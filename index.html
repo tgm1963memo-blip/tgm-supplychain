@@ -1218,7 +1218,7 @@ const SD_SALES=[
   {n:'สมหญิง รักชาติ',c:'S02',w:.56,tgt:2000000,vs:-2}
 ];
 const SD_VS=[8,-3,5,-8,11,-6,4,-2];
-let _sd={pt:'month',cm:4,cy:2569,cw:1,at:'cust',mgrView:true,op:{}};
+let _sd={pt:'month',cm:4,cy:2569,cw:1,at:'cust',mgrView:true,op:{},q:'',slmF:''};
 
 function _sdD(){
   const b=SD_MD[_sd.cm];
@@ -1254,6 +1254,14 @@ function pgMySales(){
     ${isAll?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span style="font-size:12px;color:var(--TX2);align-self:center">มุมมอง:</span>
     <button class="btn btn-sm" id="sd-rv" onclick="sdTogView()">Manager</button>`:''}
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <input id="sd-q" type="text" placeholder="🔍 ค้นหา..." oninput="sdSetQ(this.value)" style="padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font);color:var(--TX);outline:none;min-width:180px;flex:1;max-width:280px">
+    ${isAll?`<select id="sd-slm-f" class="btn btn-sm" onchange="_sd.slmF=this.value;sdRender()">
+      <option value="">ทุก Sales</option>
+      ${SD_SALES.map(s=>`<option value="${s.c}">${s.n}</option>`).join('')}
+    </select>`:''}
+    <button class="btn btn-sm" onclick="sdClear()" style="color:var(--TX3)">ล้าง</button>
   </div>
   <div id="sd-wbar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
   <div class="krow" id="sd-krow" style="margin-bottom:14px"></div>
@@ -1308,7 +1316,9 @@ function sdKPI(){
 function sdCust(){
   const d=_sdD(),T=d.t,wi=_sdWI();
   const isAll=(ROLE==='manager'||ROLE==='superadmin')&&_sd.mgrView;
-  const vis=isAll?SD_CUSTS:SD_CUSTS.slice(0,1);
+  const q=(_sd.q||'').toLowerCase();
+  const base=isAll?SD_CUSTS:SD_CUSTS.slice(0,1);
+  const vis=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)||c.g.some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))):base;
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:38%">ลูกค้า / กลุ่มสินค้า / สินค้า</th>
@@ -1342,12 +1352,14 @@ function sdCust(){
 
 function sdProd(){
   const d=_sdD(),T=d.t;
+  const q=(_sd.q||'').toLowerCase();
+  const prods=q?SD_PRODS.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q))):SD_PRODS;
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:40%">กลุ่มสินค้า / สินค้า</th>
       <th class="r">ยอดขาย</th><th class="r" style="width:110px">สัดส่วน</th><th class="r">vs เดือนก่อน</th>
     </tr></thead><tbody>`;
-  SD_PRODS.forEach((p,pi)=>{
+  prods.forEach((p,pi)=>{
     const pv=Math.round(T*p.w);
     const ok='p'+pi;
     const oo=_sd.op[ok];
@@ -1367,12 +1379,15 @@ function sdProd(){
 
 function sdSlm(){
   const d=_sdD(),T=d.t;
+  const q=(_sd.q||'').toLowerCase();
+  const sf=_sd.slmF||'';
+  const sales=SD_SALES.filter(s=>(!q||(s.n.toLowerCase().includes(q)||s.c.toLowerCase().includes(q)))&&(!sf||s.c===sf));
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:30%">เซลส์</th>
       <th class="r">ยอดขาย</th><th class="r">เป้า</th><th class="r">% บรรลุ</th><th class="r">vs เดือนก่อน</th>
     </tr></thead><tbody>`;
-  SD_SALES.forEach(s=>{
+  sales.forEach(s=>{
     const sv=Math.round(T*s.w);
     const tgt=_sd.pt==='week'?Math.round(s.tgt/4):s.tgt;
     const pct=Math.round(sv/tgt*100);
@@ -1403,12 +1418,22 @@ function sdNav(d){
 function sdGoNow(){_sd.cm=4;_sd.cy=2569;_sd.cw=1;sdRender();}
 function sdTab(el,t){
   document.querySelectorAll('#sd-root .tab').forEach(e=>e.classList.remove('act'));
-  el.classList.add('act');_sd.at=t;_sd.op={};sdRender();
+  el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.slmF='';
+  const qi=document.getElementById('sd-q');if(qi)qi.value='';
+  const si=document.getElementById('sd-slm-f');if(si)si.value='';
+  sdRender();
 }
 function sdTogView(){
   _sd.mgrView=!_sd.mgrView;
   const b=document.getElementById('sd-rv');if(b) b.textContent=_sd.mgrView?'Manager':'Sales';
   _sd.op={};sdRender();
+}
+function sdSetQ(v){_sd.q=v;sdRender();}
+function sdClear(){
+  _sd.q='';_sd.slmF='';
+  const qi=document.getElementById('sd-q');if(qi)qi.value='';
+  const si=document.getElementById('sd-slm-f');if(si)si.value='';
+  sdRender();
 }
 
 // ── FORECAST ─────────────────────────────────────────────────────
