@@ -1,4 +1,4 @@
-"""
+﻿"""
 TGM — Step 2: Import Master Data → Supabase
 ============================================
 ไฟล์นี้อ่านข้อมูล master จาก Supply Chain v3 (hardcoded)
@@ -15,13 +15,37 @@ TGM — Step 2: Import Master Data → Supabase
 
 import json
 import os
+from pathlib import Path
 from supabase import create_client, Client
 
 # ============================================================
-# CONFIG — แก้ค่านี้ก่อนรัน
+# CONFIG — read from Scripts/.env
 # ============================================================
-SUPABASE_URL = "https://XXXXXX.supabase.co"   # ← เปลี่ยน
-SUPABASE_KEY = "eyJh..."                        # ← service_role key จาก Supabase > Settings > API
+BASE_DIR = Path(__file__).resolve().parent
+ENV_PATH = BASE_DIR / ".env"
+
+
+def load_env(path: Path):
+    """Load KEY=VALUE pairs from a local .env file without extra dependencies."""
+    if not path.exists():
+        return
+
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_env(ENV_PATH)
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_SERVICE_KEY")
+    or os.getenv("SUPABASE_KEY")
+    or ""
+).strip()
 
 # ============================================================
 # MASTER DATA (copy มาจาก Supply Chain v3 HTML)
@@ -235,6 +259,12 @@ if __name__ == "__main__":
     print("=" * 50)
     
     # เชื่อม Supabase
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError(
+            f"Missing Supabase config. Please set SUPABASE_URL and "
+            f"SUPABASE_SERVICE_KEY in {ENV_PATH}"
+        )
+
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     print(f"✓ Connected to Supabase: {SUPABASE_URL}")
     
@@ -263,3 +293,4 @@ if __name__ == "__main__":
     print("\nNext steps:")
     print("  - รัน step3_migrate_html.py")
     print("  - หรือเปิด Supply Chain HTML แล้วเริ่ม test")
+
