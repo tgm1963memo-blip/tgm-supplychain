@@ -125,13 +125,7 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 <div id="ls">
 <div class="lb">
   <div class="lt">TGM Supply Chain</div>
-  <div class="ls">เลือก Role และกรอกรหัสพนักงาน</div>
-  <div class="rg">
-    <div class="rc" onclick="pickRole(event,'sales','208')"><div class="ri">👤</div><div class="rn">Sales</div><div class="rd">กรอก Forecast</div></div>
-    <div class="rc" onclick="pickRole(event,'planning','PLN01')"><div class="ri">📋</div><div class="rn">Planning</div><div class="rd">วางแผนสั่งผลิต</div></div>
-    <div class="rc" onclick="pickRole(event,'warehouse','WH01')"><div class="ri">🏭</div><div class="rn">Warehouse</div><div class="rd">จัดการ Stock</div></div>
-    <div class="rc" onclick="pickRole(event,'manager','MGR01')"><div class="ri">📊</div><div class="rn">Manager</div><div class="rd">ภาพรวมทั้งหมด</div></div>
-  </div>
+  <div class="ls">กรอกรหัสพนักงานและรหัสผ่านเพื่อเข้าสู่ระบบ</div>
   <div class="field" style="margin-bottom:13px">
     <label>รหัสพนักงาน</label>
     <input id="l-uid" type="text" value="208">
@@ -597,6 +591,9 @@ async function doLogin() {
     UID    = user.uid;
     UNAME  = user.name;
 
+    // บันทึก session สำหรับ SSO (WMS ใช้ร่วม)
+    localStorage.setItem('tgm_session', JSON.stringify({uid:user.uid,name:user.name,role:user.role,slm_id:user.slm_id||'',pwd:user.pwd,ts:Date.now()}));
+
     // แสดง app ทันทีหลัง auth สำเร็จ
     document.getElementById('ls').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
@@ -895,28 +892,37 @@ function expAudit() {
 }
 
 // ════════════════════════════════════════════════
-// pgUsers() — อ่าน Users จาก Supabase
+// pgUsers() — จัดการผู้ใช้จาก localStorage
 // ════════════════════════════════════════════════
-async function pgUsers() {
-  document.getElementById('ct').innerHTML =
-    '<div style="padding:30px;text-align:center;color:var(--TX3)">กำลังโหลด...</div>';
-  const users = await SB.getUsers();
+function pgUsers() {
+  const ROLE_BADGE = {superadmin:'bbr',manager:'bba',planning:'bbl',warehouse:'bbg',sales:'bbp'};
+  const ROLE_LABEL = {superadmin:'Super Admin',manager:'Manager',planning:'Planning',warehouse:'Warehouse',sales:'Sales'};
+  const users = DB.get('users') || [];
   document.getElementById('ct').innerHTML = `
   <div class="ch" style="margin-bottom:14px">
-    <div></div>
+    <div class="ct2">ผู้ใช้ทั้งหมด (${users.length})</div>
     <button class="btn btn-sm btn-p" onclick="showAddUser()">+ เพิ่มผู้ใช้</button>
   </div>
   <div class="card"><div class="tw"><table>
-    <thead><tr><th>UID</th><th>ชื่อ</th><th>Role</th><th>SLM ID</th><th>อีเมล</th><th>สถานะ</th></tr></thead>
-    <tbody>${users.map(u => `<tr>
+    <thead><tr><th>UID</th><th>ชื่อ</th><th>Role</th><th>SLM ID</th><th>อีเมล</th><th>สถานะ</th><th></th></tr></thead>
+    <tbody>${users.map((u,i) => `<tr>
       <td><b class="mono">${u.uid}</b></td>
       <td>${u.name}</td>
-      <td><span class="badge ${{manager:'bba',planning:'bbl',warehouse:'bbg',sales:'bbp'}[u.role]||'bbgr'}">${u.role}</span></td>
-      <td class="mono" style="font-size:12px">${u.slm_id || '—'}</td>
-      <td style="font-size:12px">${u.email || '—'}</td>
-      <td>${(u.is_active || u.active) ? '<span class="badge bbg">Active</span>' : '<span class="badge bbgr">Inactive</span>'}</td>
+      <td><span class="badge ${ROLE_BADGE[u.role]||'bbgr'}">${ROLE_LABEL[u.role]||u.role}</span></td>
+      <td class="mono" style="font-size:12px">${u.slm_id||'—'}</td>
+      <td style="font-size:12px">${u.email||'—'}</td>
+      <td>${(u.active||u.is_active)?'<span class="badge bbg">Active</span>':'<span class="badge bbgr">Inactive</span>'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-xs" onclick="showEditUser(${i})">แก้ไข</button>
+        <button class="btn btn-xs" onclick="toggleUserActive(${i})" style="margin-left:4px">${(u.active||u.is_active)?'ระงับ':'เปิดใช้'}</button>
+      </td>
     </tr>`).join('')}</tbody>
   </table></div></div>`;
+}
+function toggleUserActive(i){
+  const us=DB.get('users')||[];if(!us[i])return;
+  us[i].active=!(us[i].active||us[i].is_active);
+  DB.set('users',us);pgUsers();
 }
 
 // ════════════════════════════════════════════════
@@ -953,13 +959,22 @@ const DB={
 // ── SEED DEFAULTS ─────────────────────────────────────────────────
 function initDB(){
   if(!DB.get('users')) DB.set('users',[
-    {uid:'MGR01',name:'ผู้จัดการ',role:'manager',pwd:'1234',email:'mgr@tgm.co.th',active:true,created:'2025-01-01',by:'SYSTEM'},
-    {uid:'PLN01',name:'ฝ่ายวางแผน',role:'planning',pwd:'1234',email:'plan@tgm.co.th',active:true,created:'2025-01-01',by:'SYSTEM'},
-    {uid:'WH01', name:'ฝ่ายคลังสินค้า',role:'warehouse',pwd:'1234',email:'wh@tgm.co.th',active:true,created:'2025-01-01',by:'SYSTEM'},
-    {uid:'208',  name:'Sales ทีมห้าง 1',role:'sales',pwd:'1234',email:'s208@tgm.co.th',active:true,slm_id:'208',created:'2025-01-01',by:'SYSTEM'},
-    {uid:'152',  name:'Sales ทีมห้าง 2',role:'sales',pwd:'1234',email:'s152@tgm.co.th',active:true,slm_id:'152',created:'2025-01-01',by:'SYSTEM'},
-    {uid:'101',  name:'Sales ทีมร้านค้า 1',role:'sales',pwd:'1234',email:'s101@tgm.co.th',active:true,slm_id:'101',created:'2025-01-01',by:'SYSTEM'},
+    {uid:'SADM', name:'Super Admin',     role:'superadmin',pwd:'admin1234',email:'admin@tgm.co.th',  active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'MGR01',name:'ผู้จัดการ',        role:'manager',  pwd:'1234',    email:'mgr@tgm.co.th',    active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'PLN01',name:'ฝ่ายวางแผน',       role:'planning', pwd:'1234',    email:'plan@tgm.co.th',   active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'WH01', name:'ฝ่ายคลังสินค้า',   role:'warehouse',pwd:'1234',    email:'wh@tgm.co.th',     active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'208',  name:'Sales ทีมห้าง 1',  role:'sales',    pwd:'1234',    email:'s208@tgm.co.th',   active:true,slm_id:'208',created:'2025-01-01',by:'SYSTEM'},
+    {uid:'152',  name:'Sales ทีมห้าง 2',  role:'sales',    pwd:'1234',    email:'s152@tgm.co.th',   active:true,slm_id:'152',created:'2025-01-01',by:'SYSTEM'},
+    {uid:'101',  name:'Sales ทีมร้านค้า 1',role:'sales',   pwd:'1234',    email:'s101@tgm.co.th',   active:true,slm_id:'101',created:'2025-01-01',by:'SYSTEM'},
   ]);
+  // เพิ่ม superadmin ถ้ายังไม่มี (สำหรับ browser ที่ seed ก่อนหน้านี้)
+  else {
+    const us=DB.get('users');
+    if(!us.find(u=>u.role==='superadmin')){
+      us.unshift({uid:'SADM',name:'Super Admin',role:'superadmin',pwd:'admin1234',email:'admin@tgm.co.th',active:true,created:'2025-01-01',by:'SYSTEM'});
+      DB.set('users',us);
+    }
+  }
   if(!DB.get('forecasts')) DB.set('forecasts',[]);
   if(!DB.get('po_log')) DB.set('po_log',[
     {id:'PO-041',sku:'10002',skuName:'ค๊อกเทลซอสเซส',qty:300,delivDate:'2025-05-03',customer:'บิ๊กซี',branch:'TSS',status:'pending',so:'',note:'',by:'PLN01',ver:1,ts:Date.now()-864e5*3,edited_by:'PLN01',edited_at:new Date().toISOString()},
@@ -997,25 +1012,21 @@ initDB();
 // ── AUTH ──────────────────────────────────────────────────────────
 ROLE='', UID='', UNAME='';
 const RNAV={
+  superadmin:[['dash','📊','Dashboard'],['users','👥','จัดการผู้ใช้'],['auditlog','🔍','Audit Log']],
   sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า']],
   planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['custmap','🗺️','Customer Map'],['skuadmin','⚙️','SKU Settings']],
-  warehouse:[['dash','📊','Dashboard'], ['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า']],
-  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['planstock','📦','Stock & Planning'],['po','📋','PO Log'],['custmap','🗺️','Customer Map'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['auditlog','🔍','Audit Log']],
+  warehouse:[['dash','📊','Dashboard'],['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า']],
+  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['planstock','📦','Stock & Planning'],['po','📋','PO Log'],['custmap','🗺️','Customer Map'],['reports','📄','Reports'],['auditlog','🔍','Audit Log']],
 };
 const PTITLES={dash:'Dashboard',mysales:'Sales Overview',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'PO Planning',custmap:'Customer-Product Map',skuadmin:'SKU Settings',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',auditlog:'Audit Log'};
 
-function pickRole(event,r,uid){
-  document.querySelectorAll('.rc').forEach(c=>c.classList.remove('sel'));
-  event.target.closest('.rc').classList.add('sel');
-  document.getElementById('l-uid').value=uid;
-}
 
-function doLogout(){audit('LOGOUT','system',{});document.getElementById('ls').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('l-err').textContent='';}
+function doLogout(){audit('LOGOUT','system',{});localStorage.removeItem('tgm_session');document.getElementById('ls').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('l-err').textContent='';}
 function buildSB(){
   document.getElementById('sb-nav').innerHTML=(RNAV[ROLE]||[]).map(([id,ico,lbl])=>`<div class="ni" id="ni-${id}" onclick="nav('${id}')"><span class="ni-ico">${ico}</span><span>${lbl}</span></div>`).join('');
   document.getElementById('sb-av').textContent=UID.substring(0,2).toUpperCase();
   document.getElementById('sb-un').textContent=UNAME||UID;
-  document.getElementById('sb-ur').textContent=({sales:'Sales',planning:'Planning',warehouse:'Warehouse',manager:'Manager'})[ROLE]||ROLE;
+  document.getElementById('sb-ur').textContent=({superadmin:'Super Admin',sales:'Sales',planning:'Planning',warehouse:'Warehouse',manager:'Manager'})[ROLE]||ROLE;
 }
 
 let _charts=[];
@@ -1786,7 +1797,7 @@ function showAddUser(){
   <div class="fg">
     <div class="field"><label>รหัสพนักงาน (UID)</label><input type="text" id="u-uid" placeholder="เช่น 210"></div>
     <div class="field"><label>ชื่อ-นามสกุล</label><input type="text" id="u-name"></div>
-    <div class="field"><label>Role</label><select id="u-role"><option value="sales">Sales</option><option value="planning">Planning</option><option value="warehouse">Warehouse</option><option value="manager">Manager</option></select></div>
+    <div class="field"><label>Role</label><select id="u-role"><option value="sales">Sales</option><option value="planning">Planning</option><option value="warehouse">Warehouse</option><option value="manager">Manager</option><option value="superadmin">Super Admin</option></select></div>
     <div class="field"><label>SLM ID (สำหรับ Sales)</label><input type="text" id="u-slm" placeholder="เช่น 210"></div>
     <div class="field"><label>รหัสผ่าน</label><input type="password" id="u-pwd" value="1234"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email"></div>
@@ -1802,7 +1813,7 @@ function showEditUser(i){
   <div class="fg">
     <div class="field"><label>รหัสพนักงาน</label><input type="text" id="u-uid" value="${u.uid}" ${u.uid==='MGR01'?'readonly':''}></div>
     <div class="field"><label>ชื่อ-นามสกุล</label><input type="text" id="u-name" value="${u.name}"></div>
-    <div class="field"><label>Role</label><select id="u-role"><option value="sales" ${u.role==='sales'?'selected':''}>Sales</option><option value="planning" ${u.role==='planning'?'selected':''}>Planning</option><option value="warehouse" ${u.role==='warehouse'?'selected':''}>Warehouse</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option></select></div>
+    <div class="field"><label>Role</label><select id="u-role"><option value="sales" ${u.role==='sales'?'selected':''}>Sales</option><option value="planning" ${u.role==='planning'?'selected':''}>Planning</option><option value="warehouse" ${u.role==='warehouse'?'selected':''}>Warehouse</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option><option value="superadmin" ${u.role==='superadmin'?'selected':''}>Super Admin</option></select></div>
     <div class="field"><label>SLM ID</label><input type="text" id="u-slm" value="${u.slm_id||''}"></div>
     <div class="field"><label>รหัสผ่านใหม่ (ว่าง=ไม่เปลี่ยน)</label><input type="password" id="u-pwd" placeholder="(ว่าง=ไม่เปลี่ยน)"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email" value="${u.email||''}"></div>
