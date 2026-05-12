@@ -9,16 +9,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --N:#0F2444;--N2:#1B3A6B;--T:#0D5068;--G:#0A5940;--O:#C44B0A;--R:#A32D2D;
+  --N:#1E3A5F;--N2:#D4AF37;--T:#0D5068;--G:#0A5940;--O:#C44B0A;--R:#A32D2D;
   --A:#7A4500;--P:#412B8A;--GR:#3D4A5C;
   --bg:#F4F6F9;--bg2:#ECEEF2;--W:#fff;--BD:#CDD5E0;
   --BL:#1553A0;--LBL:#E7EFFC;--LG:#E5F3EE;--LR:#FBEBEB;
   --LY:#FDF2E2;--LP:#EDEAFB;--LN:#E7EDF7;
   --TX:#0D1117;--TX2:#4A5568;--TX3:#8896A5;
-  --font:'IBM Plex Sans Thai',sans-serif;--mono:'IBM Plex Mono',monospace;
+  --font:'Noto Sans Thai','IBM Plex Sans Thai',sans-serif;--mono:'IBM Plex Mono',monospace;
 }
 body{font-family:var(--font);background:var(--bg);color:var(--TX);font-size:13.5px;line-height:1.5}
 #app{display:flex;height:100vh;overflow:hidden}
@@ -29,7 +29,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--TX);font-size:13.5
 .sb-sec{padding:12px 14px 3px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.3}
 .ni{display:flex;align-items:center;gap:9px;padding:8px 12px;cursor:pointer;border-radius:7px;margin:1px 6px;font-size:13px;color:rgba(255,255,255,.6);transition:.12s}
 .ni:hover{background:rgba(255,255,255,.09);color:rgba(255,255,255,.9)}
-.ni.act{background:rgba(255,255,255,.14);color:#fff;font-weight:600}
+.ni.act{background:rgba(212,175,55,.18);color:#D4AF37;font-weight:600;border-left:3px solid #D4AF37;padding-left:9px}
 .ni-ico{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 .sb-foot{margin-top:auto;padding:10px 12px;border-top:1px solid rgba(255,255,255,.07)}
 .sb-u{display:flex;align-items:center;gap:9px}
@@ -44,7 +44,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--TX);font-size:13.5
 .btn:hover{background:var(--bg2)} .btn:active{transform:scale(.98)}
 .btn-sm{padding:5px 11px;font-size:12px;border-radius:6px}
 .btn-xs{padding:3px 8px;font-size:11.5px;border-radius:5px}
-.btn-p{background:var(--N2);color:#fff;border-color:var(--N2)}.btn-p:hover{opacity:.88}
+.btn-p{background:#D4AF37;color:#000;border-color:#D4AF37;font-weight:700}.btn-p:hover{opacity:.88}
 .btn-g{background:var(--G);color:#fff;border-color:var(--G)}.btn-g:hover{opacity:.88}
 .btn-r{background:var(--R);color:#fff;border-color:var(--R)}
 .btn-o{background:var(--O);color:#fff;border-color:var(--O)}
@@ -96,10 +96,10 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .mt2{font-size:16px;font-weight:700;color:var(--N)}
 .mx{cursor:pointer;font-size:20px;color:var(--TX3);line-height:1}
-#ls{position:fixed;inset:0;background:linear-gradient(135deg,var(--N) 0%,var(--T) 100%);display:flex;align-items:center;justify-content:center;z-index:300}
-.lb{background:var(--W);border-radius:16px;padding:36px;width:400px;box-shadow:0 30px 80px rgba(0,0,0,.3)}
-.lt{font-size:22px;font-weight:700;color:var(--N);margin-bottom:4px}
-.ls{font-size:13px;color:var(--TX2);margin-bottom:22px}
+#ls{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:300}
+.lb{background:var(--W);border-radius:16px;padding:40px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:14px}
+.lt{font-size:20px;font-weight:700;color:#111;margin:0;text-align:center}
+.ls{font-size:13px;color:var(--TX2);margin:0;text-align:center}
 .rg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
 .rc{border:2px solid var(--BD);border-radius:10px;padding:13px;cursor:pointer;text-align:center;transition:.15s}
 .rc:hover{border-color:var(--BL);background:var(--LBL)}.rc.sel{border-color:var(--N);background:var(--LN)}
@@ -124,18 +124,19 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 <!-- LOGIN -->
 <div id="ls">
 <div class="lb">
+  <div style="text-align:center"><img src="https://img1.pic.in.th/images/logo-tss-03.png" alt="TSS" style="height:56px;object-fit:contain" onerror="this.style.display='none'"></div>
   <div class="lt">TGM Supply Chain</div>
   <div class="ls">กรอกรหัสพนักงานและรหัสผ่านเพื่อเข้าสู่ระบบ</div>
-  <div class="field" style="margin-bottom:13px">
+  <div class="field">
     <label>รหัสพนักงาน</label>
-    <input id="l-uid" type="text" value="208">
+    <input id="l-uid" type="text" value="208" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
   </div>
-  <div class="field" style="margin-bottom:16px">
+  <div class="field">
     <label>รหัสผ่าน</label>
-    <input id="l-pwd" type="password" value="1234">
+    <input id="l-pwd" type="password" value="1234" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
   </div>
-  <button class="btn btn-p" style="width:100%;justify-content:center;padding:10px 0" onclick="doLogin()">เข้าสู่ระบบ</button>
-  <div id="l-err" style="color:var(--R);font-size:12px;margin-top:8px;text-align:center"></div>
+  <button class="btn btn-p" style="width:100%;justify-content:center;padding:13px 0;border-radius:8px;font-size:14px" onclick="doLogin()">เข้าสู่ระบบ</button>
+  <div id="l-err" style="color:var(--R);font-size:12px;text-align:center;background:#FFF1F1;border:1px solid #FECACA;border-radius:7px;padding:8px 12px;display:none"></div>
 </div>
 </div>
 
@@ -570,7 +571,7 @@ async function doLogin() {
   const uid = document.getElementById('l-uid').value.trim();
   const pwd = document.getElementById('l-pwd').value;
   const err = document.getElementById('l-err');
-  err.textContent = '';
+  err.textContent = ''; err.style.display = 'none';
 
   // แสดง loading
   const btn = document.querySelector('#ls .btn-p');
@@ -582,6 +583,7 @@ async function doLogin() {
     const user = await SB.login(uid, pwd);
     if (!user) {
       err.textContent = 'รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง';
+      err.style.display = '';
       return;
     }
 
@@ -593,6 +595,15 @@ async function doLogin() {
 
     // บันทึก session สำหรับ SSO (WMS ใช้ร่วม)
     localStorage.setItem('tgm_session', JSON.stringify({uid:user.uid,name:user.name,role:user.role,slm_id:user.slm_id||'',pwd:user.pwd,ts:Date.now()}));
+
+    // warehouse role → redirect ไปยัง WMS โดยตรง
+    if (ROLE === 'warehouse') {
+      const wmsUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:5173'
+        : 'https://tgm-wms.vercel.app';
+      window.location.href = wmsUrl;
+      return;
+    }
 
     // แสดง app ทันทีหลัง auth สำเร็จ
     document.getElementById('ls').classList.add('hidden');
@@ -620,6 +631,7 @@ async function doLogin() {
 
   } catch (e) {
     err.textContent = 'เกิดข้อผิดพลาด: ' + e.message;
+    err.style.display = '';
     console.error('Login error:', e);
   } finally {
     btn.textContent = origText;
