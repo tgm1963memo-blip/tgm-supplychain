@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="th">
-<!-- วางก่อน </head> -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <title>TGM Supply Chain v3</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -127,10 +127,10 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
   <div class="lt">TGM Supply Chain</div>
   <div class="ls">เลือก Role และกรอกรหัสพนักงาน</div>
   <div class="rg">
-    <div class="rc" onclick="pickRole('sales','208')"><div class="ri">👤</div><div class="rn">Sales</div><div class="rd">กรอก Forecast</div></div>
-    <div class="rc" onclick="pickRole('planning','PLN01')"><div class="ri">📋</div><div class="rn">Planning</div><div class="rd">วางแผนสั่งผลิต</div></div>
-    <div class="rc" onclick="pickRole('warehouse','WH01')"><div class="ri">🏭</div><div class="rn">Warehouse</div><div class="rd">จัดการ Stock</div></div>
-    <div class="rc" onclick="pickRole('manager','MGR01')"><div class="ri">📊</div><div class="rn">Manager</div><div class="rd">ภาพรวมทั้งหมด</div></div>
+    <div class="rc" onclick="pickRole(event,'sales','208')"><div class="ri">👤</div><div class="rn">Sales</div><div class="rd">กรอก Forecast</div></div>
+    <div class="rc" onclick="pickRole(event,'planning','PLN01')"><div class="ri">📋</div><div class="rn">Planning</div><div class="rd">วางแผนสั่งผลิต</div></div>
+    <div class="rc" onclick="pickRole(event,'warehouse','WH01')"><div class="ri">🏭</div><div class="rn">Warehouse</div><div class="rd">จัดการ Stock</div></div>
+    <div class="rc" onclick="pickRole(event,'manager','MGR01')"><div class="ri">📊</div><div class="rn">Manager</div><div class="rd">ภาพรวมทั้งหมด</div></div>
   </div>
   <div class="field" style="margin-bottom:13px">
     <label>รหัสพนักงาน</label>
@@ -174,12 +174,22 @@ const SUPABASE_URL      = 'https://wjhqvjlcshwnrukbdlgr.supabase.co';   // ← P
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqaHF2amxjc2h3bnJ1a2JkbGdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTg4MDcsImV4cCI6MjA5MzQ5NDgwN30.5Px3wsyf4DtZL6TfMqaF5uyTBNo8axrmdbOrZsuYIMY'; // ← anon key
 
 // ── INIT ──────────────────────────────────────────────────────────
-// ต้องมี <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-// วางใน <head> ก่อน script block นี้
-const _sbc = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ต้องมี <script src="supabase-js@2"><\/script> วางใน <head> ก่อน script block นี้
+let _sbc = null;
+function getSupabaseClient() {
+  if (_sbc) return _sbc;
+  if (!window.supabase || !window.supabase.createClient) {
+    throw new Error('โหลด Supabase JS ไม่สำเร็จ กรุณาเปิดผ่าน http://localhost แทน file:// และตรวจสอบ internet/CDN');
+  }
+  _sbc = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return _sbc;
+}
 
 // ── CURRENT SESSION ────────────────────────────────────────────────
 let CURRENT_USER = null; // เซ็ตตอน doLogin()
+let ROLE = null;
+let UID = null;
+let UNAME = null;
 
 // ════════════════════════════════════════════════
 // SB — Supabase API Wrapper
@@ -190,19 +200,26 @@ const SB = {
   // AUTH
   // ──────────────────────────────
   async login(uid, pwd) {
-    const { data, error } = await _sbc
-      .from('sc_users')
-      .select('uid,name,role,slm_id,email,pwd_hash,is_active')
-      .eq('uid', uid)
-      .eq('is_active', true)
-      .single();
-    if (error || !data)        return null;
-    if (data.pwd_hash !== pwd) return null;
-    return data;
+    console.log('Login attempt:', uid, pwd);
+    try {
+      // Use localStorage users instead of Supabase for now
+      const users = DB.get('users') || [];
+      const user = users.find(u => u.uid === uid && (u.pwd_hash === pwd || u.pwd === pwd) && (u.active || u.is_active));
+      console.log('Local user found:', user);
+      if (!user) {
+        console.log('User not found or inactive');
+        return null;
+      }
+      console.log('Login success:', user);
+      return user;
+    } catch (e) {
+      console.error('Login error:', e);
+      return null;
+    }
   },
 
   async getUsers() {
-    const { data } = await _sbc
+    const { data } = await getSupabaseClient()
       .from('v_sc_users_safe')
       .select('*')
       .order('uid');
@@ -210,14 +227,14 @@ const SB = {
   },
 
   async upsertUser(u) {
-    return _sbc.from('sc_users').upsert(u);
+    return getSupabaseClient().from('sc_users').upsert(u);
   },
 
   // ──────────────────────────────
   // PRODUCTS / SKU
   // ──────────────────────────────
   async getProducts() {
-    const { data } = await _sbc
+    const { data } = await getSupabaseClient()
       .from('products')
       .select('*')
       .eq('is_active', true)
@@ -234,7 +251,7 @@ const SB = {
     cutoff.setMonth(cutoff.getMonth() - 4);
     const startYm = cutoff.toISOString().slice(0, 7);
 
-    const { data } = await _sbc
+    const { data } = await getSupabaseClient()
       .from('sales_history')
       .select('sku, ym, qty')
       .eq('slm_id', slmId)
@@ -266,7 +283,7 @@ const SB = {
   // FORECASTS
   // ──────────────────────────────
   async getForecasts(slmId = null) {
-    let q = _sbc
+    let q = getSupabaseClient()
       .from('forecasts')
       .select('id,created_by,slm_id,sku,cust_code,qty,deliv_date,note,is_approved,approved_by,edited_by,created_at')
       .order('created_at', { ascending: false });
@@ -287,7 +304,7 @@ const SB = {
   },
 
   async addForecast(fc) {
-    return _sbc.from('forecasts').insert({
+    return getSupabaseClient().from('forecasts').insert({
       id:          fc.id,
       created_by:  CURRENT_USER?.uid,
       slm_id:      fc.by || CURRENT_USER?.slm_id,
@@ -312,12 +329,12 @@ const SB = {
       note:       fc.note || null,
       edited_by:  CURRENT_USER?.uid,
     }));
-    const { error } = await _sbc.from('forecasts').insert(rows);
+    const { error } = await getSupabaseClient().from('forecasts').insert(rows);
     return !error;
   },
 
   async approveForecast(id) {
-    return _sbc.from('forecasts').update({
+    return getSupabaseClient().from('forecasts').update({
       is_approved: true,
       approved_by: CURRENT_USER?.uid,
       approved_at: new Date().toISOString(),
@@ -328,7 +345,7 @@ const SB = {
   // PO PLANS
   // ──────────────────────────────
   async getPOPlans() {
-    const { data } = await _sbc
+    const { data } = await getSupabaseClient()
       .from('po_plans')
       .select('*')
       .order('created_at', { ascending: false });
@@ -349,7 +366,7 @@ const SB = {
   },
 
   async upsertPO(po) {
-    return _sbc.from('po_plans').upsert({
+    return getSupabaseClient().from('po_plans').upsert({
       id:         po.id,
       sku:        po.sku,
       qty:        po.qty,
@@ -369,21 +386,21 @@ const SB = {
   // STOCK (WMS writes, SC reads)
   // ──────────────────────────────
   async getStock() {
-    const { data } = await _sbc.from('stock').select('sku,qty,unit,last_updated');
+    const { data } = await getSupabaseClient().from('stock').select('sku,qty,unit,last_updated');
     const result = {};
     for (const s of (data || [])) result[s.sku] = { qty: s.qty, unit: s.unit };
     return result;
   },
 
   async getStockLots(sku = null) {
-    let q = _sbc.from('stock_lots').select('*').order('exp_date');
+    let q = getSupabaseClient().from('stock_lots').select('*').order('exp_date');
     if (sku) q = q.eq('sku', sku);
     const { data } = await q;
     return data || [];
   },
 
   async getStockPlanning() {
-    const { data } = await _sbc
+    const { data } = await getSupabaseClient()
       .from('v_stock_planning')
       .select('*')
       .order('days_remaining');
@@ -394,7 +411,7 @@ const SB = {
   // RESERVATIONS
   // ──────────────────────────────
   async getReservations(status = null) {
-    let q = _sbc
+    let q = getSupabaseClient()
       .from('v_reservation_status')
       .select('*')
       .order('created_at', { ascending: false });
@@ -404,7 +421,7 @@ const SB = {
   },
 
   async addReservation(res) {
-    const { data } = await _sbc.from('reservations').insert({
+    const { data } = await getSupabaseClient().from('reservations').insert({
       sku:           res.sku,
       qty_requested: res.qty,
       cust_code:     res.custCode || null,
@@ -417,7 +434,7 @@ const SB = {
   },
 
   async approveReservation(id, qty) {
-    return _sbc.from('reservations').update({
+    return getSupabaseClient().from('reservations').update({
       status:       'approved',
       qty_approved: qty,
       approved_by:  CURRENT_USER?.uid,
@@ -429,7 +446,7 @@ const SB = {
   // SKU SETTINGS
   // ──────────────────────────────
   async getSkuSettings() {
-    const { data } = await _sbc.from('sku_settings').select('*');
+    const { data } = await getSupabaseClient().from('sku_settings').select('*');
     const result = {};
     for (const s of (data || [])) {
       result[s.sku] = { min_stock: s.min_stock, shelf_life: s.shelf_life, moq: s.moq, lt: s.lead_time, note: s.note };
@@ -438,7 +455,7 @@ const SB = {
   },
 
   async updateSkuSetting(sku, settings) {
-    return _sbc.from('sku_settings').upsert({
+    return getSupabaseClient().from('sku_settings').upsert({
       sku,
       min_stock:  settings.min_stock,
       shelf_life: settings.shelf_life,
@@ -454,7 +471,7 @@ const SB = {
   // ──────────────────────────────
   async audit(action, target, detail = {}) {
     if (!CURRENT_USER) return;
-    await _sbc.from('audit_log').insert({
+    await getSupabaseClient().from('audit_log').insert({
       uid:    CURRENT_USER.uid,
       role:   CURRENT_USER.role,
       action,
@@ -464,7 +481,7 @@ const SB = {
   },
 
   async getAuditLog(limit = 200) {
-    const { data } = await _sbc
+    const { data } = await getSupabaseClient()
       .from('audit_log')
       .select('*')
       .order('ts', { ascending: false })
@@ -476,21 +493,21 @@ const SB = {
   // REALTIME SUBSCRIPTIONS
   // ──────────────────────────────
   subscribeStock(cb) {
-    return _sbc.channel('stock-rt')
+    return getSupabaseClient().channel('stock-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock' }, cb)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_lots' }, cb)
       .subscribe();
   },
 
   subscribeReservations(cb) {
-    return _sbc.channel('reservations-rt')
+    return getSupabaseClient().channel('reservations-rt')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reservations' }, cb)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reservations' }, cb)
       .subscribe();
   },
 
   subscribeForecasts(cb) {
-    return _sbc.channel('forecasts-rt')
+    return getSupabaseClient().channel('forecasts-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'forecasts' }, cb)
       .subscribe();
   },
@@ -580,33 +597,29 @@ async function doLogin() {
     UID    = user.uid;
     UNAME  = user.name;
 
-    // ย้าย localStorage → Supabase (ครั้งแรกเท่านั้น)
-    await migrateFromLocalStorage();
-
-    // Subscribe realtime
-    SB.subscribeStock(() => {
-      CACHE.clear('stock');
-      CACHE.clear('stock_lots');
-      CACHE.clear('stock_planning');
-      // ถ้ากำลังดูหน้า stock planning ให้ refresh อัตโนมัติ
-      if (document.getElementById('ps-tbl')) planStkT();
-    });
-
-    SB.subscribeReservations(payload => {
-      if (payload.eventType === 'INSERT') {
-        const r = payload.new;
-        toast(`📦 จองสินค้าใหม่: ${r.sku} ${r.qty_requested} กก.`);
-      }
-    });
-
-    // Audit
-    await SB.audit('LOGIN', 'system', { role: ROLE });
-
-    // แสดง app
+    // แสดง app ทันทีหลัง auth สำเร็จ
     document.getElementById('ls').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
     buildSB();
     nav('dash');
+
+    // Supabase background tasks (ไม่บล็อก login)
+    migrateFromLocalStorage().catch(console.warn);
+    SB.audit('LOGIN', 'system', { role: ROLE }).catch(console.warn);
+    try {
+      SB.subscribeStock(() => {
+        CACHE.clear('stock');
+        CACHE.clear('stock_lots');
+        CACHE.clear('stock_planning');
+        if (document.getElementById('ps-tbl')) planStkT();
+      });
+      SB.subscribeReservations(payload => {
+        if (payload.eventType === 'INSERT') {
+          const r = payload.new;
+          toast(`📦 จองสินค้าใหม่: ${r.sku} ${r.qty_requested} กก.`);
+        }
+      });
+    } catch (e) { console.warn('Realtime subscribe:', e); }
 
   } catch (e) {
     err.textContent = 'เกิดข้อผิดพลาด: ' + e.message;
@@ -901,7 +914,7 @@ async function pgUsers() {
       <td><span class="badge ${{manager:'bba',planning:'bbl',warehouse:'bbg',sales:'bbp'}[u.role]||'bbgr'}">${u.role}</span></td>
       <td class="mono" style="font-size:12px">${u.slm_id || '—'}</td>
       <td style="font-size:12px">${u.email || '—'}</td>
-      <td>${u.is_active ? '<span class="badge bbg">Active</span>' : '<span class="badge bbgr">Inactive</span>'}</td>
+      <td>${(u.is_active || u.active) ? '<span class="badge bbg">Active</span>' : '<span class="badge bbgr">Inactive</span>'}</td>
     </tr>`).join('')}</tbody>
   </table></div></div>`;
 }
@@ -982,16 +995,16 @@ function initDB(){
 initDB();
 
 // ── AUTH ──────────────────────────────────────────────────────────
-let ROLE='',UID='',UNAME='';
+ROLE='', UID='', UNAME='';
 const RNAV={
   sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า']],
   planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['custmap','🗺️','Customer Map'],['skuadmin','⚙️','SKU Settings']],
-  warehouse:[['dash','📊','Dashboard'],['stock','🏭','Stock Management'],['expiry','⚠️','ใกล้หมดอายุ'],['po','📋','PO จอง Stock']],
+  warehouse:[['dash','📊','Dashboard'], ['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า']],
   manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['planstock','📦','Stock & Planning'],['po','📋','PO Log'],['custmap','🗺️','Customer Map'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['auditlog','🔍','Audit Log']],
 };
 const PTITLES={dash:'Dashboard',mysales:'Sales Overview',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'PO Planning',custmap:'Customer-Product Map',skuadmin:'SKU Settings',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',auditlog:'Audit Log'};
 
-function pickRole(r,uid){
+function pickRole(event,r,uid){
   document.querySelectorAll('.rc').forEach(c=>c.classList.remove('sel'));
   event.target.closest('.rc').classList.add('sel');
   document.getElementById('l-uid').value=uid;
@@ -1410,7 +1423,7 @@ function showEditPO(id){
   openMod(`<div class="mh"><div class="mt2">แก้ไข ${id} (Ver.${p.ver})</div><span class="mx" onclick="closeM()">✕</span></div>
   <div class="al alw">การแก้ไขจะบันทึกเป็น Version ใหม่ — ประวัติเดิมยังคงอยู่</div>
   <div class="fg">
-    <div class="field"><label>วันส่งใหม่</label><input type="date" id="ep-d" value="${p.delivDate||''}"></div>
+    <div class="field"><label>วันส่งใหม่</label><input type="date" id="ep-d" value=""></div>
     <div class="field"><label>สถานะ</label><select id="ep-s"><option value="pending" ${p.status==='pending'?'selected':''}>รอส่ง</option><option value="overdue" ${p.status==='overdue'?'selected':''}>เลยกำหนด</option></select></div>
     <div class="field" style="grid-column:1/-1"><label>เหตุผล</label><input type="text" id="ep-r" placeholder="ระบุเหตุผล..."></div>
   </div>
@@ -1418,6 +1431,7 @@ function showEditPO(id){
     <button class="btn" onclick="closeM()">ยกเลิก</button>
     <button class="btn btn-p" onclick="updatePO('${id}')">บันทึก</button>
   </div>`);
+  document.getElementById('ep-d').value = p.delivDate || '';
 }
 function updatePO(id){
   const newD=document.getElementById('ep-d').value,newS=document.getElementById('ep-s').value,reason=document.getElementById('ep-r').value;
@@ -1512,14 +1526,21 @@ function skuAdmT(){
     const cfg=ss[s.code]||{min_stock:50,shelf_life:30,lt:7,moq:0,note:''};
     return `<tr>
       <td class="mono">${s.code}</td><td>${s.name.substring(0,30)}</td><td><span class="badge bbgr">${s.plant}</span></td>
-      <td style="text-align:center"><input class="inp-cell" style="text-align:right;width:70px" type="number" value="${cfg.min_stock||50}" onchange="saveSKUSetting('${s.code}','min_stock',this.value,this)"></td>
-      <td style="text-align:center"><input class="inp-cell" style="text-align:right;width:70px" type="number" value="${cfg.shelf_life||30}" onchange="saveSKUSetting('${s.code}','shelf_life',this.value,this)"></td>
-      <td style="text-align:center"><input class="inp-cell" style="text-align:right;width:60px" type="number" value="${cfg.lt||s.lt||7}" onchange="saveSKUSetting('${s.code}','lt',this.value,this)"></td>
-      <td style="text-align:center"><input class="inp-cell" style="text-align:right;width:70px" type="number" value="${cfg.moq||s.moq||0}" onchange="saveSKUSetting('${s.code}','moq',this.value,this)"></td>
+      <td style="text-align:center"><input class="inp-cell" style="text-align:right;width:70px" type="number" id="min-${s.code}" onchange="saveSKUSetting('${s.code}','min_stock',this.value,this)"></td>
+      <td style="text-align:center"><input class="inp-cell" style="text-align:right;width:70px" type="number" id="sl-${s.code}" onchange="saveSKUSetting('${s.code}','shelf_life',this.value,this)"></td>
+      <td style="text-align:center"><input class="inp-cell" style="text-align:right;width:60px" type="number" id="lt-${s.code}" onchange="saveSKUSetting('${s.code}','lt',this.value,this)"></td>
+      <td style="text-align:center"><input class="inp-cell" style="text-align:right;width:70px" type="number" id="moq-${s.code}" onchange="saveSKUSetting('${s.code}','moq',this.value,this)"></td>
       <td><input class="inp-cell" style="width:120px" type="text" value="${cfg.note||''}" onchange="saveSKUSetting('${s.code}','note',this.value,this)"></td>
       <td><span class="edby" id="edby-${s.code}">${cfg.edited_by||'—'}</span></td>
     </tr>`;
   }).join('')}</tbody></table></div>`;
+  rows.forEach(s => {
+    const cfg = ss[s.code] || {min_stock:50,shelf_life:30,lt:7,moq:0,note:''};
+    document.getElementById(`min-${s.code}`).value = cfg.min_stock || 50;
+    document.getElementById(`sl-${s.code}`).value = cfg.shelf_life || 30;
+    document.getElementById(`lt-${s.code}`).value = cfg.lt || s.lt || 7;
+    document.getElementById(`moq-${s.code}`).value = cfg.moq || s.moq || 0;
+  });
 }
 function saveSKUSetting(code,field,val,el){
   const ss=DB.get('sku_settings')||{};
@@ -1829,3 +1850,6 @@ function expAudit(){
 </script>
 </body>
 </html>
+
+
+
