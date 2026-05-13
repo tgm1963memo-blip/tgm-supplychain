@@ -898,10 +898,11 @@ function planStkT() {
   const q    = (document.getElementById('ss')?.value || '').toLowerCase();
   const crit = _psCrit || 'avg3';
   const period = document.getElementById('ps-period')?.value || 'current';
-
-  // update title
-  const titles={avg3:'Stock vs เฉลี่ย 3 เดือน',avg4:'Stock vs เฉลี่ย 4 เดือนล่าสุด',last1:'Stock vs ยอดเดือนล่าสุด',prevyear:'Stock vs ปีที่แล้ว (เดือนนี้)',weekly:'Stock vs ยอดรายสัปดาห์'};
-  const titleEl=document.getElementById('ps-title');if(titleEl)titleEl.textContent=titles[crit]||'Stock Planning';
+  const periodDays = {current:0,'1week':7,'2week':14,'1month':30,'3month':90}[period] || 0;
+  const periodLbl  = {current:'','1week':' +1wk','2week':' +2wk','1month':' +1 เดือน','3month':' +3 เดือน'};
+  const titlesMap  = {avg3:'เฉลี่ย 3 เดือน',avg4:'เฉลี่ย 4 เดือน',last1:'ยอดเดือนล่าสุด',prevyear:'ปีที่แล้ว/เดือน',weekly:'ยอดรายสัปดาห์'};
+  const titleEl = document.getElementById('ps-title');
+  if (titleEl) titleEl.textContent = `Stock vs ${titlesMap[crit]||crit}${periodLbl[period]||''}`;
 
   let filtered = [...rows];
   if (grp && productGroups()[grp]) {
@@ -913,80 +914,87 @@ function planStkT() {
     (r.name || '').toLowerCase().includes(q)
   );
 
-  // โหลดข้อมูล forecast และ PO
-  const fc = DB.get('forecasts') || [];
-  const po = DB.get('po_log') || [];
+  // โหลดข้อมูล forecast + PO จาก localStorage และ Supabase
+  const fcLS = DB.get('forecasts') || [];
+  const poLS = DB.get('po_log')    || [];
+  const fcSB = window._sbForecasts || [];
+  const poSB = window._sbPOPlans   || [];
+  const fc   = [...fcLS, ...fcSB.map(f => ({sku: f.sku, qty: f.qty}))];
+  const po   = [...poLS, ...poSB.map(p => ({sku: p.sku, qty: p.qty, status: p.status}))];
 
-  // compute benchmark per criterion
   filtered = filtered.map(r => {
-    const hist=ALL_HIST[r.code]?.monthly||{};
-    const vals=Object.entries(hist).sort(([a],[b])=>a.localeCompare(b)).map(([,v])=>Number(v)||0).filter(v=>v>0);
-    const avg=arr=>arr.length?arr.reduce((sum,v)=>sum+v,0)/arr.length:0;
-    const a3 = r.avg3_monthly || avg(vals.slice(-3)) || 0;
-    let bench = a3;
-    if (crit === 'avg4')     bench = r.avg4_monthly ?? avg(vals.slice(-4)) ?? a3;
-    else if(crit === 'last1') bench = r.last_month ?? vals.slice(-1)[0] ?? a3;
-    else if(crit === 'prevyear') bench = r.prevyear_monthly ?? a3;
-    else if(crit === 'weekly') bench = a3 / 4;
-    const daysComp = bench > 0 ? Math.round((r.stock_qty || 0) / bench * (crit==='weekly'?7:30)) : 9999;
+    const hist = ALL_HIST[r.code]?.monthly || {};
+    const vals = Object.entries(hist).sort(([a],[b]) => a.localeCompare(b)).map(([,v]) => Number(v)||0).filter(v => v > 0);
+    const avg  = arr => arr.length ? arr.reduce((s,v) => s+v, 0)/arr.length : 0;
+    const a3   = r.avg3_monthly || avg(vals.slice(-3)) || 0;
+    let bench  = a3;
+    if      (crit === 'avg4')     bench = (r.avg4_monthly  ?? avg(vals.slice(-4))) || a3;
+    else if (crit === 'last1')    bench = (r.last_month    ?? vals.slice(-1)[0])   || a3;
+    else if (crit === 'prevyear') bench = r.prevyear_monthly || a3;
+    else if (crit === 'weekly')   bench = a3 / 4;
 
-    // คำนวณ forecast และ PO รวม
-    const fcTotal = fc.filter(f => f.sku === r.code).reduce((sum,f) => sum + (f.qty || 0), 0);
-    const poTotal = po.filter(p => p.sku === r.code && p.status !== 'completed').reduce((sum,p) => sum + (p.qty || 0), 0);
+    const fcTotal = fc.filter(f => f.sku === r.code).reduce((s,f) => s + (f.qty||0), 0);
+    const poTotal = po.filter(p => p.sku === r.code && p.status !== 'completed').reduce((s,p) => s + (p.qty||0), 0);
 
-    return {...r, _bench: bench, _days: daysComp, _fcTotal: fcTotal, _poTotal: poTotal};
+    // Period projection
+    const consumed  = bench > 0 ? bench * (periodDays / 30) : 0;
+    const poArrived = periodDays >= 14 ? poTotal : 0;
+    const effStock  = periodDays > 0 ? Math.max(0, (r.stock_qty||0) - consumed + poArrived) : (r.stock_qty||0);
+    const daysComp  = bench > 0 ? Math.round(effStock / bench * (crit === 'weekly' ? 7 : 30)) : 9999;
+
+    return {...r, _bench: bench, _days: daysComp, _effStock: effStock, _fcTotal: fcTotal, _poTotal: poTotal};
   });
 
-  // sort
-  const sc=_psSort.col,sd=_psSort.dir;
-  if(sc==='code')  filtered.sort((a,b)=>sd*(a.code||'').localeCompare(b.code||''));
-  else if(sc==='stock') filtered.sort((a,b)=>sd*(b.stock_qty-a.stock_qty));
-  else if(sc==='bench') filtered.sort((a,b)=>sd*(b._bench-a._bench));
-  else if(sc==='min')   filtered.sort((a,b)=>sd*(b.min_stock-a.min_stock));
-  else filtered.sort((a,b)=>sd*(a._days-b._days));
+  const sc = _psSort.col, sd = _psSort.dir;
+  if      (sc === 'code')  filtered.sort((a,b) => sd*(a.code||'').localeCompare(b.code||''));
+  else if (sc === 'stock') filtered.sort((a,b) => sd*(b._effStock - a._effStock));
+  else if (sc === 'bench') filtered.sort((a,b) => sd*(b._bench - a._bench));
+  else if (sc === 'min')   filtered.sort((a,b) => sd*(b.min_stock - a.min_stock));
+  else                     filtered.sort((a,b) => sd*(a._days - b._days));
 
   const tbl = document.getElementById('ps-tbl');
   if (!tbl) return;
-  const sArrow=col=>sc===col?(sd>0?'▲':'▼'):'';
-  const thS=col=>`style="text-align:right;cursor:pointer;user-select:none" onclick="psSortBy('${col}')"`;
-  const benchLbl=crit==='weekly'?'เฉลี่ย/สัปดาห์':crit==='prevyear'?'ปีก่อน/เดือน':'เฉลี่ย/เดือน';
-  const daysLbl=crit==='weekly'?'วันคงเหลือ (wk)':'วันคงเหลือ';
+  const sA    = col => sc === col ? (sd > 0 ? '▲' : '▼') : '';
+  const thS   = col => `style="text-align:right;cursor:pointer;user-select:none" onclick="psSortBy('${col}')"`;
+  const benchH = crit === 'weekly' ? 'เฉลี่ย/สัปดาห์' : 'เฉลี่ย/เดือน';
+  const stockH = periodDays > 0 ? `Stock (proj${periodLbl[period]||''})`.trim() : 'Stock';
 
   tbl.innerHTML = `<div class="tw"><table>
   <thead><tr>
-    <th style="cursor:pointer;user-select:none" onclick="psSortBy('code')">รหัสสินค้า ${sArrow('code')}</th>
+    <th style="cursor:pointer;user-select:none" onclick="psSortBy('code')">รหัสสินค้า ${sA('code')}</th>
     <th>ชื่อสินค้า</th>
-    <th ${thS('stock')}>Stock ${sArrow('stock')}</th>
-    <th ${thS('bench')}>${benchLbl} ${sArrow('bench')}</th>
-    <th ${thS('min')}>ขั้นต่ำ ${sArrow('min')}</th>
-    <th ${thS('days')}>${daysLbl} ${sArrow('days')}</th>
-    <th style="text-align:right">Forecast รวม</th>
-    <th style="text-align:right">PO รวม</th>
+    <th ${thS('stock')}>${stockH} ${sA('stock')}</th>
+    <th ${thS('bench')}>${benchH} ${sA('bench')}</th>
+    <th ${thS('min')}>ขั้นต่ำ ${sA('min')}</th>
+    <th ${thS('days')}>วันคงเหลือ ${sA('days')}</th>
+    <th style="text-align:right;color:var(--P)">Forecast รวม</th>
+    <th style="text-align:right;color:var(--G)">PO รวม</th>
     <th>แนะนำ</th>
     <th>Action</th>
   </tr></thead>
-  <tbody>${filtered.slice(0, 120).map(r => {
-    const days  = r._days >= 9999 ? '∞' : r._days;
-    const lc    = r.stock_qty < r.min_stock ? 'var(--R)' : r.stock_qty < r.min_stock * 2 ? 'var(--A)' : 'var(--G)';
-    const cls   = r._days < 14 ? 'crit-row' : r._days < 30 ? 'exp-warm' : '';
-    const rec   = r.stock_qty < r.min_stock
-      ? `<span class="badge bbr">สั่งด่วน</span>`
-      : r._days < 30 ? `<span class="badge bba">เฝ้าระวัง</span>`
-      : `<span class="badge bbg">ปกติ</span>`;
-    const needOrder = r.stock_qty < r.min_stock || r._days < 30;
+  <tbody>${filtered.slice(0, 150).map(r => {
+    const days = r._days >= 9999 ? '∞' : r._days;
+    const lc   = r._effStock < r.min_stock ? 'var(--R)' : r._effStock < r.min_stock*2 ? 'var(--A)' : 'var(--G)';
+    const cls  = r._days < 14 ? 'crit-row' : r._days < 30 ? 'exp-warm' : '';
+    const rec  = r._effStock < r.min_stock
+      ? '<span class="badge bbr">สั่งด่วน</span>'
+      : r._days < 30 ? '<span class="badge bba">เฝ้าระวัง</span>'
+      : '<span class="badge bbg">ปกติ</span>';
+    const needOrder = r._effStock < r.min_stock || r._days < 30;
     return `<tr class="${cls}">
       <td class="mono">${r.code}</td>
-      <td>${(r.name || '').substring(0, 32)}</td>
-      <td style="text-align:right;color:${lc};font-weight:700">${Math.round(r.stock_qty || 0).toLocaleString()}</td>
+      <td>${(r.name||'').substring(0,32)}</td>
+      <td style="text-align:right;color:${lc};font-weight:700">${Math.round(r._effStock).toLocaleString()}</td>
       <td style="text-align:right">${r._bench.toFixed(1)}</td>
       <td style="text-align:right">${r.min_stock}</td>
-      <td style="text-align:right;font-weight:700;color:${r._days < 14 ? 'var(--R)' : r._days < 30 ? 'var(--A)' : 'inherit'}">${days}</td>
-      <td style="text-align:right">${r._fcTotal.toFixed(1)}</td>
-      <td style="text-align:right">${r._poTotal.toFixed(1)}</td>
+      <td style="text-align:right;font-weight:700;color:${r._days<14?'var(--R)':r._days<30?'var(--A)':'inherit'}">${days}</td>
+      <td style="text-align:right;color:var(--P)">${r._fcTotal>0?r._fcTotal.toFixed(0):'—'}</td>
+      <td style="text-align:right;color:var(--G)">${r._poTotal>0?r._poTotal.toFixed(0):'—'}</td>
       <td>${rec}</td>
-      <td>${needOrder ? `<button class="btn btn-xs btn-p" onclick="quickOrder('${r.code}')">สั่งผลิต</button>` : '-'}</td>
+      <td>${needOrder?`<button class="btn btn-xs btn-p" onclick="quickOrder('${r.code}')">สั่งผลิต</button>`:'-'}</td>
     </tr>`;
-  }).join('')}</tbody></table></div>`;
+  }).join('')}</tbody></table></div>
+  ${filtered.length>150?`<div style="padding:8px 12px;font-size:12px;color:var(--TX3)">แสดง 150 จาก ${filtered.length} รายการ — ใช้ filter เพื่อแสดงเพิ่ม</div>`:''}`;
 }
 function psSortBy(col){if(_psSort.col===col)_psSort.dir*=-1;else{_psSort.col=col;_psSort.dir=col==='days'?1:-1;}planStkT();}
 
@@ -1025,7 +1033,7 @@ function pgProdPlan(){
     <button class="btn btn-sm btn-g" onclick="ppExport()">⬇ Export</button>
   </div>
   <div id="pp-krow" class="krow" style="margin-bottom:14px"></div>
-  <div id="pp-summary" class="card" style="margin-bottom:14px"></div>
+  <div class="card" style="margin-bottom:14px"><div id="pp-gantt"></div></div>
   <div class="card">
     <div class="ch"><div class="ct2">รายการสั่งผลิต</div></div>
     <div id="pp-tbl"></div>
@@ -1047,53 +1055,194 @@ function ppGetRange(){
   if(t==='month'){const s=new Date(ref.getFullYear(),ref.getMonth(),1);const e=new Date(ref.getFullYear(),ref.getMonth()+1,1);return{s,e,lbl:['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][ref.getMonth()]+' '+(ref.getFullYear()+543)};}
   const s=new Date(ref.getFullYear(),0,1);const e=new Date(ref.getFullYear()+1,0,1);return{s,e,lbl:'พ.ศ. '+(ref.getFullYear()+543)};
 }
-function ppRender(){
+function ppGanttCols(ref, pt) {
+  const cols = [];
+  const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const dayNames = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+  if (pt === 'day') {
+    const start = new Date(ref); start.setDate(start.getDate() - 2);
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(start); d.setDate(d.getDate() + i);
+      cols.push({ key: d.toISOString().slice(0,10), lbl: String(d.getDate()).padStart(2,'0'), sub: dayNames[d.getDay()] });
+    }
+  } else if (pt === 'week') {
+    const s = new Date(ref); s.setDate(s.getDate() - s.getDay() + 1);
+    for (let i = 0; i < 8; i++) {
+      const ws = new Date(s); ws.setDate(ws.getDate() + i*7);
+      const we = new Date(ws); we.setDate(we.getDate() + 6);
+      cols.push({ key: ws.toISOString().slice(0,10), end: we.toISOString().slice(0,10),
+        lbl: `${ws.getDate()}/${ws.getMonth()+1}`, sub: `wk${i+1}` });
+    }
+  } else if (pt === 'month') {
+    const year = ref.getFullYear(), mon = ref.getMonth();
+    const days = new Date(year, mon+1, 0).getDate();
+    for (let i = 1; i <= days; i++) {
+      const d = new Date(year, mon, i);
+      cols.push({ key: d.toISOString().slice(0,10), lbl: String(i), sub: dayNames[d.getDay()] });
+    }
+  } else {
+    for (let m = 0; m < 12; m++) {
+      const d = new Date(ref.getFullYear(), m, 1);
+      cols.push({ key: d.toISOString().slice(0,7), lbl: months[m], sub: '' });
+    }
+  }
+  return cols;
+}
+
+function ppRenderGantt(orders, cols, pt) {
+  const bysku = {};
+  orders.forEach(o => {
+    if (!bysku[o.sku]) bysku[o.sku] = { name: o.skuName || o.sku, orders: [] };
+    bysku[o.sku].orders.push(o);
+  });
+  const skuList = Object.keys(bysku).sort();
+  if (!skuList.length) return '<div style="padding:16px;color:var(--TX3);text-align:center;font-size:13px">ไม่มีรายการในช่วงเวลานี้</div>';
+
+  const today = new Date().toISOString().slice(0,10);
+  const inCol = (o, col) => {
+    if (pt === 'year')   return (o.planDate||'').slice(0,7) === col.key;
+    if (col.end)         return (o.planDate||'') >= col.key && (o.planDate||'') <= col.end;
+    return (o.planDate||'') === col.key;
+  };
+  const statusColor = { pending:'#f59e0b', inprog:'#3b82f6', done:'#22c55e' };
+  const colW = pt === 'month' ? 26 : pt === 'year' ? 56 : 40;
+
+  const headerRow = `<tr>
+    <th style="min-width:130px;max-width:130px;text-align:left;padding:4px 8px;position:sticky;left:0;background:var(--bg2);z-index:2;border-right:2px solid var(--BD);font-size:11px">สินค้า</th>
+    ${cols.map(col => {
+      const isTd = pt !== 'year' ? col.key === today : false;
+      return `<th style="min-width:${colW}px;max-width:${colW}px;text-align:center;padding:2px 1px;font-size:10px;${isTd?'background:var(--N);color:#fff;':'background:var(--bg2)'}">
+        ${col.lbl}<br><span style="font-size:9px;opacity:.65">${col.sub||''}</span></th>`;
+    }).join('')}
+  </tr>`;
+
+  const bodyRows = skuList.map(sku => {
+    const info = bysku[sku];
+    const cells = cols.map(col => {
+      const os = info.orders.filter(o => inCol(o, col));
+      if (!os.length) {
+        const isTd = pt !== 'year' ? col.key === today : false;
+        return `<td style="border:1px solid var(--BD);min-width:${colW}px;max-width:${colW}px;${isTd?'background:#e8f0fe':''}"></td>`;
+      }
+      const total = os.reduce((s,o) => s + (o.qty||0), 0);
+      const color = statusColor[os[0].status] || '#6366f1';
+      const names = os.map(o => `${o.planDate} ${o.qty}กก. [${o.status}]`).join('\n');
+      const isTd  = pt !== 'year' ? col.key === today : false;
+      return `<td style="border:1px solid var(--BD);padding:2px;text-align:center;min-width:${colW}px;max-width:${colW}px;${isTd?'background:#e8f0fe':''}">
+        <div onclick="ppEditModal('${os[0].id}')" title="${names.replace(/"/g,'&quot;')}"
+          style="background:${color};color:#fff;border-radius:3px;font-size:9px;font-weight:600;padding:2px 3px;cursor:pointer;line-height:1.3;overflow:hidden">${Math.round(total)}</div>
+      </td>`;
+    }).join('');
+    return `<tr>
+      <td style="padding:3px 8px;position:sticky;left:0;background:#fff;z-index:1;border-right:2px solid var(--BD);min-width:130px;max-width:130px">
+        <div class="mono" style="font-size:10px;color:var(--TX3)">${esc(sku)}</div>
+        <div style="font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(info.name.substring(0,22))}</div>
+      </td>${cells}
+    </tr>`;
+  }).join('');
+
+  return `<div style="overflow-x:auto">
+    <table style="border-collapse:collapse;table-layout:fixed;width:max-content">
+      <thead>${headerRow}</thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  </div>
+  <div style="display:flex;gap:12px;padding:6px 8px;font-size:11px;color:var(--TX3)">
+    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px"></span>รอผลิต</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#3b82f6;border-radius:2px"></span>กำลังผลิต</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px"></span>ผลิตแล้ว</span>
+  </div>`;
+}
+
+function ppEditModal(id){
   const orders=DB.get('prod_orders')||[];
-  const {s,e,lbl}=ppGetRange();
-  const inRange=orders.filter(o=>{const d=new Date(o.planDate);return d>=s&&d<e;});
-  const totalQty=inRange.reduce((a,o)=>a+o.qty,0);
-  const totalItems=new Set(inRange.map(o=>o.sku)).size;
-  const pending=inRange.filter(o=>o.status==='pending').length;
-  const done=inRange.filter(o=>o.status==='done').length;
-  const kr=document.getElementById('pp-krow');
-  if(kr) kr.innerHTML=`
+  const o=orders.find(x=>x.id===id);
+  if(!o)return;
+  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
+  openMod(`<div class="mh"><div class="mt2">แก้ไขรายการผลิต</div><span class="mx" onclick="closeM()">✕</span></div>
+  <div class="fg">
+    <div class="field"><label>รหัสสินค้า</label><input class="fi" id="em-sku" value="${esc(o.sku)}" readonly></div>
+    <div class="field"><label>วันผลิต</label><input type="date" class="fi" id="em-date" value="${o.planDate||''}"></div>
+    <div class="field"><label>จำนวน (กก.)</label><input type="number" class="fi" id="em-qty" value="${o.qty||0}" min="0" step="0.1"></div>
+    <div class="field"><label>สายผลิต</label><input class="fi" id="em-line" value="${esc(o.line||'')}"></div>
+    <div class="field"><label>สถานะ</label><select class="fi" id="em-status">
+      <option value="pending" ${o.status==='pending'?'selected':''}>รอผลิต</option>
+      <option value="inprog"  ${o.status==='inprog'?'selected':''}>กำลังผลิต</option>
+      <option value="done"    ${o.status==='done'?'selected':''}>ผลิตแล้ว</option>
+    </select></div>
+    <div class="field"><label>หมายเหตุ</label><input class="fi" id="em-note" value="${esc(o.note||'')}"></div>
+  </div>
+  <div class="mf" style="gap:8px">
+    <button class="btn btn-r btn-sm" onclick="ppDeleteOrder('${o.id}');closeM()">ลบรายการ</button>
+    <button class="btn btn-g btn-sm" style="margin-left:auto" onclick="ppSaveModal('${o.id}')">บันทึก</button>
+  </div>`);
+}
+
+function ppSaveModal(id){
+  const fields={planDate:document.getElementById('em-date')?.value,qty:parseFloat(document.getElementById('em-qty')?.value)||0,line:document.getElementById('em-line')?.value||'',status:document.getElementById('em-status')?.value||'pending',note:document.getElementById('em-note')?.value||''};
+  Object.entries(fields).forEach(([f,v])=>ppEditOrder(id,f,v));
+  closeM();ppRender();
+}
+
+function ppRender(){
+  const orders = DB.get('prod_orders') || [];
+  const ref    = new Date(_pp.ref);
+  const {s,e,lbl} = ppGetRange();
+
+  // KPI
+  const inRange  = orders.filter(o => { const d=new Date(o.planDate); return d>=s&&d<e; });
+  const totalQty = inRange.reduce((a,o) => a+o.qty, 0);
+  const totalItems= new Set(inRange.map(o=>o.sku)).size;
+  const pending  = inRange.filter(o => o.status==='pending').length;
+  const done     = inRange.filter(o => o.status==='done').length;
+  const kr = document.getElementById('pp-krow');
+  if (kr) kr.innerHTML = `
     <div class="kpi b"><div class="kl">ช่วงเวลา</div><div class="kv" style="font-size:16px">${lbl}</div></div>
     <div class="kpi g"><div class="kl">ยอดรวม (กก.)</div><div class="kv">${fmt(totalQty)}</div><div class="kh">${totalItems} SKU</div></div>
     <div class="kpi a"><div class="kl">รอผลิต</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
     <div class="kpi t"><div class="kl">ผลิตแล้ว</div><div class="kv">${done}</div><div class="kh">รายการ</div></div>`;
-  // Summary by SKU
-  const bysku={};inRange.forEach(o=>{if(!bysku[o.sku])bysku[o.sku]={name:o.skuName||o.sku,qty:0,cnt:0};bysku[o.sku].qty+=o.qty;bysku[o.sku].cnt++;});
-  const sm=document.getElementById('pp-summary');
-  if(sm){
-    const entries=Object.entries(bysku).sort((a,b)=>b[1].qty-a[1].qty).slice(0,8);
-    sm.innerHTML=entries.length?`<div class="ct2" style="margin-bottom:10px">Top SKU ในช่วงนี้</div>`+
-      entries.map(([sku,d])=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-        <span class="mono" style="width:90px;font-size:11px;color:var(--TX3)">${sku}</span>
-        <span style="flex:1;font-size:12px">${d.name.substring(0,30)}</span>
-        <span style="font-weight:700;min-width:60px;text-align:right">${fmt(d.qty)} กก.</span>
-        <div style="width:80px;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden"><div style="width:${Math.round(d.qty/(bysku[entries[0][0]]?.qty||1)*100)}%;height:100%;background:var(--G);border-radius:3px"></div></div>
-      </div>`).join('')
-      :'<div style="color:var(--TX3);font-size:13px">ไม่มีรายการในช่วงนี้</div>';
+
+  // Gantt
+  const gc = document.getElementById('pp-gantt');
+  if (gc) {
+    const cols  = ppGanttCols(ref, _pp.pt);
+    // สำหรับ Gantt: ใช้ orders ทั้งหมดที่ตรงกับช่วงเวลา Gantt
+    const gStart = cols[0]?.key || '';
+    const gEnd   = cols[cols.length-1]?.end || cols[cols.length-1]?.key || '';
+    const gOrders = orders.filter(o => {
+      if (!o.planDate) return false;
+      if (_pp.pt === 'year') return (o.planDate||'').slice(0,4) === String(ref.getFullYear());
+      return (o.planDate||'') >= gStart && (o.planDate||'') <= gEnd;
+    });
+    gc.innerHTML = ppRenderGantt(gOrders, cols, _pp.pt);
   }
+
   // Orders table
-  const tbl=document.getElementById('pp-tbl');
-  if(tbl) tbl.innerHTML=inRange.length?`<div class="tw"><table>
-    <thead><tr><th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r">จำนวน(กก.)</th><th>สายผลิต</th><th>สถานะ</th><th>หมายเหตุ</th><th>แก้ไขโดย</th><th>Action</th></tr></thead>
+  const tbl = document.getElementById('pp-tbl');
+  if (tbl) tbl.innerHTML = inRange.length ? `<div class="tw"><table>
+    <thead><tr>
+      <th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
+      <th class="r">จำนวน(กก.)</th><th>สายผลิต</th><th>สถานะ</th>
+      <th>หมายเหตุ</th><th>แก้ไขโดย</th><th>Action</th>
+    </tr></thead>
     <tbody>${inRange.sort((a,b)=>a.planDate<b.planDate?-1:1).map(o=>`<tr>
-      <td><input type="date" value="${o.planDate}" onchange="ppEditOrder('${o.id}', 'planDate', this.value)" style="padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
+      <td><input type="date" value="${o.planDate}" onchange="ppEditOrder('${o.id}','planDate',this.value);ppRender()" style="padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
       <td class="mono">${o.sku}</td><td>${(o.skuName||'').substring(0,28)}</td>
-      <td class="r"><input type="number" value="${o.qty}" onchange="ppEditOrder('${o.id}', 'qty', this.value)" style="width:60px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px;text-align:right" min="0" step="0.1"></td>
-      <td><input type="text" value="${o.line||''}" onchange="ppEditOrder('${o.id}', 'line', this.value)" style="width:80px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
-      <td><select onchange="ppEditOrder('${o.id}', 'status', this.value)" style="padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px">
+      <td class="r"><input type="number" value="${o.qty}" onchange="ppEditOrder('${o.id}','qty',this.value)" style="width:60px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px;text-align:right" min="0" step="0.1"></td>
+      <td><input type="text" value="${o.line||''}" onchange="ppEditOrder('${o.id}','line',this.value)" style="width:80px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
+      <td><select onchange="ppEditOrder('${o.id}','status',this.value);ppRender()" style="padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px">
         <option value="pending" ${o.status==='pending'?'selected':''}>รอผลิต</option>
-        <option value="inprog" ${o.status==='inprog'?'selected':''}>กำลังผลิต</option>
-        <option value="done" ${o.status==='done'?'selected':''}>ผลิตแล้ว</option>
+        <option value="inprog"  ${o.status==='inprog'?'selected':''}>กำลังผลิต</option>
+        <option value="done"    ${o.status==='done'?'selected':''}>ผลิตแล้ว</option>
       </select></td>
-      <td><input type="text" value="${o.note||''}" onchange="ppEditOrder('${o.id}', 'note', this.value)" style="width:120px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
+      <td><input type="text" value="${o.note||''}" onchange="ppEditOrder('${o.id}','note',this.value)" style="width:120px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
       <td><span class="edby">${o.by||''}</span></td>
-      <td><button class="btn btn-xs btn-r" onclick="ppDeleteOrder('${o.id}')">ลบ</button></td></tr>`).join('')}
+      <td>
+        <button class="btn btn-xs" onclick="ppEditModal('${o.id}')">✏️</button>
+        <button class="btn btn-xs btn-r" onclick="ppDeleteOrder('${o.id}')">ลบ</button>
+      </td></tr>`).join('')}
     </tbody></table></div>`
-    :'<div style="padding:20px;color:var(--TX3);text-align:center">ไม่มีรายการในช่วงเวลานี้</div>';
+    : '<div style="padding:20px;color:var(--TX3);text-align:center">ไม่มีรายการในช่วงเวลานี้</div>';
 }
 function ppShowOrder(sku='', qty=0){
   const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
@@ -2500,58 +2649,6 @@ function expFC(){
     fc.map(f=>[f.by,f.sku,skuI(f.sku).name,f.qty,f.delivDate||'',f.note||'',f.approved?'Y':'N',f.edited_by||f.by])]],
     'Forecast_'+todayStr()+'.xlsx');
 }
-
-// ── PLANNING STOCK ────────────────────────────────────────────────
-
-function planStkT(){
-  const stk=DB.get('stock')||{},ss=DB.get('sku_settings')||{};
-  const hist=ALL_HIST,fc=DB.get('forecasts')||[];
-  const grp=gF(),q=(document.getElementById('ss')?.value||'').toLowerCase();
-  const sortBy=document.getElementById('sf')?.value||'days';
-  let rows=Object.entries(stk).map(([code,s])=>{
-    const h=hist[code];const avg3=h?h.avg3:0;const avgD=avg3/30;const qty=s.qty||0;
-    const minS=ss[code]?.min_stock||50;const dLeft=avgD>0?Math.round(qty/avgD):9999;
-    const estOut=avgD>0?new Date(Date.now()+dLeft*864e5).toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'2-digit'}):'ไม่ทราบ';
-    const cov=avgD>0?(qty/avgD/30).toFixed(1):'∞';
-    const fcQ=fc.filter(f=>f.sku===code).reduce((a,f)=>a+f.qty,0);
-    const sk=skuI(code);
-    return {code,name:sk.name,qty,avg3,avgD,minS,dLeft,estOut,cov,fcQ};
-  });
-  if(grp&&productGroups()[grp]) rows=rows.filter(r=>productGroups()[grp].includes(r.code));
-  if(q) rows=rows.filter(r=>r.code.toLowerCase().includes(q)||r.name.toLowerCase().includes(q));
-  if(sortBy==='days') rows.sort((a,b)=>a.dLeft-b.dLeft);
-  else if(sortBy==='cov') rows.sort((a,b)=>parseFloat(a.cov)-parseFloat(b.cov));
-  else rows.sort((a,b)=>a.code.localeCompare(b.code));
-  document.getElementById('ps-tbl').innerHTML=`<div class="tw"><table>
-  <thead><tr><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th style="text-align:right">Stock ปัจจุบัน</th><th style="text-align:right">เฉลี่ย 3 เดือน/เดือน</th><th style="text-align:right">ขั้นต่ำ</th><th style="text-align:right">Coverage (เดือน)</th><th>คาดขายหมด</th><th style="text-align:right">วันคงเหลือ</th><th style="text-align:right">Forecast กรอก</th><th>แนะนำ</th></tr></thead>
-  <tbody>${rows.slice(0,100).map(r=>{
-    const alert2=r.dLeft<14?'crit-row':r.dLeft<30?'exp-warm':'';
-    const lc=r.qty<r.minS?'var(--R)':r.qty<r.minS*2?'var(--A)':'var(--G)';
-    const cc=parseFloat(r.cov)<1?'var(--R)':parseFloat(r.cov)<2?'var(--A)':'var(--BL)';
-    const rec=r.qty<r.minS?`<span class="badge bbr">สั่ง ${fmt(Math.max(r.avg3*2-r.qty,r.minS))}</span>`:r.dLeft<30?'<span class="badge bba">เฝ้าระวัง</span>':'<span class="badge bbg">ปกติ</span>';
-    return `<tr class="${alert2}">
-      <td class="mono">${r.code}</td><td>${r.name.substring(0,32)}</td>
-      <td style="text-align:right;color:${lc};font-weight:700">${fmt(r.qty)}</td>
-      <td style="text-align:right">${r.avg3.toFixed(1)}</td><td style="text-align:right">${fmt(r.minS)}</td>
-      <td style="text-align:right;font-weight:700;color:${cc}">${r.cov}</td>
-      <td style="font-size:12px">${r.estOut}</td>
-      <td style="text-align:right;font-weight:700;color:${r.dLeft<14?'var(--R)':r.dLeft<30?'var(--A)':'inherit'}">${r.dLeft===9999?'∞':r.dLeft}</td>
-      <td style="text-align:right;color:var(--P)">${r.fcQ>0?fmt(r.fcQ):'—'}</td>
-      <td>${rec}</td></tr>`;
-  }).join('')}</tbody></table></div>`;
-}
-function expPlanStk(){
-  const stk=DB.get('stock')||{},ss=DB.get('sku_settings')||{},hist=ALL_HIST;
-  const rows=Object.entries(stk).map(([c,s])=>{
-    const h=hist[c];const avg3=h?h.avg3:0;const avgD=avg3/30;const qty=s.qty;
-    const dL=avgD>0?Math.round(qty/avgD):9999;
-    const estOut=avgD>0?new Date(Date.now()+dL*864e5).toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'2-digit'}):'ไม่ทราบ';
-    return [c,skuI(c).name,qty,avg3,(ss[c]?.min_stock||50),avgD>0?(qty/avgD/30).toFixed(1):'∞',estOut,dL===9999?'∞':dL];
-  });
-  toXLSX([['Stock Planning',['รหัสสินค้า','ชื่อสินค้า','Stock ปัจจุบัน','เฉลี่ย 3 เดือน','ขั้นต่ำ','Coverage (เดือน)','คาดขายหมด','วันคงเหลือ'],rows]],'StockPlan_'+todayStr()+'.xlsx');
-}
-
-// ── PO LOG ───────────────────────────────────────────────────────
 function pgPO(){
   const canEdit=ROLE==='planning'||ROLE==='manager';
   document.getElementById('ct').innerHTML=`
