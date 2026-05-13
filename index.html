@@ -1396,15 +1396,30 @@ function closeMod(e){if(e&&e.target!==document.getElementById('modal-bg'))return
 function closeM(){document.getElementById('modal-bg').classList.add('hidden');}
 
 // ── DASHBOARD ─────────────────────────────────────────────────────
-function pgDash(){
-  const po=DB.get('po_log')||[];
-  const stk=DB.get('stock')||{};
-  const fc=DB.get('forecasts')||[];
+async function pgDash(){
+  let po=DB.get('po_log')||[];
+  let stk=DB.get('stock')||{};
+  let fc=DB.get('forecasts')||[];
   const hist=myHist();
   const avgSales=Object.values(hist).reduce((a,h)=>a+h.avg3,0);
+  let ss=DB.get('sku_settings')||{};
+  try{
+    const remote = await Promise.all([
+      CACHE.get('dash_po',()=>SB.getPOPlans()),
+      CACHE.get('dash_stock',()=>SB.getStock()),
+      CACHE.get('dash_fc',()=>SB.getForecasts()),
+      CACHE.get('dash_ss',()=>SB.getSkuSettings()),
+    ]);
+    if(remote[0]?.length) po=remote[0];
+    if(remote[1]&&Object.keys(remote[1]).length) stk=remote[1];
+    if(remote[2]?.length) fc=remote[2];
+    if(remote[3]&&Object.keys(remote[3]).length) ss=remote[3];
+  }catch(e){
+    console.warn('Dashboard remote data unavailable, using local cache',e.message);
+  }
+  window._dashData={po,stk,fc,ss};
   const pending=po.filter(p=>p.status==='pending').length;
   const overdue=po.filter(p=>p.status==='overdue').length;
-  const ss=DB.get('sku_settings')||{};
   const lowStk=Object.entries(stk).filter(([c,s])=>s.qty<(ss[c]?.min_stock||50)).length;
   const expiring=Object.values(stk).reduce((a,s)=>{
     return a+(s.lots||[]).filter(l=>l.exp&&dUntil(l.exp)>=0&&dUntil(l.exp)<=30).length;
@@ -1447,10 +1462,11 @@ function dashCharts(){
   const period=parseInt(document.getElementById('pf')?.value||'4');
   const custGroup=document.getElementById('cgf')?.value||'';
   const hist=myHist();
-  const fc=DB.get('forecasts')||[];
-  const po=DB.get('po_log')||[];
-  const stk=DB.get('stock')||{};
-  const ss=DB.get('sku_settings')||{};
+  const dashData=window._dashData||{};
+  const fc=dashData.fc||DB.get('forecasts')||[];
+  const po=dashData.po||DB.get('po_log')||[];
+  const stk=dashData.stk||DB.get('stock')||{};
+  const ss=dashData.ss||DB.get('sku_settings')||{};
   const now=new Date();
   const baseYear=now.getFullYear();
   const yearMths=Array.from({length:12},(_,i)=>`${baseYear}-${String(i+1).padStart(2,'0')}`);
@@ -1500,7 +1516,7 @@ function dashSummaryTables(mths,actual,fcData,poData){
 }
 
 // ── MY SALES / SALES DASHBOARD ───────────────────────────────────
-const API_BASE = DB.get('api_base') || 'http://localhost:3001';
+const API_BASE = _apiBase();
 const SD_MTH=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const SD_MD=[
   {t:4820000,q:18400,i:312,ar:380000,vs:12},{t:4310000,q:16200,i:284,ar:210000,vs:-4},
@@ -1544,6 +1560,90 @@ const SD_VS=[8,-3,5,-8,11,-6,4,-2];
 let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1}};
 let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[]};
 
+function _apiBase(){
+  const saved=DB.get('api_base');
+  if(saved) return saved.replace(/\/$/, '');
+  if(location.hostname==='localhost'||location.hostname==='127.0.0.1') return 'http://localhost:3001';
+  return location.origin;
+}
+async function _fetchJson(url){
+  const resp=await fetch(url,{cache:'no-store'});
+  if(!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  return resp.json();
+}
+function _ymAdd(ym,delta){
+  const [y,m]=ym.split('-').map(Number);
+  const d=new Date(y,m-1+delta,1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function _sdMonthRange(monthsBack=36){
+  const end=_sdApiMonth();
+  return {start:_ymAdd(end,-monthsBack+1),end};
+}
+function _salesNameMap(){
+  const out={};
+  (DB.get('users')||[]).forEach(u=>{if(u.slm_id||u.role==='sales')out[u.slm_id||u.uid]=u.name;});
+  (SD_SALES||[]).forEach(s=>{if(!out[s.c])out[s.c]=s.n;});
+  return out;
+}
+async function _sbSalesRows(startYm,endYm,slmId=''){
+  let q=getSupabaseClient().from('sales_history').select('slm_id,sku,ym,qty,products(name,group_name)').gte('ym',startYm).lte('ym',endYm).order('ym');
+  if(slmId) q=q.eq('slm_id',slmId);
+  const {data,error}=await q;
+  if(error) throw error;
+  let rows=(data||[]).filter(r=>r.slm_id!=='ALL');
+  if(!rows.length && !slmId) rows=(data||[]).filter(r=>r.slm_id==='ALL');
+  const names=_salesNameMap();
+  return rows.map(r=>({
+    slm_id:r.slm_id,
+    slm_name:names[r.slm_id]||r.slm_id,
+    cust_code:`SLM-${r.slm_id}`,
+    cust_name:names[r.slm_id]||`Sales ${r.slm_id}`,
+    cust_group:'Sales total',
+    prod_group:r.products?.group_name||'Other',
+    prod_code:r.sku,
+    prod_name:r.products?.name||r.sku,
+    qty:Number(r.qty)||0,
+    amount:Number(r.qty)||0,
+    ym:r.ym,
+  }));
+}
+function _sdKpiFromRows(rows){
+  const byMonth={};
+  rows.forEach(r=>{if(!byMonth[r.ym])byMonth[r.ym]={ym:r.ym,total:0,qty:0,invoices:0};byMonth[r.ym].total+=r.amount;byMonth[r.ym].qty+=r.qty;byMonth[r.ym].invoices+=1;});
+  return Object.values(byMonth).sort((a,b)=>a.ym.localeCompare(b.ym));
+}
+async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId=''){
+  const rows=await _sbSalesRows(startYm,endYm,slmId);
+  const monthly=_sdKpiFromRows(rows);
+  const monthRows=activeMonth?rows.filter(r=>r.ym===activeMonth):rows;
+  const cur=activeMonth?monthly.find(m=>m.ym===activeMonth):null;
+  _sdApi.valueMode='qty';
+  _sdApi.loaded=true;
+  _sdApi.month=activeMonth||endYm;
+  _sdApi.monthly=monthly;
+  _sdApi.total=cur?cur.total:monthRows.reduce((a,r)=>a+r.amount,0);
+  _sdApi.qty=cur?cur.qty:monthRows.reduce((a,r)=>a+r.qty,0);
+  _sdApi.invoices=cur?cur.invoices:monthRows.length;
+  _sdApi.ar=0;
+  const prevYm=activeMonth?_ymAdd(activeMonth,-1):'';
+  const prev=prevYm?monthly.find(m=>m.ym===prevYm):null;
+  _sdApi.vs=prev&&prev.total?Math.round((_sdApi.total/prev.total-1)*100):0;
+  _sdApi.slmList=Object.entries(_salesNameMap()).map(([code,name])=>({code,name}));
+  _sdApi.custs=_sdBuildCusts(monthRows);
+  _sdApi.prods=_sdBuildProds(monthRows);
+  _sdApi.slms=_sdBuildSlms(monthRows,_sdApi.slmList);
+  _sdUpdateSlmDrop();
+}
+function _sdFmtTotal(n){return _sdApi.valueMode==='qty'?`${Math.round(n).toLocaleString()} kg`:_sdF(n);}
+function _sdUseLatestMonthIfEmpty(monthly){
+  const cur=_sdApiMonth();
+  if((monthly||[]).some(m=>m.ym===cur&&(Number(m.total)||Number(m.qty)))) return cur;
+  const last=[...(monthly||[])].filter(m=>Number(m.total)||Number(m.qty)).sort((a,b)=>a.ym.localeCompare(b.ym)).pop();
+  if(last?.ym){const [gy,mm]=last.ym.split('-').map(Number);_sd.cy=gy+543;_sd.cm=mm-1;return last.ym;}
+  return cur;
+}
+
 function _sdApiMonth(){const gy=_sd.cy-543;const mm=String(_sd.cm+1).padStart(2,'0');return `${gy}-${mm}`;}
 function _sdApiYear(){return _sd.cy_y-543;}
 function _sdWeekFactor(){return _sd.pt==='week'?((SD_WM[_sd.cw-1]||1)/4):1;}
@@ -1560,15 +1660,18 @@ async function sdLoad(){
   try{
     const qs=slmId?`&slm_id=${encodeURIComponent(slmId)}`:'';
     const [sumJ,kpiJ,slmJ,arJ]=await Promise.all([
-      fetch(`${API_BASE}/api/sales/summary?month=${month}${qs}`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/sales/monthly-kpi?months=24${qs}`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/sales/slm-list`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/ar${slmId?`?slm_id=${encodeURIComponent(slmId)}`:''}`).then(r=>r.json()),
+      _fetchJson(`${API_BASE}/api/sales/summary?month=${month}${qs}`),
+      _fetchJson(`${API_BASE}/api/sales/monthly-kpi?months=24${qs}`),
+      _fetchJson(`${API_BASE}/api/sales/slm-list`),
+      _fetchJson(`${API_BASE}/api/ar${slmId?`?slm_id=${encodeURIComponent(slmId)}`:''}`),
     ]);
     _sdApi.loaded=true;
+    _sdApi.valueMode='amount';
     _sdApi.month=month;
     _sdApi.monthly=kpiJ.rows||[];
     _sdApi.slmList=slmJ.rows||[];
+    const activeMonth=_sdUseLatestMonthIfEmpty(_sdApi.monthly);
+    if(activeMonth!==month){sdLoad();return;}
     const curKpi=_sdApi.monthly.find(m=>m.ym===month)||{total:0,qty:0,invoices:0};
     _sdApi.total=curKpi.total||0;_sdApi.qty=curKpi.qty||0;_sdApi.invoices=curKpi.invoices||0;
     const arRows=arJ.rows||[];
@@ -1583,10 +1686,21 @@ async function sdLoad(){
     _sdApi.slms=_sdBuildSlms(rows,_sdApi.slmList);
     _sdUpdateSlmDrop();
   }catch(e){
-    _sdApi.loaded=false;
-    console.warn('API offline — using mock data',e.message);
+    console.warn('Sales API unavailable, loading Supabase sales_history',e.message);
+    try{
+      const range=_sdMonthRange(36);
+      await _loadSalesFromSupabase(range.start,range.end,month,slmId);
+    }catch(e2){
+      _sdApi.loaded=false;
+      _sdApi.error=e2.message;
+      console.error('Supabase sales_history unavailable',e2);
+    }
   }finally{
     document.getElementById('sd-loading')?.remove();
+  }
+  if(_sdApi.loaded && _sdApi.monthly?.length && _sd.pt!=='year'){
+    const active=_sdUseLatestMonthIfEmpty(_sdApi.monthly);
+    if(active!==_sdApi.month){sdLoad();return;}
   }
   sdRender();
 }
@@ -1602,10 +1716,11 @@ async function sdLoadYear(){
     const qs=slmId?`&slm_id=${encodeURIComponent(slmId)}`:'';
     const months=Array.from({length:12},(_,i)=>`${gy}-${String(i+1).padStart(2,'0')}`);
     const [kpiJ,slmJ,...sumJs]=await Promise.all([
-      fetch(`${API_BASE}/api/sales/monthly-kpi?months=36${qs}`).then(r=>r.json()),
-      fetch(`${API_BASE}/api/sales/slm-list`).then(r=>r.json()),
-      ...months.map(m=>fetch(`${API_BASE}/api/sales/summary?month=${m}${qs}`).then(r=>r.json()).catch(()=>({rows:[]}))),
+      _fetchJson(`${API_BASE}/api/sales/monthly-kpi?months=36${qs}`),
+      _fetchJson(`${API_BASE}/api/sales/slm-list`),
+      ...months.map(m=>_fetchJson(`${API_BASE}/api/sales/summary?month=${m}${qs}`).catch(()=>({rows:[]}))),
     ]);
+    _sdApi.valueMode='amount';
     _sdApi.monthly=kpiJ.rows||[];
     _sdApi.slmList=slmJ.rows||[];
     const yearRows=_sdApi.monthly.filter(m=>m.ym.startsWith(String(gy)+'-'));
@@ -1621,7 +1736,20 @@ async function sdLoadYear(){
     _sdApi.slms=_sdBuildSlms(rows,_sdApi.slmList);
     _sdApi.loaded=true;
     _sdUpdateSlmDrop();
-  }catch(e){_sdApi.loaded=false;console.warn('API offline',e.message);}
+  }catch(e){
+    console.warn('Sales API yearly unavailable, loading Supabase sales_history',e.message);
+    try{
+      const start=`${gy}-01`,end=`${gy}-12`;
+      await _loadSalesFromSupabase(start,end,'',slmId);
+      const yearRows=_sdApi.monthly.filter(m=>m.ym.startsWith(String(gy)+'-'));
+      _sdApi.total=yearRows.reduce((sum,m)=>sum+(Number(m.total)||0),0);
+      _sdApi.qty=yearRows.reduce((sum,m)=>sum+(Number(m.qty)||0),0);
+      _sdApi.invoices=yearRows.reduce((sum,m)=>sum+(Number(m.invoices)||0),0);
+      _sdApi.custs=_sdBuildCusts((await _sbSalesRows(start,end,slmId)));
+      _sdApi.prods=_sdBuildProds((await _sbSalesRows(start,end,slmId)));
+      _sdApi.slms=_sdBuildSlms((await _sbSalesRows(start,end,slmId)),_sdApi.slmList);
+    }catch(e2){_sdApi.loaded=false;_sdApi.error=e2.message;console.error('Supabase yearly unavailable',e2);}
+  }
   finally{document.getElementById('sd-loading')?.remove();}
   sdRender();
 }
@@ -1737,6 +1865,13 @@ function pgMySales(){
 
 function sdRender(){
   sdUpdateLabel();
+  if(!_sdApi.loaded && _sdApi.error){
+    const kr=document.getElementById('sd-krow');
+    const el=document.getElementById('sd-ta');
+    if(kr) kr.innerHTML=`<div class="al ald">Sales data connection failed: ${esc(_sdApi.error)}</div>`;
+    if(el) el.innerHTML=`<div class="al ald">Sales data connection failed: ${esc(_sdApi.error)}</div>`;
+    return;
+  }
   sdKPI();
   if(_sd.at==='cust') sdCust();
   else if(_sd.at==='prod') sdProd();
@@ -1778,7 +1913,7 @@ function sdKPI(){
   const vsC=vs>=0?'var(--G)':'var(--R)';
   const avg=inv?_sdF(Math.round(total/inv)):'—';
   kr.innerHTML=`
-    <div class="kpi b"><div class="kl">ยอดขายรวม</div><div class="kv">${_sdF(total)}</div>
+    <div class="kpi b"><div class="kl">ยอดขายรวม</div><div class="kv">${_sdFmtTotal(total)}</div>
       <div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>
       <div style="display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:8px">${sparks}</div></div>
     <div class="kpi g"><div class="kl">ปริมาณ (กก./ถุง)</div><div class="kv">${Math.round(qty).toLocaleString()}</div>
@@ -1835,21 +1970,21 @@ function sdCust(){
       const otk='ty_'+ty;const oty=_sd.op[otk];
       h+=`<tr onclick="sdTogOp('${otk}')" style="cursor:pointer;background:var(--LN)">
         <td style="font-weight:700">${_xa(oty)}<span class="badge bbl">${ty}</span> <span style="font-size:11px;color:var(--TX3)">${custs2.length} ราย</span></td>
-        <td class="r"><strong>${_sdF(_sdV(tyTot))}</strong></td><td class="r">${_sdBar(tyTot,T)}</td><td class="r">—</td></tr>`;
+        <td class="r"><strong>${_sdFmtTotal(_sdV(tyTot))}</strong></td><td class="r">${_sdBar(tyTot,T)}</td><td class="r">—</td></tr>`;
       if(oty) custs2.forEach(c=>{
         const cv=c._tot;const oc=_sd.op['c'+c.c];
         h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:20px">${_xa(oc)}<strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span></td>
-          <td class="r"><strong>${_sdF(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,tyTot)}</td><td class="r">—</td></tr>`;
+          <td class="r"><strong>${_sdFmtTotal(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,tyTot)}</td><td class="r">—</td></tr>`;
         if(oc) c.g.forEach((g,gi)=>{
           const gv=g._tot;const gk='g'+c.c+'_'+gi;const og=_sd.op[gk];
           h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg)">
             <td style="padding-left:40px">${_xa(og)}<span style="font-size:12px">${g.n}</span></td>
-            <td class="r" style="font-size:12px">${_sdF(_sdV(gv))}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r">—</td></tr>`;
+            <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(gv))}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r">—</td></tr>`;
           if(og) g.it.forEach(it=>{
             h+=`<tr style="background:var(--bg2);font-size:12px">
               <td style="padding-left:60px"><span class="mono">${it.c}</span> — ${it.n}</td>
-              <td class="r">${_sdF(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,gv)}</td><td class="r">—</td></tr>`;
+              <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,gv)}</td><td class="r">—</td></tr>`;
           });
         });
       });
@@ -1869,12 +2004,12 @@ function sdCust(){
     const cv=c._cv;const oc=_sd.op['c'+c.c];
     h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer">
       <td>${_xa(oc)}<strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span> <span class="badge bbg" style="font-size:10px">${c.ty||''}</span></td>
-      <td class="r"><strong>${_sdF(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,T)}</td><td class="r">${_sdVs(SD_VS[ri%8])}</td></tr>`;
+      <td class="r"><strong>${_sdFmtTotal(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,T)}</td><td class="r">${_sdVs(SD_VS[ri%8])}</td></tr>`;
     if(oc) c.g.forEach((g,gi)=>{
       const gv=Math.round(cv*(g.w[wi]||g.w[0]));const gk='g'+c.c+'_'+gi;const og=_sd.op[gk];
       h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
         <td style="padding-left:22px">${_xa(og)}${g.n}</td>
-        <td class="r">${_sdF(_sdV(gv))}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r"></td></tr>`;
+        <td class="r">${_sdFmtTotal(_sdV(gv))}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r"></td></tr>`;
       if(og) g.it.forEach((it,ii)=>{
         const iv=Math.round(gv*(it.w[wi]||it.w[0]));
         h+=`<tr style="background:var(--bg);font-size:12px">
@@ -1906,21 +2041,21 @@ function sdProd(){
       const ok='p'+p.n;const oo=_sd.op[ok];
       h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
         <td>${_xa(oo)}<strong>${p.n}</strong></td>
-        <td class="r"><strong>${_sdF(_sdV(p._tot))}</strong></td><td class="r">${_sdBar(p._tot,T)}</td><td class="r">—</td></tr>`;
+        <td class="r"><strong>${_sdFmtTotal(_sdV(p._tot))}</strong></td><td class="r">${_sdBar(p._tot,T)}</td><td class="r">—</td></tr>`;
       if(oo) p.it.forEach(it=>{
         const ik='pi'+it.c;const oi=_sd.op[ik];
         h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
-          <td class="r">${_sdF(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,p._tot)}</td><td class="r">—</td></tr>`;
+          <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,p._tot)}</td><td class="r">—</td></tr>`;
         if(oi) it.custs.forEach(ty=>{
           const tyk='pit'+it.c+'_'+ty.n;const ot=_sd.op[tyk];
           h+=`<tr onclick="sdTogOp('${tyk}')" style="cursor:pointer;background:var(--LN)">
             <td style="padding-left:44px;font-size:12px">${_xa(ot)}<span class="badge bbl" style="font-size:10px">${ty.n}</span></td>
-            <td class="r" style="font-size:12px">${_sdF(_sdV(ty._tot))}</td><td class="r">${_sdBar(ty._tot,it._tot)}</td><td class="r">—</td></tr>`;
+            <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(ty._tot))}</td><td class="r">${_sdBar(ty._tot,it._tot)}</td><td class="r">—</td></tr>`;
           if(ot) ty.cs.forEach(cu=>{
             h+=`<tr style="background:var(--bg);font-size:12px">
               <td style="padding-left:64px"><span class="badge bbgr" style="font-size:10px">${cu.c}</span> ${cu.n}</td>
-              <td class="r">${_sdF(_sdV(cu._tot))}</td><td class="r">${_sdBar(cu._tot,ty._tot)}</td><td class="r">—</td></tr>`;
+              <td class="r">${_sdFmtTotal(_sdV(cu._tot))}</td><td class="r">${_sdBar(cu._tot,ty._tot)}</td><td class="r">—</td></tr>`;
           });
         });
       });
@@ -1980,7 +2115,7 @@ function sdSlm(){
       const sk='s'+s.code;const os=_sd.op[sk];
       h+=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer">
         <td>${_xa(os)}<strong>${s.name}</strong> <span class="badge bbgr" style="font-size:10px">${s.code}</span></td>
-        <td class="r"><strong>${_sdF(_sdV(s._tot))}</strong></td>
+        <td class="r"><strong>${_sdFmtTotal(_sdV(s._tot))}</strong></td>
         <td class="r" style="color:var(--TX3)">—</td><td class="r">—</td><td class="r">—</td></tr>`;
       if(os){
         const grpMap={};
@@ -1990,23 +2125,23 @@ function sdSlm(){
           const gk='sg'+s.code+'_'+gn;const og=_sd.op[gk];
           h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
             <td style="padding-left:22px;font-size:12px">${_xa(og)}<span class="badge bbl" style="font-size:10px">${gn}</span></td>
-            <td class="r" style="font-size:12px">${_sdF(_sdV(gv))}</td>
+            <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(gv))}</td>
             <td class="r"></td><td class="r">${_sdBar(gv,s._tot)}</td><td class="r"></td></tr>`;
           if(og) custs.forEach(c=>{
             const ck='sc'+s.code+'_'+c.c;const oc=_sd.op[ck];
             h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--bg)">
               <td style="padding-left:42px;font-size:12px">${_xa(oc)}<span class="badge bbgr" style="font-size:10px">${c.c}</span> ${c.n}</td>
-              <td class="r" style="font-size:12px">${_sdF(_sdV(c._tot))}</td>
+              <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(c._tot))}</td>
               <td class="r"></td><td class="r">${_sdBar(c._tot,gv)}</td><td class="r"></td></tr>`;
             if(oc) c.g.forEach((g,gi)=>{
               const pgk='spg'+s.code+'_'+c.c+'_'+gi;const opg=_sd.op[pgk];
               h+=`<tr onclick="sdTogOp('${pgk}')" style="cursor:pointer;background:var(--bg2);font-size:12px">
                 <td style="padding-left:62px">${_xa(opg)}${g.n}</td>
-                <td class="r">${_sdF(_sdV(g._tot))}</td><td class="r"></td><td class="r">${_sdBar(g._tot,c._tot)}</td><td class="r"></td></tr>`;
+                <td class="r">${_sdFmtTotal(_sdV(g._tot))}</td><td class="r"></td><td class="r">${_sdBar(g._tot,c._tot)}</td><td class="r"></td></tr>`;
               if(opg) g.it.forEach(it=>{
                 h+=`<tr style="background:var(--bg);font-size:12px">
                   <td style="padding-left:80px"><span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
-                  <td class="r">${_sdF(_sdV(it._tot))}</td><td class="r"></td><td class="r">${_sdBar(it._tot,g._tot)}</td><td class="r"></td></tr>`;
+                  <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r"></td><td class="r">${_sdBar(it._tot,g._tot)}</td><td class="r"></td></tr>`;
               });
             });
           });
@@ -2046,14 +2181,14 @@ function sdSlm(){
         const gk='sg'+s.c+'_'+grpName;const og=_sd.op[gk];
         h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:22px;font-size:12px">${_xa(og)}<span class="badge" style="background:var(--LBL);color:var(--BL);font-size:10px">${grpName}</span></td>
-          <td class="r" style="font-size:12px">${_sdF(_sdV(gv))}</td>
+          <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(gv))}</td>
           <td class="r"></td><td class="r" style="font-size:11px;color:var(--TX3)">${_sdBar(gv,sv)}</td><td class="r"></td></tr>`;
         if(og) custs.forEach(c=>{
           const cv=Math.round(T*(c.w[wi]||c.w[0]));
           const ck='sc'+s.c+'_'+c.c;const oc=_sd.op[ck];
           h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--bg)">
             <td style="padding-left:42px;font-size:12px">${_xa(oc)}<span class="badge bbgr" style="font-size:10px">${c.c}</span> <span class="badge ${c.category==='ขายขาด'?'bbg':'bbp'}" style="font-size:10px">${c.category||c.ty}</span> ${c.n}</td>
-            <td class="r" style="font-size:12px">${_sdF(_sdV(cv))}</td>
+            <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(cv))}</td>
             <td class="r"></td><td class="r" style="font-size:11px">${_sdBar(cv,gv)}</td><td class="r"></td></tr>`;
           if(oc) c.g.forEach((g,gi)=>{
             const pgv=Math.round(cv*(g.w[wi]||g.w[0]));
