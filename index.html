@@ -2175,6 +2175,29 @@ function handleFcPaste(e){
   pv.innerHTML=`<div class="al als">พบ ${imp.length} รายการ <button class="btn btn-sm btn-p" onclick="cfmFCPaste()">นำเข้าทั้งหมด</button></div>`;
   window._fcp=imp;
 }
+function showFcModal(){
+  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
+  const custOpts=allCustomerRows().map(c=>`<option value="${c.c} — ${c.n}">${c.c} — ${c.n}</option>`).join('');
+  openMod(`<div class="mh"><div class="mt2">เพิ่ม Forecast</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div class="field"><label>รหัสสินค้า</label>
+        <select id="f-sku" class="inp">
+          <option value="">-- เลือกสินค้า --</option>
+          ${SKUS.map(s=>`<option value="${s.code}">${s.code} — ${s.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>จำนวน (กก.)</label><input id="f-qty" type="number" class="inp" min="1" placeholder="0"></div>
+      <div class="field"><label>วันต้องการ</label><input id="f-date" type="date" class="inp"></div>
+      <div class="field"><label>ลูกค้า</label>
+        <input id="f-cust" list="f-cust-list" class="inp" placeholder="รหัสลูกค้า หรือ ชื่อ">
+        <datalist id="f-cust-list">${custOpts}</datalist>
+      </div>
+      <div class="field"><label>หมายเหตุ</label><input id="f-note" class="inp" placeholder="(ถ้ามี)"></div>
+      <button class="btn btn-p" onclick="saveFc()">บันทึก Forecast</button>
+    </div>`);
+}
+async function saveFc(){
+  const sku = document.getElementById('f-sku').value;
   const qty = parseFloat(document.getElementById('f-qty').value) || 0;
   const delivDate = document.getElementById('f-date').value;
   const rawCust = (document.getElementById('f-cust').value || '').trim();
