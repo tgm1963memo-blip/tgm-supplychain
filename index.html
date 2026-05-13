@@ -602,15 +602,6 @@ async function doLogin() {
     // บันทึก session สำหรับ SSO (WMS ใช้ร่วม)
     localStorage.setItem('tgm_session', JSON.stringify({uid:user.uid,name:user.name,role:user.role,slm_id:user.slm_id||'',pwd:user.pwd,ts:Date.now()}));
 
-    // warehouse role → redirect ไปยัง WMS โดยตรง
-    if (ROLE === 'warehouse') {
-      const wmsUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:5173'
-        : 'https://tgm-wms.vercel.app';
-      window.location.href = wmsUrl;
-      return;
-    }
-
     // แสดง app ทันทีหลัง auth สำเร็จ
     document.getElementById('ls').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
@@ -1030,7 +1021,7 @@ initDB();
 // ── AUTH ──────────────────────────────────────────────────────────
 ROLE='', UID='', UNAME='';
 const RNAV={
-  superadmin:[['dash','📊','Dashboard'],['users','👥','จัดการผู้ใช้'],['auditlog','🔍','Audit Log']],
+  superadmin:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['custmap','🗺️','Customer Map'],['skuadmin','⚙️','SKU Settings'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['auditlog','🔍','Audit Log']],
   sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า']],
   planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['custmap','🗺️','Customer Map'],['skuadmin','⚙️','SKU Settings']],
   warehouse:[['dash','📊','Dashboard'],['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า']],
@@ -1218,7 +1209,7 @@ const SD_SALES=[
   {n:'สมหญิง รักชาติ',c:'S02',w:.56,tgt:2000000,vs:-2}
 ];
 const SD_VS=[8,-3,5,-8,11,-6,4,-2];
-let _sd={pt:'month',cm:4,cy:2569,cw:1,at:'cust',mgrView:true,op:{},q:'',slmF:''};
+let _sd={pt:'month',cm:4,cy:2569,cw:1,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:-1}};
 
 function _sdD(){
   const b=SD_MD[_sd.cm];
@@ -1318,32 +1309,35 @@ function sdCust(){
   const isAll=(ROLE==='manager'||ROLE==='superadmin')&&_sd.mgrView;
   const q=(_sd.q||'').toLowerCase();
   const base=isAll?SD_CUSTS:SD_CUSTS.slice(0,1);
-  const vis=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)||c.g.some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))):base;
+  const filtered=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)||c.g.some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))):base;
+  const rows=filtered.map(c=>({...c,_cv:Math.round(T*(c.w[wi]||c.w[0]))}));
+  if(_sd.sort.col==='val') rows.sort((a,b)=>_sd.sort.dir*(b._cv-a._cv));
+  const sDn=_sd.sort.col==='val'?(_sd.sort.dir<0?'▼':'▲'):'';
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:38%">ลูกค้า / กลุ่มสินค้า / สินค้า</th>
-      <th class="r">ยอดขาย</th><th class="r" style="width:110px">สัดส่วน</th><th class="r">vs เดือนก่อน</th>
+      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th><th class="r" style="width:110px">สัดส่วน</th><th class="r">vs เดือนก่อน</th>
     </tr></thead><tbody>`;
-  vis.forEach((c,ci)=>{
-    const cv=Math.round(T*(c.w[wi]||c.w[0]));
-    const oc=_sd.op['c'+ci];
+  rows.forEach((c,ri)=>{
+    const cv=c._cv;
+    const oc=_sd.op['c'+c.c];
     const tyBg=c.ty==='ขายขาด'?'bbg':'bbp';
-    h+=`<tr onclick="sdTogOp('c${ci}')" style="cursor:pointer">
+    h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer">
       <td><span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;border:1px solid var(--BD);margin-right:5px;font-size:10px;color:var(--TX3);transition:.15s;transform:rotate(${oc?90:0}deg)">▶</span>
       <strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span> <span class="badge ${tyBg}" style="font-size:10px">${c.ty}</span></td>
-      <td class="r"><strong>${_sdF(cv)}</strong></td><td class="r">${_sdBar(cv,T)}</td><td class="r">${_sdVs(SD_VS[ci%8])}</td></tr>`;
+      <td class="r"><strong>${_sdF(cv)}</strong></td><td class="r">${_sdBar(cv,T)}</td><td class="r">${_sdVs(SD_VS[ri%8])}</td></tr>`;
     if(oc) c.g.forEach((g,gi)=>{
       const gv=Math.round(cv*(g.w[wi]||g.w[0]));
-      const gk='g'+ci+'_'+gi;
+      const gk='g'+c.c+'_'+gi;
       const og=_sd.op[gk];
       h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
         <td style="padding-left:28px"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:3px;border:1px solid var(--BD);margin-right:5px;font-size:9px;color:var(--TX3);transition:.15s;transform:rotate(${og?90:0}deg)">▶</span>${g.n}</td>
-        <td class="r">${_sdF(gv)}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r">${_sdVs(SD_VS[(ci+gi+1)%8])}</td></tr>`;
+        <td class="r">${_sdF(gv)}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r">${_sdVs(SD_VS[(ri+gi+1)%8])}</td></tr>`;
       if(og) g.it.forEach((it,ii)=>{
         const iv=Math.round(gv*(it.w[wi]||it.w[0]));
         h+=`<tr style="background:var(--bg);font-size:12px">
           <td style="padding-left:52px"><span class="mono">${it.c}</span> — ${it.n}</td>
-          <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,gv)}</td><td class="r">${_sdVs(SD_VS[(ci+gi+ii+2)%8])}</td></tr>`;
+          <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,gv)}</td><td class="r">${_sdVs(SD_VS[(ri+gi+ii+2)%8])}</td></tr>`;
       });
     });
   });
@@ -1353,26 +1347,35 @@ function sdCust(){
 function sdProd(){
   const d=_sdD(),T=d.t;
   const q=(_sd.q||'').toLowerCase();
-  const prods=q?SD_PRODS.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q))):SD_PRODS;
+  const base=q?SD_PRODS.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q))):SD_PRODS;
+  const prods=base.map(p=>({...p,_pv:Math.round(T*p.w)}));
+  if(_sd.sort.col==='val') prods.sort((a,b)=>_sd.sort.dir*(b._pv-a._pv));
+  else if(_sd.sort.col==='vs') prods.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
+  const sDn=_sd.sort.col==='val'?(_sd.sort.dir<0?'▼':'▲'):'';
+  const sDv=_sd.sort.col==='vs'?(_sd.sort.dir<0?'▼':'▲'):'';
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
-      <th style="width:40%">กลุ่มสินค้า / สินค้า</th>
-      <th class="r">ยอดขาย</th><th class="r" style="width:110px">สัดส่วน</th><th class="r">vs เดือนก่อน</th>
+      <th style="width:38%">กลุ่มสินค้า / สินค้า</th>
+      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th><th class="r" style="width:110px">สัดส่วน</th><th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('vs')">vs เดือนก่อน ${sDv}</th>
     </tr></thead><tbody>`;
-  prods.forEach((p,pi)=>{
-    const pv=Math.round(T*p.w);
-    const ok='p'+pi;
+  prods.forEach(p=>{
+    const pv=p._pv;
+    const ok='p'+p.n;
     const oo=_sd.op[ok];
     h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
       <td><span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;border:1px solid var(--BD);margin-right:5px;font-size:10px;color:var(--TX3);transition:.15s;transform:rotate(${oo?90:0}deg)">▶</span>
       <strong>${p.n}</strong></td>
       <td class="r"><strong>${_sdF(pv)}</strong></td><td class="r">${_sdBar(pv,T)}</td><td class="r">${_sdVs(p.vs)}</td></tr>`;
-    if(oo) p.it.forEach(it=>{
-      const iv=Math.round(pv*it.w);
-      h+=`<tr style="background:var(--bg2);font-size:12px">
-        <td style="padding-left:32px">${it.n}</td>
-        <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,pv)}</td><td class="r">${_sdVs(it.vs)}</td></tr>`;
-    });
+    if(oo){
+      p.it.forEach(it=>{
+        const iv=Math.round(pv*it.w);
+        h+=`<tr style="background:var(--bg2);font-size:12px">
+          <td style="padding-left:32px">${it.n}</td>
+          <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,pv)}</td><td class="r">${_sdVs(it.vs)}</td></tr>`;
+      });
+      const matchCusts=SD_CUSTS.filter(c=>c.g.some(g=>g.n===p.n));
+      if(matchCusts.length) h+=`<tr style="background:var(--LBL)"><td colspan="4" style="padding:6px 12px 6px 32px;font-size:11.5px"><span style="color:var(--BL);font-weight:600;margin-right:6px">👥 ลูกค้าที่ซื้อ:</span>${matchCusts.map(c=>`<span class="badge bbl" style="margin-right:3px">${c.n}</span>`).join('')}</td></tr>`;
+    }
   });
   document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
 }
@@ -1381,14 +1384,19 @@ function sdSlm(){
   const d=_sdD(),T=d.t;
   const q=(_sd.q||'').toLowerCase();
   const sf=_sd.slmF||'';
-  const sales=SD_SALES.filter(s=>(!q||(s.n.toLowerCase().includes(q)||s.c.toLowerCase().includes(q)))&&(!sf||s.c===sf));
+  const filtered=SD_SALES.filter(s=>(!q||(s.n.toLowerCase().includes(q)||s.c.toLowerCase().includes(q)))&&(!sf||s.c===sf));
+  const sales=filtered.map(s=>({...s,_sv:Math.round(T*s.w)}));
+  if(_sd.sort.col==='val') sales.sort((a,b)=>_sd.sort.dir*(b._sv-a._sv));
+  else if(_sd.sort.col==='vs') sales.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
+  const sDn=_sd.sort.col==='val'?(_sd.sort.dir<0?'▼':'▲'):'';
+  const sDv=_sd.sort.col==='vs'?(_sd.sort.dir<0?'▼':'▲'):'';
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:30%">เซลส์</th>
-      <th class="r">ยอดขาย</th><th class="r">เป้า</th><th class="r">% บรรลุ</th><th class="r">vs เดือนก่อน</th>
+      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th><th class="r">เป้า</th><th class="r">% บรรลุ</th><th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('vs')">vs เดือนก่อน ${sDv}</th>
     </tr></thead><tbody>`;
   sales.forEach(s=>{
-    const sv=Math.round(T*s.w);
+    const sv=s._sv;
     const tgt=_sd.pt==='week'?Math.round(s.tgt/4):s.tgt;
     const pct=Math.round(sv/tgt*100);
     const col=pct>=100?'var(--G)':pct>=80?'var(--A)':'var(--R)';
@@ -1418,7 +1426,7 @@ function sdNav(d){
 function sdGoNow(){_sd.cm=4;_sd.cy=2569;_sd.cw=1;sdRender();}
 function sdTab(el,t){
   document.querySelectorAll('#sd-root .tab').forEach(e=>e.classList.remove('act'));
-  el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.slmF='';
+  el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.slmF='';_sd.sort={col:'val',dir:-1};
   const qi=document.getElementById('sd-q');if(qi)qi.value='';
   const si=document.getElementById('sd-slm-f');if(si)si.value='';
   sdRender();
@@ -1428,6 +1436,7 @@ function sdTogView(){
   const b=document.getElementById('sd-rv');if(b) b.textContent=_sd.mgrView?'Manager':'Sales';
   _sd.op={};sdRender();
 }
+function sdSort(col){if(_sd.sort.col===col)_sd.sort.dir*=-1;else{_sd.sort.col=col;_sd.sort.dir=-1;}sdRender();}
 function sdSetQ(v){_sd.q=v;sdRender();}
 function sdClear(){
   _sd.q='';_sd.slmF='';
