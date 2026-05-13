@@ -720,13 +720,24 @@ async function pgForecast() {
 
   // สร้าง sku map
   const skuMap = Object.fromEntries(products.map(p => [p.code, p]));
+  const custMap = Object.fromEntries(allCustomerRows().map(c => [c.c, c.n]));
   fcList.forEach(f => {
     const p = skuMap[f.sku] || {};
     f.skuName  = p.name || f.sku;
     f.leadTime = p.lead_time || 7;
+    f.custName = custMap[f.custCode] || '';
   });
 
   const today = new Date();
+  const searchText = document.getElementById('fc-search')?.value.trim().toLowerCase() || '';
+  const filteredFcList = searchText
+    ? fcList.filter(f => {
+        const cust = (f.custCode || '').toLowerCase();
+        const sku = (f.sku || '').toLowerCase();
+        const name = (f.custName || '').toLowerCase();
+        return cust.includes(searchText) || sku.includes(searchText) || name.includes(searchText);
+      })
+    : fcList;
 
   ct.innerHTML = `
   <div class="card">
@@ -741,8 +752,11 @@ async function pgForecast() {
   </div>
   <div class="card">
     <div class="ch">
-      <div class="ct2">รายการ Forecast (${fcList.length} รายการ)</div>
-      <div style="display:flex;gap:8px">
+      <div>
+        <div class="ct2">รายการ Forecast (${filteredFcList.length} รายการ)</div>
+        <div style="margin-top:8px"><input id="fc-search" class="inp" style="width:260px" placeholder="ค้นหา ชื่อลูกค้า หรือ รหัส" value="${esc(searchText)}" oninput="pgForecast()"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
         ${isAll ? `<select class="btn btn-sm" id="fc-sf" onchange="pgForecast()">
           <option value="">ทุก Sales</option>
           ${SLM_IDS.map(s => `<option value="${s}">${s}</option>`).join('')}
@@ -751,7 +765,7 @@ async function pgForecast() {
         <button class="btn btn-sm btn-g" onclick="expFC()">Export Excel</button>
       </div>
     </div>
-    ${fcList.length === 0
+    ${filteredFcList.length === 0
       ? '<p style="padding:16px;color:var(--TX3)">ยังไม่มีข้อมูล</p>'
       : `<div class="tw"><table>
         <thead><tr>
@@ -760,7 +774,7 @@ async function pgForecast() {
           <th>วันต้องสั่ง</th><th>สถานะ</th><th>หมายเหตุ</th>
           <th>แก้ไขโดย</th>${isAll ? '<th>อนุมัติ</th>' : ''}
         </tr></thead>
-        <tbody>${fcList.map(f => {
+        <tbody>${filteredFcList.map(f => {
           const od = f.delivDate
             ? new Date(new Date(f.delivDate) - f.leadTime * 864e5) : null;
           const late = od && od < today;
@@ -827,27 +841,29 @@ function expFC() {
 // ════════════════════════════════════════════════
 // pgPlanStock() — อ่าน Stock จาก Supabase
 // ════════════════════════════════════════════════
+let _psCrit='avg3';let _psSort={col:'days',dir:1};
 async function pgPlanStock() {
   document.getElementById('ct').innerHTML = `
-  <div class="frow">
-    <label>กลุ่มสินค้า:</label>
+  <div class="frow" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <label style="align-self:center">กลุ่มสินค้า:</label>
     <select id="gf" onchange="planStkT()">
       <option value="">ทั้งหมด</option>
       ${skuGroupNames().map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
     </select>
-    <input id="ss" type="text" placeholder="ค้นหา..." style="width:140px" oninput="planStkT()">
-    <label>เรียงตาม:</label>
-    <select id="sf" onchange="planStkT()">
-      <option value="days">วันคงเหลือ</option>
-      <option value="code">รหัสสินค้า</option>
+    <input id="ss" type="text" placeholder="ค้นหา รหัส/ชื่อ..." style="width:160px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font)" oninput="planStkT()">
+    <label style="align-self:center">เกณฑ์เปรียบเทียบ:</label>
+    <select id="ps-crit" onchange="_psCrit=this.value;planStkT()">
+      <option value="avg3">เฉลี่ย 3 เดือน</option>
+      <option value="avg4">เฉลี่ย 4 เดือนล่าสุด</option>
+      <option value="last1">ยอดเดือนล่าสุด</option>
+      <option value="prevyear">เทียบกับปีที่แล้ว (เดือนนี้)</option>
+      <option value="weekly">รายสัปดาห์ (avg3÷4)</option>
     </select>
-    <span style="margin-left:auto;font-size:12px;color:var(--TX3)">
-      🔴 Live จาก WMS
-    </span>
+    <span style="margin-left:auto;font-size:12px;color:var(--TX3)">🔴 Live จาก WMS</span>
   </div>
   <div class="card">
     <div class="ch">
-      <div class="ct2">Stock vs เฉลี่ย 3 เดือน</div>
+      <div class="ct2" id="ps-title">Stock vs เฉลี่ย 3 เดือน</div>
       <button class="btn btn-sm btn-g" onclick="expPlanStk()">Export Excel</button>
     </div>
     <div id="ps-tbl"><div style="padding:30px;text-align:center;color:var(--TX3)">กำลังโหลด...</div></div>
@@ -860,12 +876,16 @@ async function pgPlanStock() {
 }
 
 function planStkT() {
-  const rows   = window._planRows || [];
-  const grp    = document.getElementById('gf')?.value || '';
-  const q      = (document.getElementById('ss')?.value || '').toLowerCase();
-  const sortBy = document.getElementById('sf')?.value || 'days';
+  const rows = window._planRows || [];
+  const grp  = document.getElementById('gf')?.value || '';
+  const q    = (document.getElementById('ss')?.value || '').toLowerCase();
+  const crit = _psCrit || 'avg3';
 
-  let filtered = rows;
+  // update title
+  const titles={avg3:'Stock vs เฉลี่ย 3 เดือน',avg4:'Stock vs เฉลี่ย 4 เดือนล่าสุด',last1:'Stock vs ยอดเดือนล่าสุด',prevyear:'Stock vs ปีที่แล้ว (เดือนนี้)',weekly:'Stock vs ยอดรายสัปดาห์'};
+  const titleEl=document.getElementById('ps-title');if(titleEl)titleEl.textContent=titles[crit]||'Stock Planning';
+
+  let filtered = [...rows];
   if (grp && productGroups()[grp]) {
     const set = new Set(productGroups()[grp]);
     filtered = filtered.filter(r => set.has(r.code));
@@ -874,41 +894,64 @@ function planStkT() {
     (r.code || '').toLowerCase().includes(q) ||
     (r.name || '').toLowerCase().includes(q)
   );
-  if (sortBy === 'code') filtered.sort((a, b) => (a.code || '').localeCompare(b.code));
+
+  // compute benchmark per criterion
+  filtered = filtered.map(r => {
+    const a3 = r.avg3_monthly || 0;
+    let bench = a3;
+    if (crit === 'avg4')     bench = r.avg4_monthly ?? a3;
+    else if(crit === 'last1') bench = r.last_month ?? a3;
+    else if(crit === 'prevyear') bench = r.prevyear_monthly ?? a3;
+    else if(crit === 'weekly') bench = a3 / 4;
+    const daysComp = bench > 0 ? Math.round((r.stock_qty || 0) / bench * (crit==='weekly'?7:30)) : 9999;
+    return {...r, _bench: bench, _days: daysComp};
+  });
+
+  // sort
+  const sc=_psSort.col,sd=_psSort.dir;
+  if(sc==='code')  filtered.sort((a,b)=>sd*(a.code||'').localeCompare(b.code||''));
+  else if(sc==='stock') filtered.sort((a,b)=>sd*(b.stock_qty-a.stock_qty));
+  else if(sc==='bench') filtered.sort((a,b)=>sd*(b._bench-a._bench));
+  else if(sc==='min')   filtered.sort((a,b)=>sd*(b.min_stock-a.min_stock));
+  else filtered.sort((a,b)=>sd*(a._days-b._days));
 
   const tbl = document.getElementById('ps-tbl');
   if (!tbl) return;
+  const sArrow=col=>sc===col?(sd>0?'▲':'▼'):'';
+  const thS=col=>`style="text-align:right;cursor:pointer;user-select:none" onclick="psSortBy('${col}')"`;
+  const benchLbl=crit==='weekly'?'เฉลี่ย/สัปดาห์':crit==='prevyear'?'ปีก่อน/เดือน':'เฉลี่ย/เดือน';
+  const daysLbl=crit==='weekly'?'วันคงเหลือ (wk)':'วันคงเหลือ';
 
   tbl.innerHTML = `<div class="tw"><table>
   <thead><tr>
-    <th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
-    <th style="text-align:right">Stock</th>
-    <th style="text-align:right">เฉลี่ย 3 เดือน/เดือน</th>
-    <th style="text-align:right">ขั้นต่ำ</th>
-    <th style="text-align:right">วันคงเหลือ</th>
+    <th style="cursor:pointer;user-select:none" onclick="psSortBy('code')">รหัสสินค้า ${sArrow('code')}</th>
+    <th>ชื่อสินค้า</th>
+    <th ${thS('stock')}>Stock ${sArrow('stock')}</th>
+    <th ${thS('bench')}>${benchLbl} ${sArrow('bench')}</th>
+    <th ${thS('min')}>ขั้นต่ำ ${sArrow('min')}</th>
+    <th ${thS('days')}>${daysLbl} ${sArrow('days')}</th>
     <th>แนะนำ</th>
   </tr></thead>
-  <tbody>${filtered.slice(0, 100).map(r => {
-    const days  = r.days_remaining >= 9999 ? '∞' : r.days_remaining;
-    const cls   = r.days_remaining < 14 ? 'crit-row' : r.days_remaining < 30 ? 'exp-warm' : '';
+  <tbody>${filtered.slice(0, 120).map(r => {
+    const days  = r._days >= 9999 ? '∞' : r._days;
     const lc    = r.stock_qty < r.min_stock ? 'var(--R)' : r.stock_qty < r.min_stock * 2 ? 'var(--A)' : 'var(--G)';
+    const cls   = r._days < 14 ? 'crit-row' : r._days < 30 ? 'exp-warm' : '';
     const rec   = r.stock_qty < r.min_stock
       ? `<span class="badge bbr">สั่งด่วน</span>`
-      : r.days_remaining < 30 ? `<span class="badge bba">เฝ้าระวัง</span>`
+      : r._days < 30 ? `<span class="badge bba">เฝ้าระวัง</span>`
       : `<span class="badge bbg">ปกติ</span>`;
     return `<tr class="${cls}">
       <td class="mono">${r.code}</td>
       <td>${(r.name || '').substring(0, 32)}</td>
       <td style="text-align:right;color:${lc};font-weight:700">${Math.round(r.stock_qty || 0).toLocaleString()}</td>
-      <td style="text-align:right">${(r.avg3_monthly || 0).toFixed(1)}</td>
+      <td style="text-align:right">${r._bench.toFixed(1)}</td>
       <td style="text-align:right">${r.min_stock}</td>
-      <td style="text-align:right;font-weight:700;color:${r.days_remaining < 14 ? 'var(--R)' : r.days_remaining < 30 ? 'var(--A)' : 'inherit'}">
-        ${days}
-      </td>
+      <td style="text-align:right;font-weight:700;color:${r._days < 14 ? 'var(--R)' : r._days < 30 ? 'var(--A)' : 'inherit'}">${days}</td>
       <td>${rec}</td>
     </tr>`;
   }).join('')}</tbody></table></div>`;
 }
+function psSortBy(col){if(_psSort.col===col)_psSort.dir*=-1;else{_psSort.col=col;_psSort.dir=col==='days'?1:-1;}planStkT();}
 
 function expPlanStk() {
   const rows = window._planRows || [];
@@ -916,6 +959,126 @@ function expPlanStk() {
     ['รหัสสินค้า','ชื่อสินค้า','Stock','เฉลี่ย3เดือน','ขั้นต่ำ','วันคงเหลือ'],
     rows.map(r => [r.code, r.name, r.stock_qty, r.avg3_monthly, r.min_stock, r.days_remaining]),
   ]], 'StockPlanning_' + todayStr() + '.xlsx');
+}
+
+// ════════════════════════════════════════════════
+// pgProdPlan() — สั่งยอดผลิต + ภาพรวม Planning
+// ════════════════════════════════════════════════
+let _pp={pt:'day',ref:new Date().toISOString().slice(0,10),orders:[]};
+function pgProdPlan(){
+  const SKUS=getSkusMerged?.()??SKUS_MASTER;
+  document.getElementById('ct').innerHTML=`
+  <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">
+    <button class="btn btn-sm" id="pp-pt-d" onclick="ppSetPT('day')" style="${_pp.pt==='day'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายวัน</button>
+    <button class="btn btn-sm" id="pp-pt-w" onclick="ppSetPT('week')" style="${_pp.pt==='week'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายสัปดาห์</button>
+    <button class="btn btn-sm" id="pp-pt-m" onclick="ppSetPT('month')" style="${_pp.pt==='month'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายเดือน</button>
+    <button class="btn btn-sm" id="pp-pt-y" onclick="ppSetPT('year')" style="${_pp.pt==='year'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายปี</button>
+    <div style="width:1px;background:var(--BD);align-self:stretch"></div>
+    <input type="date" id="pp-ref" value="${_pp.ref}" onchange="_pp.ref=this.value;ppRender()" class="btn btn-sm" style="padding:5px 8px">
+    <button class="btn btn-sm btn-p" onclick="ppShowOrder()">+ สั่งผลิต</button>
+    <button class="btn btn-sm btn-g" onclick="ppExport()">⬇ Export</button>
+  </div>
+  <div id="pp-krow" class="krow" style="margin-bottom:14px"></div>
+  <div id="pp-summary" class="card" style="margin-bottom:14px"></div>
+  <div class="card">
+    <div class="ch"><div class="ct2">รายการสั่งผลิต</div></div>
+    <div id="pp-tbl"></div>
+  </div>`;
+  ppRender();
+}
+function ppSetPT(t){
+  _pp.pt=t;
+  ['d','w','m','y'].forEach(x=>{const b=document.getElementById('pp-pt-'+x);if(b){b.style.background='';b.style.color='';b.style.borderColor='';b.style.fontWeight='';}});
+  const idMap={day:'d',week:'w',month:'m',year:'y'};
+  const a=document.getElementById('pp-pt-'+(idMap[t]||'d'));
+  if(a){a.style.background='var(--N)';a.style.color='#fff';a.style.borderColor='var(--N)';a.style.fontWeight='600';}
+  ppRender();
+}
+function ppGetRange(){
+  const ref=new Date(_pp.ref);const t=_pp.pt;
+  if(t==='day'){const s=new Date(ref);const e=new Date(ref);e.setDate(e.getDate()+1);return{s,e,lbl:ref.toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'numeric'})};}
+  if(t==='week'){const s=new Date(ref);s.setDate(s.getDate()-s.getDay()+1);const e=new Date(s);e.setDate(e.getDate()+7);return{s,e,lbl:'สัปดาห์ '+s.toLocaleDateString('th-TH',{day:'2-digit',month:'short'})+' – '+new Date(e-864e5).toLocaleDateString('th-TH',{day:'2-digit',month:'short'})};}
+  if(t==='month'){const s=new Date(ref.getFullYear(),ref.getMonth(),1);const e=new Date(ref.getFullYear(),ref.getMonth()+1,1);return{s,e,lbl:['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][ref.getMonth()]+' '+(ref.getFullYear()+543)};}
+  const s=new Date(ref.getFullYear(),0,1);const e=new Date(ref.getFullYear()+1,0,1);return{s,e,lbl:'พ.ศ. '+(ref.getFullYear()+543)};
+}
+function ppRender(){
+  const orders=DB.get('prod_orders')||[];
+  const {s,e,lbl}=ppGetRange();
+  const inRange=orders.filter(o=>{const d=new Date(o.planDate);return d>=s&&d<e;});
+  const totalQty=inRange.reduce((a,o)=>a+o.qty,0);
+  const totalItems=new Set(inRange.map(o=>o.sku)).size;
+  const pending=inRange.filter(o=>o.status==='pending').length;
+  const done=inRange.filter(o=>o.status==='done').length;
+  const kr=document.getElementById('pp-krow');
+  if(kr) kr.innerHTML=`
+    <div class="kpi b"><div class="kl">ช่วงเวลา</div><div class="kv" style="font-size:16px">${lbl}</div></div>
+    <div class="kpi g"><div class="kl">ยอดรวม (กก.)</div><div class="kv">${fmt(totalQty)}</div><div class="kh">${totalItems} SKU</div></div>
+    <div class="kpi a"><div class="kl">รอผลิต</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
+    <div class="kpi t"><div class="kl">ผลิตแล้ว</div><div class="kv">${done}</div><div class="kh">รายการ</div></div>`;
+  // Summary by SKU
+  const bysku={};inRange.forEach(o=>{if(!bysku[o.sku])bysku[o.sku]={name:o.skuName||o.sku,qty:0,cnt:0};bysku[o.sku].qty+=o.qty;bysku[o.sku].cnt++;});
+  const sm=document.getElementById('pp-summary');
+  if(sm){
+    const entries=Object.entries(bysku).sort((a,b)=>b[1].qty-a[1].qty).slice(0,8);
+    sm.innerHTML=entries.length?`<div class="ct2" style="margin-bottom:10px">Top SKU ในช่วงนี้</div>`+
+      entries.map(([sku,d])=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        <span class="mono" style="width:90px;font-size:11px;color:var(--TX3)">${sku}</span>
+        <span style="flex:1;font-size:12px">${d.name.substring(0,30)}</span>
+        <span style="font-weight:700;min-width:60px;text-align:right">${fmt(d.qty)} กก.</span>
+        <div style="width:80px;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden"><div style="width:${Math.round(d.qty/(bysku[entries[0][0]]?.qty||1)*100)}%;height:100%;background:var(--G);border-radius:3px"></div></div>
+      </div>`).join('')
+      :'<div style="color:var(--TX3);font-size:13px">ไม่มีรายการในช่วงนี้</div>';
+  }
+  // Orders table
+  const tbl=document.getElementById('pp-tbl');
+  if(tbl) tbl.innerHTML=inRange.length?`<div class="tw"><table>
+    <thead><tr><th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r">จำนวน(กก.)</th><th>สายผลิต</th><th>สถานะ</th><th>หมายเหตุ</th><th>แก้ไขโดย</th></tr></thead>
+    <tbody>${inRange.sort((a,b)=>a.planDate<b.planDate?-1:1).map(o=>`<tr>
+      <td>${fmtD(o.planDate)}</td>
+      <td class="mono">${o.sku}</td><td>${(o.skuName||'').substring(0,28)}</td>
+      <td class="r" style="font-weight:700">${fmt(o.qty)}</td>
+      <td>${o.line||'—'}</td>
+      <td>${o.status==='done'?'<span class="badge bbg">ผลิตแล้ว</span>':o.status==='inprog'?'<span class="badge bba">กำลังผลิต</span>':'<span class="badge bbl">รอผลิต</span>'}</td>
+      <td style="font-size:12px;color:var(--TX2)">${o.note||''}</td>
+      <td><span class="edby">${o.by||''}</span></td></tr>`).join('')}
+    </tbody></table></div>`
+    :'<div style="padding:20px;color:var(--TX3);text-align:center">ไม่มีรายการในช่วงเวลานี้</div>';
+}
+function ppShowOrder(){
+  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
+  openMod(`<div class="mh"><div class="mt2">สั่งยอดผลิต</div><span class="mx" onclick="closeM()">✕</span></div>
+  <div class="fg">
+    <div class="field"><label>รหัสสินค้า</label><select id="pp-sku">${SKUS.map(s=>`<option value="${s.code}">${s.code} — ${s.name.substring(0,28)}</option>`).join('')}</select></div>
+    <div class="field"><label>จำนวน (กก.)</label><input type="number" id="pp-qty" min="1" placeholder="0"></div>
+    <div class="field"><label>วันที่ผลิต</label><input type="date" id="pp-date" value="${_pp.ref}"></div>
+    <div class="field"><label>สายผลิต</label><input type="text" id="pp-line" placeholder="เช่น สาย A, เครื่อง 1"></div>
+    <div class="field"><label>หมายเหตุ</label><input type="text" id="pp-note" placeholder="PO อ้างอิง / ลูกค้า"></div>
+  </div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button class="btn" onclick="closeM()">ยกเลิก</button>
+    <button class="btn btn-p" onclick="ppSaveOrder()">บันทึก</button>
+  </div>`);
+}
+function ppSaveOrder(){
+  const sku=document.getElementById('pp-sku')?.value||'';
+  const qty=parseFloat(document.getElementById('pp-qty')?.value)||0;
+  const planDate=document.getElementById('pp-date')?.value||_pp.ref;
+  const line=document.getElementById('pp-line')?.value||'';
+  const note=document.getElementById('pp-note')?.value||'';
+  if(!sku||!qty){alert('กรุณาระบุสินค้าและจำนวน');return;}
+  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
+  const sk=SKUS.find(s=>s.code===sku)||{name:sku};
+  const orders=DB.get('prod_orders')||[];
+  orders.unshift({id:genId('PRD'),sku,skuName:sk.name,qty,planDate,line,note,status:'pending',by:UID,ts:Date.now()});
+  DB.set('prod_orders',orders);audit('ADD_PROD_ORDER',sku,{qty,planDate});
+  closeM();ppRender();
+}
+function ppExport(){
+  const orders=DB.get('prod_orders')||[];
+  const {s,e,lbl}=ppGetRange();
+  const rows=orders.filter(o=>{const d=new Date(o.planDate);return d>=s&&d<e;})
+    .map(o=>[o.planDate,o.sku,o.skuName||'',o.qty,o.line||'',o.status,o.note||'',o.by||'']);
+  toXLSX([['ProdOrders',['วันผลิต','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','สายผลิต','สถานะ','หมายเหตุ','สร้างโดย'],rows]],`ProdPlan_${lbl.replace(/\//g,'-')}.xlsx`);
 }
 
 // ════════════════════════════════════════════════
@@ -1074,11 +1237,11 @@ ROLE='', UID='', UNAME='';
 const RNAV={
   superadmin:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['custmap','🗺️','Customer Map'],['custreg','🏪','ลงทะเบียนลูกค้า'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['perms','🔐','สิทธิ์การใช้งาน'],['auditlog','🔍','Audit Log']],
   sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า'],['custreg','🏪','ลงทะเบียนลูกค้า']],
-  planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['custmap','🗺️','สรุปยอดขาย'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
+  planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['prodplan','🏭','สั่งยอดผลิต'],['custmap','🗺️','สรุปยอดขาย'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
   warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า']],
   manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['custmap','🗺️','Customer Map'],['custreg','🏪','ลงทะเบียนลูกค้า'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
-const PTITLES={dash:'Dashboard',mysales:'Sales Overview',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',custmap:'สรุปยอดขาย',custreg:'ลงทะเบียนลูกค้า',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
+const PTITLES={dash:'Dashboard',mysales:'Sales Overview',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',prodplan:'สั่งยอดผลิต',custmap:'สรุปยอดขาย',custreg:'ลงทะเบียนลูกค้า',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
 
 function doLogout(){audit('LOGOUT','system',{});localStorage.removeItem('tgm_session');document.getElementById('ls').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('l-err').textContent='';}
@@ -1117,7 +1280,7 @@ function nav(page){
   document.getElementById('tb-r').innerHTML='';
   document.getElementById('ct').innerHTML='';
   setTimeout(()=>{
-    ({dash:pgDash,mysales:pgMySales,forecast:pgForecast,planstock:pgPlanStock,po:pgPO,custmap:pgCustMap,custreg:pgCustReg,skuadmin:pgSKUAdmin,groups:pgGroupAdmin,stock:pgStock,expiry:pgExpiry,reports:pgReports,users:pgUsers,perms:pgPerms,wms:pgWMS,auditlog:pgAudit})[page]?.();
+    ({dash:pgDash,mysales:pgMySales,forecast:pgForecast,planstock:pgPlanStock,po:pgPO,prodplan:pgProdPlan,custmap:pgCustMap,custreg:pgCustReg,skuadmin:pgSKUAdmin,groups:pgGroupAdmin,stock:pgStock,expiry:pgExpiry,reports:pgReports,users:pgUsers,perms:pgPerms,wms:pgWMS,auditlog:pgAudit})[page]?.();
   },10);
 }
 
@@ -1231,6 +1394,8 @@ function pgDash(){
     <select id="gf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${skuGroupNames().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
     <label>ช่วงเวลา:</label>
     <select id="pf" onchange="dashCharts()"><option value="4">4 เดือน</option><option value="3">3 เดือน</option><option value="1">เดือนล่าสุด</option></select>
+    <label>กลุ่มลูกค้า:</label>
+    <select id="cgf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${[...new Set(salesCustomers().map(c=>c.corp||'อื่นๆ'))].sort().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
   </div>
   <div class="cgrid c2">
     <div class="card"><div class="ch"><div class="ct2">ยอดขายจริง vs Forecast vs PO Plan</div></div><div class="cbox"><canvas id="c-main"></canvas></div></div>
@@ -1245,6 +1410,7 @@ function pgDash(){
 function dashCharts(){
   const allowed=allowedSKUs();
   const period=parseInt(document.getElementById('pf')?.value||'4');
+  const custGroup=document.getElementById('cgf')?.value||'';
   const hist=myHist();
   const fc=DB.get('forecasts')||[];
   const po=DB.get('po_log')||[];
@@ -1252,27 +1418,35 @@ function dashCharts(){
   const ss=DB.get('sku_settings')||{};
   const mths=MONTHS.slice(-period);
   const mls=mths.map(mL);
-  const actual=mths.map(m=>Object.entries(hist).filter(([k])=>!allowed||allowed.has(k)).reduce((a,[,h])=>a+(h.monthly[m]||0),0));
-  const fcData=mths.map(m=>fc.filter(f=>(!allowed||allowed.has(f.sku))&&f.delivDate?.substring(0,7)===m.substring(0,7)).reduce((a,f)=>a+f.qty,0));
-  const poData=mths.map(m=>po.filter(p=>(!allowed||allowed.has(p.sku))&&p.delivDate?.substring(0,7)===m.substring(0,7)).reduce((a,p)=>a+p.qty,0));
+  const custSKUs = custGroup ? new Set(salesCustomers()
+    .filter(c=>((c.corp||'อื่นๆ')===custGroup))
+    .flatMap(c=>c.g.flatMap(g=>g.it.map(i=>i.c)))) : null;
+  const skuAllowed = key => (!allowed||allowed.has(key)) && (!custSKUs||custSKUs.has(key));
+  const actual=mths.map(m=>Object.entries(hist).filter(([k])=>skuAllowed(k)).reduce((a,[,h])=>a+(h.monthly[m]||0),0));
+  const fcData=mths.map(m=>fc.filter(f=>skuAllowed(f.sku)&&f.delivDate?.substring(0,7)===m.substring(0,7)).reduce((a,f)=>a+f.qty,0));
+  const poData=mths.map(m=>po.filter(p=>skuAllowed(p.sku)&&p.delivDate?.substring(0,7)===m.substring(0,7)).reduce((a,p)=>a+p.qty,0));
   mkChart('c-main','bar',mls,[
     {label:'ยอดขายจริง',data:actual,backgroundColor:'rgba(21,83,160,.72)',borderRadius:4},
     {label:'Forecast (Sales)',data:fcData,backgroundColor:'rgba(10,89,64,.65)',borderRadius:4},
     {label:'PO Plan',data:poData,backgroundColor:'rgba(196,75,10,.65)',borderRadius:4},
   ],{scales:{y:{beginAtZero:true,title:{display:true,text:'กก.'}}}});
-  const topSKU=Object.entries(hist).filter(([k])=>!allowed||allowed.has(k)).map(([k,h])=>({k,n:h.name.substring(0,18),v:h.avg3})).sort((a,b)=>b.v-a.v).slice(0,8);
+  const topSKU=Object.entries(hist).filter(([k])=>skuAllowed(k)).map(([k,h])=>({k,n:h.name.substring(0,18),v:h.avg3})).sort((a,b)=>b.v-a.v).slice(0,8);
   mkChart('c-top','bar',topSKU.map(s=>s.n),[{label:'เฉลี่ย/เดือน',data:topSKU.map(s=>s.v),backgroundColor:'rgba(65,43,138,.72)',borderRadius:4}],{indexAxis:'y',scales:{x:{beginAtZero:true}}});
-  const stkE=Object.entries(stk).filter(([k])=>!allowed||allowed.has(k)).map(([k,s])=>({k,qty:s.qty,min:(ss[k]?.min_stock||50),name:(skuI(k).name||k).substring(0,16)})).sort((a,b)=>a.qty/a.min-b.qty/b.min).slice(0,8);
+  const stkE=Object.entries(stk).filter(([k])=>skuAllowed(k)).map(([k,s])=>({k,qty:s.qty,min:(ss[k]?.min_stock||50),name:(skuI(k).name||k).substring(0,16)})).sort((a,b)=>a.qty/a.min-b.qty/b.min).slice(0,8);
   mkChart('c-stk','bar',stkE.map(s=>s.name),[
     {label:'Stock ปัจจุบัน',data:stkE.map(s=>s.qty),backgroundColor:stkE.map(s=>s.qty<s.min?'rgba(163,45,45,.75)':'rgba(10,89,64,.72)'),borderRadius:3},
     {label:'ขั้นต่ำ',data:stkE.map(s=>s.min),type:'line',borderColor:'#C44B0A',borderWidth:2,borderDash:[5,3],pointRadius:3,fill:false,backgroundColor:'transparent'},
   ],{indexAxis:'y',scales:{x:{beginAtZero:true}}});
-  const cnt={pending:po.filter(p=>p.status==='pending').length,overdue:po.filter(p=>p.status==='overdue').length,matched:po.filter(p=>p.status==='matched').length};
+  const cnt={
+    pending:po.filter(p=>skuAllowed(p.sku)&&p.status==='pending').length,
+    overdue:po.filter(p=>skuAllowed(p.sku)&&p.status==='overdue').length,
+    matched:po.filter(p=>skuAllowed(p.sku)&&p.status==='matched').length,
+  };
   mkChart('c-po','doughnut',['รอส่ง','เลยกำหนด','Matched'],[{data:[cnt.pending,cnt.overdue,cnt.matched],backgroundColor:['#1553A0','#A32D2D','#0A5940'],borderWidth:0}],{plugins:{legend:{position:'right'}}});
 }
 
-// ── MY SALES ─────────────────────────────────────────────────────
-// ── SALES DASHBOARD ──────────────────────────────────────────────
+// ── MY SALES / SALES DASHBOARD ───────────────────────────────────
+const API_BASE = DB.get('api_base') || 'http://localhost:3001';
 const SD_MTH=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const SD_MD=[
   {t:4820000,q:18400,i:312,ar:380000,vs:12},{t:4310000,q:16200,i:284,ar:210000,vs:-4},
@@ -1313,7 +1487,132 @@ const SD_SALES=[
   {n:'Sales ทีมร้านค้า 1',c:'101',w:.28,tgt:1200000,vs:5},
 ];
 const SD_VS=[8,-3,5,-8,11,-6,4,-2];
-let _sd={pt:'month',cm:4,cy:2569,cw:1,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1}};
+let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1}};
+let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[]};
+
+function _sdApiMonth(){const gy=_sd.cy-543;const mm=String(_sd.cm+1).padStart(2,'0');return `${gy}-${mm}`;}
+function _sdApiYear(){return _sd.cy_y-543;}
+
+async function sdLoad(){
+  const month=_sdApiMonth();
+  const me=(DB.get('users')||[]).find(x=>x.uid===UID);
+  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  const badge=document.createElement('div');
+  badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
+  badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
+  try{
+    const qs=slmId?`&slm_id=${encodeURIComponent(slmId)}`:'';
+    const [sumJ,kpiJ,slmJ,arJ]=await Promise.all([
+      fetch(`${API_BASE}/api/sales/summary?month=${month}${qs}`).then(r=>r.json()),
+      fetch(`${API_BASE}/api/sales/monthly-kpi?months=24${qs}`).then(r=>r.json()),
+      fetch(`${API_BASE}/api/sales/slm-list`).then(r=>r.json()),
+      fetch(`${API_BASE}/api/ar${slmId?`?slm_id=${encodeURIComponent(slmId)}`:''}`).then(r=>r.json()),
+    ]);
+    _sdApi.loaded=true;
+    _sdApi.month=month;
+    _sdApi.monthly=kpiJ.rows||[];
+    _sdApi.slmList=slmJ.rows||[];
+    const curKpi=_sdApi.monthly.find(m=>m.ym===month)||{total:0,qty:0,invoices:0};
+    _sdApi.total=curKpi.total||0;_sdApi.qty=curKpi.qty||0;_sdApi.invoices=curKpi.invoices||0;
+    const arRows=arJ.rows||[];
+    _sdApi.ar=arRows.reduce((s,r)=>s+parseFloat(r['ยอดค้างชำระ']||r['balance']||0),0);
+    const ms=[..._sdApi.monthly].sort((a,b)=>a.ym.localeCompare(b.ym));
+    const ci=ms.findIndex(m=>m.ym===month);
+    const prev=ci>0?ms[ci-1]:null;
+    _sdApi.vs=prev&&prev.total?Math.round((_sdApi.total/prev.total-1)*100):0;
+    const rows=sumJ.rows||[];
+    _sdApi.custs=_sdBuildCusts(rows);
+    _sdApi.prods=_sdBuildProds(rows);
+    _sdApi.slms=_sdBuildSlms(rows,_sdApi.slmList);
+    _sdUpdateSlmDrop();
+  }catch(e){
+    _sdApi.loaded=false;
+    console.warn('API offline — using mock data',e.message);
+  }finally{
+    document.getElementById('sd-loading')?.remove();
+  }
+  sdRender();
+}
+
+async function sdLoadYear(){
+  const gy=_sdApiYear();
+  const me=(DB.get('users')||[]).find(x=>x.uid===UID);
+  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  const badge=document.createElement('div');
+  badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
+  badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
+  try{
+    const qs=slmId?`&slm_id=${encodeURIComponent(slmId)}`:'';
+    const [kpiJ,slmJ]=await Promise.all([
+      fetch(`${API_BASE}/api/sales/monthly-kpi?months=36${qs}`).then(r=>r.json()),
+      fetch(`${API_BASE}/api/sales/slm-list`).then(r=>r.json()),
+    ]);
+    _sdApi.monthly=kpiJ.rows||[];
+    _sdApi.slmList=slmJ.rows||[];
+    const yearRows=_sdApi.monthly.filter(m=>m.ym.startsWith(String(gy)+'-'));
+    _sdApi.total=yearRows.reduce((s,m)=>s+m.total,0);
+    _sdApi.qty=yearRows.reduce((s,m)=>s+m.qty,0);
+    _sdApi.invoices=yearRows.reduce((s,m)=>s+m.invoices,0);
+    const prevYear=_sdApi.monthly.filter(m=>m.ym.startsWith(String(gy-1)+'-'));
+    const prevTotal=prevYear.reduce((s,m)=>s+m.total,0);
+    _sdApi.vs=prevTotal?Math.round((_sdApi.total/prevTotal-1)*100):0;
+    _sdApi.loaded=true;
+    _sdUpdateSlmDrop();
+  }catch(e){_sdApi.loaded=false;console.warn('API offline',e.message);}
+  finally{document.getElementById('sd-loading')?.remove();}
+  sdRender();
+}
+
+function _sdBuildCusts(rows){
+  const m={};
+  for(const r of rows){
+    if(!m[r.cust_code])m[r.cust_code]={n:r.cust_name,c:r.cust_code,ty:r.cust_group||'ขายขาด',grp:r.cust_group||'อื่นๆ',slm:r.slm_id,_tot:0,_qty:0,g:{}};
+    const c=m[r.cust_code];c._tot+=r.amount;c._qty+=r.qty;
+    if(!c.g[r.prod_group])c.g[r.prod_group]={n:r.prod_group||'อื่นๆ',_tot:0,it:{}};
+    const g=c.g[r.prod_group];g._tot+=r.amount;
+    if(!g.it[r.prod_code])g.it[r.prod_code]={n:r.prod_name,c:r.prod_code,_tot:0};
+    g.it[r.prod_code]._tot+=r.amount;
+  }
+  return Object.values(m).map(c=>({...c,g:Object.values(c.g).map(g=>({...g,it:Object.values(g.it).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
+}
+function _sdBuildProds(rows){
+  const m={};
+  for(const r of rows){
+    const gk=r.prod_group||'อื่นๆ';
+    if(!m[gk])m[gk]={n:gk,_tot:0,it:{}};
+    m[gk]._tot+=r.amount;
+    if(!m[gk].it[r.prod_code])m[gk].it[r.prod_code]={n:r.prod_name,c:r.prod_code,_tot:0,custs:{}};
+    const it=m[gk].it[r.prod_code];it._tot+=r.amount;
+    const ty=r.cust_group||'อื่นๆ';
+    if(!it.custs[ty])it.custs[ty]={n:ty,_tot:0,cs:{}};
+    it.custs[ty]._tot+=r.amount;
+    if(!it.custs[ty].cs[r.cust_code])it.custs[ty].cs[r.cust_code]={n:r.cust_name,c:r.cust_code,_tot:0};
+    it.custs[ty].cs[r.cust_code]._tot+=r.amount;
+  }
+  return Object.values(m).map(g=>({...g,it:Object.values(g.it).map(i=>({...i,custs:Object.values(i.custs).map(t=>({...t,cs:Object.values(t.cs).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
+}
+function _sdBuildSlms(rows,slmList){
+  const m={};
+  for(const s of slmList)m[s.code]={code:s.code,name:s.name,_tot:0,custs:{}};
+  for(const r of rows){
+    if(!m[r.slm_id])m[r.slm_id]={code:r.slm_id,name:r.slm_name,_tot:0,custs:{}};
+    m[r.slm_id]._tot+=r.amount;
+    const sid=r.slm_id;
+    if(!m[sid].custs[r.cust_code])m[sid].custs[r.cust_code]={n:r.cust_name,c:r.cust_code,grp:r.cust_group||'อื่นๆ',_tot:0,g:{}};
+    const c=m[sid].custs[r.cust_code];c._tot+=r.amount;
+    if(!c.g[r.prod_group])c.g[r.prod_group]={n:r.prod_group||'อื่นๆ',_tot:0,it:{}};
+    c.g[r.prod_group]._tot+=r.amount;
+    if(!c.g[r.prod_group].it[r.prod_code])c.g[r.prod_group].it[r.prod_code]={n:r.prod_name,c:r.prod_code,_tot:0};
+    c.g[r.prod_group].it[r.prod_code]._tot+=r.amount;
+  }
+  return Object.values(m).map(s=>({...s,custs:Object.values(s.custs).map(c=>({...c,g:Object.values(c.g).map(g=>({...g,it:Object.values(g.it).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
+}
+function _sdUpdateSlmDrop(){
+  const sel=document.getElementById('sd-slm-f');if(!sel)return;
+  const list=_sdApi.slmList.length?_sdApi.slmList:SD_SALES.map(s=>({code:s.c,name:s.n}));
+  sel.innerHTML='<option value="">ทุก Sales</option>'+list.map(s=>`<option value="${esc(s.code)}">${esc(s.name)}</option>`).join('');
+  if(_sd.slmF)sel.value=_sd.slmF;
+}
 
 function _sdD(){
   const b=SD_MD[_sd.cm];
@@ -1338,39 +1637,39 @@ function sdTogOp(k){_sd.op[k]=!_sd.op[k];sdRender();}
 function pgMySales(){
   const isAll=ROLE==='manager'||ROLE==='superadmin';
   document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
+  const ptBtn=t=>`<button class="btn btn-sm" id="sd-pt-${t[0]}" onclick="sdSetPT('${t}')" style="${_sd.pt===t?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายเดือน${t==='week'?'สัปดาห์':t==='year'?'ปี':''}</button>`;
   document.getElementById('ct').innerHTML=`<div id="sd-root">
   <div class="frow" style="border-radius:8px;margin-bottom:10px;gap:6px;flex-wrap:wrap">
-    <button class="btn btn-sm" id="sd-pt-m" onclick="sdSetPT('month')" style="background:var(--N);color:#fff;border-color:var(--N);font-weight:600">รายเดือน</button>
-    <button class="btn btn-sm" id="sd-pt-w" onclick="sdSetPT('week')">รายสัปดาห์</button>
+    <button class="btn btn-sm" id="sd-pt-m" onclick="sdSetPT('month')" style="${_sd.pt==='month'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายเดือน</button>
+    <button class="btn btn-sm" id="sd-pt-w" onclick="sdSetPT('week')" style="${_sd.pt==='week'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายสัปดาห์</button>
+    <button class="btn btn-sm" id="sd-pt-y" onclick="sdSetPT('year')" style="${_sd.pt==='year'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายปี</button>
     <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <button class="btn btn-sm" onclick="sdNav(-1)">‹</button>
-    <span id="sd-lbl" style="min-width:130px;text-align:center;font-size:13px;font-weight:600;color:var(--N);align-self:center"></span>
+    <span id="sd-lbl" style="min-width:110px;text-align:center;font-size:13px;font-weight:600;color:var(--N);align-self:center"></span>
     <button class="btn btn-sm" onclick="sdNav(1)">›</button>
-    <button class="btn btn-sm" onclick="sdGoNow()" style="font-size:12px">วันนี้</button>
+    <button class="btn btn-sm" onclick="sdGoNow()" style="font-size:12px">ปัจจุบัน</button>
     ${isAll?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span style="font-size:12px;color:var(--TX2);align-self:center">มุมมอง:</span>
-    <button class="btn btn-sm" id="sd-rv" onclick="sdTogView()">Manager</button>`:''}
+    <button class="btn btn-sm" id="sd-rv" onclick="sdTogView()">${_sd.mgrView?'Manager':'Sales'}</button>`:''}
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
     <input id="sd-q" type="text" placeholder="🔍 ค้นหา..." oninput="sdSetQ(this.value)" style="padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font);color:var(--TX);outline:none;min-width:180px;flex:1;max-width:280px">
-    ${isAll?`<select id="sd-slm-f" class="btn btn-sm" onchange="_sd.slmF=this.value;sdRender()">
-      <option value="">ทุก Sales</option>
-      ${SD_SALES.map(s=>`<option value="${s.c}">${s.n}</option>`).join('')}
-    </select>`:''}
+    ${isAll?`<select id="sd-slm-f" class="btn btn-sm" onchange="_sd.slmF=this.value;sdRender()"><option value="">ทุก Sales</option></select>`:''}
     <button class="btn btn-sm" onclick="sdClear()" style="color:var(--TX3)">ล้าง</button>
   </div>
   <div id="sd-wbar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
   <div class="krow" id="sd-krow" style="margin-bottom:14px"></div>
   <div class="card" style="padding:0;overflow:hidden;margin-bottom:0">
     <div class="tabs" style="padding:0 8px;margin:0;border-bottom:1px solid var(--BD)">
-      <div class="tab act" onclick="sdTab(this,'cust')">รายลูกค้า</div>
-      <div class="tab" onclick="sdTab(this,'prod')">รายสินค้า</div>
-      ${isAll?`<div class="tab" onclick="sdTab(this,'slm')">รายเซลส์</div>`:''}
+      <div class="tab ${_sd.at==='cust'?'act':''}" onclick="sdTab(this,'cust')">รายลูกค้า</div>
+      <div class="tab ${_sd.at==='prod'?'act':''}" onclick="sdTab(this,'prod')">รายสินค้า</div>
+      ${isAll?`<div class="tab ${_sd.at==='slm'?'act':''}" onclick="sdTab(this,'slm')">รายเซลส์</div>`:''}
     </div>
     <div id="sd-ta" style="padding:4px 8px 12px"></div>
   </div>
   </div>`;
-  sdRender();
+  _sdUpdateSlmDrop();
+  if(_sd.pt==='year') sdLoadYear(); else sdLoad();
 }
 
 function sdRender(){
@@ -1383,7 +1682,8 @@ function sdRender(){
 
 function sdUpdateLabel(){
   const lbl=document.getElementById('sd-lbl'); if(!lbl) return;
-  lbl.textContent=SD_MTH[_sd.cm]+' '+_sd.cy;
+  if(_sd.pt==='year') lbl.textContent='พ.ศ. '+_sd.cy_y;
+  else lbl.textContent=SD_MTH[_sd.cm]+' '+_sd.cy;
   const wb=document.getElementById('sd-wbar'); if(!wb) return;
   if(_sd.pt==='week'){
     wb.style.display='flex';
@@ -1393,20 +1693,37 @@ function sdUpdateLabel(){
 }
 
 function sdKPI(){
-  const d=_sdD(); const kr=document.getElementById('sd-krow'); if(!kr) return;
-  const maxT=Math.max(...SD_MD.map(m=>m.t));
-  const sparks=SD_MD.map((m,i)=>`<div style="flex:1;border-radius:2px 2px 0 0;min-height:2px;height:${Math.round(m.t/maxT*24)}px;background:var(--BL);opacity:${i===_sd.cm&&_sd.pt==='month'?1:.35}"></div>`).join('');
-  const vsC=d.vs>=0?'var(--G)':'var(--R)';
+  const kr=document.getElementById('sd-krow'); if(!kr) return;
+  let total,qty,inv,ar,vs,sparks,lbl2;
+  if(_sdApi.loaded){
+    total=_sdApi.total;qty=_sdApi.qty;inv=_sdApi.invoices;ar=_sdApi.ar;vs=_sdApi.vs;
+    const ms=_sdApi.monthly;
+    const maxT=Math.max(...ms.map(m=>m.total),1);
+    const curM=_sd.pt==='year'?String(_sdApiYear()):_sdApiMonth();
+    sparks=ms.slice(-12).map(m=>{
+      const active=_sd.pt==='year'?m.ym.startsWith(String(_sdApiYear())):m.ym===curM;
+      return `<div style="flex:1;border-radius:2px 2px 0 0;min-height:2px;height:${Math.round(m.total/maxT*24)}px;background:var(--BL);opacity:${active?1:.35}"></div>`;
+    }).join('');
+    lbl2=_sd.pt==='year'?'vs ปีก่อน':_sd.pt==='week'?'สัปดาห์ที่ '+_sd.cw:SD_MTH[_sd.cm];
+  }else{
+    const d=_sdD();total=d.t;qty=d.q;inv=d.i;ar=d.ar;vs=d.vs;
+    const maxT=Math.max(...SD_MD.map(m=>m.t));
+    sparks=SD_MD.map((m,i)=>`<div style="flex:1;border-radius:2px 2px 0 0;min-height:2px;height:${Math.round(m.t/maxT*24)}px;background:var(--BL);opacity:${i===_sd.cm&&_sd.pt==='month'?1:.35}"></div>`).join('');
+    lbl2=_sd.pt==='week'?'สัปดาห์ที่ '+_sd.cw:SD_MTH[_sd.cm];
+  }
+  const vsLbl=_sd.pt==='year'?'vs ปีก่อน':'vs เดือนก่อน';
+  const vsC=vs>=0?'var(--G)':'var(--R)';
+  const avg=inv?_sdF(Math.round(total/inv)):'—';
   kr.innerHTML=`
-    <div class="kpi b"><div class="kl">ยอดขายรวม</div><div class="kv">${_sdF(d.t)}</div>
-      <div class="kh" style="color:${vsC}">${d.vs>=0?'▲':'▼'} ${Math.abs(d.vs)}% vs เดือนก่อน</div>
+    <div class="kpi b"><div class="kl">ยอดขายรวม</div><div class="kv">${_sdF(total)}</div>
+      <div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>
       <div style="display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:8px">${sparks}</div></div>
-    <div class="kpi g"><div class="kl">ปริมาณ (กก./ถุง)</div><div class="kv">${Math.round(d.q).toLocaleString()}</div>
-      <div class="kh">Invoice ${d.i} ใบ</div></div>
-    <div class="kpi t"><div class="kl">เฉลี่ย / Invoice</div><div class="kv">${_sdF(Math.round(d.t/d.i))}</div>
-      <div class="kh">${_sd.pt==='week'?'สัปดาห์ที่ '+_sd.cw:SD_MTH[_sd.cm]}</div></div>
-    <div class="kpi r"><div class="kl">ยอดค้างชำระ</div><div class="kv" style="font-size:20px">${_sdF(d.ar)}</div>
-      <div class="kh">รอดำเนินการ 3 ราย</div></div>`;
+    <div class="kpi g"><div class="kl">ปริมาณ (กก./ถุง)</div><div class="kv">${Math.round(qty).toLocaleString()}</div>
+      <div class="kh">Invoice ${inv} ใบ</div></div>
+    <div class="kpi t"><div class="kl">เฉลี่ย / Invoice</div><div class="kv">${avg}</div>
+      <div class="kh">${lbl2}</div></div>
+    <div class="kpi r"><div class="kl">ยอดค้างชำระ</div><div class="kv" style="font-size:20px">${_sdF(ar)}</div>
+      <div class="kh">รอดำเนินการ</div></div>`;
 }
 
 function _xa(o){return`<span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:3px;border:1px solid var(--BD);margin-right:5px;font-size:9px;color:var(--TX3);flex-shrink:0;transition:.15s;transform:rotate(${o?90:0}deg)">▶</span>`;}
@@ -1427,42 +1744,79 @@ function _custsByItemGrouped(itCode,T,wi){
 }
 
 function sdCust(){
-  const d=_sdD(),T=d.t,wi=_sdWI();
   const isAll=(ROLE==='manager'||ROLE==='superadmin')&&_sd.mgrView;
   const q=(_sd.q||'').toLowerCase();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=me?.slm_id||'';
+  const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
+  const hHdr=`<div class="tw" style="margin-top:8px"><table>
+    <thead><tr>
+      <th style="width:42%">ประเภท / กลุ่มลูกค้า / ลูกค้า / กลุ่มสินค้า / สินค้า</th>
+      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
+      <th class="r" style="width:110px">สัดส่วน</th><th class="r">vs</th>
+    </tr></thead><tbody>`;
+
+  if(_sdApi.loaded){
+    // ─── API data: Category(ty) → Customer → ProdGroup → Product ───
+    const T=_sdApi.total||1;
+    let custs=isAll?_sdApi.custs:_sdApi.custs.filter(c=>c.slm===slmId);
+    if(_sd.slmF) custs=custs.filter(c=>c.slm===_sd.slmF);
+    if(q) custs=custs.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)||c.g.some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q))));
+    let sorted=[...custs];if(_sd.sort.col==='val') sorted.sort((a,b)=>_sd.sort.dir*(b._tot-a._tot));
+    // group by ty (category)
+    const tyMap={};
+    sorted.forEach(c=>{const ty=c.ty||'อื่นๆ';if(!tyMap[ty])tyMap[ty]=[];tyMap[ty].push(c);});
+    let h=hHdr;
+    Object.entries(tyMap).forEach(([ty,custs2])=>{
+      const tyTot=custs2.reduce((s,c)=>s+c._tot,0);
+      const otk='ty_'+ty;const oty=_sd.op[otk];
+      h+=`<tr onclick="sdTogOp('${otk}')" style="cursor:pointer;background:var(--LN)">
+        <td style="font-weight:700">${_xa(oty)}<span class="badge bbl">${ty}</span> <span style="font-size:11px;color:var(--TX3)">${custs2.length} ราย</span></td>
+        <td class="r"><strong>${_sdF(tyTot)}</strong></td><td class="r">${_sdBar(tyTot,T)}</td><td class="r">—</td></tr>`;
+      if(oty) custs2.forEach(c=>{
+        const cv=c._tot;const oc=_sd.op['c'+c.c];
+        h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer;background:var(--bg2)">
+          <td style="padding-left:20px">${_xa(oc)}<strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span></td>
+          <td class="r"><strong>${_sdF(cv)}</strong></td><td class="r">${_sdBar(cv,tyTot)}</td><td class="r">—</td></tr>`;
+        if(oc) c.g.forEach((g,gi)=>{
+          const gv=g._tot;const gk='g'+c.c+'_'+gi;const og=_sd.op[gk];
+          h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg)">
+            <td style="padding-left:40px">${_xa(og)}<span style="font-size:12px">${g.n}</span></td>
+            <td class="r" style="font-size:12px">${_sdF(gv)}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r">—</td></tr>`;
+          if(og) g.it.forEach(it=>{
+            h+=`<tr style="background:var(--bg2);font-size:12px">
+              <td style="padding-left:60px"><span class="mono">${it.c}</span> — ${it.n}</td>
+              <td class="r">${_sdF(it._tot)}</td><td class="r">${_sdBar(it._tot,gv)}</td><td class="r">—</td></tr>`;
+          });
+        });
+      });
+    });
+    document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
+    return;
+  }
+  // ─── Mock fallback ───
+  const d=_sdD(),T=d.t,wi=_sdWI();
   const allCusts=salesCustomers();
   const base=isAll?allCusts:allCusts.filter(c=>c.slm===slmId);
-  const filtered=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)||c.g.some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))):base;
+  const filtered=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)):base;
   const rows=filtered.map(c=>({...c,_cv:Math.round(T*(c.w[wi]||c.w[0]))}));
   if(_sd.sort.col==='val') rows.sort((a,b)=>_sd.sort.dir*(b._cv-a._cv));
-  const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
-  let h=`<div class="tw" style="margin-top:8px"><table>
-    <thead><tr>
-      <th style="width:38%">ลูกค้า / กลุ่มสินค้า / สินค้า</th>
-      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th><th class="r" style="width:110px">สัดส่วน</th><th class="r">vs เดือนก่อน</th>
-    </tr></thead><tbody>`;
+  let h=hHdr;
   rows.forEach((c,ri)=>{
-    const cv=c._cv;
-    const oc=_sd.op['c'+c.c];
-    const tyBg=c.ty==='ขายขาด'?'bbg':'bbp';
+    const cv=c._cv;const oc=_sd.op['c'+c.c];
     h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer">
-      <td><span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;border:1px solid var(--BD);margin-right:5px;font-size:10px;color:var(--TX3);transition:.15s;transform:rotate(${oc?90:0}deg)">▶</span>
-      <strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span> <span class="badge bbl" style="font-size:10px">${c.corp||'อื่นๆ'}</span> <span class="badge ${tyBg}" style="font-size:10px">${c.category||c.ty}</span></td>
+      <td>${_xa(oc)}<strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span> <span class="badge bbg" style="font-size:10px">${c.ty||''}</span></td>
       <td class="r"><strong>${_sdF(cv)}</strong></td><td class="r">${_sdBar(cv,T)}</td><td class="r">${_sdVs(SD_VS[ri%8])}</td></tr>`;
     if(oc) c.g.forEach((g,gi)=>{
-      const gv=Math.round(cv*(g.w[wi]||g.w[0]));
-      const gk='g'+c.c+'_'+gi;
-      const og=_sd.op[gk];
+      const gv=Math.round(cv*(g.w[wi]||g.w[0]));const gk='g'+c.c+'_'+gi;const og=_sd.op[gk];
       h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
-        <td style="padding-left:28px"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:3px;border:1px solid var(--BD);margin-right:5px;font-size:9px;color:var(--TX3);transition:.15s;transform:rotate(${og?90:0}deg)">▶</span>${g.n}</td>
-        <td class="r">${_sdF(gv)}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r">${_sdVs(SD_VS[(ri+gi+1)%8])}</td></tr>`;
+        <td style="padding-left:22px">${_xa(og)}${g.n}</td>
+        <td class="r">${_sdF(gv)}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r"></td></tr>`;
       if(og) g.it.forEach((it,ii)=>{
         const iv=Math.round(gv*(it.w[wi]||it.w[0]));
         h+=`<tr style="background:var(--bg);font-size:12px">
-          <td style="padding-left:52px"><span class="mono">${it.c}</span> — ${it.n}</td>
-          <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,gv)}</td><td class="r">${_sdVs(SD_VS[(ri+gi+ii+2)%8])}</td></tr>`;
+          <td style="padding-left:44px"><span class="mono">${it.c}</span> — ${it.n}</td>
+          <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,gv)}</td><td class="r"></td></tr>`;
       });
     });
   });
@@ -1470,78 +1824,137 @@ function sdCust(){
 }
 
 function sdProd(){
-  const d=_sdD(),T=d.t,wi=_sdWI();
+  const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
+  const hHdr=`<div class="tw" style="margin-top:8px"><table>
+    <thead><tr>
+      <th style="width:42%">กลุ่มสินค้า / สินค้า / ประเภทลูกค้า / ลูกค้า</th>
+      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
+      <th class="r" style="width:110px">สัดส่วน</th><th class="r">vs</th>
+    </tr></thead><tbody>`;
   const q=(_sd.q||'').toLowerCase();
+
+  if(_sdApi.loaded){
+    const T=_sdApi.total||1;
+    let prods=[..._sdApi.prods];
+    if(q) prods=prods.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)));
+    if(_sd.sort.col==='val') prods.sort((a,b)=>_sd.sort.dir*(b._tot-a._tot));
+    let h=hHdr;
+    prods.forEach(p=>{
+      const ok='p'+p.n;const oo=_sd.op[ok];
+      h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
+        <td>${_xa(oo)}<strong>${p.n}</strong></td>
+        <td class="r"><strong>${_sdF(p._tot)}</strong></td><td class="r">${_sdBar(p._tot,T)}</td><td class="r">—</td></tr>`;
+      if(oo) p.it.forEach(it=>{
+        const ik='pi'+it.c;const oi=_sd.op[ik];
+        h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">
+          <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
+          <td class="r">${_sdF(it._tot)}</td><td class="r">${_sdBar(it._tot,p._tot)}</td><td class="r">—</td></tr>`;
+        if(oi) it.custs.forEach(ty=>{
+          const tyk='pit'+it.c+'_'+ty.n;const ot=_sd.op[tyk];
+          h+=`<tr onclick="sdTogOp('${tyk}')" style="cursor:pointer;background:var(--LN)">
+            <td style="padding-left:44px;font-size:12px">${_xa(ot)}<span class="badge bbl" style="font-size:10px">${ty.n}</span></td>
+            <td class="r" style="font-size:12px">${_sdF(ty._tot)}</td><td class="r">${_sdBar(ty._tot,it._tot)}</td><td class="r">—</td></tr>`;
+          if(ot) ty.cs.forEach(cu=>{
+            h+=`<tr style="background:var(--bg);font-size:12px">
+              <td style="padding-left:64px"><span class="badge bbgr" style="font-size:10px">${cu.c}</span> ${cu.n}</td>
+              <td class="r">${_sdF(cu._tot)}</td><td class="r">${_sdBar(cu._tot,ty._tot)}</td><td class="r">—</td></tr>`;
+          });
+        });
+      });
+    });
+    document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
+    return;
+  }
+  // ─── Mock fallback ───
+  const d=_sdD(),T=d.t,wi=_sdWI();
   const base=q?SD_PRODS.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q))):SD_PRODS;
   const prods=base.map(p=>({...p,_pv:Math.round(T*p.w)}));
   if(_sd.sort.col==='val') prods.sort((a,b)=>_sd.sort.dir*(b._pv-a._pv));
-  else if(_sd.sort.col==='vs') prods.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
-  const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
-  const sDv=_sd.sort.col==='vs'?(_sd.sort.dir>0?'▼':'▲'):'';
-  let h=`<div class="tw" style="margin-top:8px"><table>
-    <thead><tr>
-      <th style="width:40%">กลุ่มสินค้า / สินค้า / กลุ่มลูกค้า / ลูกค้า</th>
-      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
-      <th class="r" style="width:110px">สัดส่วน</th>
-      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('vs')">vs เดือนก่อน ${sDv}</th>
-    </tr></thead><tbody>`;
+  let h=hHdr;
   prods.forEach(p=>{
-    const pv=p._pv;
-    const ok='p'+p.n;const oo=_sd.op[ok];
+    const pv=p._pv;const ok='p'+p.n;const oo=_sd.op[ok];
     h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
       <td>${_xa(oo)}<strong>${p.n}</strong></td>
       <td class="r"><strong>${_sdF(pv)}</strong></td><td class="r">${_sdBar(pv,T)}</td><td class="r">${_sdVs(p.vs)}</td></tr>`;
     if(oo) p.it.forEach(it=>{
-      const iv=Math.round(pv*it.w);
-      const ik='pi'+it.c;const oi=_sd.op[ik];
+      const iv=Math.round(pv*it.w);const ik='pi'+it.c;const oi=_sd.op[ik];
       h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">
         <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
         <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,pv)}</td><td class="r">${_sdVs(it.vs)}</td></tr>`;
-      if(oi){
-        const byGrp=_custsByItemGrouped(it.c,T,wi);
-        const grpEntries=Object.entries(byGrp);
-        if(!grpEntries.length){
-          h+=`<tr style="background:var(--bg);font-size:12px"><td style="padding-left:44px;color:var(--TX3)">— ไม่มีข้อมูลลูกค้า</td><td colspan="3"></td></tr>`;
-        } else {
-          grpEntries.forEach(([grpName,gd])=>{
-            const gk='pig'+it.c+'_'+grpName;const og=_sd.op[gk];
-            h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--LN)">
-              <td style="padding-left:44px;font-size:12px">${_xa(og)}<span class="badge" style="background:var(--LBL);color:var(--BL);font-size:10px">${grpName}</span></td>
-              <td class="r" style="font-size:12px">${_sdF(gd.v)}</td><td class="r">${_sdBar(gd.v,iv)}</td><td class="r"></td></tr>`;
-            if(og) gd.cs.forEach(cu=>{
-              h+=`<tr style="background:var(--bg);font-size:12px">
-                <td style="padding-left:64px;color:var(--TX2)">${cu.n}</td>
-                <td class="r">${_sdF(cu.v)}</td><td class="r">${_sdBar(cu.v,gd.v)}</td><td class="r"></td></tr>`;
-            });
-          });
-        }
-      }
+      if(oi){const byGrp=_custsByItemGrouped(it.c,T,wi);Object.entries(byGrp).forEach(([gn,gd])=>{
+        const gk='pig'+it.c+'_'+gn;const og=_sd.op[gk];
+        h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--LN)">
+          <td style="padding-left:44px;font-size:12px">${_xa(og)}<span class="badge bbl" style="font-size:10px">${gn}</span></td>
+          <td class="r" style="font-size:12px">${_sdF(gd.v)}</td><td class="r">${_sdBar(gd.v,iv)}</td><td class="r"></td></tr>`;
+        if(og) gd.cs.forEach(cu=>{
+          h+=`<tr style="background:var(--bg);font-size:12px"><td style="padding-left:64px">${cu.n}</td>
+            <td class="r">${_sdF(cu.v)}</td><td class="r">${_sdBar(cu.v,gd.v)}</td><td class="r"></td></tr>`;
+        });
+      });}
     });
   });
   document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
 }
 
 function sdSlm(){
-  const d=_sdD(),T=d.t,wi=_sdWI();
   const q=(_sd.q||'').toLowerCase();
   const sf=_sd.slmF||'';
-  const filtered=SD_SALES.filter(s=>(!q||(s.n.toLowerCase().includes(q)||s.c.toLowerCase().includes(q)))&&(!sf||s.c===sf));
-  const sales=filtered.map(s=>{
-    const myCusts=salesCustomers().filter(c=>c.slm===s.c);
-    const sv=myCusts.length?myCusts.reduce((a,c)=>a+Math.round(T*(c.w[wi]||c.w[0])),0):Math.round(T*s.w);
-    return{...s,_sv:sv,_custs:myCusts};
-  });
-  if(_sd.sort.col==='val') sales.sort((a,b)=>_sd.sort.dir*(b._sv-a._sv));
-  else if(_sd.sort.col==='vs') sales.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
   const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
-  const sDv=_sd.sort.col==='vs'?(_sd.sort.dir>0?'▼':'▲'):'';
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
-      <th style="width:35%">เซลส์ / กลุ่มลูกค้า / ลูกค้า / กลุ่มสินค้า / สินค้า</th>
+      <th style="width:35%">เซลส์ / ประเภทลูกค้า / ลูกค้า / กลุ่มสินค้า / สินค้า</th>
       <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
-      <th class="r">เป้า</th><th class="r">% บรรลุ</th>
-      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('vs')">vs เดือนก่อน ${sDv}</th>
+      <th class="r">เป้า</th><th class="r">% บรรลุ</th><th class="r">vs</th>
     </tr></thead><tbody>`;
+
+  if(_sdApi.loaded){
+    let slms=[..._sdApi.slms];
+    if(q) slms=slms.filter(s=>s.name.toLowerCase().includes(q)||s.code.toLowerCase().includes(q));
+    if(sf) slms=slms.filter(s=>s.code===sf);
+    if(_sd.sort.col==='val') slms.sort((a,b)=>_sd.sort.dir*(b._tot-a._tot));
+    const T=_sdApi.total||1;
+    slms.forEach(s=>{
+      const sk='s'+s.code;const os=_sd.op[sk];
+      h+=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer">
+        <td>${_xa(os)}<strong>${s.name}</strong> <span class="badge bbgr" style="font-size:10px">${s.code}</span></td>
+        <td class="r"><strong>${_sdF(s._tot)}</strong></td>
+        <td class="r" style="color:var(--TX3)">—</td><td class="r">—</td><td class="r">—</td></tr>`;
+      if(os){
+        const grpMap={};
+        s.custs.forEach(c=>{const g=c.grp||'อื่นๆ';if(!grpMap[g])grpMap[g]=[];grpMap[g].push(c);});
+        Object.entries(grpMap).forEach(([gn,custs])=>{
+          const gv=custs.reduce((a,c)=>a+c._tot,0);
+          const gk='sg'+s.code+'_'+gn;const og=_sd.op[gk];
+          h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
+            <td style="padding-left:22px;font-size:12px">${_xa(og)}<span class="badge bbl" style="font-size:10px">${gn}</span></td>
+            <td class="r" style="font-size:12px">${_sdF(gv)}</td>
+            <td class="r"></td><td class="r">${_sdBar(gv,s._tot)}</td><td class="r"></td></tr>`;
+          if(og) custs.forEach(c=>{
+            const ck='sc'+s.code+'_'+c.c;const oc=_sd.op[ck];
+            h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--bg)">
+              <td style="padding-left:42px;font-size:12px">${_xa(oc)}<span class="badge bbgr" style="font-size:10px">${c.c}</span> ${c.n}</td>
+              <td class="r" style="font-size:12px">${_sdF(c._tot)}</td>
+              <td class="r"></td><td class="r">${_sdBar(c._tot,gv)}</td><td class="r"></td></tr>`;
+            if(oc) c.g.forEach((g,gi)=>{
+              const pgk='spg'+s.code+'_'+c.c+'_'+gi;const opg=_sd.op[pgk];
+              h+=`<tr onclick="sdTogOp('${pgk}')" style="cursor:pointer;background:var(--bg2);font-size:12px">
+                <td style="padding-left:62px">${_xa(opg)}${g.n}</td>
+                <td class="r">${_sdF(g._tot)}</td><td class="r"></td><td class="r">${_sdBar(g._tot,c._tot)}</td><td class="r"></td></tr>`;
+              if(opg) g.it.forEach(it=>{
+                h+=`<tr style="background:var(--bg);font-size:12px">
+                  <td style="padding-left:80px"><span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
+                  <td class="r">${_sdF(it._tot)}</td><td class="r"></td><td class="r">${_sdBar(it._tot,g._tot)}</td><td class="r"></td></tr>`;
+              });
+            });
+          });
+        });
+      }
+    });
+    document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
+    return;
+  }
+  // ─── Mock fallback ───
+  const d=_sdD(),T=d.t,wi=_sdWI();
   sales.forEach(s=>{
     const sv=s._sv;
     const tgt=_sd.pt==='week'?Math.round(s.tgt/4):s.tgt;
@@ -1599,18 +2012,35 @@ function sdSlm(){
 
 function sdSetPT(t){
   _sd.pt=t;
-  ['m','w'].forEach(x=>{const b=document.getElementById('sd-pt-'+x);if(b){b.style.background='';b.style.color='';b.style.borderColor='';b.style.fontWeight='';}});
-  const active=document.getElementById('sd-pt-'+(t==='month'?'m':'w'));
+  ['m','w','y'].forEach(x=>{const b=document.getElementById('sd-pt-'+x);if(b){b.style.background='';b.style.color='';b.style.borderColor='';b.style.fontWeight='';}});
+  const idMap={month:'m',week:'w',year:'y'};
+  const active=document.getElementById('sd-pt-'+(idMap[t]||'m'));
   if(active){active.style.background='var(--N)';active.style.color='#fff';active.style.borderColor='var(--N)';active.style.fontWeight='600';}
   if(t==='week') _sd.cw=1;
-  sdRender();
+  _sdApi.loaded=false;
+  if(t==='year') sdLoadYear(); else sdLoad();
 }
 function sdNav(d){
-  if(_sd.pt==='month'){_sd.cm=(_sd.cm+d+12)%12;}
-  else{_sd.cw+=d;if(_sd.cw<1){_sd.cm=(_sd.cm-1+12)%12;_sd.cw=4;}else if(_sd.cw>4){_sd.cm=(_sd.cm+1)%12;_sd.cw=1;}}
-  sdRender();
+  if(_sd.pt==='year'){
+    _sd.cy_y+=d;
+  } else if(_sd.pt==='month'){
+    _sd.cm+=d;
+    if(_sd.cm<0){_sd.cm=11;_sd.cy--;}
+    else if(_sd.cm>11){_sd.cm=0;_sd.cy++;}
+  } else {
+    _sd.cw+=d;
+    if(_sd.cw<1){_sd.cm--;if(_sd.cm<0){_sd.cm=11;_sd.cy--;}_sd.cw=4;}
+    else if(_sd.cw>4){_sd.cm++;if(_sd.cm>11){_sd.cm=0;_sd.cy++;}_sd.cw=1;}
+  }
+  _sdApi.loaded=false;
+  if(_sd.pt==='year') sdLoadYear(); else sdLoad();
 }
-function sdGoNow(){_sd.cm=4;_sd.cy=2569;_sd.cw=1;sdRender();}
+function sdGoNow(){
+  const now=new Date();
+  _sd.cm=now.getMonth();_sd.cy=now.getFullYear()+543;_sd.cy_y=now.getFullYear()+543;_sd.cw=1;
+  _sdApi.loaded=false;
+  if(_sd.pt==='year') sdLoadYear(); else sdLoad();
+}
 function sdTab(el,t){
   document.querySelectorAll('#sd-root .tab').forEach(e=>e.classList.remove('act'));
   el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.slmF='';_sd.sort={col:'val',dir:1};
@@ -1624,6 +2054,7 @@ function sdTogView(){
   _sd.op={};sdRender();
 }
 function sdSort(col){if(_sd.sort.col===col)_sd.sort.dir*=-1;else{_sd.sort.col=col;_sd.sort.dir=-1;}sdRender();}
+function sdSetYear(year){_sd.cy=parseInt(year)||_sd.cy;sdRender();}
 function sdSetQ(v){_sd.q=v;sdRender();}
 function sdClear(){
   _sd.q='';_sd.slmF='';
@@ -1724,27 +2155,31 @@ function handleFcPaste(e){
   pv.innerHTML=`<div class="al als">พบ ${imp.length} รายการ <button class="btn btn-sm btn-p" onclick="cfmFCPaste()">นำเข้าทั้งหมด</button></div>`;
   window._fcp=imp;
 }
-function cfmFCPaste(){const arr=window._fcp||[];const fc=DB.get('forecasts')||[];arr.forEach(x=>fc.push(x));DB.set('forecasts',fc);audit('PASTE_FC','forecast',{count:arr.length});document.getElementById('fc-pv').innerHTML=`<div class="al als">นำเข้าสำเร็จ ${arr.length} รายการ</div>`;fcT();}
-function showFcModal(){
-  openMod(`<div class="mh"><div class="mt2">เพิ่ม Forecast</div><span class="mx" onclick="closeM()">✕</span></div>
-  <div class="fg">
-    <div class="field"><label>รหัสสินค้า</label><select id="f-sku">${SKUS_MASTER.map(s=>`<option value="${s.code}">${s.code} — ${s.name.substring(0,28)}</option>`).join('')}</select></div>
-    <div class="field"><label>จำนวน (กก.)</label><input type="number" id="f-qty" min="1"></div>
-    <div class="field"><label>วันที่ลูกค้าต้องการ</label><input type="date" id="f-date"></div>
-    <div class="field"><label>รหัสลูกค้า</label><input type="text" id="f-cust"></div>
-    <div class="field"><label>หมายเหตุ</label><input type="text" id="f-note"></div>
-  </div>
-  <div style="display:flex;gap:8px;justify-content:flex-end">
-    <button class="btn" onclick="closeM()">ยกเลิก</button>
-    <button class="btn btn-p" onclick="saveFC()">บันทึก</button>
-  </div>`);
-}
-function saveFC(){
-  const sku=document.getElementById('f-sku').value,qty=parseFloat(document.getElementById('f-qty').value)||0,delivDate=document.getElementById('f-date').value;
-  if(!sku||!qty||!delivDate){alert('กรุณากรอกข้อมูลให้ครบ');return;}
-  const fc=DB.get('forecasts')||[];
-  fc.push({id:genId('FC'),by:UID,custCode:document.getElementById('f-cust').value,sku,qty,delivDate,note:document.getElementById('f-note').value,approved:false,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});
-  DB.set('forecasts',fc);audit('ADD_FC','forecast',{sku,qty});closeM();fcT();
+  const qty = parseFloat(document.getElementById('f-qty').value) || 0;
+  const delivDate = document.getElementById('f-date').value;
+  const rawCust = (document.getElementById('f-cust').value || '').trim();
+  if(!sku || !qty || !delivDate){alert('กรุณากรอกข้อมูลให้ครบ');return;}
+  const custCode = rawCust.includes('—') ? rawCust.split('—')[0].trim() : rawCust;
+  const fc = {id: genId('FC'), by: UID, custCode, sku, qty, delivDate, note: document.getElementById('f-note').value.trim(), approved: false, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString()};
+  let ok = false;
+  if (SB?.addForecast) {
+    const res = await SB.addForecast(fc);
+    ok = !res?.error;
+  }
+  if (!ok) {
+    const arr = DB.get('forecasts')||[];
+    arr.push(fc);
+    DB.set('forecasts',arr);
+    ok = true;
+  }
+  if (ok) {
+    await SB?.audit?.('ADD_FC', 'forecast', {sku,qty});
+    closeM();
+    toast('เพิ่ม Forecast แล้ว');
+    pgForecast();
+  } else {
+    alert('เกิดข้อผิดพลาดในการบันทึก กรุณาลองใหม่');
+  }
 }
 function expFC(){
   const fc=DB.get('forecasts')||[];
@@ -2315,7 +2750,8 @@ function renderUserTbl(){
   const users=DB.get('users')||[];
   document.getElementById('user-tbl-body').innerHTML=users.map((u,i)=>`<tr>
     <td><b class="mono">${u.uid}</b></td><td>${u.name}</td>
-    <td><span class="badge ${{manager:'bba',planning:'bbl',warehouse:'bbg',sales:'bbp'}[u.role]||'bbgr'}">${u.role}</span></td>
+    <td>${u.department||'—'}</td>
+    <td><span class="badge ${{manager:'bba',planning:'bbl',warehouse:'bbg',sales:'bbp',superadmin:'bbp',user:'bbl'}[u.role]||'bbgr'}">${u.role}</span></td>
     <td class="mono" style="font-size:12px">${u.slm_id||'—'}</td>
     <td style="font-size:12px">${u.email||'—'}</td>
     <td>${u.active!==false?'<span class="badge bbg">Active</span>':'<span class="badge bbgr">Inactive</span>'}</td>
@@ -2332,7 +2768,8 @@ function showAddUser(){
   <div class="fg">
     <div class="field"><label>รหัสพนักงาน (UID)</label><input type="text" id="u-uid" placeholder="เช่น 210"></div>
     <div class="field"><label>ชื่อ-นามสกุล</label><input type="text" id="u-name"></div>
-    <div class="field"><label>Role</label><select id="u-role"><option value="sales">Sales</option><option value="planning">Planning</option><option value="warehouse">Warehouse</option><option value="manager">Manager</option><option value="superadmin">Super Admin</option></select></div>
+    <div class="field"><label>แผนก</label><input type="text" id="u-dept" placeholder="เช่น Sales / Planning / Warehouse"></div>
+    <div class="field"><label>Role</label><select id="u-role"><option value="user">User</option><option value="manager">Manager</option><option value="superadmin">Super Admin</option></select></div>
     <div class="field"><label>SLM ID (สำหรับ Sales)</label><input type="text" id="u-slm" placeholder="เช่น 210"></div>
     <div class="field"><label>รหัสผ่าน</label><input type="password" id="u-pwd" value="1234"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email"></div>
@@ -2348,7 +2785,8 @@ function showEditUser(i){
   <div class="fg">
     <div class="field"><label>รหัสพนักงาน</label><input type="text" id="u-uid" value="${u.uid}" ${u.uid==='MGR01'?'readonly':''}></div>
     <div class="field"><label>ชื่อ-นามสกุล</label><input type="text" id="u-name" value="${u.name}"></div>
-    <div class="field"><label>Role</label><select id="u-role"><option value="sales" ${u.role==='sales'?'selected':''}>Sales</option><option value="planning" ${u.role==='planning'?'selected':''}>Planning</option><option value="warehouse" ${u.role==='warehouse'?'selected':''}>Warehouse</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option><option value="superadmin" ${u.role==='superadmin'?'selected':''}>Super Admin</option></select></div>
+    <div class="field"><label>แผนก</label><input type="text" id="u-dept" value="${u.department||''}"></div>
+    <div class="field"><label>Role</label><select id="u-role"><option value="user" ${u.role==='user'?'selected':''}>User</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option><option value="superadmin" ${u.role==='superadmin'?'selected':''}>Super Admin</option></select></div>
     <div class="field"><label>SLM ID</label><input type="text" id="u-slm" value="${u.slm_id||''}"></div>
     <div class="field"><label>รหัสผ่านใหม่ (ว่าง=ไม่เปลี่ยน)</label><input type="password" id="u-pwd" placeholder="(ว่าง=ไม่เปลี่ยน)"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email" value="${u.email||''}"></div>
@@ -2361,6 +2799,7 @@ function showEditUser(i){
 function saveUser(idx){
   const uid=document.getElementById('u-uid').value.trim();
   const name=document.getElementById('u-name').value.trim();
+  const department=document.getElementById('u-dept').value.trim();
   const role=document.getElementById('u-role').value;
   const slm=document.getElementById('u-slm').value.trim();
   const pwd=document.getElementById('u-pwd').value;
@@ -2369,14 +2808,14 @@ function saveUser(idx){
   const users=DB.get('users')||[];
   if(idx===-1){
     if(users.find(u=>u.uid===uid)){alert('UID นี้มีอยู่แล้ว');return;}
-    users.push({uid,name,role,slm_id:slm||undefined,pwd:pwd||'1234',email,active:true,created:today(),by:UID});
-    audit('ADD_USER',uid,{role});
+    users.push({uid,name,department:department||undefined,role,slm_id:slm||undefined,pwd:pwd||'1234',email,active:true,created:today(),by:UID});
+    audit('ADD_USER',uid,{role,department});
   } else {
     const u=users[idx];if(!u)return;
-    u.uid=uid;u.name=name;u.role=role;u.slm_id=slm||undefined;u.email=email;
+    u.uid=uid;u.name=name;u.department=department||undefined;u.role=role;u.slm_id=slm||undefined;u.email=email;
     if(pwd) u.pwd=pwd;
     u.edited_by=UID;u.edited_at=new Date().toISOString();
-    audit('EDIT_USER',uid,{role});
+    audit('EDIT_USER',uid,{role,department});
   }
   DB.set('users',users);closeM();renderUserTbl();toast('บันทึกผู้ใช้ '+uid+' สำเร็จ');
 }
@@ -2400,9 +2839,6 @@ const CR_DOC_SLOTS=[
   {id:'tax-cert', group:'main',    label:'ทะเบียนร้าน / หนังสือรับรองบริษัท', req:true,  hint:'อายุไม่เกิน 6 เดือน',               maxFiles:2},
   {id:'vat-20',   group:'main',    label:'ใบทะเบียน VAT (ภ.พ.20)',            req:false, hint:'สำหรับกิจการจด VAT',                 maxFiles:1},
   {id:'map-doc',  group:'main',    label:'แผนที่ร้านค้า / สถานที่จัดส่ง',    req:false, hint:'รูปแผนที่หรือ screenshot',            maxFiles:3},
-  {id:'bill-orig',group:'billing', label:'ต้นฉบับบิลเสร็จรับเงิน',            req:false, hint:'ตัวอย่างบิลที่ใช้',                  maxFiles:5},
-  {id:'bill-taxinv',group:'billing',label:'ต้นฉบับใบกำกับภาษี',               req:false, hint:'ใบกำกับประกอบการวางบิล',              maxFiles:5},
-  {id:'bill-form',group:'billing', label:'แบบฟอร์มวางบิลของบริษัท/ร้านค้า',  req:false, hint:'ถ้าลูกค้ามีแบบฟอร์มเฉพาะ',           maxFiles:2},
   {id:'shop-photo',group:'other',  label:'รูปถ่ายหน้าร้าน / สถานที่',        req:true,  hint:'อย่างน้อย 1 รูป',                    maxFiles:10},
   {id:'other-doc',group:'other',   label:'เอกสารอื่นๆ',                       req:false, hint:'ระบุชื่อในหมายเหตุ',                  maxFiles:10},
 ];
@@ -2423,13 +2859,16 @@ function _crInitIfNeeded(){
 function _crSave(){
   const flds=['cr-shopname','cr-contact','cr-position','cr-phone','cr-email','cr-taxid','cr-branch','cr-addr','cr-zip',
     'cr-delplace','cr-receiver','cr-delphone','cr-deladdr','cr-route-bkk','cr-route-upc',
-    'cr-disc','cr-crdays','cr-billdate','cr-detail','cr-cashday','cr-creditday','cr-sign-sales','cr-sign-mgr'];
+    'cr-disc','cr-crdays','cr-billdate','cr-detail','cr-cashday','cr-creditday','cr-sign-sales','cr-sign-mgr','cr-final-note',
+    'cr-inv-email-addr','cr-inv-post-addr','cr-inv-other-docs'];
   flds.forEach(id=>{const e=document.getElementById(id);if(e)_cr.data[id]=e.value;});
   const cbs=['cr-c-new','cr-c-branch','cr-c-contact','cr-c-cash','cr-c-credit',
     'cr-st-food','cr-st-bakery','cr-st-hotel','cr-st-hyper','cr-st-agent','cr-st-other',
     'cr-tr-bkk','cr-tr-upc','cr-del-near','cr-del-far','cr-del-box','cr-del-dry',
     'cr-pr-c','cr-pr-d','cr-pr-e','cr-pr-f','cr-pr-g','cr-pr-z','cr-pr-special','cr-pr-disc',
-    'cr-bill-tax','cr-bill-cash','cr-pay-cod','cr-pay-chq','cr-pay-prepay','cr-inv-none','cr-inv-man','cr-inv-fax'];
+    'cr-bill-tax','cr-bill-cash','cr-pay-cod','cr-pay-chq','cr-pay-prepay','cr-inv-none','cr-inv-man','cr-inv-fax',
+    'cr-inv-email','cr-inv-post',
+    'cr-doc-receipt','cr-doc-taxinv','cr-doc-billform','cr-doc-po','cr-doc-other'];
   cbs.forEach(id=>{const e=document.getElementById(id);if(e)_cr.data[id]=e.checked;});
   document.querySelectorAll('[name="cr-purpose"]').forEach(e=>{if(e.checked)_cr.data['cr-purpose']=e.value;});
   const sn=document.querySelectorAll('[id^="cr-snote-"]');
@@ -2580,8 +3019,9 @@ function crSec2(){return`<div class="card">
   <button class="btn btn-g" style="flex:1;padding:10px;justify-content:center" onclick="crNext()">ถัดไป →</button>
 </div>`;}
 
-function crSec3(){return`<div class="card">
-  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">💰 เงื่อนไขราคาและบิล</div>
+function crSec3(){return`
+<div class="card">
+  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">💰 เงื่อนไขราคา</div>
   <div class="cr-cb">
     <label class="cr-cbi"><input type="checkbox" id="cr-pr-c" ${_crCk('cr-pr-c')}> ราคา C</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-pr-d" ${_crCk('cr-pr-d')}> ราคา D</label>
@@ -2593,27 +3033,66 @@ function crSec3(){return`<div class="card">
     <label class="cr-cbi"><input type="checkbox" id="cr-pr-disc" ${_crCk('cr-pr-disc')}> ส่วนลดพิเศษ</label>
   </div>
   <div class="field" style="margin-top:8px"><label>ส่วนลดพิเศษ (%)</label><input type="number" id="cr-disc" placeholder="0.00" min="0" max="100" step="0.01" value="${_crV('cr-disc')}"></div>
-  <hr style="border:none;border-top:1px solid var(--BD);margin:10px 0">
+  <hr style="border:none;border-top:1px solid var(--BD);margin:12px 0">
+  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px">💳 เครดิตและชำระเงิน</div>
   <div class="cr-cb">
     <label class="cr-cbi"><input type="checkbox" id="cr-bill-tax" ${_crCk('cr-bill-tax')}> บิลกำกับ</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-bill-cash" ${_crCk('cr-bill-cash')}> บิลเงินสด</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-pay-cod" ${_crCk('cr-pay-cod')}> รับเงินสดพร้อมส่ง</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-pay-chq" ${_crCk('cr-pay-chq')}> รับเช็คพร้อมส่ง</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-pay-prepay" ${_crCk('cr-pay-prepay')}> โอนก่อนส่ง</label>
-    <label class="cr-cbi"><input type="checkbox" id="cr-inv-none" ${_crCk('cr-inv-none')}> ไม่วางบิล</label>
-    <label class="cr-cbi"><input type="checkbox" id="cr-inv-man" ${_crCk('cr-inv-man')}> แมสเซนเจอร์</label>
-    <label class="cr-cbi"><input type="checkbox" id="cr-inv-fax" ${_crCk('cr-inv-fax')}> แฟกซ์</label>
   </div>
   <div class="cr-r2" style="margin-top:8px">
     <div class="field" style="margin-bottom:0"><label>เครดิต (วัน)</label><input type="number" id="cr-crdays" placeholder="30" value="${_crV('cr-crdays')}"></div>
     <div class="field" style="margin-bottom:0"><label>วางบิลวันที่</label><input type="text" id="cr-billdate" placeholder="เช่น 25 ของเดือน" value="${_crV('cr-billdate')}"></div>
   </div>
 </div>
+
+<div class="card">
+  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📨 การวางบิล</div>
+  <div style="font-size:12px;color:var(--TX2);margin-bottom:8px">ช่องทางการวางบิล (เลือกได้หลายช่องทาง)</div>
+  <div class="cr-cb" style="margin-bottom:10px">
+    <label class="cr-cbi"><input type="checkbox" id="cr-inv-none" ${_crCk('cr-inv-none')}> ไม่วางบิล</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-inv-man" ${_crCk('cr-inv-man')}> แมสเซนเจอร์</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-inv-fax" ${_crCk('cr-inv-fax')}> แฟกซ์</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-inv-email" ${_crCk('cr-inv-email')} onchange="crTogBillingField()"> อีเมล์</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-inv-post" ${_crCk('cr-inv-post')} onchange="crTogBillingField()"> ไปรษณีย์</label>
+  </div>
+  <div id="cr-email-row" style="display:${_crCk('cr-inv-email')?'block':'none'}">
+    <div class="field" style="margin-bottom:8px"><label>อีเมล์สำหรับวางบิล</label><input type="email" id="cr-inv-email-addr" placeholder="billing@example.com" value="${_crV('cr-inv-email-addr')}"></div>
+  </div>
+  <div id="cr-post-row" style="display:${_crCk('cr-inv-post')?'block':'none'}">
+    <div class="field" style="margin-bottom:8px"><label>ที่อยู่สำหรับส่งทางไปรษณีย์</label><textarea id="cr-inv-post-addr" rows="2" style="width:100%;padding:7px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font);resize:vertical" placeholder="ที่อยู่เต็ม / รหัสไปรษณีย์">${_crV('cr-inv-post-addr')}</textarea></div>
+  </div>
+  <hr style="border:none;border-top:1px solid var(--BD);margin:10px 0">
+  <div style="font-size:12px;font-weight:700;color:var(--TX);margin-bottom:8px">เอกสารประกอบการวางบิล</div>
+  <div class="cr-cb" style="flex-direction:column;gap:5px">
+    <label class="cr-cbi"><input type="checkbox" id="cr-doc-receipt" ${_crCk('cr-doc-receipt')}> ต้นฉบับใบเสร็จรับเงิน</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-doc-taxinv" ${_crCk('cr-doc-taxinv')}> ต้นฉบับใบกำกับภาษี</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-doc-billform" ${_crCk('cr-doc-billform')}> ต้นฉบับแบบฟอร์มใบวางบิลบริษัท/ร้านค้า</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-doc-po" ${_crCk('cr-doc-po')}> ใบ PO สั่งซื้อของลูกค้า</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-doc-other" ${_crCk('cr-doc-other')} onchange="crTogDocOther()"> อื่นๆ โปรดระบุ</label>
+  </div>
+  <div id="cr-doc-other-row" style="display:${_crCk('cr-doc-other')?'block':'none'};margin-top:7px">
+    <div class="field" style="margin-bottom:0"><label>ระบุเอกสารอื่นๆ</label><input type="text" id="cr-inv-other-docs" placeholder="ระบุชื่อเอกสาร" value="${_crV('cr-inv-other-docs')}"></div>
+  </div>
+</div>
+
 <div style="display:flex;gap:7px;margin-top:12px">
   <button class="btn btn-sm" onclick="crBack()" style="padding:10px 16px">← ก่อนหน้า</button>
   <button class="btn btn-g" style="flex:1;padding:10px;justify-content:center" onclick="crNext()">ถัดไป →</button>
 </div>`;}
-
+function crTogBillingField(){
+  const emailOn=document.getElementById('cr-inv-email')?.checked;
+  const postOn=document.getElementById('cr-inv-post')?.checked;
+  const er=document.getElementById('cr-email-row');const pr=document.getElementById('cr-post-row');
+  if(er)er.style.display=emailOn?'block':'none';
+  if(pr)pr.style.display=postOn?'block':'none';
+}
+function crTogDocOther(){
+  const on=document.getElementById('cr-doc-other')?.checked;
+  const r=document.getElementById('cr-doc-other-row');if(r)r.style.display=on?'block':'none';
+}
 function crSec4(){
   const total=CR_DOC_SLOTS.length;
   const filled=CR_DOC_SLOTS.filter(s=>(_cr.slotFiles[s.id]||[]).length>0).length;
@@ -2721,6 +3200,10 @@ function crSec5(){
     <div class="cr-sign"><div class="cr-sign-lbl">ผู้จัดการ</div><input class="cr-sign-inp" id="cr-sign-mgr" placeholder="ชื่อ" value="${_crV('cr-sign-mgr')}"></div>
   </div>
 </div>
+<div class="card">
+  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📝 หมายเหตุอื่นๆ</div>
+  <textarea id="cr-final-note" style="width:100%;background:var(--bg2);border:1px solid var(--BD);border-radius:7px;padding:10px;font-size:13px;color:var(--TX);font-family:var(--font);outline:none;resize:none;min-height:80px" placeholder="ระบุหมายเหตุเพิ่มเติมเกี่ยวกับลูกค้าหรือการอนุมัติ">${_crV('cr-final-note')}</textarea>
+</div>
 <div style="display:flex;gap:7px;margin-top:12px">
   <button class="btn btn-sm" onclick="crBack()" style="padding:10px 16px">← ก่อนหน้า</button>
   <button class="btn btn-g" style="flex:1;padding:10px;justify-content:center" onclick="crOpenApproval()">📤 ส่งอนุมัติ</button>
@@ -2737,6 +3220,7 @@ function crSec6(){
     <div class="cr-sr"><span style="color:var(--TX2)">🏪 ร้านค้า</span><span style="font-weight:600">${d['cr-shopname']||'—'}</span></div>
     <div class="cr-sr"><span style="color:var(--TX2)"># เลขที่เอกสาร</span><span style="font-weight:600">${_cr.docNo}</span></div>
     <div class="cr-sr"><span style="color:var(--TX2)">✅ ผู้อนุมัติ</span><span style="font-weight:600">${names||'—'}</span></div>
+    ${d['cr-final-note']?`<div class="cr-sr"><span style="color:var(--TX2)">📝 หมายเหตุเพิ่มเติม</span><span style="font-weight:600">${esc(d['cr-final-note'])}</span></div>`:''}
   </div>
   <button class="btn btn-g" onclick="crNewForm()" style="margin:0 auto">➕ ลงทะเบียนใหม่</button>
 </div>`;}
@@ -2771,7 +3255,7 @@ function crConfirmApproval(){
   const users=DB.get('users')||[];
   const sub={id:'CR-'+Date.now(),docNo:_cr.docNo,shop:d['cr-shopname']||'(ไม่ระบุ)',sales:UNAME,salesUid:UID,
     phone:d['cr-phone']||'',taxid:d['cr-taxid']||'',crdays:d['cr-crdays']||'',price:priceType,
-    date:ts,note,approvers:_cr.selectedApprovers.map(uid=>{const u=users.find(x=>x.uid===uid)||{};return{uid,name:u.name||uid,role:u.role||'',status:'pending'};}),
+    date:ts,note,finalNote:d['cr-final-note']||'',approvers:_cr.selectedApprovers.map(uid=>{const u=users.find(x=>x.uid===uid)||{};return{uid,name:u.name||uid,role:u.role||'',status:'pending'};}),
     status:'pending',custcode:'',docs:docSnap,ts:Date.now()};
   const subs=DB.get('custreg_subs')||[];subs.push(sub);DB.set('custreg_subs',subs);
   closeM();audit('CUSTREG_SUBMIT',sub.docNo,{shop:sub.shop});toast('ส่งอนุมัติสำเร็จ '+sub.docNo);
@@ -2993,7 +3477,7 @@ function crConfirmWithWorkflow(wfLevels){
   const sub={
     id:'CR-'+Date.now(),docNo:_cr.docNo,shop:d['cr-shopname']||'(ไม่ระบุ)',
     sales:UNAME,salesUid:UID,phone:d['cr-phone']||'',taxid:d['cr-taxid']||'',
-    crdays:d['cr-crdays']||'',price:priceType,date:ts,note:'',
+    crdays:d['cr-crdays']||'',price:priceType,date:ts,note:'',finalNote:d['cr-final-note']||'',
     levels,currentLevel:0,
     // backward compat: flat approvers list = all approvers from all levels
     approvers:levels.flatMap(lv=>lv.approvers),
@@ -3061,6 +3545,7 @@ function renderProdGroups(){
   <div class="frow">
     <input id="pg-new" type="text" placeholder="ชื่อกลุ่มสินค้าใหม่" style="width:180px">
     <button class="btn btn-sm btn-t" onclick="addProductGroup()">+ เพิ่มกลุ่ม</button>
+    <button class="btn btn-sm btn-p" onclick="showGroupImport('prod')">Import Excel</button>
     <button class="btn btn-sm btn-g" onclick="expProductGroups()">Export</button>
   </div>
   <div class="card"><div class="ch"><div class="ct2">Product Groups</div><div style="font-size:11px;color:var(--TX3)">เลือกสินค้าแล้วกดเพิ่มเข้าแต่ละกลุ่ม</div></div>
@@ -3111,6 +3596,7 @@ function renderCustGroups(){
   const sales=DB.get('users')||[];
   document.getElementById('grp-body').innerHTML=`
   <div class="frow">
+    <button class="btn btn-sm btn-p" onclick="showGroupImport('cust')">Import Excel</button>
     <button class="btn btn-sm btn-g" onclick="expCustomerGroups()">Export</button>
     <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / Category แล้วระบบจะบันทึกทันที</span>
   </div>
@@ -3129,6 +3615,55 @@ function renderCustGroups(){
     <datalist id="corp-list">${corps.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
     <datalist id="cat-list">${cats.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
   </div>`;
+}
+function showGroupImport(mode){
+  const title=mode==='prod'?'Import กลุ่มสินค้า':'Import กลุ่มลูกค้า';
+  const hint=mode==='prod'?'Format: ชื่อกลุ่ม\tรหัส SKU':'Format: ชื่อกลุ่ม\tรหัสลูกค้า';
+  openMod(`<div class="mh"><div class="mt2">${title}</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div class="al alw" style="margin-bottom:10px">วางข้อมูลจาก Excel โดยมี 2 คอลัมน์: ชื่อกลุ่ม, รหัส</div>
+    <div class="field"><label>วางข้อมูลที่นี่</label><textarea id="grp-paste" style="width:100%;height:180px;padding:10px;border:1px solid var(--BD);border-radius:10px;font-family:var(--font);font-size:13px" placeholder="${hint}" onpaste="handleGroupPaste(event,'${mode}')"></textarea></div>
+    <div id="grp-pv" style="margin-top:10px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+      <button class="btn" onclick="closeM()">ยกเลิก</button>
+      <button class="btn btn-p" onclick="cfmGroupImport('${mode}')">นำเข้าทั้งหมด</button>
+    </div>`);
+  window._grpImport={mode,items:[]};
+}
+function handleGroupPaste(e,mode){
+  e.preventDefault();
+  const text=e.clipboardData.getData('text').trim();
+  const rows=text.split(/\r?\n/).map(r=>r.split(/\t|;/).map(c=>c.trim()));
+  const items=[];
+  rows.forEach(r=>{
+    if(r.length<2) return;
+    const group=r[0]?.trim();
+    const code=r[1]?.trim();
+    if(group && code) items.push({group,code});
+  });
+  window._grpImport = {mode,items};
+  const pv=document.getElementById('grp-pv');
+  if(!pv) return;
+  if(!items.length){pv.innerHTML='<div class="al alw">ไม่พบข้อมูลที่ใช้ได้</div>';return;}
+  pv.innerHTML=`<div class="al als">พบ ${items.length} รายการ</div><div style="max-height:240px;overflow:auto;border:1px solid var(--BD);border-radius:10px;padding:10px;background:var(--bg2)">${items.slice(0,20).map(i=>`<div>${esc(i.group)} → <span class="mono">${esc(i.code)}</span></div>`).join('')}</div>`;
+}
+function cfmGroupImport(mode){
+  const data=window._grpImport?.items||[];
+  if(!data.length){toast('ยังไม่มีข้อมูลนำเข้า');return;}
+  if(mode==='prod'){
+    const groups=DB.get('product_groups')||{};
+    data.forEach(({group,code})=>{if(!groups[group])groups[group]=[]; if(!groups[group].includes(code)) groups[group].push(code);});
+    saveProductGroups(groups);audit('IMPORT_PRODUCT_GROUPS','product_groups',{count:data.length});
+    toast('นำเข้ากลุ่มสินค้าสำเร็จ '+data.length+' รายการ');
+    closeM(); pgGroupAdmin();
+  } else {
+    const profs=customerProfiles();
+    const rows=allCustomerRows();
+    const knownCodes=new Set(rows.map(c=>c.c));
+    data.forEach(({group,code})=>{if(!knownCodes.has(code)) return; if(!profs[code])profs[code]={}; profs[code].corporate=group; profs[code].edited_by=UID; profs[code].edited_at=new Date().toISOString();});
+    DB.set('customer_profiles',profs);audit('IMPORT_CUSTOMER_GROUPS','customer_profiles',{count:data.length});
+    toast('นำเข้ากลุ่มลูกค้าสำเร็จ '+data.length+' รายการ');
+    closeM(); pgGroupAdmin();
+  }
 }
 function saveCustomerGroup(code,field,val){
   const profs=customerProfiles();if(!profs[code])profs[code]={};
