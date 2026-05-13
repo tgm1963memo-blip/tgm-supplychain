@@ -880,6 +880,7 @@ async function pgPlanStock() {
   // โหลดจาก Supabase view
   const rows = await CACHE.get('stock_planning', () => SB.getStockPlanning());
   window._planRows = rows;
+  const critEl=document.getElementById('ps-crit');if(critEl)critEl.value=_psCrit||'avg3';
   planStkT();
 }
 
@@ -905,10 +906,13 @@ function planStkT() {
 
   // compute benchmark per criterion
   filtered = filtered.map(r => {
-    const a3 = r.avg3_monthly || 0;
+    const hist=ALL_HIST[r.code]?.monthly||{};
+    const vals=Object.entries(hist).sort(([a],[b])=>a.localeCompare(b)).map(([,v])=>Number(v)||0).filter(v=>v>0);
+    const avg=arr=>arr.length?arr.reduce((sum,v)=>sum+v,0)/arr.length:0;
+    const a3 = r.avg3_monthly || avg(vals.slice(-3)) || 0;
     let bench = a3;
-    if (crit === 'avg4')     bench = r.avg4_monthly ?? a3;
-    else if(crit === 'last1') bench = r.last_month ?? a3;
+    if (crit === 'avg4')     bench = r.avg4_monthly ?? avg(vals.slice(-4)) ?? a3;
+    else if(crit === 'last1') bench = r.last_month ?? vals.slice(-1)[0] ?? a3;
     else if(crit === 'prevyear') bench = r.prevyear_monthly ?? a3;
     else if(crit === 'weekly') bench = a3 / 4;
     const daysComp = bench > 0 ? Math.round((r.stock_qty || 0) / bench * (crit==='weekly'?7:30)) : 9999;
@@ -1268,8 +1272,15 @@ function doLogout(){audit('LOGOUT','system',{});localStorage.removeItem('tgm_ses
 function buildSB(){
   // Merge RNAV defaults with stored role-permission overrides
   const customPerms=DB.get('nav_perms')||{};
+  const deptPerms=DB.get('nav_perms_deptpos')||{};
+  const me=(DB.get('users')||[]).find(u=>u.uid===UID)||{};
+  const dkey=`${me.department||''}|${me.position||''}`;
   let navItems=RNAV[ROLE]||[];
-  if(ROLE!=='superadmin' && customPerms[ROLE]?.pages?.length){
+  if(ROLE!=='superadmin' && deptPerms[dkey]?.pages?.length){
+    const lookup={};
+    Object.values(RNAV).flat().forEach(([id,ico,lbl])=>{if(!lookup[id])lookup[id]=[id,ico,lbl];});
+    navItems=deptPerms[dkey].pages.map(id=>lookup[id]).filter(Boolean);
+  } else if(ROLE!=='superadmin' && customPerms[ROLE]?.pages?.length){
     // Build all-pages lookup from every role's RNAV
     const lookup={};
     Object.values(RNAV).flat().forEach(([id,ico,lbl])=>{if(!lookup[id])lookup[id]=[id,ico,lbl];});
@@ -1413,7 +1424,7 @@ function pgDash(){
     <label>กลุ่มสินค้า:</label>
     <select id="gf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${skuGroupNames().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
     <label>ช่วงเวลา:</label>
-    <select id="pf" onchange="dashCharts()"><option value="4">4 เดือน</option><option value="3">3 เดือน</option><option value="1">เดือนล่าสุด</option></select>
+    <select id="pf" onchange="dashCharts()"><option value="12">Year overview</option><option value="4" selected>4 months</option><option value="3">3 months</option><option value="1">Latest month</option></select>
     <label>กลุ่มลูกค้า:</label>
     <select id="cgf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${[...new Set(salesCustomers().map(c=>c.corp||'อื่นๆ'))].sort().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
   </div>
@@ -1424,6 +1435,10 @@ function pgDash(){
   <div class="cgrid c2">
     <div class="card"><div class="ch"><div class="ct2">Stock vs ขั้นต่ำ</div></div><div class="cbox2"><canvas id="c-stk"></canvas></div></div>
     <div class="card"><div class="ch"><div class="ct2">สถานะ PO</div></div><div class="cbox2"><canvas id="c-po"></canvas></div></div>
+  </div>
+  <div class="cgrid c2">
+    <div class="card"><div class="ch"><div class="ct2">Quantity summary</div></div><div id="dash-qty-tbl"></div></div>
+    <div class="card"><div class="ch"><div class="ct2">Sales value summary</div></div><div id="dash-val-tbl"></div></div>
   </div>`;
   setTimeout(dashCharts,50);
 }
@@ -1436,7 +1451,11 @@ function dashCharts(){
   const po=DB.get('po_log')||[];
   const stk=DB.get('stock')||{};
   const ss=DB.get('sku_settings')||{};
-  const mths=MONTHS.slice(-period);
+  const now=new Date();
+  const baseYear=now.getFullYear();
+  const yearMths=Array.from({length:12},(_,i)=>`${baseYear}-${String(i+1).padStart(2,'0')}`);
+  const srcMths=period>=12?yearMths:MONTHS;
+  const mths=srcMths.slice(-period);
   const mls=mths.map(mL);
   const custSKUs = custGroup ? new Set(salesCustomers()
     .filter(c=>((c.corp||'อื่นๆ')===custGroup))
@@ -1462,7 +1481,22 @@ function dashCharts(){
     overdue:po.filter(p=>skuAllowed(p.sku)&&p.status==='overdue').length,
     matched:po.filter(p=>skuAllowed(p.sku)&&p.status==='matched').length,
   };
-  mkChart('c-po','doughnut',['รอส่ง','เลยกำหนด','Matched'],[{data:[cnt.pending,cnt.overdue,cnt.matched],backgroundColor:['#1553A0','#A32D2D','#0A5940'],borderWidth:0}],{plugins:{legend:{position:'right'}}});
+  mkChart('c-po','doughnut',['Pending','Overdue','Matched'],[{data:[cnt.pending,cnt.overdue,cnt.matched],backgroundColor:['#1553A0','#A32D2D','#0A5940'],borderWidth:0}],{plugins:{legend:{position:'right'}}});
+  dashSummaryTables(mths,actual,fcData,poData);
+}
+function dashSalesValue(m){
+  const api=(_sdApi?.monthly||[]).find(x=>x.ym===m);
+  if(api) return api.total||0;
+  const mm=parseInt(m.substring(5,7),10)-1;
+  return SD_MD[mm]?.t||0;
+}
+function dashSummaryTables(mths,actual,fcData,poData){
+  const qtyEl=document.getElementById('dash-qty-tbl'),valEl=document.getElementById('dash-val-tbl');
+  if(!qtyEl||!valEl)return;
+  const qtyRows=mths.map((m,i)=>({m,actual:actual[i]||0,fc:fcData[i]||0,po:poData[i]||0}));
+  qtyEl.innerHTML=`<div class="tw"><table><thead><tr><th>Period</th><th class="r">Actual qty</th><th class="r">Forecast</th><th class="r">PO Plan</th></tr></thead><tbody>${qtyRows.map(r=>`<tr><td>${mL(r.m)}</td><td class="r">${fmt(r.actual)}</td><td class="r">${fmt(r.fc)}</td><td class="r">${fmt(r.po)}</td></tr>`).join('')}</tbody></table></div>`;
+  const valRows=mths.map(m=>({m,val:dashSalesValue(m)}));
+  valEl.innerHTML=`<div class="tw"><table><thead><tr><th>Period</th><th class="r">Sales value</th></tr></thead><tbody>${valRows.map(r=>`<tr><td>${mL(r.m)}</td><td class="r"><strong>${_sdF(r.val)}</strong></td></tr>`).join('')}</tbody></table></div>`;
 }
 
 // ── MY SALES / SALES DASHBOARD ───────────────────────────────────
@@ -1512,6 +1546,9 @@ let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[
 
 function _sdApiMonth(){const gy=_sd.cy-543;const mm=String(_sd.cm+1).padStart(2,'0');return `${gy}-${mm}`;}
 function _sdApiYear(){return _sd.cy_y-543;}
+function _sdWeekFactor(){return _sd.pt==='week'?((SD_WM[_sd.cw-1]||1)/4):1;}
+function _sdV(v){return Math.round((Number(v)||0)*_sdWeekFactor());}
+function _sdPeriodLabel(){return _sd.pt==='year'?`year_${_sd.cy_y}`:_sd.pt==='week'?`week${_sd.cw}_${SD_MTH[_sd.cm]}_${_sd.cy}`:`${SD_MTH[_sd.cm]}_${_sd.cy}`;}
 
 async function sdLoad(){
   const month=_sdApiMonth();
@@ -1560,22 +1597,28 @@ async function sdLoadYear(){
   const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
   const badge=document.createElement('div');
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
-  badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
+  badge.textContent='Loading yearly sales...';document.body.appendChild(badge);
   try{
     const qs=slmId?`&slm_id=${encodeURIComponent(slmId)}`:'';
-    const [kpiJ,slmJ]=await Promise.all([
+    const months=Array.from({length:12},(_,i)=>`${gy}-${String(i+1).padStart(2,'0')}`);
+    const [kpiJ,slmJ,...sumJs]=await Promise.all([
       fetch(`${API_BASE}/api/sales/monthly-kpi?months=36${qs}`).then(r=>r.json()),
       fetch(`${API_BASE}/api/sales/slm-list`).then(r=>r.json()),
+      ...months.map(m=>fetch(`${API_BASE}/api/sales/summary?month=${m}${qs}`).then(r=>r.json()).catch(()=>({rows:[]}))),
     ]);
     _sdApi.monthly=kpiJ.rows||[];
     _sdApi.slmList=slmJ.rows||[];
     const yearRows=_sdApi.monthly.filter(m=>m.ym.startsWith(String(gy)+'-'));
-    _sdApi.total=yearRows.reduce((s,m)=>s+m.total,0);
-    _sdApi.qty=yearRows.reduce((s,m)=>s+m.qty,0);
-    _sdApi.invoices=yearRows.reduce((s,m)=>s+m.invoices,0);
+    _sdApi.total=yearRows.reduce((sum,m)=>sum+(Number(m.total)||0),0);
+    _sdApi.qty=yearRows.reduce((sum,m)=>sum+(Number(m.qty)||0),0);
+    _sdApi.invoices=yearRows.reduce((sum,m)=>sum+(Number(m.invoices)||0),0);
     const prevYear=_sdApi.monthly.filter(m=>m.ym.startsWith(String(gy-1)+'-'));
-    const prevTotal=prevYear.reduce((s,m)=>s+m.total,0);
+    const prevTotal=prevYear.reduce((sum,m)=>sum+(Number(m.total)||0),0);
     _sdApi.vs=prevTotal?Math.round((_sdApi.total/prevTotal-1)*100):0;
+    const rows=sumJs.flatMap(j=>j.rows||[]);
+    _sdApi.custs=_sdBuildCusts(rows);
+    _sdApi.prods=_sdBuildProds(rows);
+    _sdApi.slms=_sdBuildSlms(rows,_sdApi.slmList);
     _sdApi.loaded=true;
     _sdUpdateSlmDrop();
   }catch(e){_sdApi.loaded=false;console.warn('API offline',e.message);}
@@ -1660,9 +1703,9 @@ function pgMySales(){
   const ptBtn=t=>`<button class="btn btn-sm" id="sd-pt-${t[0]}" onclick="sdSetPT('${t}')" style="${_sd.pt===t?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายเดือน${t==='week'?'สัปดาห์':t==='year'?'ปี':''}</button>`;
   document.getElementById('ct').innerHTML=`<div id="sd-root">
   <div class="frow" style="border-radius:8px;margin-bottom:10px;gap:6px;flex-wrap:wrap">
-    <button class="btn btn-sm" id="sd-pt-m" onclick="sdSetPT('month')" style="${_sd.pt==='month'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายเดือน</button>
-    <button class="btn btn-sm" id="sd-pt-w" onclick="sdSetPT('week')" style="${_sd.pt==='week'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายสัปดาห์</button>
-    <button class="btn btn-sm" id="sd-pt-y" onclick="sdSetPT('year')" style="${_sd.pt==='year'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายปี</button>
+    <button class="btn btn-sm" id="sd-pt-w" onclick="sdSetPT('week')" style="${_sd.pt==='week'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">Week</button>
+    <button class="btn btn-sm" id="sd-pt-m" onclick="sdSetPT('month')" style="${_sd.pt==='month'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">Month</button>
+    <button class="btn btn-sm" id="sd-pt-y" onclick="sdSetPT('year')" style="${_sd.pt==='year'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">Year</button>
     <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <button class="btn btn-sm" onclick="sdNav(-1)">‹</button>
     <span id="sd-lbl" style="min-width:110px;text-align:center;font-size:13px;font-weight:600;color:var(--N);align-self:center"></span>
@@ -1716,7 +1759,7 @@ function sdKPI(){
   const kr=document.getElementById('sd-krow'); if(!kr) return;
   let total,qty,inv,ar,vs,sparks,lbl2;
   if(_sdApi.loaded){
-    total=_sdApi.total;qty=_sdApi.qty;inv=_sdApi.invoices;ar=_sdApi.ar;vs=_sdApi.vs;
+    total=_sdV(_sdApi.total);qty=_sdV(_sdApi.qty);inv=Math.max(1,_sdV(_sdApi.invoices));ar=_sdApi.ar;vs=_sdApi.vs;
     const ms=_sdApi.monthly;
     const maxT=Math.max(...ms.map(m=>m.total),1);
     const curM=_sd.pt==='year'?String(_sdApiYear()):_sdApiMonth();
@@ -1792,21 +1835,21 @@ function sdCust(){
       const otk='ty_'+ty;const oty=_sd.op[otk];
       h+=`<tr onclick="sdTogOp('${otk}')" style="cursor:pointer;background:var(--LN)">
         <td style="font-weight:700">${_xa(oty)}<span class="badge bbl">${ty}</span> <span style="font-size:11px;color:var(--TX3)">${custs2.length} ราย</span></td>
-        <td class="r"><strong>${_sdF(tyTot)}</strong></td><td class="r">${_sdBar(tyTot,T)}</td><td class="r">—</td></tr>`;
+        <td class="r"><strong>${_sdF(_sdV(tyTot))}</strong></td><td class="r">${_sdBar(tyTot,T)}</td><td class="r">—</td></tr>`;
       if(oty) custs2.forEach(c=>{
         const cv=c._tot;const oc=_sd.op['c'+c.c];
         h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:20px">${_xa(oc)}<strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span></td>
-          <td class="r"><strong>${_sdF(cv)}</strong></td><td class="r">${_sdBar(cv,tyTot)}</td><td class="r">—</td></tr>`;
+          <td class="r"><strong>${_sdF(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,tyTot)}</td><td class="r">—</td></tr>`;
         if(oc) c.g.forEach((g,gi)=>{
           const gv=g._tot;const gk='g'+c.c+'_'+gi;const og=_sd.op[gk];
           h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg)">
             <td style="padding-left:40px">${_xa(og)}<span style="font-size:12px">${g.n}</span></td>
-            <td class="r" style="font-size:12px">${_sdF(gv)}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r">—</td></tr>`;
+            <td class="r" style="font-size:12px">${_sdF(_sdV(gv))}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r">—</td></tr>`;
           if(og) g.it.forEach(it=>{
             h+=`<tr style="background:var(--bg2);font-size:12px">
               <td style="padding-left:60px"><span class="mono">${it.c}</span> — ${it.n}</td>
-              <td class="r">${_sdF(it._tot)}</td><td class="r">${_sdBar(it._tot,gv)}</td><td class="r">—</td></tr>`;
+              <td class="r">${_sdF(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,gv)}</td><td class="r">—</td></tr>`;
           });
         });
       });
@@ -1826,12 +1869,12 @@ function sdCust(){
     const cv=c._cv;const oc=_sd.op['c'+c.c];
     h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer">
       <td>${_xa(oc)}<strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span> <span class="badge bbg" style="font-size:10px">${c.ty||''}</span></td>
-      <td class="r"><strong>${_sdF(cv)}</strong></td><td class="r">${_sdBar(cv,T)}</td><td class="r">${_sdVs(SD_VS[ri%8])}</td></tr>`;
+      <td class="r"><strong>${_sdF(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,T)}</td><td class="r">${_sdVs(SD_VS[ri%8])}</td></tr>`;
     if(oc) c.g.forEach((g,gi)=>{
       const gv=Math.round(cv*(g.w[wi]||g.w[0]));const gk='g'+c.c+'_'+gi;const og=_sd.op[gk];
       h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
         <td style="padding-left:22px">${_xa(og)}${g.n}</td>
-        <td class="r">${_sdF(gv)}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r"></td></tr>`;
+        <td class="r">${_sdF(_sdV(gv))}</td><td class="r">${_sdBar(gv,cv)}</td><td class="r"></td></tr>`;
       if(og) g.it.forEach((it,ii)=>{
         const iv=Math.round(gv*(it.w[wi]||it.w[0]));
         h+=`<tr style="background:var(--bg);font-size:12px">
@@ -1863,21 +1906,21 @@ function sdProd(){
       const ok='p'+p.n;const oo=_sd.op[ok];
       h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
         <td>${_xa(oo)}<strong>${p.n}</strong></td>
-        <td class="r"><strong>${_sdF(p._tot)}</strong></td><td class="r">${_sdBar(p._tot,T)}</td><td class="r">—</td></tr>`;
+        <td class="r"><strong>${_sdF(_sdV(p._tot))}</strong></td><td class="r">${_sdBar(p._tot,T)}</td><td class="r">—</td></tr>`;
       if(oo) p.it.forEach(it=>{
         const ik='pi'+it.c;const oi=_sd.op[ik];
         h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
-          <td class="r">${_sdF(it._tot)}</td><td class="r">${_sdBar(it._tot,p._tot)}</td><td class="r">—</td></tr>`;
+          <td class="r">${_sdF(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,p._tot)}</td><td class="r">—</td></tr>`;
         if(oi) it.custs.forEach(ty=>{
           const tyk='pit'+it.c+'_'+ty.n;const ot=_sd.op[tyk];
           h+=`<tr onclick="sdTogOp('${tyk}')" style="cursor:pointer;background:var(--LN)">
             <td style="padding-left:44px;font-size:12px">${_xa(ot)}<span class="badge bbl" style="font-size:10px">${ty.n}</span></td>
-            <td class="r" style="font-size:12px">${_sdF(ty._tot)}</td><td class="r">${_sdBar(ty._tot,it._tot)}</td><td class="r">—</td></tr>`;
+            <td class="r" style="font-size:12px">${_sdF(_sdV(ty._tot))}</td><td class="r">${_sdBar(ty._tot,it._tot)}</td><td class="r">—</td></tr>`;
           if(ot) ty.cs.forEach(cu=>{
             h+=`<tr style="background:var(--bg);font-size:12px">
               <td style="padding-left:64px"><span class="badge bbgr" style="font-size:10px">${cu.c}</span> ${cu.n}</td>
-              <td class="r">${_sdF(cu._tot)}</td><td class="r">${_sdBar(cu._tot,ty._tot)}</td><td class="r">—</td></tr>`;
+              <td class="r">${_sdF(_sdV(cu._tot))}</td><td class="r">${_sdBar(cu._tot,ty._tot)}</td><td class="r">—</td></tr>`;
           });
         });
       });
@@ -1937,7 +1980,7 @@ function sdSlm(){
       const sk='s'+s.code;const os=_sd.op[sk];
       h+=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer">
         <td>${_xa(os)}<strong>${s.name}</strong> <span class="badge bbgr" style="font-size:10px">${s.code}</span></td>
-        <td class="r"><strong>${_sdF(s._tot)}</strong></td>
+        <td class="r"><strong>${_sdF(_sdV(s._tot))}</strong></td>
         <td class="r" style="color:var(--TX3)">—</td><td class="r">—</td><td class="r">—</td></tr>`;
       if(os){
         const grpMap={};
@@ -1947,23 +1990,23 @@ function sdSlm(){
           const gk='sg'+s.code+'_'+gn;const og=_sd.op[gk];
           h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
             <td style="padding-left:22px;font-size:12px">${_xa(og)}<span class="badge bbl" style="font-size:10px">${gn}</span></td>
-            <td class="r" style="font-size:12px">${_sdF(gv)}</td>
+            <td class="r" style="font-size:12px">${_sdF(_sdV(gv))}</td>
             <td class="r"></td><td class="r">${_sdBar(gv,s._tot)}</td><td class="r"></td></tr>`;
           if(og) custs.forEach(c=>{
             const ck='sc'+s.code+'_'+c.c;const oc=_sd.op[ck];
             h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--bg)">
               <td style="padding-left:42px;font-size:12px">${_xa(oc)}<span class="badge bbgr" style="font-size:10px">${c.c}</span> ${c.n}</td>
-              <td class="r" style="font-size:12px">${_sdF(c._tot)}</td>
+              <td class="r" style="font-size:12px">${_sdF(_sdV(c._tot))}</td>
               <td class="r"></td><td class="r">${_sdBar(c._tot,gv)}</td><td class="r"></td></tr>`;
             if(oc) c.g.forEach((g,gi)=>{
               const pgk='spg'+s.code+'_'+c.c+'_'+gi;const opg=_sd.op[pgk];
               h+=`<tr onclick="sdTogOp('${pgk}')" style="cursor:pointer;background:var(--bg2);font-size:12px">
                 <td style="padding-left:62px">${_xa(opg)}${g.n}</td>
-                <td class="r">${_sdF(g._tot)}</td><td class="r"></td><td class="r">${_sdBar(g._tot,c._tot)}</td><td class="r"></td></tr>`;
+                <td class="r">${_sdF(_sdV(g._tot))}</td><td class="r"></td><td class="r">${_sdBar(g._tot,c._tot)}</td><td class="r"></td></tr>`;
               if(opg) g.it.forEach(it=>{
                 h+=`<tr style="background:var(--bg);font-size:12px">
                   <td style="padding-left:80px"><span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
-                  <td class="r">${_sdF(it._tot)}</td><td class="r"></td><td class="r">${_sdBar(it._tot,g._tot)}</td><td class="r"></td></tr>`;
+                  <td class="r">${_sdF(_sdV(it._tot))}</td><td class="r"></td><td class="r">${_sdBar(it._tot,g._tot)}</td><td class="r"></td></tr>`;
               });
             });
           });
@@ -1975,6 +2018,10 @@ function sdSlm(){
   }
   // ─── Mock fallback ───
   const d=_sdD(),T=d.t,wi=_sdWI();
+  const filtered=SD_SALES.filter(s=>(!q||(s.n.toLowerCase().includes(q)||s.c.toLowerCase().includes(q)))&&(!sf||s.c===sf));
+  const sales=filtered.map(s=>({...s,_sv:Math.round(T*s.w),_custs:salesCustomers().filter(c=>c.slm===s.c)}));
+  if(_sd.sort.col==='val') sales.sort((a,b)=>_sd.sort.dir*(b._sv-a._sv));
+  else if(_sd.sort.col==='vs') sales.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
   sales.forEach(s=>{
     const sv=s._sv;
     const tgt=_sd.pt==='week'?Math.round(s.tgt/4):s.tgt;
@@ -1999,14 +2046,14 @@ function sdSlm(){
         const gk='sg'+s.c+'_'+grpName;const og=_sd.op[gk];
         h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:22px;font-size:12px">${_xa(og)}<span class="badge" style="background:var(--LBL);color:var(--BL);font-size:10px">${grpName}</span></td>
-          <td class="r" style="font-size:12px">${_sdF(gv)}</td>
+          <td class="r" style="font-size:12px">${_sdF(_sdV(gv))}</td>
           <td class="r"></td><td class="r" style="font-size:11px;color:var(--TX3)">${_sdBar(gv,sv)}</td><td class="r"></td></tr>`;
         if(og) custs.forEach(c=>{
           const cv=Math.round(T*(c.w[wi]||c.w[0]));
           const ck='sc'+s.c+'_'+c.c;const oc=_sd.op[ck];
           h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--bg)">
             <td style="padding-left:42px;font-size:12px">${_xa(oc)}<span class="badge bbgr" style="font-size:10px">${c.c}</span> <span class="badge ${c.category==='ขายขาด'?'bbg':'bbp'}" style="font-size:10px">${c.category||c.ty}</span> ${c.n}</td>
-            <td class="r" style="font-size:12px">${_sdF(cv)}</td>
+            <td class="r" style="font-size:12px">${_sdF(_sdV(cv))}</td>
             <td class="r"></td><td class="r" style="font-size:11px">${_sdBar(cv,gv)}</td><td class="r"></td></tr>`;
           if(oc) c.g.forEach((g,gi)=>{
             const pgv=Math.round(cv*(g.w[wi]||g.w[0]));
@@ -2441,6 +2488,7 @@ function pgSKUAdmin(){
     <label>กลุ่มสินค้า:</label><select id="gf" onchange="skuAdmT()"><option value="">ทั้งหมด</option>${skuGroupNames().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
     <button class="btn btn-sm btn-t" onclick="showAddSkuModal()">➕ เพิ่มสินค้า</button>
     <button class="btn btn-sm" onclick="showSkuImportModal()">⬆ Import กลับ</button>
+    <button class="btn btn-sm btn-g" onclick="expSkuTemplate()">Template</button>
     <button class="btn btn-sm btn-g" onclick="expSKUAdmin()">Export Excel</button>
   </div>
   <div class="card"><div class="ch"><div class="ct2">ตั้งค่าสินค้า</div><div style="font-size:11px;color:var(--TX3)">คลิกช่องตัวเลขเพื่อแก้ไข → กด Tab/Enter เพื่อบันทึก</div></div><div id="skua-tbl"></div></div>`;
@@ -2507,6 +2555,9 @@ function expSKUAdmin(){
     getSkusMerged().map(s=>{const c=ss[s.code]||{};const grp=Object.entries(groups).find(([,items])=>items.includes(s.code))?.[0]||'';return[s.code,s.name,s.plant,grp,c.min_stock||50,c.shelf_life||30,c.lt||s.lt,c.moq||s.moq,c.note||'',c.edited_by||'',s.custom?'Y':''];})]],'SKU_Settings_'+todayStr()+'.xlsx');
 }
 
+function expSkuTemplate(){
+  toXLSX([['SKU Settings Template',['SKU','Name','Plant','Product Group','Min Stock','Shelf Life','Lead Time','MOQ','Note'],[['10001','Sample product','TGM1','Sample group',50,30,7,0,'']]]],'SKU_Settings_Template.xlsx');
+}
 function showSkuImportModal(){
   openMod(`<div>
     <div class="mh"><div class="mt2">Import SKU Settings กลับเข้าระบบ</div><div class="mx" onclick="closeM()">✕</div></div>
@@ -2843,6 +2894,7 @@ function saveUser(idx){
   const uid=document.getElementById('u-uid').value.trim();
   const name=document.getElementById('u-name').value.trim();
   const department=document.getElementById('u-dept').value.trim();
+  const position=document.getElementById('u-pos')?.value.trim()||'';
   const role=document.getElementById('u-role').value;
   const slm=document.getElementById('u-slm').value.trim();
   const pwd=document.getElementById('u-pwd').value;
@@ -2851,11 +2903,11 @@ function saveUser(idx){
   const users=DB.get('users')||[];
   if(idx===-1){
     if(users.find(u=>u.uid===uid)){alert('UID นี้มีอยู่แล้ว');return;}
-    users.push({uid,name,department:department||undefined,role,slm_id:slm||undefined,pwd:pwd||'1234',email,active:true,created:today(),by:UID});
+    users.push({uid,name,department:department||undefined,position:position||undefined,role,slm_id:slm||undefined,pwd:pwd||'1234',email,active:true,created:today(),by:UID});
     audit('ADD_USER',uid,{role,department});
   } else {
     const u=users[idx];if(!u)return;
-    u.uid=uid;u.name=name;u.department=department||undefined;u.role=role;u.slm_id=slm||undefined;u.email=email;
+    u.uid=uid;u.name=name;u.department=department||undefined;u.position=position||undefined;u.role=role;u.slm_id=slm||undefined;u.email=email;
     if(pwd) u.pwd=pwd;
     u.edited_by=UID;u.edited_at=new Date().toISOString();
     audit('EDIT_USER',uid,{role,department});
@@ -3589,6 +3641,7 @@ function renderProdGroups(){
     <input id="pg-new" type="text" placeholder="ชื่อกลุ่มสินค้าใหม่" style="width:180px">
     <button class="btn btn-sm btn-t" onclick="addProductGroup()">+ เพิ่มกลุ่ม</button>
     <button class="btn btn-sm btn-p" onclick="showGroupImport('prod')">Import Excel</button>
+    <button class="btn btn-sm btn-g" onclick="expGroupTemplate('prod')">Template</button>
     <button class="btn btn-sm btn-g" onclick="expProductGroups()">Export</button>
   </div>
   <div class="card"><div class="ch"><div class="ct2">Product Groups</div><div style="font-size:11px;color:var(--TX3)">เลือกสินค้าแล้วกดเพิ่มเข้าแต่ละกลุ่ม</div></div>
@@ -3640,6 +3693,7 @@ function renderCustGroups(){
   document.getElementById('grp-body').innerHTML=`
   <div class="frow">
     <button class="btn btn-sm btn-p" onclick="showGroupImport('cust')">Import Excel</button>
+    <button class="btn btn-sm btn-g" onclick="expGroupTemplate('cust')">Template</button>
     <button class="btn btn-sm btn-g" onclick="expCustomerGroups()">Export</button>
     <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / Category แล้วระบบจะบันทึกทันที</span>
   </div>
@@ -3658,6 +3712,10 @@ function renderCustGroups(){
     <datalist id="corp-list">${corps.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
     <datalist id="cat-list">${cats.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
   </div>`;
+}
+function expGroupTemplate(mode){
+  if(mode==='prod') toXLSX([['Product Group Template',['Product Group','SKU'],[['Sample product group','10001']]]],'Product_Group_Template.xlsx');
+  else toXLSX([['Customer Group Template',['Corporate group','Customer code'],[['Sample customer group','01-LF-0001']]]],'Customer_Group_Template.xlsx');
 }
 function showGroupImport(mode){
   const title=mode==='prod'?'Import กลุ่มสินค้า':'Import กลุ่มลูกค้า';
@@ -3732,49 +3790,43 @@ const ALL_NAV_PAGES=[
 const ALL_ROLES_PERM=['manager','planning','warehouse','sales'];
 const ROLE_LBL_P={manager:'Manager',planning:'Planning',warehouse:'Warehouse',sales:'Sales'};
 
+function _permGroups(){
+  const users=DB.get('users')||[];
+  const map={};
+  users.forEach(u=>{
+    const dept=u.department||'Unassigned department';
+    const pos=u.position||'Unassigned position';
+    const key=`${dept}|${pos}`;
+    if(!map[key])map[key]={key,dept,pos,users:0,role:u.role};
+    map[key].users++;
+  });
+  return Object.values(map).sort((a,b)=>(a.dept+a.pos).localeCompare(b.dept+b.pos,'th'));
+}
 function pgPerms(){
-  const customPerms=DB.get('nav_perms')||{};
-  // Seed defaults from RNAV if not set
-  ALL_ROLES_PERM.forEach(r=>{if(!customPerms[r])customPerms[r]={pages:(RNAV[r]||[]).map(([id])=>id)};});
+  const perms=DB.get('nav_perms_deptpos')||{};
+  const groups=_permGroups();
+  groups.forEach(g=>{if(!perms[g.key])perms[g.key]={pages:(RNAV[g.role]||RNAV.sales||[]).map(([id])=>id)};});
   document.getElementById('ct').innerHTML=`
-  <div class="al ali">กำหนดหน้าที่แต่ละ Role เข้าถึงได้ — มีผลเมื่อ Login ใหม่ (Superadmin เข้าได้ทุกหน้าเสมอ)</div>
+  <div class="al ali">Set access by department and position. Users in the same department/position share the same menu set. Superadmin always has all pages.</div>
   <div class="card">
-    <div class="ch"><div class="ct2">ตาราง Role × หน้า</div><button class="btn btn-sm btn-g" onclick="savePerms()">💾 บันทึก</button></div>
-    <div class="tw">
-    <table>
-      <thead><tr>
-        <th style="min-width:180px">หน้า / ฟังก์ชัน</th>
-        ${ALL_ROLES_PERM.map(r=>`<th style="text-align:center;min-width:90px">${ROLE_LBL_P[r]}</th>`).join('')}
-      </tr></thead>
-      <tbody>
-        ${ALL_NAV_PAGES.map(pg=>`<tr>
-          <td style="font-size:12.5px">${pg.lbl}</td>
-          ${ALL_ROLES_PERM.map(r=>{
-            const has=(customPerms[r]?.pages||[]).includes(pg.id);
-            return `<td style="text-align:center"><input type="checkbox" id="perm-${r}-${pg.id}" ${has?'checked':''} style="width:15px;height:15px;accent-color:var(--BL);cursor:pointer"></td>`;
-          }).join('')}
-        </tr>`).join('')}
-      </tbody>
-    </table>
-    </div>
-    <div style="margin-top:12px;text-align:right">
-      <button class="btn btn-sm" onclick="resetPerms()">↺ คืนค่าเริ่มต้น</button>
-      <button class="btn btn-sm btn-g" onclick="savePerms()" style="margin-left:8px">💾 บันทึก</button>
-    </div>
+    <div class="ch"><div class="ct2">Department x Position x Page</div><button class="btn btn-sm btn-g" onclick="savePerms()">Save</button></div>
+    <div class="tw"><table><thead><tr><th style="min-width:190px">Page / function</th>${groups.map(g=>`<th style="text-align:center;min-width:120px">${esc(g.dept)}<br><span style="font-size:10px;color:var(--TX3)">${esc(g.pos)} (${g.users})</span></th>`).join('')}</tr></thead>
+    <tbody>${ALL_NAV_PAGES.map(pg=>`<tr><td style="font-size:12.5px">${pg.lbl}</td>${groups.map(g=>{const has=(perms[g.key]?.pages||[]).includes(pg.id);return `<td style="text-align:center"><input type="checkbox" data-pkey="${esc(g.key)}" data-page="${pg.id}" ${has?'checked':''} style="width:15px;height:15px;accent-color:var(--BL);cursor:pointer"></td>`;}).join('')}</tr>`).join('')}</tbody></table></div>
+    <div style="margin-top:12px;text-align:right"><button class="btn btn-sm" onclick="resetPerms()">Reset defaults</button><button class="btn btn-sm btn-g" onclick="savePerms()" style="margin-left:8px">Save</button></div>
   </div>`;
 }
 function savePerms(){
-  const perms=DB.get('nav_perms')||{};
-  ALL_ROLES_PERM.forEach(r=>{
-    perms[r]={pages:ALL_NAV_PAGES.map(pg=>pg.id).filter(id=>document.getElementById(`perm-${r}-${id}`)?.checked)};
-  });
-  DB.set('nav_perms',perms);
-  toast('บันทึกสิทธิ์แล้ว — มีผลเมื่อ Login ใหม่');
+  const groups=_permGroups();
+  const perms={};
+  groups.forEach(g=>{perms[g.key]={dept:g.dept,pos:g.pos,pages:[]};});
+  document.querySelectorAll('[data-pkey][data-page]').forEach(cb=>{if(cb.checked)perms[cb.dataset.pkey].pages.push(cb.dataset.page);});
+  DB.set('nav_perms_deptpos',perms);
+  toast('Saved department/position permissions. They apply on next login.');
 }
 function resetPerms(){
-  DB.set('nav_perms',{});
+  DB.set('nav_perms_deptpos',{});
   pgPerms();
-  toast('คืนค่าเริ่มต้นแล้ว');
+  toast('Permission defaults restored');
 }
 
 // ── WMS SYSTEM ────────────────────────────────────────────────────
