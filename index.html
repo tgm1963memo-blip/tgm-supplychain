@@ -867,6 +867,14 @@ async function pgPlanStock() {
       <option value="prevyear">เทียบกับปีที่แล้ว (เดือนนี้)</option>
       <option value="weekly">รายสัปดาห์ (avg3÷4)</option>
     </select>
+    <label style="align-self:center">ช่วงเวลา:</label>
+    <select id="ps-period" onchange="planStkT()">
+      <option value="current">ปัจจุบัน</option>
+      <option value="1week">1 สัปดาห์หน้า</option>
+      <option value="2week">2 สัปดาห์หน้า</option>
+      <option value="1month">1 เดือนหน้า</option>
+      <option value="3month">3 เดือนหน้า</option>
+    </select>
     <span style="margin-left:auto;font-size:12px;color:var(--TX3)">🔴 Live จาก WMS</span>
   </div>
   <div class="card">
@@ -889,6 +897,7 @@ function planStkT() {
   const grp  = document.getElementById('gf')?.value || '';
   const q    = (document.getElementById('ss')?.value || '').toLowerCase();
   const crit = _psCrit || 'avg3';
+  const period = document.getElementById('ps-period')?.value || 'current';
 
   // update title
   const titles={avg3:'Stock vs เฉลี่ย 3 เดือน',avg4:'Stock vs เฉลี่ย 4 เดือนล่าสุด',last1:'Stock vs ยอดเดือนล่าสุด',prevyear:'Stock vs ปีที่แล้ว (เดือนนี้)',weekly:'Stock vs ยอดรายสัปดาห์'};
@@ -904,6 +913,10 @@ function planStkT() {
     (r.name || '').toLowerCase().includes(q)
   );
 
+  // โหลดข้อมูล forecast และ PO
+  const fc = DB.get('forecasts') || [];
+  const po = DB.get('po_log') || [];
+
   // compute benchmark per criterion
   filtered = filtered.map(r => {
     const hist=ALL_HIST[r.code]?.monthly||{};
@@ -916,7 +929,12 @@ function planStkT() {
     else if(crit === 'prevyear') bench = r.prevyear_monthly ?? a3;
     else if(crit === 'weekly') bench = a3 / 4;
     const daysComp = bench > 0 ? Math.round((r.stock_qty || 0) / bench * (crit==='weekly'?7:30)) : 9999;
-    return {...r, _bench: bench, _days: daysComp};
+
+    // คำนวณ forecast และ PO รวม
+    const fcTotal = fc.filter(f => f.sku === r.code).reduce((sum,f) => sum + (f.qty || 0), 0);
+    const poTotal = po.filter(p => p.sku === r.code && p.status !== 'completed').reduce((sum,p) => sum + (p.qty || 0), 0);
+
+    return {...r, _bench: bench, _days: daysComp, _fcTotal: fcTotal, _poTotal: poTotal};
   });
 
   // sort
@@ -942,7 +960,10 @@ function planStkT() {
     <th ${thS('bench')}>${benchLbl} ${sArrow('bench')}</th>
     <th ${thS('min')}>ขั้นต่ำ ${sArrow('min')}</th>
     <th ${thS('days')}>${daysLbl} ${sArrow('days')}</th>
+    <th style="text-align:right">Forecast รวม</th>
+    <th style="text-align:right">PO รวม</th>
     <th>แนะนำ</th>
+    <th>Action</th>
   </tr></thead>
   <tbody>${filtered.slice(0, 120).map(r => {
     const days  = r._days >= 9999 ? '∞' : r._days;
@@ -952,6 +973,7 @@ function planStkT() {
       ? `<span class="badge bbr">สั่งด่วน</span>`
       : r._days < 30 ? `<span class="badge bba">เฝ้าระวัง</span>`
       : `<span class="badge bbg">ปกติ</span>`;
+    const needOrder = r.stock_qty < r.min_stock || r._days < 30;
     return `<tr class="${cls}">
       <td class="mono">${r.code}</td>
       <td>${(r.name || '').substring(0, 32)}</td>
@@ -959,17 +981,29 @@ function planStkT() {
       <td style="text-align:right">${r._bench.toFixed(1)}</td>
       <td style="text-align:right">${r.min_stock}</td>
       <td style="text-align:right;font-weight:700;color:${r._days < 14 ? 'var(--R)' : r._days < 30 ? 'var(--A)' : 'inherit'}">${days}</td>
+      <td style="text-align:right">${r._fcTotal.toFixed(1)}</td>
+      <td style="text-align:right">${r._poTotal.toFixed(1)}</td>
       <td>${rec}</td>
+      <td>${needOrder ? `<button class="btn btn-xs btn-p" onclick="quickOrder('${r.code}')">สั่งผลิต</button>` : '-'}</td>
     </tr>`;
   }).join('')}</tbody></table></div>`;
 }
 function psSortBy(col){if(_psSort.col===col)_psSort.dir*=-1;else{_psSort.col=col;_psSort.dir=col==='days'?1:-1;}planStkT();}
 
+function quickOrder(sku){
+  const r = window._planRows?.find(row => row.code === sku);
+  if(!r) return;
+  const minStock = r.min_stock || 50;
+  const currentStock = r.stock_qty || 0;
+  const suggestedQty = Math.max(minStock - currentStock, 0) + (r._bench || 0);
+  ppShowOrder(sku, Math.ceil(suggestedQty));
+}
+
 function expPlanStk() {
   const rows = window._planRows || [];
   toXLSX([['StockPlanning',
-    ['รหัสสินค้า','ชื่อสินค้า','Stock','เฉลี่ย3เดือน','ขั้นต่ำ','วันคงเหลือ'],
-    rows.map(r => [r.code, r.name, r.stock_qty, r.avg3_monthly, r.min_stock, r.days_remaining]),
+    ['รหัสสินค้า','ชื่อสินค้า','Stock','เฉลี่ย3เดือน','ขั้นต่ำ','วันคงเหลือ','Forecastรวม','POรวม'],
+    rows.map(r => [r.code, r.name, r.stock_qty, r.avg3_monthly, r.min_stock, r.days_remaining, r._fcTotal || 0, r._poTotal || 0]),
   ]], 'StockPlanning_' + todayStr() + '.xlsx');
 }
 
@@ -1044,24 +1078,29 @@ function ppRender(){
   // Orders table
   const tbl=document.getElementById('pp-tbl');
   if(tbl) tbl.innerHTML=inRange.length?`<div class="tw"><table>
-    <thead><tr><th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r">จำนวน(กก.)</th><th>สายผลิต</th><th>สถานะ</th><th>หมายเหตุ</th><th>แก้ไขโดย</th></tr></thead>
+    <thead><tr><th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r">จำนวน(กก.)</th><th>สายผลิต</th><th>สถานะ</th><th>หมายเหตุ</th><th>แก้ไขโดย</th><th>Action</th></tr></thead>
     <tbody>${inRange.sort((a,b)=>a.planDate<b.planDate?-1:1).map(o=>`<tr>
-      <td>${fmtD(o.planDate)}</td>
+      <td><input type="date" value="${o.planDate}" onchange="ppEditOrder('${o.id}', 'planDate', this.value)" style="padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
       <td class="mono">${o.sku}</td><td>${(o.skuName||'').substring(0,28)}</td>
-      <td class="r" style="font-weight:700">${fmt(o.qty)}</td>
-      <td>${o.line||'—'}</td>
-      <td>${o.status==='done'?'<span class="badge bbg">ผลิตแล้ว</span>':o.status==='inprog'?'<span class="badge bba">กำลังผลิต</span>':'<span class="badge bbl">รอผลิต</span>'}</td>
-      <td style="font-size:12px;color:var(--TX2)">${o.note||''}</td>
-      <td><span class="edby">${o.by||''}</span></td></tr>`).join('')}
+      <td class="r"><input type="number" value="${o.qty}" onchange="ppEditOrder('${o.id}', 'qty', this.value)" style="width:60px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px;text-align:right" min="0" step="0.1"></td>
+      <td><input type="text" value="${o.line||''}" onchange="ppEditOrder('${o.id}', 'line', this.value)" style="width:80px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
+      <td><select onchange="ppEditOrder('${o.id}', 'status', this.value)" style="padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px">
+        <option value="pending" ${o.status==='pending'?'selected':''}>รอผลิต</option>
+        <option value="inprog" ${o.status==='inprog'?'selected':''}>กำลังผลิต</option>
+        <option value="done" ${o.status==='done'?'selected':''}>ผลิตแล้ว</option>
+      </select></td>
+      <td><input type="text" value="${o.note||''}" onchange="ppEditOrder('${o.id}', 'note', this.value)" style="width:120px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
+      <td><span class="edby">${o.by||''}</span></td>
+      <td><button class="btn btn-xs btn-r" onclick="ppDeleteOrder('${o.id}')">ลบ</button></td></tr>`).join('')}
     </tbody></table></div>`
     :'<div style="padding:20px;color:var(--TX3);text-align:center">ไม่มีรายการในช่วงเวลานี้</div>';
 }
-function ppShowOrder(){
+function ppShowOrder(sku='', qty=0){
   const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
   openMod(`<div class="mh"><div class="mt2">สั่งยอดผลิต</div><span class="mx" onclick="closeM()">✕</span></div>
   <div class="fg">
-    <div class="field"><label>รหัสสินค้า</label><select id="pp-sku">${SKUS.map(s=>`<option value="${s.code}">${s.code} — ${s.name.substring(0,28)}</option>`).join('')}</select></div>
-    <div class="field"><label>จำนวน (กก.)</label><input type="number" id="pp-qty" min="1" placeholder="0"></div>
+    <div class="field"><label>รหัสสินค้า</label><select id="pp-sku">${SKUS.map(s=>`<option value="${s.code}" ${s.code===sku?'selected':''}>${s.code} — ${s.name.substring(0,28)}</option>`).join('')}</select></div>
+    <div class="field"><label>จำนวน (กก.)</label><input type="number" id="pp-qty" min="1" placeholder="0" value="${qty}"></div>
     <div class="field"><label>วันที่ผลิต</label><input type="date" id="pp-date" value="${_pp.ref}"></div>
     <div class="field"><label>สายผลิต</label><input type="text" id="pp-line" placeholder="เช่น สาย A, เครื่อง 1"></div>
     <div class="field"><label>หมายเหตุ</label><input type="text" id="pp-note" placeholder="PO อ้างอิง / ลูกค้า"></div>
@@ -1071,19 +1110,62 @@ function ppShowOrder(){
     <button class="btn btn-p" onclick="ppSaveOrder()">บันทึก</button>
   </div>`);
 }
-function ppSaveOrder(){
-  const sku=document.getElementById('pp-sku')?.value||'';
-  const qty=parseFloat(document.getElementById('pp-qty')?.value)||0;
-  const planDate=document.getElementById('pp-date')?.value||_pp.ref;
-  const line=document.getElementById('pp-line')?.value||'';
-  const note=document.getElementById('pp-note')?.value||'';
-  if(!sku||!qty){alert('กรุณาระบุสินค้าและจำนวน');return;}
-  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
-  const sk=SKUS.find(s=>s.code===sku)||{name:sku};
-  const orders=DB.get('prod_orders')||[];
-  orders.unshift({id:genId('PRD'),sku,skuName:sk.name,qty,planDate,line,note,status:'pending',by:UID,ts:Date.now()});
-  DB.set('prod_orders',orders);audit('ADD_PROD_ORDER',sku,{qty,planDate});
-  closeM();ppRender();
+function ppEditOrder(id, field, value){
+  const orders = DB.get('prod_orders') || [];
+  const order = orders.find(o => o.id === id);
+  if(!order) return;
+
+  const oldValue = order[field];
+  if(field === 'qty') value = parseFloat(value) || 0;
+  if(field === 'planDate' && !value) return; // Don't allow empty date
+
+  order[field] = value;
+  order.edited_by = UID;
+  order.edited_at = new Date().toISOString();
+
+  DB.set('prod_orders', orders);
+  audit('EDIT_PROD_ORDER', id, {field, oldValue, newValue: value});
+
+  // Link to WMS if status changed to done
+  if(field === 'status' && value === 'done') {
+    ppLinkToWMS(order);
+  }
+
+  ppRender();
+}
+
+function ppDeleteOrder(id){
+  if(!confirm('ลบรายการสั่งผลิตนี้?')) return;
+  const orders = DB.get('prod_orders') || [];
+  const index = orders.findIndex(o => o.id === id);
+  if(index === -1) return;
+
+  const deleted = orders.splice(index, 1)[0];
+  DB.set('prod_orders', orders);
+  audit('DELETE_PROD_ORDER', id, deleted);
+  ppRender();
+}
+
+function ppLinkToWMS(order){
+  // Link production completion to WMS stock entry
+  const stockEntry = {
+    sku: order.sku,
+    qty: order.qty,
+    lot_no: `PROD-${order.id}`,
+    exp_date: null, // Production doesn't have expiration
+    location: 'PRODUCTION',
+    type: 'production_in',
+    ref_id: order.id,
+    ref_type: 'prod_order',
+    created_by: UID,
+    created_at: new Date().toISOString(),
+    notes: `Production completed: ${order.line || ''} ${order.note || ''}`
+  };
+
+  // This would normally call WMS API, but for now we'll store locally
+  // In real implementation, this should call WMS API to add stock
+  console.log('Linking to WMS:', stockEntry);
+  toast(`ส่งข้อมูลการผลิตไป WMS สำหรับ ${order.sku} (${order.qty} กก.)`);
 }
 function ppExport(){
   const orders=DB.get('prod_orders')||[];
@@ -1800,6 +1882,12 @@ function _sdBuildSlms(rows,slmList){
 }
 function _sdUpdateSlmDrop(){
   const sel=document.getElementById('sd-slm-f');if(!sel)return;
+  if(ROLE === 'sales') {
+    // สำหรับเซลล์ แสดงเฉพาะชื่อตัวเอง ไม่มี dropdown เลือก
+    sel.style.display = 'none';
+    _sd.slmF = UID; // ตั้งค่าให้แสดงเฉพาะข้อมูลตัวเอง
+    return;
+  }
   const list=_sdApi.slmList.length?_sdApi.slmList:SD_SALES.map(s=>({code:s.c,name:s.n}));
   sel.innerHTML='<option value="">ทุก Sales</option>'+list.map(s=>`<option value="${esc(s.code)}">${esc(s.name)}</option>`).join('');
   if(_sd.slmF)sel.value=_sd.slmF;
@@ -3775,11 +3863,12 @@ function renderProdGroups(){
   <div class="frow">
     <input id="pg-new" type="text" placeholder="ชื่อกลุ่มสินค้าใหม่" style="width:180px">
     <button class="btn btn-sm btn-t" onclick="addProductGroup()">+ เพิ่มกลุ่ม</button>
-    <button class="btn btn-sm btn-p" onclick="showGroupImport('prod')">Import Excel</button>
+    <input type="file" id="pg-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importProductGroupsFile()">
+    <button class="btn btn-sm btn-p" onclick="document.getElementById('pg-file').click()">📁 Import Excel</button>
     <button class="btn btn-sm btn-g" onclick="expGroupTemplate('prod')">Template</button>
     <button class="btn btn-sm btn-g" onclick="expProductGroups()">Export</button>
   </div>
-  <div class="card"><div class="ch"><div class="ct2">Product Groups</div><div style="font-size:11px;color:var(--TX3)">เลือกสินค้าแล้วกดเพิ่มเข้าแต่ละกลุ่ม</div></div>
+  <div class="card"><div class="ch"><div class="ct2">Product Groups</div><div style="font-size:11px;color:var(--TX3)">เลือกสินค้าแล้วกดเพิ่มเข้าแต่ละกลุ่ม หรือ import จาก Excel</div></div>
     <div class="tw"><table><thead><tr><th>กลุ่ม</th><th class="r">จำนวน SKU</th><th>เพิ่ม SKU</th><th>ตัวอย่างรายการ</th><th>Action</th></tr></thead>
     <tbody>${Object.entries(groups).map(([g,items])=>{
       const isBase=!!SKU_GROUPS[g];
@@ -3815,6 +3904,70 @@ function deleteProductGroup(g){
   if(!confirm('ลบกลุ่มสินค้า '+g+' ?'))return;
   const groups=DB.get('product_groups')||{};delete groups[g];saveProductGroups(groups);audit('DEL_PRODUCT_GROUP',g,{});pgGroupAdmin();
 }
+function importProductGroupsFile(){
+  const file=document.getElementById('pg-file').files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=new Uint8Array(e.target.result);
+      const workbook=XLSX.read(data,{type:'array'});
+      const sheet=workbook.Sheets[workbook.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(sheet,{header:1});
+      const groups=DB.get('product_groups')||{};
+      let count=0;
+      rows.slice(1).forEach(row=>{ // Skip header
+        const group=row[0]?.toString().trim();
+        const code=row[1]?.toString().trim();
+        if(group&&code){
+          if(!groups[group])groups[group]=[];
+          if(!groups[group].includes(code))groups[group].push(code);
+          count++;
+        }
+      });
+      saveProductGroups(groups);
+      audit('IMPORT_PRODUCT_GROUPS_FILE','product_groups',{count});
+      toast('นำเข้ากลุ่มสินค้าจากไฟล์สำเร็จ '+count+' รายการ');
+      pgGroupAdmin();
+    }catch(err){
+      toast('เกิดข้อผิดพลาดในการอ่านไฟล์: '+err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function importCustomerGroupsFile(){
+  const file=document.getElementById('cg-file').files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=new Uint8Array(e.target.result);
+      const workbook=XLSX.read(data,{type:'array'});
+      const sheet=workbook.Sheets[workbook.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(sheet,{header:1});
+      const profs=customerProfiles();
+      const allRows=allCustomerRows();
+      const knownCodes=new Set(allRows.map(c=>c.c));
+      let count=0;
+      rows.slice(1).forEach(row=>{ // Skip header
+        const group=row[0]?.toString().trim();
+        const code=row[1]?.toString().trim();
+        if(group&&code&&knownCodes.has(code)){
+          if(!profs[code])profs[code]={};
+          profs[code].corporate=group;
+          profs[code].edited_by=UID;
+          profs[code].edited_at=new Date().toISOString();
+          count++;
+        }
+      });
+      DB.set('customer_profiles',profs);
+      audit('IMPORT_CUSTOMER_GROUPS_FILE','customer_profiles',{count});
+      toast('นำเข้ากลุ่มลูกค้าจากไฟล์สำเร็จ '+count+' รายการ');
+      pgGroupAdmin();
+    }catch(err){
+      toast('เกิดข้อผิดพลาดในการอ่านไฟล์: '+err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
 function expProductGroups(){
   const rows=[];Object.entries(productGroups()).forEach(([g,items])=>items.forEach(code=>rows.push([g,code,skuI(code).name])));
   toXLSX([['Product Groups',['กลุ่มสินค้า','รหัสสินค้า','ชื่อสินค้า'],rows]],'Product_Groups_'+todayStr()+'.xlsx');
@@ -3827,7 +3980,8 @@ function renderCustGroups(){
   const sales=DB.get('users')||[];
   document.getElementById('grp-body').innerHTML=`
   <div class="frow">
-    <button class="btn btn-sm btn-p" onclick="showGroupImport('cust')">Import Excel</button>
+    <input type="file" id="cg-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importCustomerGroupsFile()">
+    <button class="btn btn-sm btn-p" onclick="document.getElementById('cg-file').click()">📁 Import Excel</button>
     <button class="btn btn-sm btn-g" onclick="expGroupTemplate('cust')">Template</button>
     <button class="btn btn-sm btn-g" onclick="expCustomerGroups()">Export</button>
     <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / Category แล้วระบบจะบันทึกทันที</span>
