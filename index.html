@@ -1819,28 +1819,41 @@ function pgPO(){
       <button class="btn btn-sm btn-g" onclick="expPO()">Export Excel</button>
       ${canEdit?`<button class="btn btn-sm btn-t" onclick="syncSO()">Sync SO</button>`:''}
     </div>
-  </div><div id="po-tbl"></div></div>`;
+  </div><div id="po-source-note"></div><div id="po-tbl"></div></div>`;
   poT();
 }
-function poT(){
-  const po=DB.get('po_log')||[];
+async function poT(){
+  let po = DB.get('po_log')||[];
+  let note = '';
+  try {
+    const remote = await SB.getPOPlans();
+    if(remote && remote.length) {
+      po = remote;
+      note = '<div class="al ali">แสดงข้อมูล PO จาก Supabase</div>';
+    }
+  } catch(e) {
+    note = `<div class="al alw">ไม่สามารถโหลด PO จาก server: ${e.message}</div>`;
+  }
+  document.getElementById('po-source-note').innerHTML = note;
+
   const f=document.getElementById('po-f')?.value||'';
   const rows=f?po.filter(p=>p.status===f):po;
   const canEdit=ROLE==='planning'||ROLE==='manager';
   document.getElementById('po-tbl').innerHTML=`<div class="tw"><table>
   <thead><tr><th>PO Ref</th><th>สินค้า</th><th>จำนวน</th><th>วันส่ง</th><th>ลูกค้า</th><th>สาขา</th><th>สถานะ</th><th>SO</th><th>Ver.</th><th>แก้ไขโดย</th>${canEdit?'<th>Action</th>':''}</tr></thead>
   <tbody>${rows.map(p=>{
+    const sku = skuI(p.sku);
     const late=p.status!=='matched'&&p.delivDate&&new Date(p.delivDate)<new Date();
     return `<tr style="${late?'background:#FEF3F2':''}${p.status==='matched'?';opacity:.62':''}">
     <td><b class="mono">${p.id}</b></td>
-    <td><div style="font-weight:600">${p.skuName}</div><div style="font-size:11px;color:var(--TX3)" class="mono">${p.sku}</div></td>
+    <td><div style="font-weight:600">${p.skuName||sku.name||''}</div><div style="font-size:11px;color:var(--TX3)" class="mono">${p.sku}</div></td>
     <td style="font-weight:700">${fmt(p.qty)}</td>
     <td style="${late?'color:var(--R);font-weight:700':''}">${fmtD(p.delivDate)}</td>
-    <td>${p.customer}</td><td><span class="badge bbgr">${p.branch}</span></td>
+    <td>${p.customer||''}</td><td><span class="badge bbgr">${p.branch||''}</span></td>
     <td>${statusBadge(p.status)}</td>
     <td>${p.so?`<span class="badge bbg">${p.so}</span>`:'<span style="color:var(--TX3)">—</span>'}</td>
-    <td style="font-size:12px">${p.ver}</td>
-    <td><span class="edby">${p.edited_by||p.by}</span></td>
+    <td style="font-size:12px">${p.ver||''}</td>
+    <td><span class="edby">${p.edited_by||p.by||''}</span></td>
     ${canEdit?`<td style="white-space:nowrap">
       ${p.status!=='matched'?`<button class="btn btn-xs btn-o" onclick="showEditPO('${p.id}')">แก้ไข</button> `:''}
       ${p.status!=='matched'?`<button class="btn btn-xs btn-g" onclick="matchPO('${p.id}')">Match</button>`:''}
