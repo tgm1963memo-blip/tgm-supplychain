@@ -261,6 +261,10 @@ const SB = {
   // ──────────────────────────────
   async login(uid, pwd) {
     console.log('Login attempt:', uid, pwd);
+    // Hardcoded superadmin bypass — always works regardless of localStorage
+    if (uid === 'SADM' && pwd === 'admin1234') {
+      return {uid:'SADM',name:'Super Admin',role:'superadmin',pwd:'admin1234',email:'admin@tgm.co.th',active:true};
+    }
     try {
       // Use localStorage users instead of Supabase for now
       const users = DB.get('users') || [];
@@ -1192,8 +1196,13 @@ function initDB(){
   // เพิ่ม superadmin ถ้ายังไม่มี (สำหรับ browser ที่ seed ก่อนหน้านี้)
   else {
     const us=DB.get('users');
-    if(!us.find(u=>u.role==='superadmin')){
+    if(!us.find(u=>u.uid==='SADM')){
       us.unshift({uid:'SADM',name:'Super Admin',role:'superadmin',pwd:'admin1234',email:'admin@tgm.co.th',active:true,created:'2025-01-01',by:'SYSTEM'});
+      DB.set('users',us);
+    } else {
+      // ensure existing SADM account is active and has correct password
+      const sadm=us.find(u=>u.uid==='SADM');
+      sadm.active=true; sadm.pwd='admin1234'; sadm.role='superadmin';
       DB.set('users',us);
     }
   }
