@@ -189,11 +189,11 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
   <div class="ls">กรอกรหัสพนักงานและรหัสผ่านเพื่อเข้าสู่ระบบ</div>
   <div class="field">
     <label>รหัสพนักงาน</label>
-    <input id="l-uid" type="text" value="208" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
+    <input id="l-uid" type="text" value="Username" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
   </div>
   <div class="field">
     <label>รหัสผ่าน</label>
-    <input id="l-pwd" type="password" value="1234" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
+    <input id="l-pwd" type="password" value="Password" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
   </div>
   <button class="btn btn-p" style="width:100%;justify-content:center;padding:13px 0;border-radius:8px;font-size:14px" onclick="doLogin()">เข้าสู่ระบบ</button>
   <div id="l-err" style="color:var(--R);font-size:12px;text-align:center;background:#FFF1F1;border:1px solid #FECACA;border-radius:7px;padding:8px 12px;display:none"></div>
@@ -3857,8 +3857,14 @@ function pgGroupAdmin(){
   <div id="grp-body"></div>`;
   if(_grpTab==='prod')renderProdGroups();else renderCustGroups();
 }
+let _pgItemTab='items';
 function renderProdGroups(){
   const groups=productGroups(),skus=getSkusMerged();
+  const groupNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'th'));
+  const skuGrpMap={};
+  Object.entries(groups).forEach(([g,items])=>items.forEach(c=>skuGrpMap[c]=g));
+  const q=(document.getElementById('pg-q')?.value||'').toLowerCase();
+  const gf=document.getElementById('pg-gf')?.value||'';
   document.getElementById('grp-body').innerHTML=`
   <div class="frow">
     <input id="pg-new" type="text" placeholder="ชื่อกลุ่มสินค้าใหม่" style="width:180px">
@@ -3867,23 +3873,74 @@ function renderProdGroups(){
     <button class="btn btn-sm btn-p" onclick="document.getElementById('pg-file').click()">📁 Import Excel</button>
     <button class="btn btn-sm btn-g" onclick="expGroupTemplate('prod')">Template</button>
     <button class="btn btn-sm btn-g" onclick="expProductGroups()">Export</button>
+    <input id="pg-q" type="text" value="${esc(q)}" placeholder="ค้นหา รหัส/ชื่อ..." style="width:150px;padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:12.5px;font-family:var(--font)" oninput="renderProdGroups()">
+    <select id="pg-gf" style="padding:5px 9px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)" onchange="renderProdGroups()">
+      <option value="">ทุกกลุ่ม</option>
+      ${groupNames.map(g=>`<option value="${esc(g)}" ${gf===g?'selected':''}>${esc(g)}</option>`).join('')}
+    </select>
   </div>
-  <div class="card"><div class="ch"><div class="ct2">Product Groups</div><div style="font-size:11px;color:var(--TX3)">เลือกสินค้าแล้วกดเพิ่มเข้าแต่ละกลุ่ม หรือ import จาก Excel</div></div>
-    <div class="tw"><table><thead><tr><th>กลุ่ม</th><th class="r">จำนวน SKU</th><th>เพิ่ม SKU</th><th>ตัวอย่างรายการ</th><th>Action</th></tr></thead>
-    <tbody>${Object.entries(groups).map(([g,items])=>{
-      const isBase=!!SKU_GROUPS[g];
-      return `
-      <tr>
-        <td><input class="inp-cell" value="${esc(g)}" ${isBase?'readonly':''} onchange="renameProductGroup('${esc(g)}',this.value)"> ${isBase?'<span class="badge bbgr" style="font-size:10px">ตั้งต้น</span>':''}</td>
-        <td class="r">${items.length}</td>
-        <td style="min-width:260px"><select id="pg-sku-${esc(g)}" style="width:180px;padding:5px;border:1px solid var(--BD);border-radius:6px">${skus.map(s=>`<option value="${esc(s.code)}">${esc(s.code)} — ${esc(s.name.substring(0,24))}</option>`).join('')}</select>
-          <button class="btn btn-xs" onclick="addSkuToGroup('${esc(g)}')">เพิ่ม</button></td>
-        <td style="font-size:12px;color:var(--TX2)">${items.slice(0,8).map(esc).join(', ')}${items.length>8?' ...':''}</td>
-        <td>${isBase?'<span style="font-size:11px;color:var(--TX3)">ลบไม่ได้</span>':`<button class="btn btn-xs btn-r" onclick="deleteProductGroup('${esc(g)}')">ลบ</button>`}</td>
-      </tr>`;
-    }).join('')}</tbody></table></div>
-  </div>`;
+  <div class="tabs" style="margin-bottom:10px">
+    <div class="tab ${_pgItemTab==='items'?'act':''}" onclick="_pgItemTab='items';renderProdGroups()">📋 รายการสินค้าทั้งหมด</div>
+    <div class="tab ${_pgItemTab==='groups'?'act':''}" onclick="_pgItemTab='groups';renderProdGroups()">🏷️ จัดการกลุ่ม</div>
+  </div>
+  <div id="pg-content"></div>`;
+  const q2=(document.getElementById('pg-q')?.value||'').toLowerCase();
+  const gf2=document.getElementById('pg-gf')?.value||'';
+  if(_pgItemTab==='items'){
+    const rows=skus.filter(s=>{
+      if(gf2&&skuGrpMap[s.code]!==gf2)return false;
+      if(q2&&!s.code.toLowerCase().includes(q2)&&!(s.name||'').toLowerCase().includes(q2))return false;
+      return true;
+    });
+    document.getElementById('pg-content').innerHTML=`
+    <div class="card">
+      <div class="ch"><div class="ct2">รายการสินค้าทั้งหมด</div><div style="font-size:11px;color:var(--TX3)">${rows.length} รายการ</div></div>
+      <div class="tw"><table>
+        <thead><tr><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>โรง</th><th style="min-width:190px">กลุ่มสินค้า</th><th>Action</th></tr></thead>
+        <tbody>${rows.map(s=>{
+          const grp=skuGrpMap[s.code]||'';
+          return `<tr>
+            <td class="mono">${esc(s.code)}</td>
+            <td>${esc(s.name||'')}</td>
+            <td style="color:var(--TX3);font-size:12px">${esc(s.plant||'')}</td>
+            <td><select onchange="saveSkuGroupMapping('${esc(s.code)}',this.value)" style="width:100%;padding:5px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
+              <option value="">— ไม่มีกลุ่ม —</option>
+              ${groupNames.map(g=>`<option value="${esc(g)}" ${grp===g?'selected':''}>${esc(g)}</option>`).join('')}
+            </select></td>
+            <td>${grp?`<button class="btn btn-xs btn-r" onclick="saveSkuGroupMapping('${esc(s.code)}','')">ลบออก</button>`:''}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+  } else {
+    document.getElementById('pg-content').innerHTML=`
+    <div class="card"><div class="ch"><div class="ct2">จัดการกลุ่มสินค้า</div><div style="font-size:11px;color:var(--TX3)">เลือกสินค้าแล้วกดเพิ่มเข้าแต่ละกลุ่ม หรือ import จาก Excel</div></div>
+      <div class="tw"><table>
+        <thead><tr><th>กลุ่ม</th><th class="r">จำนวน SKU</th><th style="min-width:260px">เพิ่ม SKU</th><th>รายการ (8 แรก)</th><th>Action</th></tr></thead>
+        <tbody>${groupNames.map(g=>{
+          const items=groups[g];const isBase=!!SKU_GROUPS[g];
+          return `<tr>
+            <td><input class="inp-cell" value="${esc(g)}" ${isBase?'readonly':''} onchange="renameProductGroup('${esc(g)}',this.value)"> ${isBase?'<span class="badge bbgr" style="font-size:10px">ตั้งต้น</span>':''}</td>
+            <td class="r">${items.length}</td>
+            <td><select id="pg-sku-${esc(g)}" style="width:190px;padding:5px;border:1px solid var(--BD);border-radius:6px">${skus.map(s=>`<option value="${esc(s.code)}">${esc(s.code)} — ${esc((s.name||'').substring(0,22))}</option>`).join('')}</select>
+              <button class="btn btn-xs btn-t" onclick="addSkuToGroup('${esc(g)}')">+ เพิ่ม</button></td>
+            <td style="font-size:12px;color:var(--TX2)">${items.slice(0,8).map(esc).join(', ')}${items.length>8?` ... (+${items.length-8})`:''}</td>
+            <td>${isBase?'<span style="font-size:11px;color:var(--TX3)">ลบไม่ได้</span>':`<button class="btn btn-xs btn-r" onclick="deleteProductGroup('${esc(g)}')">ลบกลุ่ม</button>`}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
 }
+function saveSkuGroupMapping(code,newGrp){
+  const groups=DB.get('product_groups')||{};
+  Object.keys(groups).forEach(g=>{groups[g]=(groups[g]||[]).filter(c=>c!==code);});
+  if(newGrp){if(!groups[newGrp])groups[newGrp]=[];if(!groups[newGrp].includes(code))groups[newGrp].push(code);}
+  saveProductGroups(groups);audit('EDIT_SKU_GROUP',code,{grp:newGrp});
+  toast(newGrp?`กำหนด ${code} → กลุ่ม ${newGrp}`:`นำ ${code} ออกจากกลุ่มแล้ว`);
+  renderProdGroups();
+}
+
 function addProductGroup(){
   const name=document.getElementById('pg-new')?.value.trim();if(!name)return;
   const groups=DB.get('product_groups')||{};if(!groups[name])groups[name]=[];
@@ -4091,18 +4148,124 @@ function _permGroups(){
   });
   return Object.values(map).sort((a,b)=>(a.dept+a.pos).localeCompare(b.dept+b.pos,'th'));
 }
+let _permTab='pages';
+const DEFAULT_ROLES={
+  planning:{label:'Planning',pages:['dash','forecast','planstock','po','prodplan','custmap','skuadmin','groups']},
+  warehouse:{label:'Warehouse',pages:['dash','wms','po','reserve']},
+  sales:{label:'Sales',pages:['dash','mysales','forecast','custmap','custreg']},
+  manager:{label:'Manager',pages:['dash','mysales','planstock','po','custmap','custreg','groups','reports']},
+};
+function _getRoles(){
+  const custom=DB.get('nav_roles')||{};
+  return {...DEFAULT_ROLES,...custom};
+}
 function pgPerms(){
   const perms=DB.get('nav_perms_deptpos')||{};
   const groups=_permGroups();
+  const roles=_getRoles();
   groups.forEach(g=>{if(!perms[g.key])perms[g.key]={pages:(RNAV[g.role]||RNAV.sales||[]).map(([id])=>id)};});
   document.getElementById('ct').innerHTML=`
-  <div class="al ali">Set access by department and position. Users in the same department/position share the same menu set. Superadmin always has all pages.</div>
+  <div class="tabs" style="margin-bottom:12px">
+    <div class="tab ${_permTab==='pages'?'act':''}" onclick="_permTab='pages';pgPerms()">🔒 สิทธิ์หน้าระบบ</div>
+    <div class="tab ${_permTab==='roles'?'act':''}" onclick="_permTab='roles';pgPerms()">🏷️ จัดการ Role</div>
+  </div>
+  <div id="perm-body"></div>`;
+  if(_permTab==='pages'){
+    const roleOpts=Object.entries(roles).map(([k,r])=>`<option value="${esc(k)}">${esc(r.label)}</option>`).join('');
+    document.getElementById('perm-body').innerHTML=`
+  <div class="al ali">กำหนดหน้าระบบตามแผนก+ตำแหน่ง หรือใช้ Apply Role เพื่อตั้งค่าด่วน Superadmin เห็นทุกหน้าเสมอ</div>
   <div class="card">
-    <div class="ch"><div class="ct2">Department x Position x Page</div><button class="btn btn-sm btn-g" onclick="savePerms()">Save</button></div>
-    <div class="tw"><table><thead><tr><th style="min-width:190px">Page / function</th>${groups.map(g=>`<th style="text-align:center;min-width:120px">${esc(g.dept)}<br><span style="font-size:10px;color:var(--TX3)">${esc(g.pos)} (${g.users})</span></th>`).join('')}</tr></thead>
-    <tbody>${ALL_NAV_PAGES.map(pg=>`<tr><td style="font-size:12.5px">${pg.lbl}</td>${groups.map(g=>{const has=(perms[g.key]?.pages||[]).includes(pg.id);return `<td style="text-align:center"><input type="checkbox" data-pkey="${esc(g.key)}" data-page="${pg.id}" ${has?'checked':''} style="width:15px;height:15px;accent-color:var(--BL);cursor:pointer"></td>`;}).join('')}</tr>`).join('')}</tbody></table></div>
-    <div style="margin-top:12px;text-align:right"><button class="btn btn-sm" onclick="resetPerms()">Reset defaults</button><button class="btn btn-sm btn-g" onclick="savePerms()" style="margin-left:8px">Save</button></div>
+    <div class="ch"><div class="ct2">แผนก × ตำแหน่ง × หน้าระบบ</div><button class="btn btn-sm btn-g" onclick="savePerms()">💾 Save</button></div>
+    <div class="tw"><table><thead>
+      <tr>
+        <th style="min-width:190px">หน้า / ฟังก์ชัน</th>
+        ${groups.map(g=>`<th style="text-align:center;min-width:140px">
+          <div style="font-weight:700;font-size:12px">${esc(g.dept)}</div>
+          <div style="font-size:10px;color:var(--TX3)">${esc(g.pos)} (${g.users} คน)</div>
+          <select style="width:100%;margin-top:4px;padding:3px;border:1px solid var(--BD);border-radius:5px;font-size:11px" onchange="applyRoleToGroup('${esc(g.key)}',this.value);this.value=''">
+            <option value="">— Apply Role —</option>
+            ${roleOpts}
+          </select>
+        </th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>${ALL_NAV_PAGES.map(pg=>`<tr>
+      <td style="font-size:12.5px">${pg.lbl}</td>
+      ${groups.map(g=>{const has=(perms[g.key]?.pages||[]).includes(pg.id);
+        return `<td style="text-align:center"><input type="checkbox" data-pkey="${esc(g.key)}" data-page="${pg.id}" ${has?'checked':''} style="width:15px;height:15px;accent-color:var(--BL);cursor:pointer"></td>`;
+      }).join('')}
+    </tr>`).join('')}</tbody></table></div>
+    <div style="margin-top:12px;text-align:right;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-sm" onclick="resetPerms()">Reset defaults</button>
+      <button class="btn btn-sm btn-g" onclick="savePerms()">💾 Save</button>
+    </div>
   </div>`;
+  } else {
+    const custom=DB.get('nav_roles')||{};
+    document.getElementById('perm-body').innerHTML=`
+  <div class="al ali">สร้าง Role สำหรับกำหนดสิทธิ์ นำไป Apply ให้แผนก+ตำแหน่งในแท็บ "สิทธิ์หน้าระบบ"</div>
+  <div class="frow" style="margin-bottom:12px">
+    <input id="role-new-key" type="text" placeholder="key เช่น sales2" style="width:130px;padding:6px 9px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font)">
+    <input id="role-new-lbl" type="text" placeholder="ชื่อ Role" style="width:160px;padding:6px 9px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font)">
+    <button class="btn btn-sm btn-t" onclick="addCustomRole()">+ สร้าง Role ใหม่</button>
+  </div>
+  <div class="cgrid c2">
+    ${Object.entries(roles).map(([k,r])=>{
+      const isDefault=!!DEFAULT_ROLES[k];
+      const pageChk=ALL_NAV_PAGES.map(pg=>`
+        <label style="display:flex;align-items:center;gap:5px;padding:3px 0;cursor:pointer;font-size:12px">
+          <input type="checkbox" data-rkey="${esc(k)}" data-rpage="${pg.id}" ${(r.pages||[]).includes(pg.id)?'checked':''} ${isDefault?'disabled':''} style="accent-color:var(--BL);cursor:${isDefault?'default':'pointer'}">
+          ${pg.lbl}
+        </label>`).join('');
+      return `<div class="card" style="margin-bottom:0">
+        <div class="ch">
+          <div class="ct2" style="font-size:14px">${esc(r.label)} ${isDefault?'<span class="badge bbgr" style="font-size:10px">ตั้งต้น</span>':''}</div>
+          <div style="display:flex;gap:6px">
+            ${isDefault?'':`<button class="btn btn-xs btn-g" onclick="saveCustomRole('${esc(k)}')">💾 บันทึก</button><button class="btn btn-xs btn-r" onclick="deleteCustomRole('${esc(k)}')">ลบ</button>`}
+          </div>
+        </div>
+        <div style="columns:2;gap:8px">${pageChk}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+  }
+}
+function applyRoleToGroup(pkey,roleKey){
+  if(!roleKey)return;
+  const roles=_getRoles();
+  const rolePages=roles[roleKey]?.pages||[];
+  document.querySelectorAll(`[data-pkey="${pkey}"][data-page]`).forEach(cb=>{
+    cb.checked=rolePages.includes(cb.dataset.page);
+  });
+  toast(`Apply role "${roles[roleKey]?.label}" ให้ ${pkey} แล้ว`);
+}
+function addCustomRole(){
+  const key=(document.getElementById('role-new-key')?.value||'').trim().replace(/\s+/g,'_');
+  const lbl=(document.getElementById('role-new-lbl')?.value||'').trim();
+  if(!key||!lbl){toast('กรุณากรอก key และชื่อ Role','warn');return;}
+  const custom=DB.get('nav_roles')||{};
+  custom[key]={label:lbl,pages:[]};
+  DB.set('nav_roles',custom);
+  audit('ADD_ROLE',key,{lbl});
+  pgPerms();
+  toast('สร้าง Role '+lbl+' แล้ว');
+}
+function saveCustomRole(key){
+  const custom=DB.get('nav_roles')||{};
+  const pages=[];
+  document.querySelectorAll(`[data-rkey="${key}"][data-rpage]`).forEach(cb=>{if(cb.checked)pages.push(cb.dataset.rpage);});
+  custom[key]={...custom[key],pages};
+  DB.set('nav_roles',custom);
+  audit('SAVE_ROLE',key,{pages});
+  toast('บันทึก Role '+key+' แล้ว');
+}
+function deleteCustomRole(key){
+  if(!confirm('ลบ Role '+key+' ?'))return;
+  const custom=DB.get('nav_roles')||{};
+  delete custom[key];
+  DB.set('nav_roles',custom);
+  audit('DEL_ROLE',key,{});
+  pgPerms();
 }
 function savePerms(){
   const groups=_permGroups();
@@ -4110,7 +4273,7 @@ function savePerms(){
   groups.forEach(g=>{perms[g.key]={dept:g.dept,pos:g.pos,pages:[]};});
   document.querySelectorAll('[data-pkey][data-page]').forEach(cb=>{if(cb.checked)perms[cb.dataset.pkey].pages.push(cb.dataset.page);});
   DB.set('nav_perms_deptpos',perms);
-  toast('Saved department/position permissions. They apply on next login.');
+  toast('บันทึกสิทธิ์แล้ว — มีผลเมื่อ Login ใหม่');
 }
 function resetPerms(){
   DB.set('nav_perms_deptpos',{});
