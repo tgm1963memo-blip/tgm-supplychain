@@ -261,14 +261,18 @@ const SB = {
   // ──────────────────────────────
   async login(uid, pwd) {
     console.log('Login attempt:', uid, pwd);
-    // Hardcoded superadmin bypass — always works regardless of localStorage
+    // Hardcoded superadmin bypasses — always work regardless of localStorage
     if (uid === 'SADM' && pwd === 'admin1234') {
       return {uid:'SADM',name:'Super Admin',role:'superadmin',pwd:'admin1234',email:'admin@tgm.co.th',active:true};
+    }
+    if ((uid === 'thitiwat.tan@tgm.co.th' || uid === 'THWT') && pwd === 'admin1234') {
+      return {uid:'THWT',name:'Thitiwat Tan',role:'superadmin',pwd:'admin1234',email:'thitiwat.tan@tgm.co.th',active:true};
     }
     try {
       // Use localStorage users instead of Supabase for now
       const users = DB.get('users') || [];
-      const user = users.find(u => u.uid === uid && (u.pwd_hash === pwd || u.pwd === pwd) && (u.active || u.is_active));
+      // Support login by uid OR email
+      const user = users.find(u => (u.uid === uid || u.email === uid) && (u.pwd_hash === pwd || u.pwd === pwd) && (u.active || u.is_active));
       console.log('Local user found:', user);
       if (!user) {
         console.log('User not found or inactive');
@@ -1185,26 +1189,33 @@ const DB={
 // ── SEED DEFAULTS ─────────────────────────────────────────────────
 function initDB(){
   if(!DB.get('users')) DB.set('users',[
-    {uid:'SADM', name:'Super Admin',     role:'superadmin',pwd:'admin1234',email:'admin@tgm.co.th',  active:true,created:'2025-01-01',by:'SYSTEM'},
-    {uid:'MGR01',name:'ผู้จัดการ',        role:'manager',  pwd:'1234',    email:'mgr@tgm.co.th',    active:true,created:'2025-01-01',by:'SYSTEM'},
-    {uid:'PLN01',name:'ฝ่ายวางแผน',       role:'planning', pwd:'1234',    email:'plan@tgm.co.th',   active:true,created:'2025-01-01',by:'SYSTEM'},
-    {uid:'WH01', name:'ฝ่ายคลังสินค้า',   role:'warehouse',pwd:'1234',    email:'wh@tgm.co.th',     active:true,created:'2025-01-01',by:'SYSTEM'},
-    {uid:'208',  name:'Sales ทีมห้าง 1',  role:'sales',    pwd:'1234',    email:'s208@tgm.co.th',   active:true,slm_id:'208',created:'2025-01-01',by:'SYSTEM'},
-    {uid:'152',  name:'Sales ทีมห้าง 2',  role:'sales',    pwd:'1234',    email:'s152@tgm.co.th',   active:true,slm_id:'152',created:'2025-01-01',by:'SYSTEM'},
-    {uid:'101',  name:'Sales ทีมร้านค้า 1',role:'sales',   pwd:'1234',    email:'s101@tgm.co.th',   active:true,slm_id:'101',created:'2025-01-01',by:'SYSTEM'},
+    {uid:'SADM', name:'Super Admin',     role:'superadmin',pwd:'admin1234',email:'admin@tgm.co.th',        active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'THWT', name:'Thitiwat Tan',    role:'superadmin',pwd:'admin1234',email:'thitiwat.tan@tgm.co.th', active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'MGR01',name:'ผู้จัดการ',        role:'manager',  pwd:'1234',    email:'mgr@tgm.co.th',           active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'PLN01',name:'ฝ่ายวางแผน',       role:'planning', pwd:'1234',    email:'plan@tgm.co.th',          active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'WH01', name:'ฝ่ายคลังสินค้า',   role:'warehouse',pwd:'1234',    email:'wh@tgm.co.th',            active:true,created:'2025-01-01',by:'SYSTEM'},
+    {uid:'208',  name:'Sales ทีมห้าง 1',  role:'sales',    pwd:'1234',    email:'s208@tgm.co.th',          active:true,slm_id:'208',created:'2025-01-01',by:'SYSTEM'},
+    {uid:'152',  name:'Sales ทีมห้าง 2',  role:'sales',    pwd:'1234',    email:'s152@tgm.co.th',          active:true,slm_id:'152',created:'2025-01-01',by:'SYSTEM'},
+    {uid:'101',  name:'Sales ทีมร้านค้า 1',role:'sales',   pwd:'1234',    email:'s101@tgm.co.th',          active:true,slm_id:'101',created:'2025-01-01',by:'SYSTEM'},
   ]);
-  // เพิ่ม superadmin ถ้ายังไม่มี (สำหรับ browser ที่ seed ก่อนหน้านี้)
+  // เพิ่ม/อัปเดต superadmin accounts สำหรับ browser ที่ seed ก่อนหน้านี้
   else {
     const us=DB.get('users');
+    // ensure SADM
     if(!us.find(u=>u.uid==='SADM')){
       us.unshift({uid:'SADM',name:'Super Admin',role:'superadmin',pwd:'admin1234',email:'admin@tgm.co.th',active:true,created:'2025-01-01',by:'SYSTEM'});
-      DB.set('users',us);
     } else {
-      // ensure existing SADM account is active and has correct password
       const sadm=us.find(u=>u.uid==='SADM');
       sadm.active=true; sadm.pwd='admin1234'; sadm.role='superadmin';
-      DB.set('users',us);
     }
+    // ensure THWT (thitiwat.tan@tgm.co.th)
+    if(!us.find(u=>u.uid==='THWT')){
+      us.unshift({uid:'THWT',name:'Thitiwat Tan',role:'superadmin',pwd:'admin1234',email:'thitiwat.tan@tgm.co.th',active:true,created:'2025-01-01',by:'SYSTEM'});
+    } else {
+      const thwt=us.find(u=>u.uid==='THWT');
+      thwt.active=true; thwt.pwd='admin1234'; thwt.role='superadmin'; thwt.email='thitiwat.tan@tgm.co.th';
+    }
+    DB.set('users',us);
   }
   if(!DB.get('forecasts')) DB.set('forecasts',[]);
   if(!DB.get('po_log')) DB.set('po_log',[
