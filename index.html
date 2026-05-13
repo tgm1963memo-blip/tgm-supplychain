@@ -934,16 +934,6 @@ function toggleUserActive(i){
   DB.set('users',us);pgUsers();
 }
 
-// ════════════════════════════════════════════════
-// pgDash() — เพิ่ม WMS link banner
-// ════════════════════════════════════════════════
-// NOTE: ใส่ code นี้ใน pgDash() ต่อท้ายก่อน setTimeout(dashCharts,50)
-const WMS_BANNER = `
-<div class="al ali" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">
-  <span>📦 Stock ดึงจาก WMS realtime — คลิกเพื่อดูรายละเอียด</span>
-  <a href="https://tgm-wms.vercel.app" target="_blank"
-     class="btn btn-sm btn-t">เปิด WMS →</a>
-</div>`;
 
 const MONTHS=["2026-01", "2026-02", "2026-03", "2026-04"];
 const MTH_TH={"2026-01": "ม.ค.69", "2026-02": "ก.พ.69", "2026-03": "มี.ค.69", "2026-04": "เม.ย.69"};
@@ -1121,7 +1111,6 @@ function pgDash(){
     return a+(s.lots||[]).filter(l=>l.exp&&dUntil(l.exp)>=0&&dUntil(l.exp)<=30).length;
   },0);
   document.getElementById('ct').innerHTML=`
-  ${WMS_BANNER}
   <div class="krow">
     <div class="kpi b"><div class="kl">ยอดขาย เฉลี่ย/เดือน</div><div class="kv">${fmt(avgSales)}</div><div class="kh">กก. (3 เดือนล่าสุด)</div></div>
     <div class="kpi a"><div class="kl">PO รอส่ง</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
@@ -1209,7 +1198,7 @@ const SD_SALES=[
   {n:'สมหญิง รักชาติ',c:'S02',w:.56,tgt:2000000,vs:-2}
 ];
 const SD_VS=[8,-3,5,-8,11,-6,4,-2];
-let _sd={pt:'month',cm:4,cy:2569,cw:1,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:-1}};
+let _sd={pt:'month',cm:4,cy:2569,cw:1,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1}};
 
 function _sdD(){
   const b=SD_MD[_sd.cm];
@@ -1233,6 +1222,7 @@ function sdTogOp(k){_sd.op[k]=!_sd.op[k];sdRender();}
 
 function pgMySales(){
   const isAll=ROLE==='manager'||ROLE==='superadmin';
+  document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
   document.getElementById('ct').innerHTML=`<div id="sd-root">
   <div class="frow" style="border-radius:8px;margin-bottom:10px;gap:6px;flex-wrap:wrap">
     <button class="btn btn-sm" id="sd-pt-m" onclick="sdSetPT('month')" style="background:var(--N);color:#fff;border-color:var(--N);font-weight:600">รายเดือน</button>
@@ -1312,7 +1302,7 @@ function sdCust(){
   const filtered=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)||c.g.some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))):base;
   const rows=filtered.map(c=>({...c,_cv:Math.round(T*(c.w[wi]||c.w[0]))}));
   if(_sd.sort.col==='val') rows.sort((a,b)=>_sd.sort.dir*(b._cv-a._cv));
-  const sDn=_sd.sort.col==='val'?(_sd.sort.dir<0?'▼':'▲'):'';
+  const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:38%">ลูกค้า / กลุ่มสินค้า / สินค้า</th>
@@ -1351,8 +1341,13 @@ function sdProd(){
   const prods=base.map(p=>({...p,_pv:Math.round(T*p.w)}));
   if(_sd.sort.col==='val') prods.sort((a,b)=>_sd.sort.dir*(b._pv-a._pv));
   else if(_sd.sort.col==='vs') prods.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
-  const sDn=_sd.sort.col==='val'?(_sd.sort.dir<0?'▼':'▲'):'';
-  const sDv=_sd.sort.col==='vs'?(_sd.sort.dir<0?'▼':'▲'):'';
+  const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
+  const sDv=_sd.sort.col==='vs'?(_sd.sort.dir>0?'▼':'▲'):'';
+  const custByItem={};
+  SD_CUSTS.forEach(c=>c.g.forEach(g=>g.it.forEach(it=>{
+    if(!custByItem[it.c]) custByItem[it.c]=[];
+    if(!custByItem[it.c].includes(c.n)) custByItem[it.c].push(c.n);
+  })));
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:38%">กลุ่มสินค้า / สินค้า</th>
@@ -1366,16 +1361,14 @@ function sdProd(){
       <td><span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;border:1px solid var(--BD);margin-right:5px;font-size:10px;color:var(--TX3);transition:.15s;transform:rotate(${oo?90:0}deg)">▶</span>
       <strong>${p.n}</strong></td>
       <td class="r"><strong>${_sdF(pv)}</strong></td><td class="r">${_sdBar(pv,T)}</td><td class="r">${_sdVs(p.vs)}</td></tr>`;
-    if(oo){
-      p.it.forEach(it=>{
-        const iv=Math.round(pv*it.w);
-        h+=`<tr style="background:var(--bg2);font-size:12px">
-          <td style="padding-left:32px">${it.n}</td>
-          <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,pv)}</td><td class="r">${_sdVs(it.vs)}</td></tr>`;
-      });
-      const matchCusts=SD_CUSTS.filter(c=>c.g.some(g=>g.n===p.n));
-      if(matchCusts.length) h+=`<tr style="background:var(--LBL)"><td colspan="4" style="padding:6px 12px 6px 32px;font-size:11.5px"><span style="color:var(--BL);font-weight:600;margin-right:6px">👥 ลูกค้าที่ซื้อ:</span>${matchCusts.map(c=>`<span class="badge bbl" style="margin-right:3px">${c.n}</span>`).join('')}</td></tr>`;
-    }
+    if(oo) p.it.forEach(it=>{
+      const iv=Math.round(pv*it.w);
+      const custs=custByItem[it.c]||[];
+      const cb=custs.length?` <span style="margin-left:4px">${custs.map(n=>`<span class="badge bbl" style="font-size:10px;margin-right:2px">${n}</span>`).join('')}</span>`:'';
+      h+=`<tr style="background:var(--bg2);font-size:12px">
+        <td style="padding-left:32px">${it.n}${cb}</td>
+        <td class="r">${_sdF(iv)}</td><td class="r">${_sdBar(iv,pv)}</td><td class="r">${_sdVs(it.vs)}</td></tr>`;
+    });
   });
   document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
 }
@@ -1388,8 +1381,8 @@ function sdSlm(){
   const sales=filtered.map(s=>({...s,_sv:Math.round(T*s.w)}));
   if(_sd.sort.col==='val') sales.sort((a,b)=>_sd.sort.dir*(b._sv-a._sv));
   else if(_sd.sort.col==='vs') sales.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
-  const sDn=_sd.sort.col==='val'?(_sd.sort.dir<0?'▼':'▲'):'';
-  const sDv=_sd.sort.col==='vs'?(_sd.sort.dir<0?'▼':'▲'):'';
+  const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
+  const sDv=_sd.sort.col==='vs'?(_sd.sort.dir>0?'▼':'▲'):'';
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:30%">เซลส์</th>
@@ -1426,7 +1419,7 @@ function sdNav(d){
 function sdGoNow(){_sd.cm=4;_sd.cy=2569;_sd.cw=1;sdRender();}
 function sdTab(el,t){
   document.querySelectorAll('#sd-root .tab').forEach(e=>e.classList.remove('act'));
-  el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.slmF='';_sd.sort={col:'val',dir:-1};
+  el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.slmF='';_sd.sort={col:'val',dir:1};
   const qi=document.getElementById('sd-q');if(qi)qi.value='';
   const si=document.getElementById('sd-slm-f');if(si)si.value='';
   sdRender();
@@ -1443,6 +1436,55 @@ function sdClear(){
   const qi=document.getElementById('sd-q');if(qi)qi.value='';
   const si=document.getElementById('sd-slm-f');if(si)si.value='';
   sdRender();
+}
+function sdExport(){
+  const d=_sdD(),T=d.t,wi=_sdWI();
+  const period=(_sd.pt==='week'?'สัปดาห์'+_sd.cw+'_':'')+SD_MTH[_sd.cm]+'_'+_sd.cy;
+  let cols,rows=[],sheet;
+  if(_sd.at==='cust'){
+    const isAll=(ROLE==='manager'||ROLE==='superadmin')&&_sd.mgrView;
+    const q=(_sd.q||'').toLowerCase();
+    const base=isAll?SD_CUSTS:SD_CUSTS.slice(0,1);
+    const filtered=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)):base;
+    const custRows=filtered.map(c=>({...c,_cv:Math.round(T*(c.w[wi]||c.w[0]))}));
+    if(_sd.sort.col==='val') custRows.sort((a,b)=>_sd.sort.dir*(b._cv-a._cv));
+    cols=['ลูกค้า','รหัส','ประเภท','ยอดขาย','สัดส่วน%'];
+    custRows.forEach(c=>{
+      rows.push([c.n,c.c,c.ty,c._cv,Math.round(c._cv/T*100)]);
+      c.g.forEach(g=>{
+        const gv=Math.round(c._cv*(g.w[wi]||g.w[0]));
+        rows.push(['  '+g.n,'','',gv,Math.round(gv/T*100)]);
+        g.it.forEach(it=>{const iv=Math.round(gv*(it.w[wi]||it.w[0]));rows.push(['    '+it.c+' — '+it.n,'','',iv,Math.round(iv/T*100)]);});
+      });
+    });
+    sheet='รายลูกค้า';
+  } else if(_sd.at==='prod'){
+    const q=(_sd.q||'').toLowerCase();
+    const base=q?SD_PRODS.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q))):SD_PRODS;
+    const prods=base.map(p=>({...p,_pv:Math.round(T*p.w)}));
+    if(_sd.sort.col==='val') prods.sort((a,b)=>_sd.sort.dir*(b._pv-a._pv));
+    else if(_sd.sort.col==='vs') prods.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
+    const custByItem={};
+    SD_CUSTS.forEach(c=>c.g.forEach(g=>g.it.forEach(it=>{if(!custByItem[it.c])custByItem[it.c]=[];if(!custByItem[it.c].includes(c.n))custByItem[it.c].push(c.n);})));
+    cols=['กลุ่มสินค้า / สินค้า','ยอดขาย','สัดส่วน%','vs เดือนก่อน%','ลูกค้าที่ซื้อ'];
+    prods.forEach(p=>{
+      rows.push([p.n,p._pv,Math.round(p._pv/T*100),p.vs,'']);
+      p.it.forEach(it=>{const iv=Math.round(p._pv*it.w);rows.push(['  '+it.n,iv,Math.round(iv/T*100),it.vs,(custByItem[it.c]||[]).join(', ')]);});
+    });
+    sheet='รายสินค้า';
+  } else {
+    const q=(_sd.q||'').toLowerCase();
+    const sf=_sd.slmF||'';
+    const filtered=SD_SALES.filter(s=>(!q||(s.n.toLowerCase().includes(q)||s.c.toLowerCase().includes(q)))&&(!sf||s.c===sf));
+    const sales=filtered.map(s=>({...s,_sv:Math.round(T*s.w)}));
+    if(_sd.sort.col==='val') sales.sort((a,b)=>_sd.sort.dir*(b._sv-a._sv));
+    else if(_sd.sort.col==='vs') sales.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
+    cols=['เซลส์','รหัส','ยอดขาย','เป้า','% บรรลุ','vs เดือนก่อน%'];
+    const tgtMul=_sd.pt==='week'?4:1;
+    sales.forEach(s=>{const tgt=Math.round(s.tgt/tgtMul);rows.push([s.n,s.c,s._sv,tgt,Math.round(s._sv/tgt*100),s.vs]);});
+    sheet='รายเซลส์';
+  }
+  toXLSX([[sheet, cols, rows]], `Sales_${period}_${sheet}.xlsx`);
 }
 
 // ── FORECAST ─────────────────────────────────────────────────────
