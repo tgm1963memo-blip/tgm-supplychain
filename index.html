@@ -117,6 +117,9 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 .cr-step-item.act .cr-step-num span,.cr-step-item.done .cr-step-num span{color:#fff}
 .cr-fullpage-prog{height:4px;background:rgba(255,255,255,.2);border-radius:99px;overflow:hidden;margin-top:12px;max-width:220px}
 .cr-fullpage-prog-fill{height:100%;background:#D4AF37;border-radius:99px;transition:width .4s}
+#btn-sync:hover{background:rgba(255,255,255,.22)}
+#btn-sync.syncing{opacity:.7;pointer-events:none}
+#btn-sync.syncing::before{content:'⏳ ';animation:none}
 .ald{background:var(--LR);color:var(--R);border:1px solid rgba(163,45,45,.2)}
 .pz{border:2px dashed var(--BD);border-radius:8px;padding:18px;text-align:center;color:var(--TX3);cursor:pointer;transition:.15s;margin-bottom:10px;position:relative}
 .pz:hover,.pz.drag{border-color:var(--BL);background:var(--LBL);color:var(--BL)}
@@ -274,6 +277,7 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
   <div id="tb">
     <img src="https://img1.pic.in.th/images/logo-tss-03.png" alt="TSS" style="height:28px;object-fit:contain;margin-right:4px" onerror="this.style.display='none'">
     <div class="tb-t" id="tb-t">Dashboard</div>
+    <button id="btn-sync" onclick="syncAndReload()" title="ซิงค์ข้อมูลใหม่" style="background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.2);border-radius:7px;padding:5px 11px;color:#fff;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:5px;transition:.2s">🔄 ซิงค์</button>
     <div id="tb-r" style="display:flex;gap:8px;align-items:center"></div>
   </div>
   <div id="ct"></div>
@@ -473,6 +477,25 @@ const SB = {
       console.warn('addForecasts Supabase:', e.message || e);
       return false;
     }
+  },
+
+  async deleteForecastsByMonth(ym, custCode) {
+    // ym = 'YYYY-MM', custCode = null หมายถึงทุกลูกค้า
+    let q = getSupabaseClient().from('forecasts')
+      .delete()
+      .gte('deliv_date', `${ym}-01`)
+      .lte('deliv_date', `${ym}-31`);
+    if (custCode) q = q.eq('cust_code', custCode);
+    return sbThrow(q, 'deleteForecastsByMonth');
+  },
+
+  async deleteForecastsByDay(date, custCode) {
+    // date = 'YYYY-MM-DD', custCode = null หมายถึงทุกลูกค้า
+    let q = getSupabaseClient().from('forecasts')
+      .delete()
+      .eq('deliv_date', date);
+    if (custCode) q = q.eq('cust_code', custCode);
+    return sbThrow(q, 'deleteForecastsByDay');
   },
 
   async approveForecast(id) {
@@ -793,6 +816,16 @@ const SB = {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, cb)
       .subscribe();
   },
+
+  subscribeExpressData(cb) {
+    return getSupabaseClient().channel('express-data-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales_history' }, cb)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'outbound_orders' }, cb)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'skus' }, cb)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, cb)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, cb)
+      .subscribe();
+  },
 };
 
 // ════════════════════════════════════════════════
@@ -939,6 +972,18 @@ async function doLogin() {
           }
         });
       }
+      // Express sync tables — debounce 8s เพราะ upsert หลาย batch
+      let _expressTimer = null;
+      SB.subscribeExpressData(() => {
+        CACHE.clearAll();
+        const btn = document.getElementById('btn-sync');
+        if (btn) btn.classList.add('syncing');
+        clearTimeout(_expressTimer);
+        _expressTimer = setTimeout(() => {
+          nav(sessionStorage.getItem('_pg') || 'dash');
+          if (btn) btn.classList.remove('syncing');
+        }, 8000);
+      });
     } catch (e) { console.warn('Realtime subscribe:', e); }
 
   } catch (e) {
@@ -1006,9 +1051,11 @@ async function pgForecast() {
       <option value="day" ${(window._fcTpl||'week')==='day'?'selected':''}>Template: วัน</option>
       <option value="week" ${(window._fcTpl||'week')==='week'?'selected':''}>Template: สัปดาห์</option>
       <option value="month" ${(window._fcTpl||'week')==='month'?'selected':''}>Template: เดือน</option>
+      <option value="cust" ${(window._fcTpl||'week')==='cust'?'selected':''}>Template: ลูกค้า</option>
     </select>
     <input type="month" value="${selMonth}" onchange="window._fcMonth=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px">
-    <select onchange="window._fcCust=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;min-width:180px;height:34px">
+    ${(window._fcTpl||'week')==='cust'?`<input type="date" value="${window._fcDay||(selMonth+'-01')}" onchange="window._fcDay=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px">`:``}
+    <select onchange="window._fcCust=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;min-width:180px;height:34px;${(window._fcTpl||'week')==='cust'?'display:none':''}">
       <option value="">— ลูกค้า (ทั้งหมด) —</option>
       ${custSet.map(c=>`<option value="${esc(c.code)}" ${selCust===c.code?'selected':''}>${esc(c.name||c.code)}</option>`).join('')}
     </select>
@@ -1076,11 +1123,12 @@ function expFcSummary(){
 }
 function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
   const el=document.getElementById('fc-tab-body');if(!el)return;
+  const tpl=window._fcTpl||'week';
+  if(tpl==='cust') return _renderFcGridCust(fcAll,SKUS,skuMap,selMonth,selCust,custMap);
   const hist=window._salesHistCache||ALL_HIST||{};
   const[yr,mo]=selMonth?selMonth.split('-').map(Number):[new Date().getFullYear(),new Date().getMonth()+1];
   const prevYm=`${mo===1?yr-1:yr}-${String(mo===1?12:mo-1).padStart(2,'0')}`;
   const prevYrYm=`${yr-1}-${String(mo).padStart(2,'0')}`;
-  const tpl=window._fcTpl||'week';
   const cols=_fcTemplateCols(selMonth,tpl);
   const fcData={};
   fcAll.filter(f=>(!selMonth||(f.delivDate||'').slice(0,7)===selMonth)&&(!selCust||f.custCode===selCust)).forEach(f=>{
@@ -1103,7 +1151,10 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
         <div style="font-size:15px;font-weight:700">${esc(custName)}</div>
         <div style="font-size:12px;opacity:.8;margin-top:2px">Forecast ${_fcTplLabel(tpl)} · ${mL?mL(selMonth):selMonth}</div>
       </div>
-      <button class="btn btn-sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.35)" onclick="fcShowAddSku()">+ เพิ่มรายการสินค้า</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.35)" onclick="fcShowLoadPrev()">📋 โหลดจากใบเก่า</button>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.35)" onclick="fcShowAddSku()">+ เพิ่มรายการสินค้า</button>
+      </div>
     </div>
     <div style="overflow-x:auto">
       <table style="border-collapse:collapse;width:100%;min-width:680px">
@@ -1155,7 +1206,7 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
   fcgFooter();
 }
 function _fcGridKey(month,cust,tpl){return `${month||''}|${cust||'ALL'}|${tpl||'week'}`;}
-function _fcTplLabel(tpl){return tpl==='day'?'รายวัน':tpl==='month'?'รายเดือน':'รายสัปดาห์';}
+function _fcTplLabel(tpl){return tpl==='day'?'รายวัน':tpl==='month'?'รายเดือน':tpl==='cust'?'รายลูกค้า':'รายสัปดาห์';}
 function _fcTemplateCols(selMonth,tpl){
   const [yr,mo]=selMonth?selMonth.split('-').map(Number):[new Date().getFullYear(),new Date().getMonth()+1];
   const mm=String(mo).padStart(2,'0');
@@ -1216,7 +1267,13 @@ async function saveFcGrid(){
   });
   if(!newFc.length){toast('กรุณากรอกจำนวนอย่างน้อย 1 รายการ');return;}
   let ok=false;
-  if(SB?.addForecast){try{for(const f of newFc)await SB.addForecast(f);ok=true;}catch(e){console.warn('saveFcGrid:',e);}}
+  if(SB?.deleteForecastsByMonth&&SB?.addForecasts){
+    try{
+      await SB.deleteForecastsByMonth(selMonth,selCust||null);
+      await SB.addForecasts(newFc);
+      ok=true;
+    }catch(e){console.warn('saveFcGrid Supabase:',e);}
+  }
   if(!ok){const arr=DB.get('forecasts')||[];const filtered=arr.filter(f=>{const fm=(f.delivDate||'').slice(0,7);return!(fm===selMonth&&(!selCust||f.custCode===selCust));});DB.set('forecasts',[...filtered,...newFc]);}
   toast(`บันทึก ${newFc.length} รายการแล้ว`);
   setTimeout(()=>nav('planstock'),350);
@@ -1228,6 +1285,233 @@ function expFcGrid(){
   const bySku={};document.querySelectorAll('.fcg-inp').forEach(el=>{const sku=el.dataset.sku;bySku[sku]=bySku[sku]||Array(cols.length).fill('');const v=parseFloat(el.value||0)||0;bySku[sku][Number(el.dataset.col)||0]=v||'';});
   const rows=Object.entries(bySku).map(([sku,vals])=>[sku,SKUS[sku]?.name||sku,...vals,vals.reduce((a,b)=>a+(Number(b)||0),0)||'']).filter(r=>r.slice(2,-1).some(Boolean));
   toXLSX([['Forecast_Grid',['รหัสสินค้า','ชื่อสินค้า',...cols.map(c=>c.lbl), 'รวม'],rows]],`FcGrid_${selMonth}_${selCust||'ALL'}_${tpl}.xlsx`);
+}
+function _renderFcGridCust(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
+  const el=document.getElementById('fc-tab-body');if(!el)return;
+  const selDay=window._fcDay||(selMonth+'-01');
+  const custRows=allCustomerRows();
+  const custSet=custRows.map(c=>({code:c.c,name:c.n||c.c})).sort((a,b)=>a.code.localeCompare(b.code,'th'));
+  // build fcData[sku][custCode] from forecasts matching selDay
+  const dayFc=fcAll.filter(f=>(f.delivDate||'').slice(0,10)===selDay);
+  const fcData={};
+  dayFc.forEach(f=>{const cc=f.custCode||'';if(!cc)return;if(!fcData[f.sku])fcData[f.sku]={};fcData[f.sku][cc]=(fcData[f.sku][cc]||0)+(f.qty||0);});
+  // determine customer columns to show
+  const activeCusts=new Set(dayFc.map(f=>f.custCode).filter(Boolean));
+  const stateKeyC=`cust-cols|${selMonth}`;
+  window._fcGridCustColState=window._fcGridCustColState||{};
+  if(!window._fcGridCustColState[stateKeyC]){
+    const top=custSet.slice(0,15).map(c=>c.code);
+    window._fcGridCustColState[stateKeyC]=[...new Set([...activeCusts,...top])];
+  }
+  const showCusts=custSet.filter(c=>window._fcGridCustColState[stateKeyC].includes(c.code));
+  // determine skus to show
+  const hist=window._salesHistCache||ALL_HIST||{};
+  const activeSku=new Set(Object.keys(fcData));
+  const topSku=SKUS.filter(s=>hist[s.code]?.avg3>0).sort((a,b)=>(hist[b.code]?.avg3||0)-(hist[a.code]?.avg3||0)).slice(0,20).map(s=>s.code);
+  const stateKey=`cust|${selDay}`;
+  window._fcGridSkusCust=window._fcGridSkusCust||{};
+  if(!window._fcGridSkusCust[stateKey])window._fcGridSkusCust[stateKey]=[...new Set([...activeSku,...topSku])].slice(0,30);
+  const showSkus=(window._fcGridSkusCust[stateKey]||[]).map(c=>SKUS.find(s=>s.code===c)).filter(Boolean);
+  const fmtD2=d=>{try{const[y,m,dd]=String(d).split('-');return `${Number(dd)}/${Number(m)}/${y}`;}catch{return d;}};
+  el.innerHTML=`
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="background:var(--N);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center">
+      <div>
+        <div style="font-size:15px;font-weight:700">Forecast รายลูกค้า — ${fmtD2(selDay)}</div>
+        <div style="font-size:12px;opacity:.8;margin-top:2px">วันที่ ${selDay} · แต่ละคอลัมน์คือลูกค้า 1 ราย</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.35)" onclick="fcShowLoadPrev()">📋 โหลดจากใบเก่า</button>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.35)" onclick="fcShowAddSkuCust()">+ เพิ่มสินค้า</button>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.35)" onclick="fcShowAddCustCol()">+ เพิ่มลูกค้า</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="border-collapse:collapse;width:100%;min-width:600px">
+        <thead><tr style="background:var(--bg2);font-size:11px">
+          <th style="padding:8px 10px;text-align:left;position:sticky;left:0;background:var(--bg2);min-width:95px;z-index:2">รหัสสินค้า</th>
+          <th style="padding:8px 10px;text-align:left;min-width:150px">ชื่อสินค้า</th>
+          ${showCusts.map((c,i)=>`<th style="padding:7px 6px;text-align:center;color:var(--BL);min-width:92px;${i===0?'border-left:2px solid var(--BD)':''}"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:88px" title="${esc(c.name||c.code)}">${esc((c.name||c.code).substring(0,13))}</div><span style="font-weight:400;color:var(--TX3);font-size:10px">${esc(c.code)}</span><br><button class="btn btn-xs btn-r" style="font-size:9px;padding:1px 4px;margin-top:2px" onclick="fcRemoveCustCol('${esc(c.code)}')">ลบ</button></th>`).join('')}
+          <th style="padding:8px 10px;text-align:right;color:var(--N);font-weight:700;min-width:70px;border-left:2px solid var(--BD)">รวม</th>
+          <th style="padding:8px 8px;min-width:46px"></th>
+        </tr></thead>
+        <tbody>${showSkus.map(s=>{
+          const d=fcData[s.code]||{};
+          const tot=showCusts.reduce((a,c)=>a+(d[c.code]||0),0);
+          const hl=tot>0?'background:#f0f9ff':'';
+          return`<tr style="border-bottom:1px solid var(--bg2);${hl}">
+            <td style="padding:5px 10px;font-family:monospace;font-size:11px;color:var(--TX2);position:sticky;left:0;background:${tot>0?'#f0f9ff':'#fff'};z-index:1">${esc(s.code)}</td>
+            <td style="padding:5px 10px;font-size:12px">${esc(s.name.substring(0,28))}</td>
+            ${showCusts.map((c,i)=>`<td style="padding:3px 4px;${i===0?'border-left:2px solid var(--BD)':''}">
+              <input class="fcgc-inp" data-sku="${esc(s.code)}" data-cust="${esc(c.code)}" type="number" min="0" step="100" value="${d[c.code]||''}"
+                oninput="fcgcRow('${esc(s.code)}')"
+                style="width:100%;text-align:right;font-size:12px;padding:4px 6px;border:1px solid var(--BD);border-radius:5px;background:${(d[c.code]||0)>0?'#eff6ff':''}">
+            </td>`).join('')}
+            <td style="padding:5px 10px;text-align:right;font-weight:700;font-size:13px;color:var(--N);border-left:2px solid var(--BD)" id="fcgc-tot-${esc(s.code)}">${tot>0?tot.toLocaleString():''}</td>
+            <td style="padding:4px 6px;text-align:center"><button class="btn btn-xs btn-r" onclick="fcRemoveSkuCust('${esc(s.code)}')">ลบ</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+        <tfoot><tr style="background:var(--bg2);font-weight:700;font-size:12px">
+          <td colspan="2" style="padding:8px 10px">รวมทั้งหมด</td>
+          ${showCusts.map((c,i)=>`<td style="padding:8px 6px;text-align:center;color:var(--BL);${i===0?'border-left:2px solid var(--BD)':''}" id="fcgc-ftot-${esc(c.code)}"></td>`).join('')}
+          <td style="padding:8px 10px;text-align:right;color:var(--N);border-left:2px solid var(--BD)" id="fcgc-ftot-all"></td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <div style="padding:10px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--bg2)">
+      <button class="btn btn-p" onclick="saveFcGridCust()">บันทึกแผน</button>
+      <button class="btn btn-g" onclick="expFcGridCust()">Export Excel</button>
+    </div>
+  </div>`;
+  window._fcGridCustColsActive=showCusts;
+  fcgcFooter();
+}
+function fcgcRow(sku){
+  let tot=0;document.querySelectorAll('.fcgc-inp').forEach(el=>{if(el.dataset.sku===sku)tot+=parseFloat(el.value||0);});
+  const el=document.getElementById(`fcgc-tot-${sku}`);if(el)el.textContent=tot>0?Math.round(tot).toLocaleString():'';fcgcFooter();
+}
+function fcgcFooter(){
+  let all=0;const custs=window._fcGridCustColsActive||[];
+  custs.forEach(c=>{let s=0;document.querySelectorAll(`.fcgc-inp[data-cust="${c.code}"]`).forEach(el=>s+=parseFloat(el.value||0));const el=document.getElementById(`fcgc-ftot-${c.code}`);if(el)el.textContent=s>0?Math.round(s).toLocaleString():'';all+=s;});
+  const el=document.getElementById('fcgc-ftot-all');if(el)el.textContent=all>0?Math.round(all).toLocaleString():'';
+}
+function fcShowAddSkuCust(){
+  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
+  const selDay=window._fcDay||(window._fcMonth||today().slice(0,7))+'-01';
+  const key=`cust|${selDay}`;const used=new Set((window._fcGridSkusCust||{})[key]||[]);
+  openMod(`<div class="mh"><div class="mt2">เพิ่มสินค้าใน Forecast ลูกค้า</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div class="field"><label>สินค้า</label><select id="fcc-add-sku">${SKUS.filter(s=>!used.has(s.code)).map(s=>`<option value="${esc(s.code)}">${esc(s.code)} — ${esc((s.name||'').substring(0,42))}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ยกเลิก</button><button class="btn btn-p" onclick="fcAddSkuCust()">เพิ่ม</button></div>`);
+}
+function fcAddSkuCust(){
+  const sku=document.getElementById('fcc-add-sku')?.value;if(!sku)return;
+  const selDay=window._fcDay||(window._fcMonth||today().slice(0,7))+'-01';
+  const key=`cust|${selDay}`;
+  window._fcGridSkusCust=window._fcGridSkusCust||{};window._fcGridSkusCust[key]=window._fcGridSkusCust[key]||[];
+  if(!window._fcGridSkusCust[key].includes(sku))window._fcGridSkusCust[key].push(sku);
+  closeM();pgForecast();
+}
+function fcRemoveSkuCust(sku){
+  const selDay=window._fcDay||(window._fcMonth||today().slice(0,7))+'-01';
+  const key=`cust|${selDay}`;
+  window._fcGridSkusCust=window._fcGridSkusCust||{};window._fcGridSkusCust[key]=(window._fcGridSkusCust[key]||[]).filter(c=>c!==sku);
+  pgForecast();
+}
+function fcShowAddCustCol(){
+  const custRows=allCustomerRows();
+  const custSet=custRows.map(c=>({code:c.c,name:c.n||c.c})).sort((a,b)=>a.code.localeCompare(b.code,'th'));
+  const selMonth=window._fcMonth||today().slice(0,7);
+  const stateKeyC=`cust-cols|${selMonth}`;
+  const used=new Set((window._fcGridCustColState||{})[stateKeyC]||[]);
+  openMod(`<div class="mh"><div class="mt2">เพิ่มลูกค้าในตาราง</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div class="field"><label>ลูกค้า</label><select id="fcc-add-cust">${custSet.filter(c=>!used.has(c.code)).map(c=>`<option value="${esc(c.code)}">${esc(c.code)} — ${esc((c.name||'').substring(0,42))}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ยกเลิก</button><button class="btn btn-p" onclick="fcAddCustCol()">เพิ่ม</button></div>`);
+}
+function fcAddCustCol(){
+  const code=document.getElementById('fcc-add-cust')?.value;if(!code)return;
+  const selMonth=window._fcMonth||today().slice(0,7);
+  const stateKeyC=`cust-cols|${selMonth}`;
+  window._fcGridCustColState=window._fcGridCustColState||{};window._fcGridCustColState[stateKeyC]=window._fcGridCustColState[stateKeyC]||[];
+  if(!window._fcGridCustColState[stateKeyC].includes(code))window._fcGridCustColState[stateKeyC].push(code);
+  closeM();pgForecast();
+}
+function fcRemoveCustCol(code){
+  const selMonth=window._fcMonth||today().slice(0,7);
+  const stateKeyC=`cust-cols|${selMonth}`;
+  window._fcGridCustColState=window._fcGridCustColState||{};window._fcGridCustColState[stateKeyC]=(window._fcGridCustColState[stateKeyC]||[]).filter(c=>c!==code);
+  pgForecast();
+}
+function fcShowLoadPrev(){
+  const tpl=window._fcTpl||'week';
+  const isCust=tpl==='cust';
+  const fcAll=window._fcListCache||DB.get('forecasts')||[];
+  let options='';
+  if(isCust){
+    const selDay=window._fcDay||((window._fcMonth||today().slice(0,7))+'-01');
+    const days=[...new Set(fcAll.map(f=>(f.delivDate||'').slice(0,10)).filter(d=>d&&d!==selDay))].sort().reverse().slice(0,30);
+    if(!days.length){toast('ไม่พบ Forecast วันอื่นที่บันทึกไว้');return;}
+    options=days.map(d=>`<option value="${esc(d)}">${fmtD(d)} (${d})</option>`).join('');
+  } else {
+    const selMonth=window._fcMonth||today().slice(0,7);
+    const selCust=window._fcCust||'';
+    const months=[...new Set(fcAll.filter(f=>!selCust||f.custCode===selCust).map(f=>(f.delivDate||'').slice(0,7)).filter(m=>m&&m!==selMonth))].sort().reverse().slice(0,18);
+    if(!months.length){toast('ไม่พบ Forecast เดือนอื่นที่บันทึกไว้');return;}
+    options=months.map(m=>`<option value="${esc(m)}">${m}</option>`).join('');
+  }
+  openMod(`<div class="mh"><div class="mt2">📋 โหลดข้อมูลจาก Forecast เก่า</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="padding:4px 0 10px;font-size:13px;color:var(--TX2)">ค่าที่มีอยู่ในตารางจะถูกแทนที่ด้วยข้อมูลที่เลือก (ยังไม่บันทึกจนกว่าจะกด "บันทึกแผน")</div>
+    <div class="field"><label>${isCust?'เลือกวันที่':'เลือกเดือน'}</label><select id="fc-load-prev-sel">${options}</select></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+      <button class="btn" onclick="closeM()">ยกเลิก</button>
+      <button class="btn btn-p" onclick="fcLoadPrevData()">โหลดข้อมูล</button>
+    </div>`);
+}
+function fcLoadPrevData(){
+  const sel=document.getElementById('fc-load-prev-sel')?.value;if(!sel)return;
+  const tpl=window._fcTpl||'week';
+  const isCust=tpl==='cust';
+  const fcAll=window._fcListCache||DB.get('forecasts')||[];
+  if(isCust){
+    // กรองข้อมูลจากวันที่เลือก → srcData[sku][custCode] = qty
+    const srcData={};
+    fcAll.filter(f=>(f.delivDate||'').slice(0,10)===sel).forEach(f=>{
+      const cc=f.custCode||'';if(!cc)return;
+      if(!srcData[f.sku])srcData[f.sku]={};
+      srcData[f.sku][cc]=(srcData[f.sku][cc]||0)+(f.qty||0);
+    });
+    document.querySelectorAll('.fcgc-inp').forEach(el=>{
+      const v=srcData[el.dataset.sku]?.[el.dataset.cust]||0;
+      el.value=v||'';el.style.background=v>0?'#eff6ff':'';
+    });
+    [...new Set([...document.querySelectorAll('.fcgc-inp')].map(el=>el.dataset.sku))].forEach(sku=>fcgcRow(sku));
+  } else {
+    // กรองข้อมูลจากเดือนที่เลือก → map ตาม column index
+    const selCust=window._fcCust||'';
+    const srcCols=_fcTemplateCols(sel,tpl);
+    const srcData={};
+    fcAll.filter(f=>(f.delivDate||'').slice(0,7)===sel&&(!selCust||f.custCode===selCust)).forEach(f=>{
+      const idx=_fcColIndexForDate(f.delivDate||'',srcCols);if(idx<0)return;
+      if(!srcData[f.sku])srcData[f.sku]={};
+      srcData[f.sku][idx]=(srcData[f.sku][idx]||0)+(f.qty||0);
+    });
+    document.querySelectorAll('.fcg-inp').forEach(el=>{
+      const v=srcData[el.dataset.sku]?.[Number(el.dataset.col)||0]||0;
+      el.value=v||'';el.style.background=v>0?'#eff6ff':'';
+    });
+    [...new Set([...document.querySelectorAll('.fcg-inp')].map(el=>el.dataset.sku))].forEach(sku=>fcgRow(sku));
+  }
+  closeM();
+  toast('โหลดข้อมูลแล้ว — กรุณาตรวจสอบและกด "บันทึกแผน"');
+}
+async function saveFcGridCust(){
+  const selDay=window._fcDay||(window._fcMonth||today().slice(0,7))+'-01';
+  const newFc=[];
+  document.querySelectorAll('.fcgc-inp').forEach(el=>{
+    const qty=parseFloat(el.value||0)||0;if(qty<=0)return;
+    newFc.push({id:genId('FC'),by:UID,custCode:el.dataset.cust||null,sku:el.dataset.sku,qty,delivDate:selDay,week:1,note:'template:cust',approved:false,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});
+  });
+  if(!newFc.length){toast('กรุณากรอกจำนวนอย่างน้อย 1 รายการ');return;}
+  let ok=false;
+  if(SB?.deleteForecastsByDay&&SB?.addForecasts){
+    try{
+      await SB.deleteForecastsByDay(selDay,null);
+      await SB.addForecasts(newFc);
+      ok=true;
+    }catch(e){console.warn('saveFcGridCust Supabase:',e);}
+  }
+  if(!ok){const arr=DB.get('forecasts')||[];const filtered=arr.filter(f=>(f.delivDate||'').slice(0,10)!==selDay);DB.set('forecasts',[...filtered,...newFc]);}
+  toast(`บันทึก ${newFc.length} รายการแล้ว`);
+  setTimeout(()=>pgForecast(),350);
+}
+function expFcGridCust(){
+  const selDay=window._fcDay||(window._fcMonth||today().slice(0,7))+'-01';
+  const custs=window._fcGridCustColsActive||[];
+  const SKUS_MAP=Object.fromEntries((typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).map(s=>[s.code,s]));
+  const bySku={};
+  document.querySelectorAll('.fcgc-inp').forEach(el=>{const sku=el.dataset.sku;const cc=el.dataset.cust;bySku[sku]=bySku[sku]||{};bySku[sku][cc]=parseFloat(el.value||0)||'';});
+  const rows=Object.entries(bySku).map(([sku,vals])=>[sku,SKUS_MAP[sku]?.name||sku,...custs.map(c=>vals[c.code]||''),custs.reduce((a,c)=>a+(Number(vals[c.code])||0),0)||'']).filter(r=>r.slice(2,-1).some(Boolean));
+  toXLSX([['Forecast_Cust',['รหัสสินค้า','ชื่อสินค้า',...custs.map(c=>`${c.name||c.code} (${c.code})`),'รวม'],rows]],`FcCust_${selDay}.xlsx`);
 }
 function _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap){
   const el=document.getElementById('fc-tab-body');if(!el)return;
@@ -2247,7 +2531,7 @@ function restoreSession(){
     document.getElementById('ls').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
     buildSB();
-    nav('dash');
+    nav(sessionStorage.getItem('_pg')||'dash');
     CACHE.clearAll();
     return true;
   }catch(e){console.warn('restoreSession failed',e);return false;}
@@ -2287,7 +2571,16 @@ function mkChart(id,type,labels,datasets,opts={}){
   _charts.push(ch);return ch;
 }
 
+function syncAndReload(){
+  const btn=document.getElementById('btn-sync');
+  if(btn){btn.textContent='⏳ กำลังโหลด...';btn.disabled=true;}
+  CACHE.clearAll();
+  nav(sessionStorage.getItem('_pg')||'dash');
+  setTimeout(()=>{if(btn){btn.textContent='🔄 ซิงค์';btn.disabled=false;}},1500);
+}
+
 function nav(page){
+  sessionStorage.setItem('_pg',page);
   destroyCharts();
   document.getElementById('app').classList.remove('custreg-mode');
   document.querySelectorAll('.ni').forEach(el=>el.classList.remove('act'));
@@ -4406,7 +4699,6 @@ function _crCk(id){return _cr.data[id]?'checked':'';}
 
 function pgCustReg(){
   _crInitIfNeeded();
-  document.getElementById('app').classList.add('custreg-mode');
   const isApprover=ROLE==='manager'||ROLE==='superadmin';
   const isAdmin=ROLE==='superadmin';
   const tabViews=isAdmin?['form','approve','settings']:isApprover?['form','approve']:['form'];
@@ -4424,27 +4716,22 @@ function pgCustReg(){
   const tabsHtml=tabViews.length>1?`<div style="display:flex;gap:6px;margin-bottom:14px">
     ${tabViews.map(v=>`<div onclick="crTab('${v}')" style="padding:6px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:${_cr.view===v?'var(--LBL)':'var(--bg2)'};border:1px solid ${_cr.view===v?'var(--BL)':'var(--BD)'};color:${_cr.view===v?'var(--BL)':'var(--TX2)'}">${tabLabels[v]}</div>`).join('')}
   </div>`:'';
-  document.getElementById('ct').innerHTML=`<div class="cr-fullpage">
-  <div class="cr-fullpage-header">
-    <div>
-      <div style="font-size:16px;font-weight:700;color:#fff">🏪 ใบทะเบียนร้านค้า</div>
-      <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px">${UNAME} · ${({sales:'Sales',manager:'ผู้จัดการ',superadmin:'Super Admin'})[ROLE]||ROLE} · เลขที่ ${_cr.docNo}</div>
-    </div>
-    <div style="text-align:right">
-      <div class="cr-fullpage-prog"><div class="cr-fullpage-prog-fill" style="width:${pct}%"></div></div>
-      <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:4px">${pct}% เสร็จสิ้น</div>
-    </div>
-  </div>
-  <div class="cr-fullpage-body">
+  document.getElementById('ct').innerHTML=`<div class="cr-fullpage-body" style="min-height:calc(100vh - 120px)">
     <div class="cr-fullpage-sidebar" id="cr-sidebar">
       <div style="font-size:11px;font-weight:700;color:var(--TX3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;padding:0 4px">ขั้นตอน</div>
       ${sidebarSteps}
+      <div style="margin-top:12px;padding:0 4px">
+        <div style="font-size:10px;color:var(--TX3);margin-bottom:4px">ความคืบหน้า</div>
+        <div style="height:4px;background:var(--BD);border-radius:99px;overflow:hidden">
+          <div class="cr-fullpage-prog-fill" style="width:${pct}%"></div>
+        </div>
+        <div style="font-size:10px;color:var(--TX3);margin-top:4px">${pct}% เสร็จสิ้น · เลขที่ ${_cr.docNo}</div>
+      </div>
     </div>
     <div class="cr-fullpage-content" id="cr-body">
       ${tabsHtml}
     </div>
-  </div>
-</div>`;
+  </div>`;
   crRender();
 }
 
