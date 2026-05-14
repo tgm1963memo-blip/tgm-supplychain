@@ -953,6 +953,14 @@ function expFC() {
 // pgPlanStock() — อ่าน Stock จาก Supabase
 // ════════════════════════════════════════════════
 let _psCrits=['avg3'];let _psSort={col:'days',dir:1};
+function _psInitPeriod(){
+  const mon=document.getElementById('ps-mon')?.value;
+  const yr=document.getElementById('ps-yr')?.value;
+  if(mon&&yr) window._psPeriodYm=`${yr}-${String(mon).padStart(2,'0')}`;
+  else if(!window._psPeriodYm){
+    const n=new Date();window._psPeriodYm=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
+  }
+}
 const PS_CRITS_ALL=[
   {key:'avg3',lbl:'เฉลี่ย 3 เดือน'},
   {key:'avg4',lbl:'เฉลี่ย 4 เดือน'},
@@ -988,13 +996,12 @@ async function pgPlanStock() {
     <div class="crit-cb-row">
       ${PS_CRITS_ALL.map(c=>`<label class="crit-cb${_psCrits.includes(c.key)?' sel':''}" data-crit="${c.key}" onclick="psCritToggle('${c.key}')"><input type="checkbox" ${_psCrits.includes(c.key)?'checked':''} onclick="event.stopPropagation()">${c.lbl}</label>`).join('')}
     </div>
-    <label style="align-self:center">ช่วงเวลา:</label>
-    <select id="ps-period" onchange="planStkT()">
-      <option value="current">ปัจจุบัน</option>
-      <option value="1week">1 สัปดาห์หน้า</option>
-      <option value="2week">2 สัปดาห์หน้า</option>
-      <option value="1month">1 เดือนหน้า</option>
-      <option value="3month">3 เดือนหน้า</option>
+    <label style="align-self:center">ดูถึงเดือน:</label>
+    <select id="ps-mon" onchange="_psInitPeriod();planStkT()" style="height:34px;padding:4px 8px;border:1px solid var(--BD);border-radius:7px;font-size:13px">
+      ${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'].map((m,i)=>`<option value="${i+1}" ${new Date().getMonth()===i?'selected':''}>${m}</option>`).join('')}
+    </select>
+    <select id="ps-yr" onchange="_psInitPeriod();planStkT()" style="height:34px;padding:4px 8px;border:1px solid var(--BD);border-radius:7px;font-size:13px">
+      ${[0,1,2].map(d=>`<option value="${new Date().getFullYear()+d}" ${d===0?'selected':''}>${new Date().getFullYear()+d}</option>`).join('')}
     </select>
     <span style="margin-left:auto;font-size:12px;color:var(--TX3)">🔴 Live จาก WMS</span>
   </div>
@@ -1022,12 +1029,21 @@ function planStkT() {
   const grp  = document.getElementById('gf')?.value || '';
   const q    = (document.getElementById('ss')?.value || '').toLowerCase();
   const crits = (_psCrits && _psCrits.length) ? _psCrits : ['avg3'];
-  const period = document.getElementById('ps-period')?.value || 'current';
-  const periodDays = {current:0,'1week':7,'2week':14,'1month':30,'3month':90}[period] || 0;
-  const periodLbl  = {current:'','1week':' +1wk','2week':' +2wk','1month':' +1เดือน','3month':' +3เดือน'};
+  _psInitPeriod();
+  const selYm = window._psPeriodYm || '';
+  const nowD = new Date();
+  const curYm = `${nowD.getFullYear()}-${String(nowD.getMonth()+1).padStart(2,'0')}`;
+  let periodDays = 0;
+  if(selYm && selYm > curYm){
+    const [sy,sm] = selYm.split('-').map(Number);
+    const selDate = new Date(sy, sm-1, 28);
+    periodDays = Math.max(0, Math.round((selDate - nowD)/(864e5)));
+  }
+  const periodLbl = {[curYm]:''};
   const critLabels = {avg3:'avg3m',avg4:'avg4m',last1:'last1m',prevyear:'prevYear',weekly:'weekly'};
   const titleEl = document.getElementById('ps-title');
-  if (titleEl) titleEl.textContent = `Stock Planning — ${crits.map(c=>PS_CRITS_ALL.find(x=>x.key===c)?.lbl||c).join(', ')}${periodLbl[period]||''}`;
+  const periodSuffix = (selYm && selYm !== curYm) ? ` (ถึง ${mL(selYm)})` : '';
+  if (titleEl) titleEl.textContent = `Stock Planning — ${crits.map(c=>PS_CRITS_ALL.find(x=>x.key===c)?.lbl||c).join(', ')}${periodSuffix}`;
 
   // SKU filter
   const skuActive = _skuFilter?.active || [];
@@ -1102,7 +1118,7 @@ function planStkT() {
   if (!tbl) return;
   const sA    = col => sc === col ? (sd > 0 ? '▲' : '▼') : '';
   const thS   = col => `style="text-align:right;cursor:pointer;user-select:none" onclick="psSortBy('${col}')"`;
-  const stockH = periodDays > 0 ? `Stock(proj${periodLbl[period]||''})` : 'Stock';
+  const stockH = periodDays > 0 ? `Stock(proj${periodSuffix})` : 'Stock';
 
   // Multiple criteria columns
   const critCols = crits.map(c => {
@@ -1958,7 +1974,7 @@ async function pgDash(){
     <label>กลุ่มสินค้า:</label>
     <select id="gf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${skuGroupNames().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
     <label>ช่วงเวลา:</label>
-    <select id="pf" onchange="dashCharts()"><option value="12">Year overview</option><option value="4" selected>4 months</option><option value="3">3 months</option><option value="1">Latest month</option></select>
+    <select id="pf" onchange="dashCharts()"><option value="12" selected>ปีนี้ (ทั้งปี)</option><option value="4">4 เดือน</option><option value="3">3 เดือน</option><option value="1">เดือนนี้</option><option value="24">2 ปี</option></select>
     <label>กลุ่มลูกค้า:</label>
     <select id="cgf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${[...new Set(salesCustomers().map(c=>c.corp||'อื่นๆ'))].sort().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
   </div>
@@ -1988,12 +2004,18 @@ function dashCharts(){
   const ss=dashData.ss||DB.get('sku_settings')||{};
   const now=new Date();
   const baseYear=now.getFullYear();
+  const curYm=`${baseYear}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const cutYm=_ymAdd(curYm,-23);
   const yearMths=Array.from({length:12},(_,i)=>`${baseYear}-${String(i+1).padStart(2,'0')}`);
+  const twoYrMths=Array.from({length:24},(_,i)=>_ymAdd(curYm,-23+i));
   const dataMths=[...new Set([
     ...Object.values(hist).flatMap(h=>Object.keys(h.monthly||{})),
     ...(window._dashSalesRows||[]).map(r=>r.ym),
-  ])].sort();
-  const srcMths=period>=12?yearMths:(dataMths.length?dataMths:yearMths);
+  ])].filter(m=>m>=cutYm).sort();
+  let srcMths;
+  if(period===12) srcMths=yearMths;
+  else if(period===24) srcMths=twoYrMths;
+  else srcMths=dataMths.length?dataMths:yearMths;
   const mths=srcMths.slice(-period);
   const mls=mths.map(mL);
   const custSKUs = custGroup ? new Set(salesCustomers()
@@ -2174,6 +2196,40 @@ function _sdUseLatestMonthIfEmpty(monthly){
 }
 
 function _sdApiMonth(){const gy=_sd.cy-543;const mm=String(_sd.cm+1).padStart(2,'0');return `${gy}-${mm}`;}
+
+// ── Fallback: สร้าง sales data จาก ALL_HIST (embedded) ──
+function _loadSalesFromAllHist(targetYm, slmId=''){
+  const hist = ALL_HIST || {};
+  const monthly = {};
+  const now = new Date();
+  // เก็บเฉพาะ 2 ปีล่าสุด
+  const cutYM = `${now.getFullYear()-2}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  Object.entries(hist).forEach(([sku, h]) => {
+    Object.entries(h.monthly||{}).forEach(([ym, qty]) => {
+      if(ym < cutYM) return;
+      if(!monthly[ym]) monthly[ym]={ym,total:0,qty:0,invoices:1};
+      monthly[ym].qty += Number(qty)||0;
+      monthly[ym].total += Number(qty)||0;
+    });
+  });
+  const monthlyArr = Object.values(monthly).sort((a,b)=>a.ym.localeCompare(b.ym));
+  _sdApi.loaded = true;
+  _sdApi.valueMode = 'qty';
+  _sdApi.monthly = monthlyArr;
+  _sdApi.month = targetYm;
+  const cur = monthlyArr.find(m=>m.ym===targetYm)||{total:0,qty:0,invoices:0};
+  _sdApi.total = cur.total; _sdApi.qty = cur.qty; _sdApi.invoices = cur.invoices; _sdApi.ar = 0;
+  const prev = monthlyArr.find(m=>m.ym===_ymAdd(targetYm,-1));
+  _sdApi.vs = prev?.total ? Math.round((_sdApi.total/prev.total-1)*100) : 0;
+  const monthRows = Object.entries(hist).map(([sku,h])=>({
+    prod_code:sku, prod_name:(typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).find(s=>s.code===sku)?.name||sku,
+    prod_group:productGroupForSku(sku,'อื่นๆ'),
+    qty:h.monthly?.[targetYm]||0, amount:h.monthly?.[targetYm]||0, ym:targetYm,
+  })).filter(r=>r.qty>0);
+  _sdApi.custs = []; _sdApi.prods = _sdBuildProds(monthRows); _sdApi.slms = []; _sdApi.slmList = [];
+  _sdApi.error = null;
+  _sdUpdateSlmDrop();
+}
 function _sdApiYear(){return _sd.cy_y-543;}
 function _sdWeekFactor(){return _sd.pt==='week'?((SD_WM[_sd.cw-1]||1)/4):1;}
 function _sdV(v){return Math.round((Number(v)||0)*_sdWeekFactor());}
@@ -2187,10 +2243,16 @@ async function sdLoad(){
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
   try{
-    const range=_sdMonthRange(36);
+    const range=_sdMonthRange(24);
     await _loadSalesFromSupabase(range.start,range.end,month,slmId);
   }catch(e0){
-    console.warn('Supabase sales_history unavailable, trying Sales API',e0.message);
+    console.warn('Supabase sales_history unavailable, trying fallback',e0.message);
+    // ── Fallback: build from ALL_HIST (local embedded data) ──
+    if(ALL_HIST && Object.keys(ALL_HIST).length>0){
+      _loadSalesFromAllHist(month,slmId);
+      document.getElementById('sd-loading')?.remove();
+      sdRender();return;
+    }
     try{
     const qs=slmId?`&slm_id=${encodeURIComponent(slmId)}`:'';
     const [sumJ,kpiJ,slmJ,arJ]=await Promise.all([
@@ -2877,32 +2939,76 @@ function sdExport(){
   toXLSX([[sheet, cols, rows]], `Sales_${period}_${sheet}.xlsx`);
 }
 
+let _consiRows=[], _consiCustF='', _consiProdF='', _consiLoaded=false;
 async function pgConsignment(){
+  document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button>`;
   document.getElementById('ct').innerHTML='<div class="al ali">กำลังโหลดข้อมูลฝากขาย CONSI...</div>';
+  _consiRows=[];_consiLoaded=false;_consiCustF='';_consiProdF='';
   const now=new Date();
   const end=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const start=_ymAdd(end,-11);
+  const start=_ymAdd(end,-23);
   try{
-    const rows=await _sbSalesRows(start,end,'',{includeConsi:true});
-    const monthly=_sdKpiFromRows(rows);
-    const total=rows.reduce((a,r)=>a+r.qty,0);
-    const byProd=_sdBuildProds(rows).slice(0,30);
-    document.getElementById('ct').innerHTML=`
-    <div class="krow">
-      <div class="kpi p"><div class="kl">ยอดฝากขาย CONSI</div><div class="kv">${fmt(total)}</div><div class="kh">กก. แยกจากยอดขายจริง</div></div>
-      <div class="kpi b"><div class="kl">จำนวนเดือน</div><div class="kv">${monthly.length}</div><div class="kh">${mL(start)} - ${mL(end)}</div></div>
-    </div>
-    <div class="cgrid c2">
-      <div class="card"><div class="ch"><div class="ct2">CONSI รายเดือน</div></div><div class="tw"><table><thead><tr><th>เดือน</th><th class="r">จำนวน</th></tr></thead><tbody>
-        ${monthly.map(m=>`<tr><td>${mL(m.ym)}</td><td class="r">${fmt(m.qty||m.total)}</td></tr>`).join('')||'<tr><td colspan="2">ไม่มีข้อมูล CONSI</td></tr>'}
-      </tbody></table></div></div>
-      <div class="card"><div class="ch"><div class="ct2">CONSI ตามกลุ่มสินค้า</div></div><div class="tw"><table><thead><tr><th>กลุ่ม/สินค้า</th><th class="r">จำนวน</th></tr></thead><tbody>
-        ${byProd.map(g=>`<tr><td><strong>${esc(g.n)}</strong></td><td class="r"><strong>${fmt(g._tot)}</strong></td></tr>${g.it.slice(0,8).map(i=>`<tr><td style="padding-left:20px"><span class="mono">${esc(i.c)}</span> ${esc(i.n)}</td><td class="r">${fmt(i._tot)}</td></tr>`).join('')}`).join('')||'<tr><td colspan="2">ไม่มีข้อมูล CONSI</td></tr>'}
-      </tbody></table></div></div>
-    </div>`;
+    _consiRows=await _sbSalesRows(start,end,'',{includeConsi:true});
+    _consiLoaded=true;
   }catch(e){
-    document.getElementById('ct').innerHTML=`<div class="al ald">โหลดข้อมูล CONSI ไม่สำเร็จ: ${esc(e.message||e)}</div>`;
+    console.warn('CONSI load failed:',e);
+    _consiRows=[];_consiLoaded=false;
   }
+  consiRender();
+}
+function consiRender(){
+  const custs=[...new Map(_consiRows.map(r=>[r.cust_code,r.cust_name||r.cust_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'th'));
+  const prods=[...new Map(_consiRows.map(r=>[r.prod_code,r.prod_name||r.prod_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+  let rows=_consiRows;
+  if(_consiCustF) rows=rows.filter(r=>r.cust_code===_consiCustF);
+  if(_consiProdF) rows=rows.filter(r=>r.prod_code===_consiProdF);
+  const monthly=_sdKpiFromRows(rows);
+  const total=rows.reduce((a,r)=>a+(r.qty||0),0);
+  const byProd=_sdBuildProds(rows).slice(0,30);
+  document.getElementById('ct').innerHTML=`
+  <div class="card" style="padding:12px 16px;margin-bottom:12px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="margin:0;min-width:200px">
+        <label style="font-size:11px;color:var(--TX2)">ลูกค้า</label>
+        <select class="inp" onchange="_consiCustF=this.value;consiRender()" style="height:34px;padding:4px 8px">
+          <option value="">ทุกลูกค้า</option>
+          ${custs.map(([code,name])=>`<option value="${code}" ${_consiCustF===code?'selected':''}>${esc(code)} — ${esc(name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin:0;min-width:220px">
+        <label style="font-size:11px;color:var(--TX2)">สินค้า</label>
+        <select class="inp" onchange="_consiProdF=this.value;consiRender()" style="height:34px;padding:4px 8px">
+          <option value="">ทุกสินค้า</option>
+          ${prods.map(([code,name])=>`<option value="${code}" ${_consiProdF===code?'selected':''}>${esc(code)} — ${esc(name)}</option>`).join('')}
+        </select>
+      </div>
+      ${!_consiLoaded?`<span style="color:var(--R);font-size:12px">⚠ ไม่สามารถโหลดจาก Supabase ได้ — ไม่มีข้อมูล CONSI ออฟไลน์</span>`:''}
+    </div>
+  </div>
+  <div class="krow">
+    <div class="kpi p"><div class="kl">ยอดฝากขาย CONSI</div><div class="kv">${fmt(total)}</div><div class="kh">กก. แยกจากยอดขายจริง</div></div>
+    <div class="kpi b"><div class="kl">จำนวนเดือน</div><div class="kv">${monthly.length}</div><div class="kh">2 ปีย้อนหลัง</div></div>
+    <div class="kpi g"><div class="kl">จำนวนสินค้า</div><div class="kv">${prods.length}</div><div class="kh">รายการ</div></div>
+    <div class="kpi o"><div class="kl">จำนวนลูกค้า</div><div class="kv">${custs.length}</div><div class="kh">บัญชี</div></div>
+  </div>
+  ${!rows.length?`<div class="al alw">ไม่มีข้อมูล CONSI ในช่วงนี้</div>`:`
+  <div class="cgrid c2">
+    <div class="card"><div class="ch"><div class="ct2">CONSI รายเดือน</div></div><div class="tw"><table><thead><tr><th>เดือน</th><th class="r">จำนวน (กก.)</th></tr></thead><tbody>
+      ${monthly.map(m=>`<tr><td>${mL(m.ym)}</td><td class="r">${fmt(m.qty||m.total)}</td></tr>`).join('')||'<tr><td colspan="2" style="color:var(--TX3)">ไม่มีข้อมูล</td></tr>'}
+    </tbody></table></div></div>
+    <div class="card"><div class="ch"><div class="ct2">CONSI ตามกลุ่มสินค้า</div></div><div class="tw"><table><thead><tr><th>กลุ่ม/สินค้า</th><th class="r">จำนวน</th></tr></thead><tbody>
+      ${byProd.map(g=>`<tr><td><strong>${esc(g.n)}</strong></td><td class="r"><strong>${fmt(g._tot)}</strong></td></tr>${g.it.slice(0,8).map(i=>`<tr><td style="padding-left:20px"><span class="mono">${esc(i.c)}</span> ${esc(i.n)}</td><td class="r">${fmt(i._tot)}</td></tr>`).join('')}`).join('')||'<tr><td colspan="2" style="color:var(--TX3)">ไม่มีข้อมูล</td></tr>'}
+    </tbody></table></div></div>
+  </div>`}`;
+}
+function expConsi(){
+  if(!_consiRows.length){toast('ไม่มีข้อมูล CONSI');return;}
+  let rows=_consiRows;
+  if(_consiCustF) rows=rows.filter(r=>r.cust_code===_consiCustF);
+  if(_consiProdF) rows=rows.filter(r=>r.prod_code===_consiProdF);
+  const cols=['เดือน','รหัสลูกค้า','ชื่อลูกค้า','รหัสสินค้า','ชื่อสินค้า','จำนวน (กก.)'];
+  const data=rows.map(r=>[r.ym,r.cust_code||'',r.cust_name||'',r.prod_code||'',r.prod_name||'',r.qty||0]);
+  toXLSX([['CONSI',cols,data]],'CONSI_Export.xlsx');
 }
 
 // ── FORECAST ─────────────────────────────────────────────────────
@@ -5026,7 +5132,8 @@ function pgPlanBooking() {
   if (searchText) filtered = filtered.filter(b =>
     (b.sku || '').toLowerCase().includes(searchText) ||
     (b.skuName || '').toLowerCase().includes(searchText) ||
-    (b.custName || '').toLowerCase().includes(searchText)
+    (b.custName || '').toLowerCase().includes(searchText) ||
+    (b.refNo || '').toLowerCase().includes(searchText)
   );
   const produceCount = bks.filter(b => b.stockStatus === 'produce' && b.status !== 'cancelled').length;
 
@@ -5059,7 +5166,7 @@ function pgPlanBooking() {
     ${filtered.length === 0 ? '<div style="padding:20px;color:var(--TX3);text-align:center">ยังไม่มีรายการจอง</div>' : `
     <div class="tw"><table>
       <thead><tr>
-        <th>ประเภท</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
+        <th>ประเภท</th><th>เลขที่ PO/SO</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
         <th class="r">จำนวน(กก.)</th>
         <th>ผู้จอง/ลูกค้า</th>
         <th>วันที่รับสินค้า</th>
@@ -5076,6 +5183,7 @@ function pgPlanBooking() {
         const typeSt = b.type === 'PO' ? 'background:var(--LBL);color:var(--BL)' : 'background:var(--LG);color:var(--G)';
         return `<tr style="${late?'background:#FEF3F2':''}">
           <td><span class="badge" style="${typeSt}">${b.type}</span></td>
+          <td class="mono" style="font-size:12px">${esc(b.refNo||'—')}</td>
           <td class="mono">${b.sku}</td>
           <td>${esc((b.skuName||'').substring(0,28))}</td>
           <td class="r" style="font-weight:700">${fmt(b.qty)}</td>
@@ -5110,6 +5218,8 @@ function showBkModal(id = '') {
         <option value="PO" ${(!b||b.type==='PO')?'selected':''}>PO (Purchase Order)</option>
         <option value="SO" ${b?.type==='SO'?'selected':''}>SO (Sales Order)</option>
       </select></div>
+    <div class="field"><label>เลขที่ PO / SO</label>
+      <input type="text" id="bk-ref" placeholder="เลขที่อ้างอิง PO หรือ SO" value="${esc(b?.refNo||'')}"></div>
     <div class="field"><label>รหัสสินค้า</label>
       <select id="bk-sku">${SKUS.map(s=>`<option value="${s.code}" ${b?.sku===s.code?'selected':''}>${s.code} — ${(s.name||'').substring(0,24)}</option>`).join('')}</select></div>
     <div class="field"><label>จำนวน (กก.)</label>
@@ -5141,6 +5251,7 @@ function showBkModal(id = '') {
 
 function saveBk(id) {
   const type = document.getElementById('bk-type')?.value || 'PO';
+  const refNo = (document.getElementById('bk-ref')?.value || '').trim();
   const sku  = document.getElementById('bk-sku')?.value;
   const qty  = parseFloat(document.getElementById('bk-qty')?.value) || 0;
   const custName = (document.getElementById('bk-cust')?.value || '').trim();
@@ -5154,12 +5265,12 @@ function saveBk(id) {
   const bks = DB.get('bookings') || [];
   if (id) {
     const idx = bks.findIndex(b => b.id === id);
-    if (idx !== -1) Object.assign(bks[idx], { type, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, edited_by: UID, edited_at: new Date().toISOString() });
+    if (idx !== -1) Object.assign(bks[idx], { type, refNo, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, edited_by: UID, edited_at: new Date().toISOString() });
     audit('EDIT_BK', id, { sku, qty, stockStatus });
   } else {
-    const newBk = { id: genId('BK'), type, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, by: UID, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString() };
+    const newBk = { id: genId('BK'), type, refNo, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, by: UID, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString() };
     bks.unshift(newBk);
-    audit('ADD_BK', newBk.id, { type, sku, qty, custName, stockStatus });
+    audit('ADD_BK', newBk.id, { type, refNo, sku, qty, custName, stockStatus });
     if (stockStatus === 'produce') toast(`⚠️ จอง ${type} ${sku} ${qty}กก. — ต้องสั่งผลิต รอ confirm`);
   }
   DB.set('bookings', bks);
@@ -5178,8 +5289,8 @@ function deleteBk(id) {
 function expBookings() {
   const bks = DB.get('bookings') || [];
   toXLSX([['Bookings',
-    ['ประเภท','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','ผู้จอง','วันรับสินค้า','สต๊อก/ผลิต','สถานะ','หมายเหตุ','บันทึกโดย'],
-    bks.map(b => [b.type,b.sku,b.skuName||'',b.qty,b.custName||'',b.receiveDate||'',b.stockStatus==='produce'?'สั่งผลิต':'จากสต๊อก',b.status,b.note||'',b.by||''])
+    ['ประเภท','เลขที่ PO/SO','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','ผู้จอง','วันรับสินค้า','สต๊อก/ผลิต','สถานะ','หมายเหตุ','บันทึกโดย'],
+    bks.map(b => [b.type,b.refNo||'',b.sku,b.skuName||'',b.qty,b.custName||'',b.receiveDate||'',b.stockStatus==='produce'?'สั่งผลิต':'จากสต๊อก',b.status,b.note||'',b.by||''])
   ]], 'Bookings_' + todayStr() + '.xlsx');
 }
 
