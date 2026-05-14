@@ -1098,6 +1098,11 @@ function ppRenderGantt(orders, cols, pt) {
   const skuList = Object.keys(bysku).sort();
   if (!skuList.length) return '<div style="padding:16px;color:var(--TX3);text-align:center;font-size:13px">ไม่มีรายการในช่วงเวลานี้</div>';
 
+  // ── Comparison data ──────────────────────────────
+  const planRows  = window._planRows || [];
+  const fcAll     = DB.get('forecasts') || [];
+  const poAll     = DB.get('po_log')    || [];
+
   const today = new Date().toISOString().slice(0,10);
   const inCol = (o, col) => {
     if (pt === 'year')   return (o.planDate||'').slice(0,7) === col.key;
@@ -1106,9 +1111,11 @@ function ppRenderGantt(orders, cols, pt) {
   };
   const statusColor = { pending:'#f59e0b', inprog:'#3b82f6', done:'#22c55e' };
   const colW = pt === 'month' ? 26 : pt === 'year' ? 56 : 40;
+  const leftW = 195;
 
   const headerRow = `<tr>
-    <th style="min-width:130px;max-width:130px;text-align:left;padding:4px 8px;position:sticky;left:0;background:var(--bg2);z-index:2;border-right:2px solid var(--BD);font-size:11px">สินค้า</th>
+    <th style="min-width:${leftW}px;max-width:${leftW}px;text-align:left;padding:4px 8px;position:sticky;left:0;background:var(--bg2);z-index:2;border-right:2px solid var(--BD);font-size:11px">
+      สินค้า &amp; เปรียบเทียบ</th>
     ${cols.map(col => {
       const isTd = pt !== 'year' ? col.key === today : false;
       return `<th style="min-width:${colW}px;max-width:${colW}px;text-align:center;padding:2px 1px;font-size:10px;${isTd?'background:var(--N);color:#fff;':'background:var(--bg2)'}">
@@ -1117,7 +1124,16 @@ function ppRenderGantt(orders, cols, pt) {
   </tr>`;
 
   const bodyRows = skuList.map(sku => {
-    const info = bysku[sku];
+    const info    = bysku[sku];
+    const pr      = planRows.find(r => r.code === sku) || {};
+    const stock   = Math.round(pr.stock_qty ?? pr._effStock ?? 0);
+    const fcTotal = Math.round(fcAll.filter(f => f.sku === sku).reduce((s,f) => s+(f.qty||0), 0));
+    const poTotal = Math.round(poAll.filter(p => p.sku === sku && p.status !== 'completed').reduce((s,p) => s+(p.qty||0), 0));
+    const salesAvg= Math.round(ALL_HIST[sku]?.avg3 || 0);
+    const prodTot = Math.round(info.orders.reduce((s,o) => s+(o.qty||0), 0));
+    const minStk  = pr.min_stock || 0;
+    const stockColor = stock < minStk ? 'var(--R)' : stock < minStk*1.5 ? 'var(--A)' : 'var(--G)';
+
     const cells = cols.map(col => {
       const os = info.orders.filter(o => inCol(o, col));
       if (!os.length) {
@@ -1133,10 +1149,35 @@ function ppRenderGantt(orders, cols, pt) {
           style="background:${color};color:#fff;border-radius:3px;font-size:9px;font-weight:600;padding:2px 3px;cursor:pointer;line-height:1.3;overflow:hidden">${Math.round(total)}</div>
       </td>`;
     }).join('');
+
+    // Mini comparison bar (% of monthly avg)
+    const maxVal = Math.max(stock, fcTotal, poTotal, salesAvg, prodTot, 1);
+    const barPct = v => Math.min(100, Math.round(v / maxVal * 100));
+    const miniBar = (v, color, label, title) => v > 0
+      ? `<div title="${title}: ${v.toLocaleString()} กก." style="display:flex;align-items:center;gap:3px;margin-bottom:2px">
+          <span style="font-size:8px;width:30px;color:var(--TX3);flex-shrink:0;text-align:right">${label}</span>
+          <div style="flex:1;height:5px;background:var(--bg2);border-radius:2px;overflow:hidden">
+            <div style="width:${barPct(v)}%;height:100%;background:${color};border-radius:2px"></div>
+          </div>
+          <span style="font-size:8px;color:${color};font-weight:600;width:36px;flex-shrink:0">${v>=1000?(v/1000).toFixed(1)+'k':v}</span>
+        </div>`
+      : `<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px">
+          <span style="font-size:8px;width:30px;color:var(--TX3);flex-shrink:0;text-align:right">${label}</span>
+          <div style="flex:1;height:5px;background:var(--bg2);border-radius:2px"></div>
+          <span style="font-size:8px;color:var(--TX3);width:36px;flex-shrink:0">—</span>
+        </div>`;
+
     return `<tr>
-      <td style="padding:3px 8px;position:sticky;left:0;background:#fff;z-index:1;border-right:2px solid var(--BD);min-width:130px;max-width:130px">
-        <div class="mono" style="font-size:10px;color:var(--TX3)">${esc(sku)}</div>
-        <div style="font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(info.name.substring(0,22))}</div>
+      <td style="padding:5px 8px;position:sticky;left:0;background:#fff;z-index:1;border-right:2px solid var(--BD);border-bottom:1px solid var(--bg2);min-width:${leftW}px;max-width:${leftW}px;vertical-align:top">
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
+          <span class="mono" style="font-size:10px;color:var(--TX3)">${esc(sku)}</span>
+          <span style="font-size:10px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:110px" title="${esc(info.name)}">${esc(info.name.substring(0,18))}</span>
+        </div>
+        ${miniBar(stock,   stockColor,   'Stock', 'Stock ปัจจุบัน')}
+        ${miniBar(prodTot, '#6366f1',    'ผลิต',  'สั่งผลิต (ช่วงนี้)')}
+        ${miniBar(fcTotal, '#a855f7',    'FC',    'Forecast รวม')}
+        ${miniBar(poTotal, '#0A5940',    'PO',    'PO รวม')}
+        ${miniBar(salesAvg,'#C44B0A',    'Out',   'ยอดออกเฉลี่ย/เดือน')}
       </td>${cells}
     </tr>`;
   }).join('');
@@ -1147,10 +1188,15 @@ function ppRenderGantt(orders, cols, pt) {
       <tbody>${bodyRows}</tbody>
     </table>
   </div>
-  <div style="display:flex;gap:12px;padding:6px 8px;font-size:11px;color:var(--TX3)">
+  <div style="display:flex;gap:14px;padding:6px 8px;font-size:11px;color:var(--TX3);flex-wrap:wrap;border-top:1px solid var(--bg2);margin-top:4px">
+    <span style="font-weight:600;color:var(--TX2)">สัญลักษณ์:</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px"></span>รอผลิต</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#3b82f6;border-radius:2px"></span>กำลังผลิต</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px"></span>ผลิตแล้ว</span>
+    <span style="margin-left:8px;display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:5px;background:#6366f1;border-radius:2px"></span>ผลิต</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:5px;background:#a855f7;border-radius:2px"></span>FC</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:5px;background:#0A5940;border-radius:2px"></span>PO</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:5px;background:#C44B0A;border-radius:2px"></span>ยอดออก/เดือน</span>
   </div>`;
 }
 
@@ -1160,6 +1206,7 @@ function ppEditModal(id){
   if(!o)return;
   const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
   openMod(`<div class="mh"><div class="mt2">แก้ไขรายการผลิต</div><span class="mx" onclick="closeM()">✕</span></div>
+  ${o.docNo?`<div style="background:var(--LBL);border-radius:6px;padding:6px 10px;margin-bottom:12px;font-size:12px;color:var(--BL)">📄 เลขที่เอกสาร: <b class="mono">${esc(o.docNo)}</b></div>`:''}
   <div class="fg">
     <div class="field"><label>รหัสสินค้า</label><input class="fi" id="em-sku" value="${esc(o.sku)}" readonly></div>
     <div class="field"><label>วันผลิต</label><input type="date" class="fi" id="em-date" value="${o.planDate||''}"></div>
@@ -1221,11 +1268,12 @@ function ppRender(){
   const tbl = document.getElementById('pp-tbl');
   if (tbl) tbl.innerHTML = inRange.length ? `<div class="tw"><table>
     <thead><tr>
-      <th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
+      <th>เลขที่เอกสาร</th><th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
       <th class="r">จำนวน(กก.)</th><th>สายผลิต</th><th>สถานะ</th>
       <th>หมายเหตุ</th><th>แก้ไขโดย</th><th>Action</th>
     </tr></thead>
     <tbody>${inRange.sort((a,b)=>a.planDate<b.planDate?-1:1).map(o=>`<tr>
+      <td><span class="mono" style="font-size:12px;color:var(--BL);font-weight:700">${o.docNo||'—'}</span></td>
       <td><input type="date" value="${o.planDate}" onchange="ppEditOrder('${o.id}','planDate',this.value);ppRender()" style="padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
       <td class="mono">${o.sku}</td><td>${(o.skuName||'').substring(0,28)}</td>
       <td class="r"><input type="number" value="${o.qty}" onchange="ppEditOrder('${o.id}','qty',this.value)" style="width:60px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px;text-align:right" min="0" step="0.1"></td>
@@ -1258,6 +1306,46 @@ function ppShowOrder(sku='', qty=0){
     <button class="btn" onclick="closeM()">ยกเลิก</button>
     <button class="btn btn-p" onclick="ppSaveOrder()">บันทึก</button>
   </div>`);
+}
+function ppSaveOrder(){
+  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
+  const sku=document.getElementById('pp-sku')?.value;
+  const qty=parseFloat(document.getElementById('pp-qty')?.value)||0;
+  const planDate=document.getElementById('pp-date')?.value;
+  const line=(document.getElementById('pp-line')?.value||'').trim();
+  const note=(document.getElementById('pp-note')?.value||'').trim();
+  if(!sku){toast('กรุณาเลือกสินค้า','warn');return;}
+  if(!qty||qty<=0){toast('กรุณากรอกจำนวน','warn');return;}
+  if(!planDate){toast('กรุณาระบุวันที่ผลิต','warn');return;}
+  const sk=SKUS.find(s=>s.code===sku);
+  const orders=DB.get('prod_orders')||[];
+  // Generate sequential document number
+  const maxSeq=orders.reduce((mx,o)=>{
+    const m=(o.docNo||'').match(/PLN-(\d+)$/);
+    return m?Math.max(mx,parseInt(m[1])):mx;
+  },0);
+  const docNo='PLN-'+String(maxSeq+1).padStart(4,'0');
+  const order={
+    id:genId('PROD'),
+    docNo,
+    sku,
+    skuName:sk?.name||sku,
+    qty,
+    planDate,
+    line,
+    note,
+    status:'pending',
+    by:UID,
+    ts:Date.now(),
+    edited_by:UID,
+    edited_at:new Date().toISOString()
+  };
+  orders.unshift(order);
+  DB.set('prod_orders',orders);
+  audit('ADD_PROD_ORDER',order.id,{sku,qty,planDate,docNo});
+  closeM();
+  toast('บันทึก '+docNo+' แล้ว ✅');
+  ppRender();
 }
 function ppEditOrder(id, field, value){
   const orders = DB.get('prod_orders') || [];
@@ -1320,8 +1408,8 @@ function ppExport(){
   const orders=DB.get('prod_orders')||[];
   const {s,e,lbl}=ppGetRange();
   const rows=orders.filter(o=>{const d=new Date(o.planDate);return d>=s&&d<e;})
-    .map(o=>[o.planDate,o.sku,o.skuName||'',o.qty,o.line||'',o.status,o.note||'',o.by||'']);
-  toXLSX([['ProdOrders',['วันผลิต','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','สายผลิต','สถานะ','หมายเหตุ','สร้างโดย'],rows]],`ProdPlan_${lbl.replace(/\//g,'-')}.xlsx`);
+    .map(o=>[o.docNo||'',o.planDate,o.sku,o.skuName||'',o.qty,o.line||'',o.status,o.note||'',o.by||'']);
+  toXLSX([['ProdOrders',['เลขที่เอกสาร','วันผลิต','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','สายผลิต','สถานะ','หมายเหตุ','สร้างโดย'],rows]],`ProdPlan_${lbl.replace(/\//g,'-')}.xlsx`);
 }
 
 // ════════════════════════════════════════════════
