@@ -824,8 +824,14 @@ async function pgForecast() {
   ct.innerHTML = '<div style="padding:40px;text-align:center;color:var(--TX3)">กำลังโหลด...</div>';
   const slmFilter = isAll ? null : (CURRENT_USER?.slm_id || UID);
   let fcAll=[], products=[];
-  try{[fcAll,products]=await Promise.all([SB.getForecasts(slmFilter),CACHE.get('products',()=>SB.getProducts())]);}
-  catch(e){fcAll=DB.get('forecasts')||[];products=[];}
+  const fcLoads=await Promise.allSettled([
+    SB.getForecasts(slmFilter),
+    CACHE.get('products',()=>SB.getProducts()),
+    CACHE.get('sales_hist_2y',()=>loadDashboardSalesHist())
+  ]);
+  fcAll=fcLoads[0].status==='fulfilled' ? (fcLoads[0].value||[]) : (DB.get('forecasts')||[]);
+  products=fcLoads[1].status==='fulfilled' ? (fcLoads[1].value||[]) : [];
+  if(fcLoads[2].status==='rejected') console.warn('forecast sales history:',fcLoads[2].reason?.message||fcLoads[2].reason);
   const SKUS = typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
   const skuMap = Object.fromEntries([...SKUS.map(s=>[s.code,{name:s.name,lead_time:s.lt||7}]),...products.map(p=>[p.code,p])]);
   const custRows = allCustomerRows();
@@ -836,7 +842,7 @@ async function pgForecast() {
   const tBtn=(id,lbl)=>`<button class="btn btn-sm" onclick="window._fcTab='${id}';pgForecast()" style="${tab===id?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">${lbl}</button>`;
   ct.innerHTML=`
   <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-    ${tBtn('grid','ตารางแผน')}${tBtn('list','รายการ')}${tBtn('doc','เอกสารลูกค้า')}
+    ${tBtn('grid','ตารางแผน')}${tBtn('entry','นำเข้าตาราง')}${tBtn('list','รายการ')}${tBtn('doc','เอกสารลูกค้า')}
     <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <input type="month" value="${selMonth}" onchange="window._fcMonth=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px">
     <select onchange="window._fcCust=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;min-width:180px;height:34px">
@@ -850,13 +856,14 @@ async function pgForecast() {
   </div>
   <div id="fc-tab-body"></div>`;
   if(tab==='grid')      _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap);
+  else if(tab==='entry') _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap);
   else if(tab==='list') _renderFcList(fcAll,isAll,selMonth,selCust);
   else                  _renderFcDoc(fcAll,SKUS,skuMap,selMonth,selCust,custMap);
 }
 
 function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
   const el=document.getElementById('fc-tab-body');if(!el)return;
-  const hist=ALL_HIST||{};
+  const hist=window._salesHistCache||ALL_HIST||{};
   const[yr,mo]=selMonth?selMonth.split('-').map(Number):[new Date().getFullYear(),new Date().getMonth()+1];
   const prevYm=`${mo===1?yr-1:yr}-${String(mo===1?12:mo-1).padStart(2,'0')}`;
   const prevYrYm=`${yr-1}-${String(mo).padStart(2,'0')}`;
@@ -953,6 +960,46 @@ function expFcGrid(){
   const rows=[];SKUS.forEach(s=>{let any=false;const row=[s.code,s.name];for(let w=1;w<=4;w++){const v=parseFloat(document.getElementById(`fcg-${s.code}-${w}`)?.value||0);row.push(v||'');if(v)any=true;}const tot=row.slice(2).reduce((a,b)=>a+(Number(b)||0),0);row.push(tot||'');if(any)rows.push(row);});
   toXLSX([['Forecast_Grid',['รหัสสินค้า','ชื่อสินค้า','wk1','wk2','wk3','wk4','รวม'],rows]],`FcGrid_${selMonth}_${selCust||'ALL'}.xlsx`);
 }
+function _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap){
+  const el=document.getElementById('fc-tab-body');if(!el)return;
+  const custName=selCust?(custMap[selCust]||selCust):'ทุกลูกค้า';
+  el.innerHTML=`<div class="card" style="padding:0;overflow:hidden">
+    <div style="background:var(--N);color:#fff;padding:12px 16px">
+      <div style="font-size:15px;font-weight:700">นำเข้า Forecast แบบตาราง — ${esc(custName)}</div>
+      <div style="font-size:12px;opacity:.8;margin-top:2px">${mL?mL(selMonth):selMonth} · วางข้อมูลจาก Excel: รหัสสินค้า, wk1, wk2, wk3, wk4</div>
+    </div>
+    <div style="padding:14px 16px">
+      <textarea id="fc-entry-paste" style="width:100%;height:260px;padding:10px;border:1px solid var(--BD);border-radius:8px;font-family:Consolas,monospace;font-size:12px" placeholder="SKU001\t100\t200\t0\t300"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-sm" onclick="fcEntryTemplate()">Template Excel</button>
+        <button class="btn btn-sm btn-p" onclick="saveFcEntryTable()">บันทึกจากตาราง</button>
+      </div>
+    </div>
+  </div>`;
+}
+function fcEntryTemplate(){
+  toXLSX([['Forecast_Template',['รหัสสินค้า','ชื่อสินค้า','wk1','wk2','wk3','wk4'],(typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).slice(0,30).map(s=>[s.code,s.name,'','','',''])]],'Forecast_Template.xlsx');
+}
+async function saveFcEntryTable(){
+  const txt=document.getElementById('fc-entry-paste')?.value||'';
+  const selMonth=window._fcMonth||today().slice(0,7);const selCust=window._fcCust||'';
+  const[yr,mo]=selMonth.split('-').map(Number);
+  const wkDates=[1,8,15,22].map(d=>`${yr}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  const valid=new Set((typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).map(s=>s.code));
+  const rows=[];
+  txt.split(/\r?\n/).forEach(line=>{
+    const p=line.split(/\t|,/).map(x=>String(x||'').trim());
+    const sku=p[0]; if(!valid.has(sku))return;
+    const offset=Number.isFinite(parseFloat(p[1]))?1:2;
+    for(let w=1;w<=4;w++){const qty=parseFloat(p[offset+w-1]||0)||0;if(qty>0)rows.push({id:genId('FC'),by:UID,custCode:selCust||null,sku,qty,delivDate:wkDates[w-1],week:w,note:'import table',approved:false,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});}
+  });
+  if(!rows.length){toast('ไม่พบข้อมูลที่นำเข้าได้');return;}
+  let ok=false;
+  if(SB?.addForecasts){try{await SB.addForecasts(rows);ok=true;}catch(e){console.warn('saveFcEntryTable:',e);}}
+  if(!ok){const arr=DB.get('forecasts')||[];DB.set('forecasts',[...arr,...rows]);}
+  toast(`บันทึก Forecast ${rows.length} รายการแล้ว`);
+  window._fcTab='grid';pgForecast();
+}
 function _renderFcList(fcAll,isAll,selMonth,selCust){
   const el=document.getElementById('fc-tab-body');if(!el)return;
   const todayD=new Date();
@@ -982,7 +1029,7 @@ function _renderFcList(fcAll,isAll,selMonth,selCust){
 }
 function _renderFcDoc(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
   const el=document.getElementById('fc-tab-body');if(!el)return;
-  const hist=ALL_HIST||{};
+  const hist=window._salesHistCache||ALL_HIST||{};
   const[yr,mo]=selMonth?selMonth.split('-').map(Number):[new Date().getFullYear(),new Date().getMonth()+1];
   const prevYm=`${mo===1?yr-1:yr}-${String(mo===1?12:mo-1).padStart(2,'0')}`;
   const prevYrYm=`${yr-1}-${String(mo).padStart(2,'0')}`;
@@ -1132,7 +1179,7 @@ async function pgPlanStock() {
       ${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'].map((m,i)=>`<option value="${i+1}" ${new Date().getMonth()===i?'selected':''}>${m}</option>`).join('')}
     </select>
     <select id="ps-yr" onchange="_psInitPeriod();planStkT()" style="height:34px;padding:4px 8px;border:1px solid var(--BD);border-radius:7px;font-size:13px">
-      ${[0,1,2].map(d=>`<option value="${new Date().getFullYear()+d}" ${d===0?'selected':''}>${new Date().getFullYear()+d}</option>`).join('')}
+      ${[new Date().getFullYear()-1,new Date().getFullYear()].map(y=>`<option value="${y}" ${y===new Date().getFullYear()?'selected':''}>${y}</option>`).join('')}
     </select>
     <span style="margin-left:auto;font-size:12px;color:var(--TX3)">🔴 Live จาก WMS</span>
   </div>
@@ -1145,6 +1192,7 @@ async function pgPlanStock() {
   </div>`;
 
   // โหลดจาก Supabase view
+  await CACHE.get('sales_hist_2y',()=>loadDashboardSalesHist()).catch(e=>console.warn('sales_hist_2y:',e));
   const rows = await CACHE.get('stock_planning', () => SB.getStockPlanning());
   window._planRows = rows;
   // init multi-select filter
@@ -1200,7 +1248,7 @@ function planStkT() {
   const po   = [...poLS, ...poSB.map(p => ({sku: p.sku, qty: p.qty, status: p.status}))];
 
   filtered = filtered.map(r => {
-    const hist = ALL_HIST[r.code]?.monthly || {};
+    const hist = (window._salesHistCache?.[r.code]?.monthly) || ALL_HIST[r.code]?.monthly || {};
     const vals = Object.entries(hist).sort(([a],[b]) => a.localeCompare(b)).map(([,v]) => Number(v)||0).filter(v => v > 0);
     const avg  = arr => arr.length ? arr.reduce((s,v) => s+v, 0)/arr.length : 0;
     const a3   = r.avg3_monthly || avg(vals.slice(-3)) || 0;
@@ -1211,7 +1259,10 @@ function planStkT() {
       let b = a3;
       if      (c === 'avg4')     b = (r.avg4_monthly  ?? avg(vals.slice(-4))) || a3;
       else if (c === 'last1')    b = (r.last_month    ?? vals.slice(-1)[0])   || a3;
-      else if (c === 'prevyear') b = r.prevyear_monthly || a3;
+      else if (c === 'prevyear') {
+        const [py,pm]=(selYm||curYm).split('-').map(Number);
+        b = hist[`${py-1}-${String(pm).padStart(2,'0')}`] || r.prevyear_monthly || a3;
+      }
       else if (c === 'weekly')   b = a3 / 4;
       benchMap[c] = b;
     });
@@ -1411,6 +1462,7 @@ function ppRenderGantt(orders, cols, pt) {
   const planRows = window._planRows || [];
   const fcAll    = DB.get('forecasts') || [];
   const poAll    = window._poMerged || DB.get('po_log') || [];
+  const actualAll = DB.get('stock_in_actual') || [];
 
   const today = new Date().toISOString().slice(0,10);
   const inCol = (o, col) => {
@@ -1489,17 +1541,20 @@ function ppRenderGantt(orders, cols, pt) {
       const os = info.orders.filter(o => inCol(o, col));
       const colFc = fcAll.filter(f => f.sku===sku && inCol({planDate:f.delivDate||''},col));
       const colPo = poAll.filter(p => p.sku===sku && p.status!=='completed' && p.status!=='replaced' && inCol({planDate:p.delivDate||''},col));
+      const colActual = actualAll.filter(r => r.sku===sku && inCol({planDate:r.date||''},col));
       const fcQty = colFc.reduce((s,f)=>s+(f.qty||0),0);
       const poQty = colPo.reduce((s,p)=>s+(p.qty||0),0);
+      const actQty = colActual.reduce((s,r)=>s+(r.qty||0),0);
       const isTd = pt !== 'year' ? col.key === today : false;
       const bg = isTd ? 'background:#e8f0fe;' : '';
       const fmtT = v => v>=10000?(v/1000).toFixed(0)+'k':v>=1000?(v/1000).toFixed(1)+'k':Math.round(v);
-      if (!os.length && !fcQty && !poQty) return `<td style="${bg}border:1px solid var(--BD);min-width:${colW}px;max-width:${colW}px"></td>`;
+      if (!os.length && !fcQty && !poQty && !actQty) return `<td style="${bg}border:1px solid var(--BD);min-width:${colW}px;max-width:${colW}px"></td>`;
       const prodTotal = os.reduce((s,o) => s+(o.qty||0), 0);
       const color = statusColor[os[0]?.status] || '#6366f1';
-      const tip = [...os.map(o=>`ผลิต:${o.qty}[${o.status}]`), fcQty?`FC:${fcQty}`:'', poQty?`PO:${poQty}`:''].filter(Boolean).join(' ');
+      const tip = [...os.map(o=>`ผลิต:${o.qty}[${o.status}]`), actQty?`รับจริง:${actQty}`:'', fcQty?`FC:${fcQty}`:'', poQty?`PO:${poQty}`:''].filter(Boolean).join(' ');
       return `<td style="${bg}border:1px solid var(--BD);padding:2px;min-width:${colW}px;max-width:${colW}px;vertical-align:top" title="${tip.replace(/"/g,'&quot;')}">
         ${prodTotal>0?`<div onclick="ppEditModal('${os[0].id}')" style="background:${color};color:#fff;border-radius:2px;font-size:9px;font-weight:600;padding:1px 2px;text-align:center;cursor:pointer;line-height:1.4">${fmtT(prodTotal)}</div>`:''}
+        ${actQty>0?`<div style="background:#dcfce7;color:#0A5940;border-radius:2px;font-size:8px;padding:1px 2px;text-align:center;margin-top:1px;line-height:1.3">รับ:${fmtT(actQty)}</div>`:''}
         ${fcQty>0?`<div style="background:#ede9fe;color:#7C3AED;border-radius:2px;font-size:8px;padding:1px 2px;text-align:center;margin-top:1px;line-height:1.3">FC:${fmtT(fcQty)}</div>`:''}
         ${poQty>0?`<div style="background:#dcfce7;color:#0A5940;border-radius:2px;font-size:8px;padding:1px 2px;text-align:center;margin-top:1px;line-height:1.3">PO:${fmtT(poQty)}</div>`:''}
       </td>`;
@@ -1654,6 +1709,24 @@ function ppShowOrder(sku='', qty=0){
     <button class="btn" onclick="closeM()">ยกเลิก</button>
     <button class="btn btn-p" onclick="ppSaveOrder()">บันทึก</button>
   </div>`);
+}
+function ppSaveOrder(){
+  const sku=document.getElementById('pp-sku')?.value||'';
+  const qty=parseFloat(document.getElementById('pp-qty')?.value)||0;
+  const planDate=document.getElementById('pp-date')?.value||'';
+  const line=(document.getElementById('pp-line')?.value||'').trim();
+  const note=(document.getElementById('pp-note')?.value||'').trim();
+  if(!sku||qty<=0||!planDate){alert('กรุณากรอกรหัสสินค้า จำนวน และวันที่ผลิต');return;}
+  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
+  const sk=SKUS.find(s=>s.code===sku)||{name:sku};
+  const orders=DB.get('prod_orders')||[];
+  const order={id:genId('PP'),sku,skuName:sk.name||sku,qty,planDate,line,note,status:'pending',by:UID,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()};
+  orders.unshift(order);
+  DB.set('prod_orders',orders);
+  audit('ADD_PROD_ORDER',order.id,{sku,qty,planDate,line});
+  closeM();
+  toast('บันทึกรายการสั่งผลิตแล้ว');
+  ppRender();
 }
 function ppEditOrder(id, field, value){
   const orders = DB.get('prod_orders') || [];
@@ -2055,15 +2128,15 @@ function _histFromSalesRows(rows){
   return bySku;
 }
 async function loadDashboardSalesHist(){
-  const now=new Date();
-  const end=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const start=_ymAdd(end,-11);
+  const range=_twoYearWindow();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
-  const rows=await _sbSalesRows(start,end,slmId,{includeConsi:false});
-  window._dashSalesRows=rows;
+  const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false});
+  window._salesRows2Y=rows;
   window._salesHistCache=_histFromSalesRows(rows);
-  return window._salesHistCache;
+  const dashRows=rows.filter(r=>r.ym>=range.currentStart&&r.ym<=range.currentEnd);
+  window._dashSalesRows=dashRows;
+  return _histFromSalesRows(dashRows);
 }
 async function pgDash(){
   let po=DB.get('po_log')||[];
@@ -2087,7 +2160,7 @@ async function pgDash(){
   }catch(e){
     console.warn('Dashboard remote data unavailable, using local cache',e.message);
   }
-  const avgSales=Object.values(hist).reduce((a,h)=>a+h.avg3,0);
+  const yearSales=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
   window._dashData={po,stk,fc,ss};
   const pending=po.filter(p=>p.status==='pending').length;
   const overdue=po.filter(p=>p.status==='overdue').length;
@@ -2097,7 +2170,7 @@ async function pgDash(){
   },0);
   document.getElementById('ct').innerHTML=`
   <div class="krow">
-    <div class="kpi b"><div class="kl">ยอดขาย เฉลี่ย/เดือน</div><div class="kv">${fmt(avgSales)}</div><div class="kh">กก. (3 เดือนล่าสุด)</div></div>
+    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">${fmt(yearSales)}</div><div class="kh">กก. รวมทั้งปี</div></div>
     <div class="kpi a"><div class="kl">PO รอส่ง</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
     <div class="kpi r"><div class="kl">PO เลยกำหนด</div><div class="kv">${overdue}</div><div class="kh">รายการ</div></div>
     <div class="kpi r"><div class="kl">Stock ต่ำกว่าขั้นต่ำ</div><div class="kv">${lowStk}</div><div class="kh">SKU</div></div>
@@ -2110,7 +2183,7 @@ async function pgDash(){
     <label>กลุ่มสินค้า:</label>
     <select id="gf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${skuGroupNames().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
     <label>ช่วงเวลา:</label>
-    <select id="pf" onchange="dashCharts()"><option value="12" selected>12 เดือนล่าสุด</option><option value="4">4 เดือน</option><option value="3">3 เดือน</option><option value="1">เดือนนี้</option><option value="24">2 ปี</option></select>
+    <select id="pf" onchange="dashCharts()"><option value="12" selected>ปีปัจจุบัน</option><option value="4">4 เดือนล่าสุด</option><option value="3">3 เดือนล่าสุด</option><option value="1">เดือนนี้</option><option value="24">2 ปีล่าสุด</option></select>
     <label>กลุ่มลูกค้า:</label>
     <select id="cgf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${[...new Set(salesCustomers().map(c=>c.corp||'อื่นๆ'))].sort().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
   </div>
@@ -2142,8 +2215,8 @@ function dashCharts(){
   const baseYear=now.getFullYear();
   const curYm=`${baseYear}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const cutYm=_ymAdd(curYm,-23);
-  const yearMths=Array.from({length:12},(_,i)=>_ymAdd(curYm,-11+i));
-  const twoYrMths=Array.from({length:24},(_,i)=>_ymAdd(curYm,-23+i));
+  const yearMths=Array.from({length:12},(_,i)=>`${baseYear}-${String(i+1).padStart(2,'0')}`);
+  const twoYrMths=Array.from({length:24},(_,i)=>`${baseYear-1+Math.floor(i/12)}-${String((i%12)+1).padStart(2,'0')}`);
   const dataMths=[...new Set([
     ...Object.values(hist).flatMap(h=>Object.keys(h.monthly||{})),
     ...(window._dashSalesRows||[]).map(r=>r.ym),
@@ -2224,9 +2297,12 @@ function _ymAdd(ym,delta){
   const d=new Date(y,m-1+delta,1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
-function _sdMonthRange(monthsBack=36){
-  const end=_sdApiMonth();
-  return {start:_ymAdd(end,-monthsBack+1),end};
+function _twoYearWindow(refDate=new Date()){
+  const y=refDate.getFullYear();
+  return {prevYear:y-1,currentYear:y,start:`${y-1}-01`,end:`${y}-12`,currentStart:`${y}-01`,currentEnd:`${y}-12`};
+}
+function _sdMonthRange(){
+  return _twoYearWindow();
 }
 function _salesNameMap(){
   const out={};
@@ -2453,6 +2529,26 @@ async function sdLoadYear(){
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='Loading yearly sales...';document.body.appendChild(badge);
   try{
+    const start=`${gy}-01`,end=`${gy}-12`;
+    const rows=await _sbSalesRows(start,end,slmId,{includeConsi:false});
+    const prevRows=await _sbSalesRows(`${gy-1}-01`,`${gy-1}-12`,slmId,{includeConsi:false}).catch(()=>[]);
+    const monthly=_sdKpiFromRows(rows);
+    _sdApi.valueMode='qty';
+    _sdApi.monthly=monthly;
+    _sdApi.slmList=[...new Map(rows.map(r=>[r.slm_id,r.slm_name||r.slm_id]).filter(([c])=>c)).entries()].map(([code,name])=>({code,name}));
+    _sdApi.total=rows.reduce((sum,r)=>sum+(Number(r.amount)||0),0);
+    _sdApi.qty=rows.reduce((sum,r)=>sum+(Number(r.qty)||0),0);
+    _sdApi.invoices=rows.length;
+    const prevTotal=prevRows.reduce((sum,r)=>sum+(Number(r.amount)||0),0);
+    _sdApi.vs=prevTotal?Math.round((_sdApi.total/prevTotal-1)*100):0;
+    _sdApi.custs=_sdBuildCusts(rows);
+    _sdApi.prods=_sdBuildProds(rows);
+    _sdApi.slms=_sdBuildSlms(rows,_sdApi.slmList);
+    _sdApi.loaded=true;
+    _sdUpdateSlmDrop();
+  }catch(e0){
+    console.warn('Supabase yearly unavailable, trying Sales API',e0.message);
+  try{
     const qs=slmId?`&slm_id=${encodeURIComponent(slmId)}`:'';
     const months=Array.from({length:12},(_,i)=>`${gy}-${String(i+1).padStart(2,'0')}`);
     const [kpiJ,slmJ,...sumJs]=await Promise.all([
@@ -2489,6 +2585,7 @@ async function sdLoadYear(){
       _sdApi.prods=_sdBuildProds((await _sbSalesRows(start,end,slmId)));
       _sdApi.slms=_sdBuildSlms((await _sbSalesRows(start,end,slmId)),_sdApi.slmList);
     }catch(e2){_sdApi.loaded=false;_sdApi.error=e2.message;console.error('Supabase yearly unavailable',e2);}
+  }
   }
   finally{document.getElementById('sd-loading')?.remove();}
   sdRender();
@@ -3098,11 +3195,9 @@ async function pgConsignment(){
   document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button>`;
   document.getElementById('ct').innerHTML='<div class="al ali">กำลังโหลดข้อมูลฝากขาย CONSI...</div>';
   _consiRows=[];_consiLoaded=false;_consiCustF='';_consiProdF='';_consiBranchF='';
-  const now=new Date();
-  const end=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const start=_ymAdd(end,-23);
+  const range=_twoYearWindow();
   try{
-    _consiRows=await _sbSalesRows(start,end,'',{includeConsi:true});
+    _consiRows=await _sbSalesRows(range.start,range.end,'',{includeConsi:true});
     _consiLoaded=true;
   }catch(e){
     console.warn('CONSI load failed:',e);
@@ -3113,11 +3208,11 @@ async function pgConsignment(){
 function consiRender(){
   const custs=[...new Map(_consiRows.map(r=>[r.cust_code,r.cust_name||r.cust_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'th'));
   const prods=[...new Map(_consiRows.map(r=>[r.prod_code,r.prod_name||r.prod_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
-  const branches=[...new Set(_consiRows.map(r=>r.cust_group||r.branch||'').filter(Boolean))].sort();
+  const branches=[...new Set(_consiRows.map(r=>r.branch||'').filter(Boolean))].sort();
   let rows=_consiRows;
   if(_consiCustF) rows=rows.filter(r=>r.cust_code===_consiCustF);
   if(_consiProdF) rows=rows.filter(r=>r.prod_code===_consiProdF);
-  if(_consiBranchF) rows=rows.filter(r=>(r.cust_group||r.branch||'')===_consiBranchF);
+  if(_consiBranchF) rows=rows.filter(r=>(r.branch||'')===_consiBranchF);
   const monthly=_sdKpiFromRows(rows);
   const total=rows.reduce((a,r)=>a+(r.qty||0),0);
   const byProd=_sdBuildProds(rows).slice(0,30);
@@ -3139,7 +3234,7 @@ function consiRender(){
         </select>
       </div>
       ${branches.length>1?`<div class="field" style="margin:0;min-width:160px">
-        <label style="font-size:11px;color:var(--TX2)">สาขา / กลุ่ม</label>
+        <label style="font-size:11px;color:var(--TX2)">สาขา</label>
         <select class="inp" onchange="_consiBranchF=this.value;consiRender()" style="height:34px;padding:4px 8px">
           <option value="">ทุกสาขา</option>
           ${branches.map(b=>`<option value="${esc(b)}" ${_consiBranchF===b?'selected':''}>${esc(b)}</option>`).join('')}
@@ -3169,9 +3264,9 @@ function expConsi(){
   let rows=_consiRows;
   if(_consiCustF) rows=rows.filter(r=>r.cust_code===_consiCustF);
   if(_consiProdF) rows=rows.filter(r=>r.prod_code===_consiProdF);
-  if(_consiBranchF) rows=rows.filter(r=>(r.cust_group||r.branch||'')===_consiBranchF);
+  if(_consiBranchF) rows=rows.filter(r=>(r.branch||'')===_consiBranchF);
   const cols=['เดือน','รหัสลูกค้า','ชื่อลูกค้า','สาขา/กลุ่ม','รหัสสินค้า','ชื่อสินค้า','จำนวน (กก.)'];
-  const data=rows.map(r=>[r.ym,r.cust_code||'',r.cust_name||'',r.cust_group||r.branch||'',r.prod_code||'',r.prod_name||'',r.qty||0]);
+  const data=rows.map(r=>[r.ym,r.cust_code||'',r.cust_name||'',r.branch||r.cust_group||'',r.prod_code||'',r.prod_name||'',r.qty||0]);
   toXLSX([['CONSI',cols,data]],'CONSI_Export.xlsx');
 }
 
@@ -5347,7 +5442,7 @@ function pgPlanBooking() {
         const typeSt = b.type === 'PO' ? 'background:var(--LBL);color:var(--BL)' : 'background:var(--LG);color:var(--G)';
         return `<tr style="${late?'background:#FEF3F2':''}">
           <td><span class="badge" style="${typeSt}">${b.type}</span></td>
-          <td class="mono" style="font-size:12px">${esc(b.refNo||'—')}</td>
+          <td class="mono" style="font-size:12px">${esc(b.refNo||b.poNo||b.soNo||'—')}</td>
           <td class="mono">${b.sku}</td>
           <td>${esc((b.skuName||'').substring(0,28))}</td>
           <td class="r" style="font-weight:700">${fmt(b.qty)}</td>
@@ -5384,6 +5479,10 @@ function showBkModal(id = '') {
       </select></div>
     <div class="field"><label>เลขที่ PO / SO</label>
       <input type="text" id="bk-ref" placeholder="เลขที่อ้างอิง PO หรือ SO" value="${esc(b?.refNo||'')}"></div>
+    <div class="field"><label>เลขที่ PO</label>
+      <input type="text" id="bk-po" placeholder="กรอกเมื่อเป็น PO" value="${esc(b?.poNo||(b?.type==='PO'?b?.refNo:'')||'')}"></div>
+    <div class="field"><label>เลขที่ SO</label>
+      <input type="text" id="bk-so" placeholder="กรอกเมื่อเป็น SO" value="${esc(b?.soNo||(b?.type==='SO'?b?.refNo:'')||'')}"></div>
     <div class="field"><label>รหัสสินค้า</label>
       <select id="bk-sku">${SKUS.map(s=>`<option value="${s.code}" ${b?.sku===s.code?'selected':''}>${s.code} — ${(s.name||'').substring(0,24)}</option>`).join('')}</select></div>
     <div class="field"><label>จำนวน (กก.)</label>
@@ -5415,7 +5514,9 @@ function showBkModal(id = '') {
 
 function saveBk(id) {
   const type = document.getElementById('bk-type')?.value || 'PO';
-  const refNo = (document.getElementById('bk-ref')?.value || '').trim();
+  const poNo = (document.getElementById('bk-po')?.value || '').trim();
+  const soNo = (document.getElementById('bk-so')?.value || '').trim();
+  const refNo = ((document.getElementById('bk-ref')?.value || '').trim()) || (type==='PO'?poNo:soNo);
   const sku  = document.getElementById('bk-sku')?.value;
   const qty  = parseFloat(document.getElementById('bk-qty')?.value) || 0;
   const custName = (document.getElementById('bk-cust')?.value || '').trim();
@@ -5429,10 +5530,10 @@ function saveBk(id) {
   const bks = DB.get('bookings') || [];
   if (id) {
     const idx = bks.findIndex(b => b.id === id);
-    if (idx !== -1) Object.assign(bks[idx], { type, refNo, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, edited_by: UID, edited_at: new Date().toISOString() });
+    if (idx !== -1) Object.assign(bks[idx], { type, refNo, poNo, soNo, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, edited_by: UID, edited_at: new Date().toISOString() });
     audit('EDIT_BK', id, { sku, qty, stockStatus });
   } else {
-    const newBk = { id: genId('BK'), type, refNo, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, by: UID, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString() };
+    const newBk = { id: genId('BK'), type, refNo, poNo, soNo, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, by: UID, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString() };
     bks.unshift(newBk);
     audit('ADD_BK', newBk.id, { type, refNo, sku, qty, custName, stockStatus });
     if (stockStatus === 'produce') toast(`⚠️ จอง ${type} ${sku} ${qty}กก. — ต้องสั่งผลิต รอ confirm`);
@@ -5454,7 +5555,7 @@ function expBookings() {
   const bks = DB.get('bookings') || [];
   toXLSX([['Bookings',
     ['ประเภท','เลขที่ PO/SO','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','ผู้จอง','วันรับสินค้า','สต๊อก/ผลิต','สถานะ','หมายเหตุ','บันทึกโดย'],
-    bks.map(b => [b.type,b.refNo||'',b.sku,b.skuName||'',b.qty,b.custName||'',b.receiveDate||'',b.stockStatus==='produce'?'สั่งผลิต':'จากสต๊อก',b.status,b.note||'',b.by||''])
+    bks.map(b => [b.type,b.refNo||b.poNo||b.soNo||'',b.sku,b.skuName||'',b.qty,b.custName||'',b.receiveDate||'',b.stockStatus==='produce'?'สั่งผลิต':'จากสต๊อก',b.status,b.note||'',b.by||''])
   ]], 'Bookings_' + todayStr() + '.xlsx');
 }
 
@@ -5704,16 +5805,19 @@ function psvRender() {
 
 function expPsvSummary() {
   const orders = DB.get('prod_orders') || [];
+  const stockInActual = DB.get('stock_in_actual') || [];
   const today7 = new Date(_psv.ref); today7.setDate(today7.getDate() - 6);
   const rows = [];
   for (let i = 0; i < 14; i++) {
     const d = new Date(today7); d.setDate(today7.getDate() + i);
     const key = d.toISOString().slice(0,10);
     const plan = orders.filter(o=>o.planDate===key&&o.status!=='replaced').reduce((s,o)=>s+(o.qty||0),0);
-    const done = orders.filter(o=>o.planDate===key&&o.status==='done').reduce((s,o)=>s+(o.qty||0),0);
+    const done = stockInActual.length
+      ? stockInActual.filter(r=>r.date===key).reduce((s,r)=>s+(r.qty||0),0)
+      : orders.filter(o=>o.planDate===key&&o.status==='done').reduce((s,o)=>s+(o.qty||0),0);
     rows.push([key, plan, done, done-plan, plan>0?Math.round(done/plan*100)+'%':'']);
   }
-  toXLSX([['ProdSummary',['ช่วงเวลา','แผนผลิต(กก.)','ผลิตจริง(กก.)','ส่วนต่าง','%สำเร็จ'],rows]],'ProdSummary_'+todayStr()+'.xlsx');
+  toXLSX([['ProdSummary',['ช่วงเวลา','แผนผลิต(กก.)','รับเข้าจริง/ผลิตจริง(กก.)','ส่วนต่าง','%สำเร็จ'],rows]],'ProdSummary_'+todayStr()+'.xlsx');
 }
 
 // ════════════════════════════════════════════════
