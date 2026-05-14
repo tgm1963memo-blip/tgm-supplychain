@@ -1098,106 +1098,133 @@ function ppRenderGantt(orders, cols, pt) {
   const skuList = Object.keys(bysku).sort();
   if (!skuList.length) return '<div style="padding:16px;color:var(--TX3);text-align:center;font-size:13px">ไม่มีรายการในช่วงเวลานี้</div>';
 
-  // ── Comparison data ──────────────────────────────
-  const planRows  = window._planRows || [];
-  const fcAll     = DB.get('forecasts') || [];
-  const poAll     = DB.get('po_log')    || [];
+  // ── ดึงข้อมูลเปรียบเทียบ ─────────────────────────
+  const planRows = window._planRows || [];
+  const fcAll    = DB.get('forecasts') || [];
+  const poAll    = window._poMerged || DB.get('po_log') || [];
 
   const today = new Date().toISOString().slice(0,10);
   const inCol = (o, col) => {
-    if (pt === 'year')   return (o.planDate||'').slice(0,7) === col.key;
-    if (col.end)         return (o.planDate||'') >= col.key && (o.planDate||'') <= col.end;
+    if (pt === 'year')  return (o.planDate||'').slice(0,7) === col.key;
+    if (col.end)        return (o.planDate||'') >= col.key && (o.planDate||'') <= col.end;
     return (o.planDate||'') === col.key;
   };
   const statusColor = { pending:'#f59e0b', inprog:'#3b82f6', done:'#22c55e' };
   const colW = pt === 'month' ? 26 : pt === 'year' ? 56 : 40;
-  const leftW = 195;
 
-  const headerRow = `<tr>
-    <th style="min-width:${leftW}px;max-width:${leftW}px;text-align:left;padding:4px 8px;position:sticky;left:0;background:var(--bg2);z-index:2;border-right:2px solid var(--BD);font-size:11px">
-      สินค้า &amp; เปรียบเทียบ</th>
-    ${cols.map(col => {
-      const isTd = pt !== 'year' ? col.key === today : false;
-      return `<th style="min-width:${colW}px;max-width:${colW}px;text-align:center;padding:2px 1px;font-size:10px;${isTd?'background:var(--N);color:#fff;':'background:var(--bg2)'}">
-        ${col.lbl}<br><span style="font-size:9px;opacity:.65">${col.sub||''}</span></th>`;
-    }).join('')}
-  </tr>`;
+  // ── sticky column widths (สะสม left) ────────────
+  // [สินค้า=150] [Stock=62] [ผลิต=62] [FC=62] [PO=62] [ยอดออก=70] | date cols
+  const W = { sku:150, stock:62, prod:62, fc:62, po:62, out:70 };
+  const L = {
+    sku:   0,
+    stock: W.sku,
+    prod:  W.sku + W.stock,
+    fc:    W.sku + W.stock + W.prod,
+    po:    W.sku + W.stock + W.prod + W.fc,
+    out:   W.sku + W.stock + W.prod + W.fc + W.po,
+  };
+  const totalStickyW = L.out + W.out; // 468px
 
+  // shared cell style helpers
+  const thBase = `font-size:10px;font-weight:600;text-align:right;padding:4px 6px;border-bottom:1px solid var(--BD);white-space:nowrap;position:sticky;top:0;z-index:3;background:var(--bg2)`;
+  const tdBase = (left, borderR='') => `position:sticky;left:${left}px;background:#fff;z-index:1;${borderR}vertical-align:middle;border-bottom:1px solid var(--bg2)`;
+
+  const numCell = (val, color) => {
+    if (!val || val === 0) return `<td style="${tdBase(0)};text-align:right;padding:3px 6px;color:var(--TX3)">—</td>`;
+    const display = val >= 10000 ? (val/1000).toFixed(0)+'k' : val >= 1000 ? (val/1000).toFixed(1)+'k' : Math.round(val);
+    return `<td style="text-align:right;padding:3px 6px;font-size:11px;font-weight:700;color:${color};border-bottom:1px solid var(--bg2)">${display}</td>`;
+  };
+
+  // ── Header row (2 rows: group + col names) ───────
+  const stickyGroupHeader = `
+    <th style="${thBase};left:${L.sku}px;min-width:${W.sku}px;max-width:${W.sku}px;text-align:left;border-right:1px solid var(--BD)" rowspan="2">สินค้า</th>
+    <th colspan="5" style="${thBase};left:${L.stock}px;text-align:center;border-right:2px solid var(--BD)">ข้อมูลเปรียบเทียบ (กก.)</th>`;
+  const stickySubHeader = `
+    <th style="${thBase};left:${L.stock}px;min-width:${W.stock}px;color:#0A5940">Stock</th>
+    <th style="${thBase};left:${L.prod}px;min-width:${W.prod}px;color:#6366f1">ผลิต</th>
+    <th style="${thBase};left:${L.fc}px;min-width:${W.fc}px;color:#7C3AED">FC</th>
+    <th style="${thBase};left:${L.po}px;min-width:${W.po}px;color:#0A5940">PO</th>
+    <th style="${thBase};left:${L.out}px;min-width:${W.out}px;color:#C44B0A;border-right:2px solid var(--BD)">ยอดออก<br><span style="font-weight:400;opacity:.7">/เดือน</span></th>`;
+  const dateTh1 = cols.map(col => {
+    const isTd = pt !== 'year' ? col.key === today : false;
+    return `<th style="min-width:${colW}px;max-width:${colW}px;text-align:center;padding:2px 1px;font-size:10px;position:sticky;top:0;z-index:2;${isTd?'background:var(--N);color:#fff':'background:var(--bg2)'}"
+      colspan="1">${col.lbl}<br><span style="font-size:9px;opacity:.65">${col.sub||''}</span></th>`;
+  }).join('');
+
+  const headerHTML = `
+    <tr>${stickyGroupHeader}${dateTh1}</tr>
+    <tr>${stickySubHeader}</tr>`;
+
+  // ── Body rows ────────────────────────────────────
   const bodyRows = skuList.map(sku => {
-    const info    = bysku[sku];
-    const pr      = planRows.find(r => r.code === sku) || {};
-    const stock   = Math.round(pr.stock_qty ?? pr._effStock ?? 0);
-    const fcTotal = Math.round(fcAll.filter(f => f.sku === sku).reduce((s,f) => s+(f.qty||0), 0));
-    const poTotal = Math.round(poAll.filter(p => p.sku === sku && p.status !== 'completed').reduce((s,p) => s+(p.qty||0), 0));
-    const salesAvg= Math.round(ALL_HIST[sku]?.avg3 || 0);
-    const prodTot = Math.round(info.orders.reduce((s,o) => s+(o.qty||0), 0));
-    const minStk  = pr.min_stock || 0;
-    const stockColor = stock < minStk ? 'var(--R)' : stock < minStk*1.5 ? 'var(--A)' : 'var(--G)';
+    const info     = bysku[sku];
+    const pr       = planRows.find(r => r.code === sku) || {};
+    const stock    = pr.stock_qty ?? pr._effStock ?? 0;
+    const minStk   = pr.min_stock || 0;
+    const prodTot  = info.orders.reduce((s,o) => s+(o.qty||0), 0);
+    const fcTotal  = fcAll.filter(f => f.sku===sku).reduce((s,f) => s+(f.qty||0), 0);
+    const poTotal  = poAll.filter(p => p.sku===sku && p.status!=='completed' && p.status!=='replaced').reduce((s,p) => s+(p.qty||0), 0);
+    const salesAvg = ALL_HIST[sku]?.avg3 || 0;
 
-    const cells = cols.map(col => {
+    const stockColor = stock === 0 ? 'var(--R)' : stock < minStk ? '#C44B0A' : '#0A5940';
+    const fmtV = v => !v ? '—' : v >= 10000 ? (v/1000).toFixed(0)+'k' : v >= 1000 ? (v/1000).toFixed(1)+'k' : Math.round(v);
+    const numTd = (v, color, left, borderR='') => {
+      const txt = fmtV(v);
+      const isZero = !v || v === 0;
+      return `<td style="${tdBase(left, borderR)}text-align:right;padding:3px 7px;font-size:11px;font-weight:${isZero?'400':'700'};color:${isZero?'var(--TX3)':color};min-width:${
+        left===L.stock?W.stock:left===L.prod?W.prod:left===L.fc?W.fc:left===L.po?W.po:W.out}px">${txt}</td>`;
+    };
+
+    // Date cells
+    const dateCells = cols.map(col => {
       const os = info.orders.filter(o => inCol(o, col));
-      if (!os.length) {
-        const isTd = pt !== 'year' ? col.key === today : false;
-        return `<td style="border:1px solid var(--BD);min-width:${colW}px;max-width:${colW}px;${isTd?'background:#e8f0fe':''}"></td>`;
-      }
-      const total = os.reduce((s,o) => s + (o.qty||0), 0);
+      const isTd = pt !== 'year' ? col.key === today : false;
+      const bg = isTd ? 'background:#e8f0fe;' : '';
+      if (!os.length) return `<td style="${bg}border:1px solid var(--BD);min-width:${colW}px;max-width:${colW}px"></td>`;
+      const total = os.reduce((s,o) => s+(o.qty||0), 0);
       const color = statusColor[os[0].status] || '#6366f1';
-      const names = os.map(o => `${o.planDate} ${o.qty}กก. [${o.status}]`).join('\n');
-      const isTd  = pt !== 'year' ? col.key === today : false;
-      return `<td style="border:1px solid var(--BD);padding:2px;text-align:center;min-width:${colW}px;max-width:${colW}px;${isTd?'background:#e8f0fe':''}">
-        <div onclick="ppEditModal('${os[0].id}')" title="${names.replace(/"/g,'&quot;')}"
-          style="background:${color};color:#fff;border-radius:3px;font-size:9px;font-weight:600;padding:2px 3px;cursor:pointer;line-height:1.3;overflow:hidden">${Math.round(total)}</div>
+      const label = total >= 1000 ? (total/1000).toFixed(1)+'k' : Math.round(total);
+      const tip   = os.map(o=>`${o.planDate} ${o.qty}กก.[${o.status}]`).join('\n');
+      return `<td style="${bg}border:1px solid var(--BD);padding:2px;text-align:center;min-width:${colW}px;max-width:${colW}px">
+        <div onclick="ppEditModal('${os[0].id}')" title="${tip.replace(/"/g,'&quot;')}"
+          style="background:${color};color:#fff;border-radius:3px;font-size:9px;font-weight:600;padding:2px 2px;cursor:pointer;line-height:1.3;overflow:hidden">${label}</div>
       </td>`;
     }).join('');
 
-    // Mini comparison bar (% of monthly avg)
-    const maxVal = Math.max(stock, fcTotal, poTotal, salesAvg, prodTot, 1);
-    const barPct = v => Math.min(100, Math.round(v / maxVal * 100));
-    const miniBar = (v, color, label, title) => v > 0
-      ? `<div title="${title}: ${v.toLocaleString()} กก." style="display:flex;align-items:center;gap:3px;margin-bottom:2px">
-          <span style="font-size:8px;width:30px;color:var(--TX3);flex-shrink:0;text-align:right">${label}</span>
-          <div style="flex:1;height:5px;background:var(--bg2);border-radius:2px;overflow:hidden">
-            <div style="width:${barPct(v)}%;height:100%;background:${color};border-radius:2px"></div>
-          </div>
-          <span style="font-size:8px;color:${color};font-weight:600;width:36px;flex-shrink:0">${v>=1000?(v/1000).toFixed(1)+'k':v}</span>
-        </div>`
-      : `<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px">
-          <span style="font-size:8px;width:30px;color:var(--TX3);flex-shrink:0;text-align:right">${label}</span>
-          <div style="flex:1;height:5px;background:var(--bg2);border-radius:2px"></div>
-          <span style="font-size:8px;color:var(--TX3);width:36px;flex-shrink:0">—</span>
-        </div>`;
-
-    return `<tr>
-      <td style="padding:5px 8px;position:sticky;left:0;background:#fff;z-index:1;border-right:2px solid var(--BD);border-bottom:1px solid var(--bg2);min-width:${leftW}px;max-width:${leftW}px;vertical-align:top">
-        <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
-          <span class="mono" style="font-size:10px;color:var(--TX3)">${esc(sku)}</span>
-          <span style="font-size:10px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:110px" title="${esc(info.name)}">${esc(info.name.substring(0,18))}</span>
-        </div>
-        ${miniBar(stock,   stockColor,   'Stock', 'Stock ปัจจุบัน')}
-        ${miniBar(prodTot, '#6366f1',    'ผลิต',  'สั่งผลิต (ช่วงนี้)')}
-        ${miniBar(fcTotal, '#a855f7',    'FC',    'Forecast รวม')}
-        ${miniBar(poTotal, '#0A5940',    'PO',    'PO รวม')}
-        ${miniBar(salesAvg,'#C44B0A',    'Out',   'ยอดออกเฉลี่ย/เดือน')}
-      </td>${cells}
+    return `<tr style="height:32px">
+      <td style="${tdBase(L.sku,'border-right:1px solid var(--BD);')}padding:3px 8px;min-width:${W.sku}px;max-width:${W.sku}px">
+        <div class="mono" style="font-size:9px;color:var(--TX3)">${esc(sku)}</div>
+        <div style="font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:${W.sku-16}px" title="${esc(info.name)}">${esc(info.name.substring(0,22))}</div>
+      </td>
+      ${numTd(stock,    stockColor,        L.stock, '')}
+      ${numTd(prodTot,  '#6366f1',         L.prod,  '')}
+      ${numTd(fcTotal,  '#7C3AED',         L.fc,    '')}
+      ${numTd(poTotal,  '#0A5940',         L.po,    '')}
+      ${numTd(salesAvg, '#C44B0A',         L.out,   'border-right:2px solid var(--BD);')}
+      ${dateCells}
     </tr>`;
   }).join('');
 
   return `<div style="overflow-x:auto">
     <table style="border-collapse:collapse;table-layout:fixed;width:max-content">
-      <thead>${headerRow}</thead>
+      <thead>${headerHTML}</thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </div>
-  <div style="display:flex;gap:14px;padding:6px 8px;font-size:11px;color:var(--TX3);flex-wrap:wrap;border-top:1px solid var(--bg2);margin-top:4px">
-    <span style="font-weight:600;color:var(--TX2)">สัญลักษณ์:</span>
+  <div style="display:flex;gap:14px;padding:7px 10px;font-size:11px;color:var(--TX3);flex-wrap:wrap;border-top:1px solid var(--bg2)">
+    <b style="color:var(--TX2)">สถานะผลิต:</b>
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px"></span>รอผลิต</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#3b82f6;border-radius:2px"></span>กำลังผลิต</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px"></span>ผลิตแล้ว</span>
-    <span style="margin-left:8px;display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:5px;background:#6366f1;border-radius:2px"></span>ผลิต</span>
-    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:5px;background:#a855f7;border-radius:2px"></span>FC</span>
-    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:5px;background:#0A5940;border-radius:2px"></span>PO</span>
-    <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:5px;background:#C44B0A;border-radius:2px"></span>ยอดออก/เดือน</span>
+    <span style="margin-left:8px;color:var(--TX3)">|</span>
+    <b style="color:var(--TX2)">Columns:</b>
+    <span style="color:#0A5940">Stock</span> = WMS ปัจจุบัน ·
+    <span style="color:#6366f1">ผลิต</span> = รวมยอดสั่งผลิต ·
+    <span style="color:#7C3AED">FC</span> = Forecast รวม ·
+    <span style="color:#0A5940">PO</span> = PO รวม ·
+    <span style="color:#C44B0A">ยอดออก</span> = avg 3 เดือน
   </div>`;
+}
 }
 
 function ppEditModal(id){
@@ -1206,7 +1233,6 @@ function ppEditModal(id){
   if(!o)return;
   const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
   openMod(`<div class="mh"><div class="mt2">แก้ไขรายการผลิต</div><span class="mx" onclick="closeM()">✕</span></div>
-  ${o.docNo?`<div style="background:var(--LBL);border-radius:6px;padding:6px 10px;margin-bottom:12px;font-size:12px;color:var(--BL)">📄 เลขที่เอกสาร: <b class="mono">${esc(o.docNo)}</b></div>`:''}
   <div class="fg">
     <div class="field"><label>รหัสสินค้า</label><input class="fi" id="em-sku" value="${esc(o.sku)}" readonly></div>
     <div class="field"><label>วันผลิต</label><input type="date" class="fi" id="em-date" value="${o.planDate||''}"></div>
@@ -1268,12 +1294,11 @@ function ppRender(){
   const tbl = document.getElementById('pp-tbl');
   if (tbl) tbl.innerHTML = inRange.length ? `<div class="tw"><table>
     <thead><tr>
-      <th>เลขที่เอกสาร</th><th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
+      <th>วันผลิต</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
       <th class="r">จำนวน(กก.)</th><th>สายผลิต</th><th>สถานะ</th>
       <th>หมายเหตุ</th><th>แก้ไขโดย</th><th>Action</th>
     </tr></thead>
     <tbody>${inRange.sort((a,b)=>a.planDate<b.planDate?-1:1).map(o=>`<tr>
-      <td><span class="mono" style="font-size:12px;color:var(--BL);font-weight:700">${o.docNo||'—'}</span></td>
       <td><input type="date" value="${o.planDate}" onchange="ppEditOrder('${o.id}','planDate',this.value);ppRender()" style="padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px"></td>
       <td class="mono">${o.sku}</td><td>${(o.skuName||'').substring(0,28)}</td>
       <td class="r"><input type="number" value="${o.qty}" onchange="ppEditOrder('${o.id}','qty',this.value)" style="width:60px;padding:3px;border:1px solid var(--BD);border-radius:4px;font-size:12px;text-align:right" min="0" step="0.1"></td>
@@ -1306,46 +1331,6 @@ function ppShowOrder(sku='', qty=0){
     <button class="btn" onclick="closeM()">ยกเลิก</button>
     <button class="btn btn-p" onclick="ppSaveOrder()">บันทึก</button>
   </div>`);
-}
-function ppSaveOrder(){
-  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
-  const sku=document.getElementById('pp-sku')?.value;
-  const qty=parseFloat(document.getElementById('pp-qty')?.value)||0;
-  const planDate=document.getElementById('pp-date')?.value;
-  const line=(document.getElementById('pp-line')?.value||'').trim();
-  const note=(document.getElementById('pp-note')?.value||'').trim();
-  if(!sku){toast('กรุณาเลือกสินค้า','warn');return;}
-  if(!qty||qty<=0){toast('กรุณากรอกจำนวน','warn');return;}
-  if(!planDate){toast('กรุณาระบุวันที่ผลิต','warn');return;}
-  const sk=SKUS.find(s=>s.code===sku);
-  const orders=DB.get('prod_orders')||[];
-  // Generate sequential document number
-  const maxSeq=orders.reduce((mx,o)=>{
-    const m=(o.docNo||'').match(/PLN-(\d+)$/);
-    return m?Math.max(mx,parseInt(m[1])):mx;
-  },0);
-  const docNo='PLN-'+String(maxSeq+1).padStart(4,'0');
-  const order={
-    id:genId('PROD'),
-    docNo,
-    sku,
-    skuName:sk?.name||sku,
-    qty,
-    planDate,
-    line,
-    note,
-    status:'pending',
-    by:UID,
-    ts:Date.now(),
-    edited_by:UID,
-    edited_at:new Date().toISOString()
-  };
-  orders.unshift(order);
-  DB.set('prod_orders',orders);
-  audit('ADD_PROD_ORDER',order.id,{sku,qty,planDate,docNo});
-  closeM();
-  toast('บันทึก '+docNo+' แล้ว ✅');
-  ppRender();
 }
 function ppEditOrder(id, field, value){
   const orders = DB.get('prod_orders') || [];
@@ -1408,8 +1393,8 @@ function ppExport(){
   const orders=DB.get('prod_orders')||[];
   const {s,e,lbl}=ppGetRange();
   const rows=orders.filter(o=>{const d=new Date(o.planDate);return d>=s&&d<e;})
-    .map(o=>[o.docNo||'',o.planDate,o.sku,o.skuName||'',o.qty,o.line||'',o.status,o.note||'',o.by||'']);
-  toXLSX([['ProdOrders',['เลขที่เอกสาร','วันผลิต','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','สายผลิต','สถานะ','หมายเหตุ','สร้างโดย'],rows]],`ProdPlan_${lbl.replace(/\//g,'-')}.xlsx`);
+    .map(o=>[o.planDate,o.sku,o.skuName||'',o.qty,o.line||'',o.status,o.note||'',o.by||'']);
+  toXLSX([['ProdOrders',['วันผลิต','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','สายผลิต','สถานะ','หมายเหตุ','สร้างโดย'],rows]],`ProdPlan_${lbl.replace(/\//g,'-')}.xlsx`);
 }
 
 // ════════════════════════════════════════════════
@@ -2761,11 +2746,20 @@ async function poT(){
   try {
     const remote = await SB.getPOPlans();
     if(remote && remote.length) {
-      po = remote;
-      note = '<div class="al ali">แสดงข้อมูล PO จาก Supabase</div>';
+      // Merge: remote เป็นหลัก + local ที่ยังไม่ได้ sync (id ไม่ซ้ำกัน)
+      const remoteIds = new Set(remote.map(p=>p.id));
+      const localOnly = po.filter(p=>!remoteIds.has(p.id));
+      po = [...remote, ...localOnly];
+      window._poMerged = po; // เก็บไว้สำหรับ expPO / planstock
+      note = localOnly.length
+        ? `<div class="al ali">Supabase ${remote.length} รายการ + รอ sync ${localOnly.length} รายการ</div>`
+        : '<div class="al ali">แสดงข้อมูล PO จาก Supabase</div>';
+    } else {
+      window._poMerged = po;
     }
   } catch(e) {
-    note = `<div class="al alw">ไม่สามารถโหลด PO จาก server: ${e.message}</div>`;
+    window._poMerged = po;
+    note = `<div class="al alw">ไม่สามารถโหลด PO จาก server: ${e.message} — แสดงข้อมูล local</div>`;
   }
   document.getElementById('po-source-note').innerHTML = note;
 
@@ -2810,7 +2804,22 @@ function handlePOPaste(e){
   pv.innerHTML=`<div class="al als">พบ ${imp.length} รายการ <button class="btn btn-sm btn-p" onclick="cfmPOPaste()">นำเข้า</button></div>`;
   window._pop=imp;
 }
-function cfmPOPaste(){const arr=window._pop||[];const po=DB.get('po_log')||[];arr.forEach(x=>po.unshift(x));DB.set('po_log',po);audit('PASTE_PO','po_log',{count:arr.length});document.getElementById('po-pv').innerHTML=`<div class="al als">นำเข้าสำเร็จ ${arr.length} รายการ</div>`;poT();}
+async function cfmPOPaste(){
+  const arr=window._pop||[];
+  if(!arr.length)return;
+  const po=DB.get('po_log')||[];
+  arr.forEach(x=>po.unshift(x));
+  DB.set('po_log',po);
+  document.getElementById('po-pv').innerHTML=`<div class="al als">นำเข้าสำเร็จ ${arr.length} รายการ — กำลัง sync Supabase...</div>`;
+  try {
+    for(const x of arr) await SB.upsertPO(x);
+    document.getElementById('po-pv').innerHTML=`<div class="al als">นำเข้าและ sync Supabase สำเร็จ ${arr.length} รายการ ✅</div>`;
+  } catch(e){
+    document.getElementById('po-pv').innerHTML=`<div class="al alw">นำเข้าสำเร็จ ${arr.length} รายการ (Supabase offline: ${e.message})</div>`;
+  }
+  audit('PASTE_PO','po_log',{count:arr.length});
+  poT();
+}
 function showPOModal(){
   openMod(`<div class="mh"><div class="mt2">เพิ่ม PO ล่วงหน้า</div><span class="mx" onclick="closeM()">✕</span></div>
   <div class="al ali">PO นี้จะปรากฏใน Warehouse ทันที — คลังจะเห็นการจอง Stock</div>
@@ -2838,12 +2847,19 @@ function updPOInfo(){
   if(document.getElementById('pi-moq'))document.getElementById('pi-moq').textContent=sk.moq||'ไม่กำหนด';
   if(d&&document.getElementById('pi-ord')){const od=new Date(new Date(d).getTime()-sk.lt*864e5);document.getElementById('pi-ord').textContent=od.toLocaleDateString('th-TH',{day:'2-digit',month:'short'});}
 }
-function savePO(){
+async function savePO(){
   const sku=document.getElementById('p-sku').value,qty=parseFloat(document.getElementById('p-qty').value)||0,delivDate=document.getElementById('p-date').value,customer=document.getElementById('p-cust').value;
   if(!sku||!qty||!delivDate||!customer){alert('กรุณากรอกข้อมูลให้ครบ');return;}
-  const sk=skuI(sku);const po=DB.get('po_log')||[];
-  po.unshift({id:genId('PO'),sku,skuName:sk.name,qty,delivDate,customer,branch:document.getElementById('p-br').value,status:new Date(delivDate)<new Date()?'overdue':'pending',so:'',note:document.getElementById('p-note').value,by:UID,ver:1,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});
-  DB.set('po_log',po);audit('ADD_PO','po_log',{sku,qty});closeM();poT();
+  const sk=skuI(sku);
+  const newPO={id:genId('PO'),sku,skuName:sk.name,qty,delivDate,customer,branch:document.getElementById('p-br').value,status:new Date(delivDate)<new Date()?'overdue':'pending',so:'',note:document.getElementById('p-note').value,by:UID,ver:1,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()};
+  const po=DB.get('po_log')||[];
+  po.unshift(newPO);
+  DB.set('po_log',po);
+  closeM();
+  toast('บันทึก PO แล้ว — กำลัง sync...');
+  try { await SB.upsertPO(newPO); toast('Sync Supabase สำเร็จ ✅'); } catch(e){ toast('บันทึก local แล้ว (Supabase offline)','warn'); }
+  audit('ADD_PO','po_log',{sku,qty});
+  poT();
 }
 function showEditPO(id){
   const po=DB.get('po_log')||[];const p=po.find(x=>x.id===id);if(!p)return;
@@ -2860,17 +2876,27 @@ function showEditPO(id){
   </div>`);
   document.getElementById('ep-d').value = p.delivDate || '';
 }
-function updatePO(id){
+async function updatePO(id){
   const newD=document.getElementById('ep-d').value,newS=document.getElementById('ep-s').value,reason=document.getElementById('ep-r').value;
   const po=DB.get('po_log')||[];const orig=po.find(p=>p.id===id);if(!orig)return;
-  po.unshift({...orig,id:id+'-v'+(orig.ver+1),delivDate:newD,status:newS,note:reason,ver:orig.ver+1,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});
-  orig.status='replaced';DB.set('po_log',po);audit('EDIT_PO',id,{newD,reason});closeM();poT();
+  const updated={...orig,id:id+'-v'+(orig.ver+1),delivDate:newD,status:newS,note:reason,ver:orig.ver+1,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()};
+  po.unshift(updated);
+  orig.status='replaced';
+  DB.set('po_log',po);
+  closeM();
+  try { await SB.upsertPO(updated); } catch(e){ console.warn('updatePO Supabase:', e); }
+  audit('EDIT_PO',id,{newD,reason});
+  poT();
 }
-function matchPO(id){
+async function matchPO(id){
   const so='SO-'+Math.floor(8800+Math.random()*200);
   const po=DB.get('po_log')||[];const p=po.find(x=>x.id===id);
   if(p){p.status='matched';p.so=so;p.edited_by=UID;p.edited_at=new Date().toISOString();}
-  DB.set('po_log',po);audit('MATCH_PO',id,{so});poT();toast('Match สำเร็จ: '+id+' → '+so);
+  DB.set('po_log',po);
+  try { if(p) await SB.upsertPO(p); } catch(e){ console.warn('matchPO Supabase:', e); }
+  audit('MATCH_PO',id,{so});
+  poT();
+  toast('Match สำเร็จ: '+id+' → '+so);
 }
 function syncSO(){
   const po=DB.get('po_log')||[];let cnt=0;
