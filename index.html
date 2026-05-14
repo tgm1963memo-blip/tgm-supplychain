@@ -100,6 +100,23 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
   .btn{min-height:38px}
   .tw table{min-width:720px}
 }
+/* หน้า custreg — เต็มหน้าจอ ซ่อน sidebar */
+#app.custreg-mode #sb{display:none}
+#app.custreg-mode #ct{padding:0}
+.cr-fullpage{max-width:100%;min-height:100vh;display:flex;flex-direction:column}
+.cr-fullpage-header{background:var(--N);padding:16px 28px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.cr-fullpage-body{flex:1;display:flex;gap:0;overflow:hidden}
+.cr-fullpage-sidebar{width:220px;background:var(--bg2);border-right:1px solid var(--BD);padding:20px 14px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex-shrink:0}
+.cr-fullpage-content{flex:1;overflow-y:auto;padding:24px 32px}
+.cr-step-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--TX2);transition:.12s;border:1px solid transparent}
+.cr-step-item:hover{background:var(--W)}
+.cr-step-item.act{background:var(--LBL);border-color:var(--BL);color:var(--BL);font-weight:600}
+.cr-step-item.done{background:var(--LG);border-color:var(--G);color:var(--G)}
+.cr-step-num{width:22px;height:22px;border-radius:50%;background:currentColor;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;opacity:.18}
+.cr-step-item.act .cr-step-num,.cr-step-item.done .cr-step-num{opacity:1;background:currentColor}
+.cr-step-item.act .cr-step-num span,.cr-step-item.done .cr-step-num span{color:#fff}
+.cr-fullpage-prog{height:4px;background:rgba(255,255,255,.2);border-radius:99px;overflow:hidden;margin-top:12px;max-width:220px}
+.cr-fullpage-prog-fill{height:100%;background:#D4AF37;border-radius:99px;transition:width .4s}
 .ald{background:var(--LR);color:var(--R);border:1px solid rgba(163,45,45,.2)}
 .pz{border:2px dashed var(--BD);border-radius:8px;padding:18px;text-align:center;color:var(--TX3);cursor:pointer;transition:.15s;margin-bottom:10px;position:relative}
 .pz:hover,.pz.drag{border-color:var(--BL);background:var(--LBL);color:var(--BL)}
@@ -2272,6 +2289,7 @@ function mkChart(id,type,labels,datasets,opts={}){
 
 function nav(page){
   destroyCharts();
+  document.getElementById('app').classList.remove('custreg-mode');
   document.querySelectorAll('.ni').forEach(el=>el.classList.remove('act'));
   const ni=document.getElementById('ni-'+page);if(ni)ni.classList.add('act');
   document.getElementById('tb-t').textContent=PTITLES[page]||page;
@@ -4388,24 +4406,44 @@ function _crCk(id){return _cr.data[id]?'checked':'';}
 
 function pgCustReg(){
   _crInitIfNeeded();
+  document.getElementById('app').classList.add('custreg-mode');
   const isApprover=ROLE==='manager'||ROLE==='superadmin';
   const isAdmin=ROLE==='superadmin';
   const tabViews=isAdmin?['form','approve','settings']:isApprover?['form','approve']:['form'];
   const tabLabels={form:'📝 กรอกฟอร์ม',approve:'✅ อนุมัติ',settings:'⚙️ ตั้งค่า Workflow'};
-  const tabs=tabViews.length>1?`<div style="display:flex;border-bottom:1px solid var(--BD);margin-bottom:12px">
-    ${tabViews.map(v=>`<div onclick="crTab('${v}')" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;cursor:pointer;border-bottom:2px solid ${_cr.view===v?'var(--BL)':'transparent'};color:${_cr.view===v?'var(--BL)':'var(--TX2)'}">${tabLabels[v]}</div>`).join('')}
-  </div>`:'';
+  const steps=[['📋','ทั่วไป'],['🏪','ร้านค้า'],['🚚','ส่งสินค้า'],['💳','การเงิน'],['📁','เอกสาร'],['✅','สรุป']];
   const pct=_cr.step>=5?100:Math.round((_cr.step/5)*100);
-  document.getElementById('ct').innerHTML=`<div style="max-width:680px;margin:0 auto;padding-bottom:24px">
-  <div style="background:var(--N);border-radius:10px;padding:14px 16px;margin-bottom:14px">
-    <div style="display:flex;align-items:center;justify-content:space-between">
-      <div><div style="font-size:14px;font-weight:700;color:#fff">🏪 ใบทะเบียนร้านค้า</div><div style="font-size:11px;color:rgba(255,255,255,.65);margin-top:2px">${UNAME} — ${({sales:'Sales',manager:'ผู้จัดการ',superadmin:'Super Admin'})[ROLE]||ROLE}</div></div>
-      <div style="font-size:11px;color:rgba(255,255,255,.7)">${_cr.docNo}</div>
+  const sidebarSteps=steps.map(([ico,lbl],i)=>{
+    const cls=i===_cr.step?'act':i<_cr.step?'done':'';
+    return `<div class="cr-step-item ${cls}" onclick="crGoStep(${i})">
+      <div class="cr-step-num"><span>${i+1}</span></div>
+      <span>${ico} ${lbl}</span>
+      ${i<_cr.step?'<span style="margin-left:auto;font-size:11px">✓</span>':''}
+    </div>`;
+  }).join('');
+  const tabsHtml=tabViews.length>1?`<div style="display:flex;gap:6px;margin-bottom:14px">
+    ${tabViews.map(v=>`<div onclick="crTab('${v}')" style="padding:6px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:${_cr.view===v?'var(--LBL)':'var(--bg2)'};border:1px solid ${_cr.view===v?'var(--BL)':'var(--BD)'};color:${_cr.view===v?'var(--BL)':'var(--TX2)'}">${tabLabels[v]}</div>`).join('')}
+  </div>`:'';
+  document.getElementById('ct').innerHTML=`<div class="cr-fullpage">
+  <div class="cr-fullpage-header">
+    <div>
+      <div style="font-size:16px;font-weight:700;color:#fff">🏪 ใบทะเบียนร้านค้า</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px">${UNAME} · ${({sales:'Sales',manager:'ผู้จัดการ',superadmin:'Super Admin'})[ROLE]||ROLE} · เลขที่ ${_cr.docNo}</div>
     </div>
-    <div class="cr-prog"><div class="cr-prog-fill" id="cr-prog-fill" style="width:${pct}%"></div></div>
+    <div style="text-align:right">
+      <div class="cr-fullpage-prog"><div class="cr-fullpage-prog-fill" style="width:${pct}%"></div></div>
+      <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:4px">${pct}% เสร็จสิ้น</div>
+    </div>
   </div>
-  ${tabs}
-  <div id="cr-body"></div>
+  <div class="cr-fullpage-body">
+    <div class="cr-fullpage-sidebar" id="cr-sidebar">
+      <div style="font-size:11px;font-weight:700;color:var(--TX3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;padding:0 4px">ขั้นตอน</div>
+      ${sidebarSteps}
+    </div>
+    <div class="cr-fullpage-content" id="cr-body">
+      ${tabsHtml}
+    </div>
+  </div>
 </div>`;
   crRender();
 }
@@ -4421,13 +4459,21 @@ function crRender(){
   if(_cr.view==='settings'){pgCrWorkflowSettings();return;}
   const el=document.getElementById('cr-body');if(!el)return;
   const steps=[['📋','ทั่วไป'],['🏪','ร้านค้า'],['🚚','ส่งสินค้า'],['💳','การเงิน'],['📁','เอกสาร'],['✅','สรุป']];
-  const pills=steps.map(([ico,lbl],i)=>`<div class="cr-pill${i===_cr.step?' act':i<_cr.step?' done':''}" onclick="crGoStep(${i})">${ico} ${lbl}</div>`).join('');
+  // อัปเดต sidebar steps
+  const sb=document.getElementById('cr-sidebar');
+  if(sb){
+    const items=sb.querySelectorAll('.cr-step-item');
+    items.forEach((el2,i)=>{el2.className='cr-step-item'+(i===_cr.step?' act':i<_cr.step?' done':'');});
+  }
+  // อัปเดต progress bar (รองรับทั้ง layout เดิม #cr-prog-fill และ fullpage .cr-fullpage-prog-fill)
+  const pct=_cr.step>=5?100:Math.round((_cr.step/5)*100);
+  document.querySelectorAll('#cr-prog-fill,.cr-fullpage-prog-fill').forEach(p=>p.style.width=pct+'%');
   if(_cr.step===6){el.innerHTML=crSec6();return;}
   const secs=[crSec0,crSec1,crSec2,crSec3,crSec4,crSec5];
-  el.innerHTML=`<div class="cr-steps">${pills}</div>${(secs[_cr.step]||crSec0)()}`;
+  // ถ้าอยู่ใน fullpage mode ไม่แสดง pills ซ้ำ (มี sidebar แล้ว)
+  const isFullpage=!!document.getElementById('cr-sidebar');
+  el.innerHTML=isFullpage?(secs[_cr.step]||crSec0)():`<div class="cr-steps">${steps.map(([ico,lbl],i)=>`<div class="cr-pill${i===_cr.step?' act':i<_cr.step?' done':''}" onclick="crGoStep(${i})">${ico} ${lbl}</div>`).join('')}</div>${(secs[_cr.step]||crSec0)()}`;
   if(_cr.step===4)crRenderDocSlots();
-  const pf=document.getElementById('cr-prog-fill');
-  if(pf)pf.style.width=(_cr.step>=5?'100':Math.round((_cr.step/5)*100))+'%';
 }
 
 function crSec0(){return`<div class="card">
