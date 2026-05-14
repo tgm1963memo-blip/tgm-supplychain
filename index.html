@@ -838,12 +838,17 @@ async function pgForecast() {
   const custMap  = Object.fromEntries(custRows.map(c=>[c.c,c.n]));
   fcAll.forEach(f=>{f.skuName=skuMap[f.sku]?.name||f.sku;f.leadTime=skuMap[f.sku]?.lead_time||7;f.custName=custMap[f.custCode]||f.custCode||'';});
   window._fcListCache = fcAll;
-  const custSet=[...new Map(fcAll.filter(f=>f.custCode).map(f=>[f.custCode,{code:f.custCode,name:f.custName||f.custCode}])).entries()].map(([,v])=>v).sort((a,b)=>a.code.localeCompare(b.code,'th'));
+  const custSet=custRows.map(c=>({code:c.c,name:c.n||c.c})).sort((a,b)=>a.code.localeCompare(b.code,'th'));
   const tBtn=(id,lbl)=>`<button class="btn btn-sm" onclick="window._fcTab='${id}';pgForecast()" style="${tab===id?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">${lbl}</button>`;
   ct.innerHTML=`
   <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
     ${tBtn('grid','ตารางแผน')}${tBtn('entry','นำเข้าตาราง')}${tBtn('list','รายการ')}${tBtn('doc','เอกสารลูกค้า')}
     <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
+    <select onchange="window._fcTpl=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px">
+      <option value="day" ${(window._fcTpl||'week')==='day'?'selected':''}>Template: วัน</option>
+      <option value="week" ${(window._fcTpl||'week')==='week'?'selected':''}>Template: สัปดาห์</option>
+      <option value="month" ${(window._fcTpl||'week')==='month'?'selected':''}>Template: เดือน</option>
+    </select>
     <input type="month" value="${selMonth}" onchange="window._fcMonth=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px">
     <select onchange="window._fcCust=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;min-width:180px;height:34px">
       <option value="">— ลูกค้า (ทั้งหมด) —</option>
@@ -867,25 +872,30 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
   const[yr,mo]=selMonth?selMonth.split('-').map(Number):[new Date().getFullYear(),new Date().getMonth()+1];
   const prevYm=`${mo===1?yr-1:yr}-${String(mo===1?12:mo-1).padStart(2,'0')}`;
   const prevYrYm=`${yr-1}-${String(mo).padStart(2,'0')}`;
-  const wkStarts=[1,8,15,22].map(d=>`${yr}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
-  const lastDay=new Date(yr,mo,0).getDate();
-  const wkEnds=[7,14,21,lastDay].map(d=>`${yr}-${String(mo).padStart(2,'0')}-${String(Math.min(d,lastDay)).padStart(2,'0')}`);
+  const tpl=window._fcTpl||'week';
+  const cols=_fcTemplateCols(selMonth,tpl);
   const fcData={};
   fcAll.filter(f=>(!selMonth||(f.delivDate||'').slice(0,7)===selMonth)&&(!selCust||f.custCode===selCust)).forEach(f=>{
-    const day=parseInt((f.delivDate||'').slice(8,10))||1;
-    const wk=day<=7?1:day<=14?2:day<=21?3:4;
-    if(!fcData[f.sku])fcData[f.sku]={w1:0,w2:0,w3:0,w4:0};
-    fcData[f.sku][`w${wk}`]=(fcData[f.sku][`w${wk}`]||0)+(f.qty||0);
+    const idx=_fcColIndexForDate(f.delivDate||'',cols);
+    if(idx<0)return;
+    if(!fcData[f.sku])fcData[f.sku]={};
+    fcData[f.sku][idx]=(fcData[f.sku][idx]||0)+(f.qty||0);
   });
   const activeSku=new Set(Object.keys(fcData));
   const topSku=SKUS.filter(s=>hist[s.code]?.avg3>0).sort((a,b)=>(hist[b.code]?.avg3||0)-(hist[a.code]?.avg3||0)).slice(0,25).map(s=>s.code);
-  const showSkus=[...new Set([...activeSku,...topSku])].map(c=>SKUS.find(s=>s.code===c)).filter(Boolean);
+  const stateKey=_fcGridKey(selMonth,selCust,tpl);
+  window._fcGridSkus=window._fcGridSkus||{};
+  if(!window._fcGridSkus[stateKey]) window._fcGridSkus[stateKey]=[...new Set([...activeSku,...topSku])].slice(0,30);
+  const showSkus=(window._fcGridSkus[stateKey]||[]).map(c=>SKUS.find(s=>s.code===c)).filter(Boolean);
   const custName=selCust?(custMap[selCust]||selCust):'ทุกลูกค้า';
   el.innerHTML=`
   <div class="card" style="padding:0;overflow:hidden">
-    <div style="background:var(--N);color:#fff;padding:12px 16px">
-      <div style="font-size:15px;font-weight:700">ตารางวางแผน Forecast — ${esc(custName)}</div>
-      <div style="font-size:12px;opacity:.8;margin-top:2px">${mL?mL(selMonth):selMonth} · กรอกจำนวนคาดการณ์รายสัปดาห์</div>
+    <div style="background:var(--N);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center">
+      <div>
+        <div style="font-size:15px;font-weight:700">${esc(custName)}</div>
+        <div style="font-size:12px;opacity:.8;margin-top:2px">Forecast ${_fcTplLabel(tpl)} · ${mL?mL(selMonth):selMonth}</div>
+      </div>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.35)" onclick="fcShowAddSku()">+ เพิ่มรายการสินค้า</button>
     </div>
     <div style="overflow-x:auto">
       <table style="border-collapse:collapse;width:100%;min-width:680px">
@@ -895,15 +905,16 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
           <th style="padding:8px 10px;text-align:right;color:var(--TX2)">เดือนก่อน</th>
           <th style="padding:8px 10px;text-align:right;color:var(--TX2)">avg 3 เดือน</th>
           <th style="padding:8px 10px;text-align:right;color:var(--TX2)">ปีก่อน</th>
-          ${[1,2,3,4].map((w,i)=>`<th style="padding:7px 6px;text-align:center;color:var(--BL);min-width:72px;${i===0?'border-left:2px solid var(--BD)':''}">สัปดาห์ ${w}<br><span style="font-weight:400;color:var(--TX3);font-size:10px">${wkStarts[i].slice(8)}-${wkEnds[i].slice(8)}</span></th>`).join('')}
+          ${cols.map((c,i)=>`<th style="padding:7px 6px;text-align:center;color:var(--BL);min-width:${tpl==='day'?52:tpl==='month'?100:72}px;${i===0?'border-left:2px solid var(--BD)':''}">${esc(c.lbl)}<br><span style="font-weight:400;color:var(--TX3);font-size:10px">${esc(c.sub||'')}</span></th>`).join('')}
           <th style="padding:8px 10px;text-align:right;color:var(--N);font-weight:700;min-width:70px;border-left:2px solid var(--BD)">รวม</th>
+          <th style="padding:8px 8px;text-align:center;min-width:46px"></th>
         </tr></thead>
         <tbody>${showSkus.map(s=>{
           const h=hist[s.code]?.monthly||{};
           const vals=Object.values(h).map(Number).filter(v=>v>0);
           const avg3=vals.length?Math.round(vals.slice(-3).reduce((a,b)=>a+b,0)/Math.min(3,vals.length)):0;
           const d=fcData[s.code]||{};
-          const tot=(d.w1||0)+(d.w2||0)+(d.w3||0)+(d.w4||0);
+          const tot=cols.reduce((a,_,i)=>a+(d[i]||0),0);
           const hl=tot>0?'background:#f0f9ff':'';
           return`<tr style="border-bottom:1px solid var(--bg2);${hl}">
             <td style="padding:5px 10px;font-family:monospace;font-size:11px;color:var(--TX2);position:sticky;left:0;background:${tot>0?'#f0f9ff':'#fff'};z-index:1">${esc(s.code)}</td>
@@ -911,18 +922,20 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
             <td style="padding:5px 10px;text-align:right;font-size:11px;color:var(--TX3)">${(h[prevYm]||0)>0?fmt(h[prevYm]):'—'}</td>
             <td style="padding:5px 10px;text-align:right;font-size:11px;color:var(--TX3)">${avg3>0?avg3.toLocaleString():'—'}</td>
             <td style="padding:5px 10px;text-align:right;font-size:11px;color:var(--TX3)">${(h[prevYrYm]||0)>0?fmt(h[prevYrYm]):'—'}</td>
-            ${[1,2,3,4].map((w,i)=>`<td style="padding:3px 4px;${i===0?'border-left:2px solid var(--BD)':''}">
-              <input type="number" min="0" step="100" value="${d[`w${w}`]||''}" id="fcg-${esc(s.code)}-${w}"
+            ${cols.map((c,i)=>`<td style="padding:3px 4px;${i===0?'border-left:2px solid var(--BD)':''}">
+              <input class="fcg-inp" data-sku="${esc(s.code)}" data-col="${i}" type="number" min="0" step="100" value="${d[i]||''}" id="fcg-${esc(s.code)}-${i}"
                 oninput="fcgRow('${esc(s.code)}')"
-                style="width:100%;text-align:right;font-size:12px;padding:4px 6px;border:1px solid var(--BD);border-radius:5px;background:${(d[`w${w}`]||0)>0?'#eff6ff':''}">
+                style="width:100%;text-align:right;font-size:12px;padding:4px 6px;border:1px solid var(--BD);border-radius:5px;background:${(d[i]||0)>0?'#eff6ff':''}">
             </td>`).join('')}
             <td style="padding:5px 10px;text-align:right;font-weight:700;font-size:13px;color:var(--N);border-left:2px solid var(--BD)" id="fcg-tot-${esc(s.code)}">${tot>0?tot.toLocaleString():''}</td>
+            <td style="padding:4px 6px;text-align:center"><button class="btn btn-xs btn-r" onclick="fcRemoveSku('${esc(s.code)}')">ลบ</button></td>
           </tr>`;
         }).join('')}</tbody>
         <tfoot><tr style="background:var(--bg2);font-weight:700;font-size:12px">
           <td colspan="5" style="padding:8px 10px">รวมทั้งหมด</td>
-          ${[1,2,3,4].map((w,i)=>`<td style="padding:8px 6px;text-align:center;color:var(--BL);${i===0?'border-left:2px solid var(--BD)':''}" id="fcg-ftot-${w}"></td>`).join('')}
+          ${cols.map((c,i)=>`<td style="padding:8px 6px;text-align:center;color:var(--BL);${i===0?'border-left:2px solid var(--BD)':''}" id="fcg-ftot-${i}"></td>`).join('')}
           <td style="padding:8px 10px;text-align:right;color:var(--N);border-left:2px solid var(--BD)" id="fcg-ftot-all"></td>
+          <td></td>
         </tr></tfoot>
       </table>
     </div>
@@ -933,40 +946,90 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
   </div>`;
   fcgFooter();
 }
+function _fcGridKey(month,cust,tpl){return `${month||''}|${cust||'ALL'}|${tpl||'week'}`;}
+function _fcTplLabel(tpl){return tpl==='day'?'รายวัน':tpl==='month'?'รายเดือน':'รายสัปดาห์';}
+function _fcTemplateCols(selMonth,tpl){
+  const [yr,mo]=selMonth?selMonth.split('-').map(Number):[new Date().getFullYear(),new Date().getMonth()+1];
+  const mm=String(mo).padStart(2,'0');
+  const lastDay=new Date(yr,mo,0).getDate();
+  if(tpl==='day') return Array.from({length:lastDay},(_,i)=>{
+    const d=String(i+1).padStart(2,'0');
+    return {lbl:d,sub:'',date:`${yr}-${mm}-${d}`,start:`${yr}-${mm}-${d}`,end:`${yr}-${mm}-${d}`};
+  });
+  if(tpl==='month') return [{lbl:'เดือนนี้',sub:`01-${String(lastDay).padStart(2,'0')}`,date:`${yr}-${mm}-01`,start:`${yr}-${mm}-01`,end:`${yr}-${mm}-${String(lastDay).padStart(2,'0')}`}];
+  return [1,8,15,22].map((d,i)=>{
+    const e=[7,14,21,lastDay][i];
+    const dd=String(d).padStart(2,'0'),ee=String(Math.min(e,lastDay)).padStart(2,'0');
+    return {lbl:`สัปดาห์ ${i+1}`,sub:`${dd}-${ee}`,date:`${yr}-${mm}-${dd}`,start:`${yr}-${mm}-${dd}`,end:`${yr}-${mm}-${ee}`};
+  });
+}
+function _fcColIndexForDate(date,cols){
+  const d=String(date||'').slice(0,10);
+  return cols.findIndex(c=>d>=c.start&&d<=c.end);
+}
 function fcgRow(sku){
-  let tot=0;for(let w=1;w<=4;w++)tot+=parseFloat(document.getElementById(`fcg-${sku}-${w}`)?.value||0);
+  let tot=0;document.querySelectorAll('.fcg-inp').forEach(el=>{if(el.dataset.sku===sku)tot+=parseFloat(el.value||0);});
   const el=document.getElementById(`fcg-tot-${sku}`);if(el)el.textContent=tot>0?Math.round(tot).toLocaleString():'';fcgFooter();
 }
 function fcgFooter(){
-  let all=0;for(let w=1;w<=4;w++){let s=0;document.querySelectorAll(`input[id^="fcg-"][id$="-${w}"]`).forEach(el=>s+=parseFloat(el.value||0));const el=document.getElementById(`fcg-ftot-${w}`);if(el)el.textContent=s>0?Math.round(s).toLocaleString():'';all+=s;}
+  let all=0;const maxCol=Math.max(-1,...[...document.querySelectorAll('.fcg-inp')].map(el=>Number(el.dataset.col)||0));
+  for(let i=0;i<=maxCol;i++){let s=0;document.querySelectorAll(`.fcg-inp[data-col="${i}"]`).forEach(el=>s+=parseFloat(el.value||0));const el=document.getElementById(`fcg-ftot-${i}`);if(el)el.textContent=s>0?Math.round(s).toLocaleString():'';all+=s;}
   const el=document.getElementById('fcg-ftot-all');if(el)el.textContent=all>0?Math.round(all).toLocaleString():'';
+}
+function fcShowAddSku(){
+  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
+  const key=_fcGridKey(window._fcMonth||today().slice(0,7),window._fcCust||'',window._fcTpl||'week');
+  const used=new Set(window._fcGridSkus?.[key]||[]);
+  openMod(`<div class="mh"><div class="mt2">เพิ่มรายการสินค้าใน Forecast</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div class="field"><label>สินค้า</label><select id="fc-add-sku">${SKUS.filter(s=>!used.has(s.code)).map(s=>`<option value="${esc(s.code)}">${esc(s.code)} — ${esc((s.name||'').substring(0,42))}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ยกเลิก</button><button class="btn btn-p" onclick="fcAddSku()">เพิ่ม</button></div>`);
+}
+function fcAddSku(){
+  const sku=document.getElementById('fc-add-sku')?.value;if(!sku)return;
+  const key=_fcGridKey(window._fcMonth||today().slice(0,7),window._fcCust||'',window._fcTpl||'week');
+  window._fcGridSkus=window._fcGridSkus||{};window._fcGridSkus[key]=window._fcGridSkus[key]||[];
+  if(!window._fcGridSkus[key].includes(sku))window._fcGridSkus[key].push(sku);
+  closeM();pgForecast();
+}
+function fcRemoveSku(sku){
+  const key=_fcGridKey(window._fcMonth||today().slice(0,7),window._fcCust||'',window._fcTpl||'week');
+  window._fcGridSkus=window._fcGridSkus||{};window._fcGridSkus[key]=(window._fcGridSkus[key]||[]).filter(c=>c!==sku);
+  pgForecast();
 }
 async function saveFcGrid(){
   const selMonth=window._fcMonth||today().slice(0,7);const selCust=window._fcCust||'';
-  const[yr,mo]=selMonth.split('-').map(Number);
-  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
-  const wkDates=[1,8,15,22].map(d=>`${yr}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  const tpl=window._fcTpl||'week';
+  const cols=_fcTemplateCols(selMonth,tpl);
   const newFc=[];
-  SKUS.forEach(s=>{for(let w=1;w<=4;w++){const qty=parseFloat(document.getElementById(`fcg-${s.code}-${w}`)?.value||0);if(qty>0)newFc.push({id:genId('FC'),by:UID,custCode:selCust||null,sku:s.code,qty,delivDate:wkDates[w-1],week:w,note:'',approved:false,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});}});
+  document.querySelectorAll('.fcg-inp').forEach(el=>{
+    const qty=parseFloat(el.value||0)||0;if(qty<=0)return;
+    const col=cols[Number(el.dataset.col)||0];if(!col)return;
+    newFc.push({id:genId('FC'),by:UID,custCode:selCust||null,sku:el.dataset.sku,qty,delivDate:col.date,week:(Number(el.dataset.col)||0)+1,note:`template:${tpl}`,approved:false,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});
+  });
   if(!newFc.length){toast('กรุณากรอกจำนวนอย่างน้อย 1 รายการ');return;}
   let ok=false;
   if(SB?.addForecast){try{for(const f of newFc)await SB.addForecast(f);ok=true;}catch(e){console.warn('saveFcGrid:',e);}}
   if(!ok){const arr=DB.get('forecasts')||[];const filtered=arr.filter(f=>{const fm=(f.delivDate||'').slice(0,7);return!(fm===selMonth&&(!selCust||f.custCode===selCust));});DB.set('forecasts',[...filtered,...newFc]);}
-  toast(`บันทึก ${newFc.length} รายการแล้ว`);pgForecast();
+  toast(`บันทึก ${newFc.length} รายการแล้ว`);
+  setTimeout(()=>nav('planstock'),350);
 }
 function expFcGrid(){
   const selMonth=window._fcMonth||today().slice(0,7);const selCust=window._fcCust||'';
-  const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
-  const rows=[];SKUS.forEach(s=>{let any=false;const row=[s.code,s.name];for(let w=1;w<=4;w++){const v=parseFloat(document.getElementById(`fcg-${s.code}-${w}`)?.value||0);row.push(v||'');if(v)any=true;}const tot=row.slice(2).reduce((a,b)=>a+(Number(b)||0),0);row.push(tot||'');if(any)rows.push(row);});
-  toXLSX([['Forecast_Grid',['รหัสสินค้า','ชื่อสินค้า','wk1','wk2','wk3','wk4','รวม'],rows]],`FcGrid_${selMonth}_${selCust||'ALL'}.xlsx`);
+  const tpl=window._fcTpl||'week';const cols=_fcTemplateCols(selMonth,tpl);
+  const SKUS=Object.fromEntries((typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).map(s=>[s.code,s]));
+  const bySku={};document.querySelectorAll('.fcg-inp').forEach(el=>{const sku=el.dataset.sku;bySku[sku]=bySku[sku]||Array(cols.length).fill('');const v=parseFloat(el.value||0)||0;bySku[sku][Number(el.dataset.col)||0]=v||'';});
+  const rows=Object.entries(bySku).map(([sku,vals])=>[sku,SKUS[sku]?.name||sku,...vals,vals.reduce((a,b)=>a+(Number(b)||0),0)||'']).filter(r=>r.slice(2,-1).some(Boolean));
+  toXLSX([['Forecast_Grid',['รหัสสินค้า','ชื่อสินค้า',...cols.map(c=>c.lbl), 'รวม'],rows]],`FcGrid_${selMonth}_${selCust||'ALL'}_${tpl}.xlsx`);
 }
 function _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap){
   const el=document.getElementById('fc-tab-body');if(!el)return;
   const custName=selCust?(custMap[selCust]||selCust):'ทุกลูกค้า';
+  const tpl=window._fcTpl||'week';
+  const cols=_fcTemplateCols(selMonth,tpl);
   el.innerHTML=`<div class="card" style="padding:0;overflow:hidden">
     <div style="background:var(--N);color:#fff;padding:12px 16px">
       <div style="font-size:15px;font-weight:700">นำเข้า Forecast แบบตาราง — ${esc(custName)}</div>
-      <div style="font-size:12px;opacity:.8;margin-top:2px">${mL?mL(selMonth):selMonth} · วางข้อมูลจาก Excel: รหัสสินค้า, wk1, wk2, wk3, wk4</div>
+      <div style="font-size:12px;opacity:.8;margin-top:2px">${mL?mL(selMonth):selMonth} · Template ${_fcTplLabel(tpl)} · คอลัมน์: รหัสสินค้า, ชื่อสินค้า, ${cols.map(c=>c.lbl).join(', ')}</div>
     </div>
     <div style="padding:14px 16px">
       <textarea id="fc-entry-paste" style="width:100%;height:260px;padding:10px;border:1px solid var(--BD);border-radius:8px;font-family:Consolas,monospace;font-size:12px" placeholder="SKU001\t100\t200\t0\t300"></textarea>
@@ -978,27 +1041,30 @@ function _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap){
   </div>`;
 }
 function fcEntryTemplate(){
-  toXLSX([['Forecast_Template',['รหัสสินค้า','ชื่อสินค้า','wk1','wk2','wk3','wk4'],(typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).slice(0,30).map(s=>[s.code,s.name,'','','',''])]],'Forecast_Template.xlsx');
+  const selMonth=window._fcMonth||today().slice(0,7);
+  const tpl=window._fcTpl||'week';
+  const cols=_fcTemplateCols(selMonth,tpl);
+  toXLSX([['Forecast_Template',['รหัสสินค้า','ชื่อสินค้า',...cols.map(c=>c.lbl)],(typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).slice(0,30).map(s=>[s.code,s.name,...cols.map(()=> '')])]],`Forecast_Template_${tpl}_${selMonth}.xlsx`);
 }
 async function saveFcEntryTable(){
   const txt=document.getElementById('fc-entry-paste')?.value||'';
   const selMonth=window._fcMonth||today().slice(0,7);const selCust=window._fcCust||'';
-  const[yr,mo]=selMonth.split('-').map(Number);
-  const wkDates=[1,8,15,22].map(d=>`${yr}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  const tpl=window._fcTpl||'week';
+  const cols=_fcTemplateCols(selMonth,tpl);
   const valid=new Set((typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).map(s=>s.code));
   const rows=[];
   txt.split(/\r?\n/).forEach(line=>{
     const p=line.split(/\t|,/).map(x=>String(x||'').trim());
     const sku=p[0]; if(!valid.has(sku))return;
     const offset=Number.isFinite(parseFloat(p[1]))?1:2;
-    for(let w=1;w<=4;w++){const qty=parseFloat(p[offset+w-1]||0)||0;if(qty>0)rows.push({id:genId('FC'),by:UID,custCode:selCust||null,sku,qty,delivDate:wkDates[w-1],week:w,note:'import table',approved:false,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});}
+    cols.forEach((c,i)=>{const qty=parseFloat(p[offset+i]||0)||0;if(qty>0)rows.push({id:genId('FC'),by:UID,custCode:selCust||null,sku,qty,delivDate:c.date,week:i+1,note:`import table:${tpl}`,approved:false,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()});});
   });
   if(!rows.length){toast('ไม่พบข้อมูลที่นำเข้าได้');return;}
   let ok=false;
   if(SB?.addForecasts){try{await SB.addForecasts(rows);ok=true;}catch(e){console.warn('saveFcEntryTable:',e);}}
   if(!ok){const arr=DB.get('forecasts')||[];DB.set('forecasts',[...arr,...rows]);}
   toast(`บันทึก Forecast ${rows.length} รายการแล้ว`);
-  window._fcTab='grid';pgForecast();
+  setTimeout(()=>nav('planstock'),350);
 }
 function _renderFcList(fcAll,isAll,selMonth,selCust){
   const el=document.getElementById('fc-tab-body');if(!el)return;
@@ -1471,41 +1537,19 @@ function ppRenderGantt(orders, cols, pt) {
     return (o.planDate||'') === col.key;
   };
   const statusColor = { pending:'#f59e0b', inprog:'#3b82f6', done:'#22c55e' };
-  const colW = pt === 'month' ? 26 : pt === 'year' ? 56 : 40;
+  const colW = pt === 'month' ? 96 : pt === 'year' ? 112 : pt === 'week' ? 112 : 108;
 
   // ── sticky column widths (สะสม left) ────────────
-  // [สินค้า=150] [Stock=62] [ผลิต=62] [FC=62] [PO=62] [ยอดออก=70] | date cols
-  const W = { sku:150, stock:62, prod:62, fc:62, po:62, out:70 };
-  const L = {
-    sku:   0,
-    stock: W.sku,
-    prod:  W.sku + W.stock,
-    fc:    W.sku + W.stock + W.prod,
-    po:    W.sku + W.stock + W.prod + W.fc,
-    out:   W.sku + W.stock + W.prod + W.fc + W.po,
-  };
-  const totalStickyW = L.out + W.out; // 468px
+  const W = { sku:170 };
+  const L = { sku:0 };
 
   // shared cell style helpers
-  const thBase = `font-size:10px;font-weight:600;text-align:right;padding:4px 6px;border-bottom:1px solid var(--BD);white-space:nowrap;position:sticky;top:0;z-index:3;background:var(--bg2)`;
+  const thBase = `font-size:10px;font-weight:600;text-align:left;padding:4px 8px;border-bottom:1px solid var(--BD);white-space:nowrap;position:sticky;top:0;z-index:3;background:var(--bg2)`;
   const tdBase = (left, borderR='') => `position:sticky;left:${left}px;background:#fff;z-index:1;${borderR}vertical-align:middle;border-bottom:1px solid var(--bg2)`;
-
-  const numCell = (val, color) => {
-    if (!val || val === 0) return `<td style="${tdBase(0)};text-align:right;padding:3px 6px;color:var(--TX3)">—</td>`;
-    const display = val >= 10000 ? (val/1000).toFixed(0)+'k' : val >= 1000 ? (val/1000).toFixed(1)+'k' : Math.round(val);
-    return `<td style="text-align:right;padding:3px 6px;font-size:11px;font-weight:700;color:${color};border-bottom:1px solid var(--bg2)">${display}</td>`;
-  };
 
   // ── Header row (2 rows: group + col names) ───────
   const stickyGroupHeader = `
-    <th style="${thBase};left:${L.sku}px;min-width:${W.sku}px;max-width:${W.sku}px;text-align:left;border-right:1px solid var(--BD)" rowspan="2">สินค้า</th>
-    <th colspan="5" style="${thBase};left:${L.stock}px;text-align:center;border-right:2px solid var(--BD)">ข้อมูลเปรียบเทียบ (กก.)</th>`;
-  const stickySubHeader = `
-    <th style="${thBase};left:${L.stock}px;min-width:${W.stock}px;color:#0A5940">Stock</th>
-    <th style="${thBase};left:${L.prod}px;min-width:${W.prod}px;color:#6366f1">ผลิต</th>
-    <th style="${thBase};left:${L.fc}px;min-width:${W.fc}px;color:#7C3AED">FC</th>
-    <th style="${thBase};left:${L.po}px;min-width:${W.po}px;color:#0A5940">PO</th>
-    <th style="${thBase};left:${L.out}px;min-width:${W.out}px;color:#C44B0A;border-right:2px solid var(--BD)">ยอดออก<br><span style="font-weight:400;opacity:.7">/เดือน</span></th>`;
+    <th style="${thBase};left:${L.sku}px;min-width:${W.sku}px;max-width:${W.sku}px;text-align:left;border-right:2px solid var(--BD)">สินค้า</th>`;
   const dateTh1 = cols.map(col => {
     const isTd = pt !== 'year' ? col.key === today : false;
     return `<th style="min-width:${colW}px;max-width:${colW}px;text-align:center;padding:2px 1px;font-size:10px;position:sticky;top:0;z-index:2;${isTd?'background:var(--N);color:#fff':'background:var(--bg2)'}"
@@ -1513,8 +1557,7 @@ function ppRenderGantt(orders, cols, pt) {
   }).join('');
 
   const headerHTML = `
-    <tr>${stickyGroupHeader}${dateTh1}</tr>
-    <tr>${stickySubHeader}</tr>`;
+    <tr>${stickyGroupHeader}${dateTh1}</tr>`;
 
   // ── Body rows ────────────────────────────────────
   const bodyRows = skuList.map(sku => {
@@ -1529,12 +1572,7 @@ function ppRenderGantt(orders, cols, pt) {
 
     const stockColor = stock === 0 ? 'var(--R)' : stock < minStk ? '#C44B0A' : '#0A5940';
     const fmtV = v => !v ? '—' : v >= 10000 ? (v/1000).toFixed(0)+'k' : v >= 1000 ? (v/1000).toFixed(1)+'k' : Math.round(v);
-    const numTd = (v, color, left, borderR='') => {
-      const txt = fmtV(v);
-      const isZero = !v || v === 0;
-      return `<td style="${tdBase(left, borderR)}text-align:right;padding:3px 7px;font-size:11px;font-weight:${isZero?'400':'700'};color:${isZero?'var(--TX3)':color};min-width:${
-        left===L.stock?W.stock:left===L.prod?W.prod:left===L.fc?W.fc:left===L.po?W.po:W.out}px">${txt}</td>`;
-    };
+    const compLine=(label,val,color)=>`<div style="display:flex;justify-content:space-between;gap:4px;line-height:1.25"><span style="color:${color};font-size:8px">${label}</span><b style="color:${val?color:'var(--TX3)'};font-size:9px">${fmtV(val)}</b></div>`;
 
     // Date cells — production + FC/PO comparison per column
     const dateCells = cols.map(col => {
@@ -1545,31 +1583,31 @@ function ppRenderGantt(orders, cols, pt) {
       const fcQty = colFc.reduce((s,f)=>s+(f.qty||0),0);
       const poQty = colPo.reduce((s,p)=>s+(p.qty||0),0);
       const actQty = colActual.reduce((s,r)=>s+(r.qty||0),0);
+      const stockCol = stock;
+      const outQty = salesAvg;
       const isTd = pt !== 'year' ? col.key === today : false;
       const bg = isTd ? 'background:#e8f0fe;' : '';
       const fmtT = v => v>=10000?(v/1000).toFixed(0)+'k':v>=1000?(v/1000).toFixed(1)+'k':Math.round(v);
-      if (!os.length && !fcQty && !poQty && !actQty) return `<td style="${bg}border:1px solid var(--BD);min-width:${colW}px;max-width:${colW}px"></td>`;
       const prodTotal = os.reduce((s,o) => s+(o.qty||0), 0);
       const color = statusColor[os[0]?.status] || '#6366f1';
-      const tip = [...os.map(o=>`ผลิต:${o.qty}[${o.status}]`), actQty?`รับจริง:${actQty}`:'', fcQty?`FC:${fcQty}`:'', poQty?`PO:${poQty}`:''].filter(Boolean).join(' ');
-      return `<td style="${bg}border:1px solid var(--BD);padding:2px;min-width:${colW}px;max-width:${colW}px;vertical-align:top" title="${tip.replace(/"/g,'&quot;')}">
-        ${prodTotal>0?`<div onclick="ppEditModal('${os[0].id}')" style="background:${color};color:#fff;border-radius:2px;font-size:9px;font-weight:600;padding:1px 2px;text-align:center;cursor:pointer;line-height:1.4">${fmtT(prodTotal)}</div>`:''}
-        ${actQty>0?`<div style="background:#dcfce7;color:#0A5940;border-radius:2px;font-size:8px;padding:1px 2px;text-align:center;margin-top:1px;line-height:1.3">รับ:${fmtT(actQty)}</div>`:''}
-        ${fcQty>0?`<div style="background:#ede9fe;color:#7C3AED;border-radius:2px;font-size:8px;padding:1px 2px;text-align:center;margin-top:1px;line-height:1.3">FC:${fmtT(fcQty)}</div>`:''}
-        ${poQty>0?`<div style="background:#dcfce7;color:#0A5940;border-radius:2px;font-size:8px;padding:1px 2px;text-align:center;margin-top:1px;line-height:1.3">PO:${fmtT(poQty)}</div>`:''}
+      const tip = [`Stock:${stockCol}`,`ผลิต:${prodTotal}`,`รับจริง:${actQty}`,`FC:${fcQty}`,`PO:${poQty}`,`ยอดออก:${outQty}`].join(' ');
+      return `<td style="${bg}border:1px solid var(--BD);padding:3px;min-width:${colW}px;max-width:${colW}px;vertical-align:top" title="${tip.replace(/"/g,'&quot;')}">
+        <div style="min-height:54px">
+          ${compLine('Stock',stockCol,stockColor)}
+          ${prodTotal>0?`<div onclick="ppEditModal('${os[0].id}')" style="background:${color};color:#fff;border-radius:2px;font-size:9px;font-weight:600;padding:1px 3px;text-align:center;cursor:pointer;line-height:1.35;margin:1px 0">ผลิต ${fmtT(prodTotal)}</div>`:compLine('ผลิต',0,'#6366f1')}
+          ${actQty>0?compLine('รับจริง',actQty,'#0A5940'):''}
+          ${compLine('FC',fcQty,'#7C3AED')}
+          ${compLine('PO',poQty,'#0A5940')}
+          ${compLine('ยอดออก',outQty,'#C44B0A')}
+        </div>
       </td>`;
     }).join('');
 
     return `<tr style="height:32px">
-      <td style="${tdBase(L.sku,'border-right:1px solid var(--BD);')}padding:3px 8px;min-width:${W.sku}px;max-width:${W.sku}px">
+      <td style="${tdBase(L.sku,'border-right:2px solid var(--BD);')}padding:3px 8px;min-width:${W.sku}px;max-width:${W.sku}px">
         <div class="mono" style="font-size:9px;color:var(--TX3)">${esc(sku)}</div>
         <div style="font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:${W.sku-16}px" title="${esc(info.name)}">${esc(info.name.substring(0,22))}</div>
       </td>
-      ${numTd(stock,    stockColor,        L.stock, '')}
-      ${numTd(prodTot,  '#6366f1',         L.prod,  '')}
-      ${numTd(fcTotal,  '#7C3AED',         L.fc,    '')}
-      ${numTd(poTotal,  '#0A5940',         L.po,    '')}
-      ${numTd(salesAvg, '#C44B0A',         L.out,   'border-right:2px solid var(--BD);')}
       ${dateCells}
     </tr>`;
   }).join('');
@@ -1586,12 +1624,12 @@ function ppRenderGantt(orders, cols, pt) {
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#3b82f6;border-radius:2px"></span>กำลังผลิต</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px"></span>ผลิตแล้ว</span>
     <span style="margin-left:8px;color:var(--TX3)">|</span>
-    <b style="color:var(--TX2)">Columns:</b>
-    <span style="color:#0A5940">Stock</span> = WMS ปัจจุบัน ·
-    <span style="color:#6366f1">ผลิต</span> = รวมยอดสั่งผลิต ·
-    <span style="color:#7C3AED">FC</span> = Forecast รวม ·
-    <span style="color:#0A5940">PO</span> = PO รวม ·
-    <span style="color:#C44B0A">ยอดออก</span> = avg 3 เดือน
+    <b style="color:var(--TX2)">ในแต่ละช่องเวลา:</b>
+    <span style="color:#0A5940">Stock</span> ·
+    <span style="color:#6366f1">ผลิต</span> ·
+    <span style="color:#7C3AED">FC</span> ·
+    <span style="color:#0A5940">PO</span> ·
+    <span style="color:#C44B0A">ยอดออก</span>
   </div>`;
 }
 
@@ -2336,14 +2374,16 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   if(error) throw error;
   const names=_salesNameMap();
   const mapped=(data||[])
-    .filter(r=>r.slm_id && !_splitBranchSlm(r.slm_id).slm.startsWith('ALL'))
+    .filter(r=>r.slm_id)
     .flatMap(r=>{
       const sp=_splitBranchSlm(r.slm_id);
-      const name=names[sp.slm]||names[sp.raw]||sp.slm;
+      const isAll=String(sp.slm||'').toUpperCase().startsWith('ALL');
+      const name=names[sp.slm]||names[sp.raw]||(isAll?'ทั้งหมด':sp.slm);
       const qty=Number(r.qty)||0;
       const base={
     branch:sp.branch,
     prefixed:sp.prefixed,
+    is_all:isAll,
     slm_id:sp.slm,
     slm_key:sp.raw,
     slm_name:name,
@@ -2358,7 +2398,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     ym:r.ym,
       };
       const custWeights=(PROD_CUST?.[r.sku]?.[sp.slm])||null;
-      if(!custWeights || !Object.keys(custWeights).length) return [base];
+      if(isAll || !custWeights || !Object.keys(custWeights).length) return [base];
       const totalW=Object.values(custWeights).reduce((a,b)=>a+(Number(b)||0),0)||1;
       return Object.entries(custWeights).map(([code,w])=>{
         const ratio=(Number(w)||0)/totalW;
@@ -2367,7 +2407,9 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
         return {...base,cust_code:code,cust_name:prof.n||code,cust_group:prof.corp||grp,category:prof.category,qty:qty*ratio,amount:qty*ratio};
       });
     });
-  const filteredByMode=_salesRowsForMode(mapped,opts);
+  const modeRows=_salesRowsForMode(mapped,opts);
+  const detailKeys=new Set(modeRows.filter(r=>!r.is_all).map(r=>`${r.branch}|${r.ym}|${r.prod_code}`));
+  const filteredByMode=modeRows.filter(r=>!r.is_all || !detailKeys.has(`${r.branch}|${r.ym}|${r.prod_code}`));
   if(!slmId) return filteredByMode;
   return filteredByMode.filter(r=>r.slm_id===slmId || r.slm_key===slmId || r.slm_key.endsWith(':'+slmId));
 }
@@ -2376,15 +2418,15 @@ function _sdKpiFromRows(rows){
   rows.forEach(r=>{if(!byMonth[r.ym])byMonth[r.ym]={ym:r.ym,total:0,qty:0,invoices:0};byMonth[r.ym].total+=r.amount;byMonth[r.ym].qty+=r.qty;byMonth[r.ym].invoices+=1;});
   return Object.values(byMonth).sort((a,b)=>a.ym.localeCompare(b.ym));
 }
-async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId=''){
-  const rows=await _sbSalesRows(startYm,endYm,slmId);
-  const monthly=_sdKpiFromRows(rows);
-  const monthRows=activeMonth?rows.filter(r=>r.ym===activeMonth):rows;
+function _applySalesRowsToSd(rows,activeMonth,slmId=''){
+  const sourceRows=slmId ? (rows||[]).filter(r=>r.slm_id===slmId || r.slm_key===slmId || r.slm_key?.endsWith(':'+slmId)) : (rows||[]);
+  const monthly=_sdKpiFromRows(sourceRows);
+  const monthRows=activeMonth?sourceRows.filter(r=>r.ym===activeMonth):sourceRows;
   const cur=activeMonth?monthly.find(m=>m.ym===activeMonth):null;
   _sdApi.valueMode='qty';
   _sdApi.loaded=true;
   _sdApi.histFallback=false;
-  _sdApi.month=activeMonth||endYm;
+  _sdApi.month=activeMonth||monthly.at(-1)?.ym||'';
   _sdApi.monthly=monthly;
   _sdApi.total=cur?cur.total:monthRows.reduce((a,r)=>a+r.amount,0);
   _sdApi.qty=cur?cur.qty:monthRows.reduce((a,r)=>a+r.qty,0);
@@ -2394,13 +2436,19 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId=''){
   const prev=prevYm?monthly.find(m=>m.ym===prevYm):null;
   _sdApi.vs=prev&&prev.total?Math.round((_sdApi.total/prev.total-1)*100):0;
   const slmMap={};
-  rows.forEach(r=>{if(r.slm_id) slmMap[r.slm_id]=r.slm_name||r.slm_id;});
+  sourceRows.forEach(r=>{if(r.slm_id) slmMap[r.slm_id]=r.slm_name||r.slm_id;});
   Object.entries(_salesNameMap()).forEach(([code,name])=>{if(!slmMap[code])slmMap[code]=name;});
   _sdApi.slmList=Object.entries(slmMap).map(([code,name])=>({code,name})).sort((a,b)=>a.code.localeCompare(b.code,'th'));
   _sdApi.custs=_sdBuildCusts(monthRows);
   _sdApi.prods=_sdBuildProds(monthRows);
   _sdApi.slms=_sdBuildSlms(monthRows,_sdApi.slmList);
   _sdUpdateSlmDrop();
+}
+async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId=''){
+  const rows=await _sbSalesRows(startYm,endYm,slmId);
+  window._salesRows2Y=rows;
+  try{DB.set('sales_rows_cache',rows);}catch(_){}
+  _applySalesRowsToSd(rows,activeMonth,slmId);
 }
 function _sdFmtTotal(n){return _sdApi.valueMode==='qty'?`${Math.round(n).toLocaleString()} kg`:_sdF(n);}
 function _sdUseLatestMonthIfEmpty(monthly){
@@ -2472,6 +2520,12 @@ async function sdLoad(){
     await _loadSalesFromSupabase(range.start,range.end,month,slmId);
   }catch(e0){
     console.warn('Supabase sales_history unavailable, trying fallback',e0.message);
+    const cachedRows=window._salesRows2Y || DB.get('sales_rows_cache') || [];
+    if(cachedRows.length){
+      _applySalesRowsToSd(_salesRowsForMode(cachedRows,{includeConsi:false}),month,slmId);
+      document.getElementById('sd-loading')?.remove();
+      sdRender();return;
+    }
     // ── Fallback: build from ALL_HIST (local embedded data) ──
     if(ALL_HIST && Object.keys(ALL_HIST).length>0){
       _loadSalesFromAllHist(month,slmId);
@@ -3190,12 +3244,14 @@ function sdExport(){
   toXLSX([[sheet, cols, rows]], `Sales_${period}_${sheet}.xlsx`);
 }
 
-let _consiRows=[], _consiCustF='', _consiProdF='', _consiBranchF='', _consiLoaded=false;
+let _consiRows=[], _consiCustF='', _consiProdF='', _consiBranchF='', _consiStartF='', _consiEndF='', _consiLoaded=false;
 async function pgConsignment(){
   document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button>`;
   document.getElementById('ct').innerHTML='<div class="al ali">กำลังโหลดข้อมูลฝากขาย CONSI...</div>';
   _consiRows=[];_consiLoaded=false;_consiCustF='';_consiProdF='';_consiBranchF='';
   const range=_twoYearWindow();
+  if(!_consiStartF) _consiStartF=range.start;
+  if(!_consiEndF) _consiEndF=range.end;
   try{
     _consiRows=await _sbSalesRows(range.start,range.end,'',{includeConsi:true});
     _consiLoaded=true;
@@ -3206,10 +3262,10 @@ async function pgConsignment(){
   consiRender();
 }
 function consiRender(){
-  const custs=[...new Map(_consiRows.map(r=>[r.cust_code,r.cust_name||r.cust_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'th'));
-  const prods=[...new Map(_consiRows.map(r=>[r.prod_code,r.prod_name||r.prod_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
-  const branches=[...new Set(_consiRows.map(r=>r.branch||'').filter(Boolean))].sort();
-  let rows=_consiRows;
+  let rows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
+  const custs=[...new Map(rows.map(r=>[r.cust_code,r.cust_name||r.cust_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'th'));
+  const prods=[...new Map(rows.map(r=>[r.prod_code,r.prod_name||r.prod_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+  const branches=[...new Set(rows.map(r=>r.branch||'').filter(Boolean))].sort();
   if(_consiCustF) rows=rows.filter(r=>r.cust_code===_consiCustF);
   if(_consiProdF) rows=rows.filter(r=>r.prod_code===_consiProdF);
   if(_consiBranchF) rows=rows.filter(r=>(r.branch||'')===_consiBranchF);
@@ -3219,6 +3275,14 @@ function consiRender(){
   document.getElementById('ct').innerHTML=`
   <div class="card" style="padding:12px 16px;margin-bottom:12px">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="margin:0;min-width:150px">
+        <label style="font-size:11px;color:var(--TX2)">จากเดือน</label>
+        <input type="month" class="inp" value="${esc(_consiStartF)}" onchange="_consiStartF=this.value;consiRender()" style="height:34px;padding:4px 8px">
+      </div>
+      <div class="field" style="margin:0;min-width:150px">
+        <label style="font-size:11px;color:var(--TX2)">ถึงเดือน</label>
+        <input type="month" class="inp" value="${esc(_consiEndF)}" onchange="_consiEndF=this.value;consiRender()" style="height:34px;padding:4px 8px">
+      </div>
       <div class="field" style="margin:0;min-width:200px">
         <label style="font-size:11px;color:var(--TX2)">ลูกค้า</label>
         <select class="inp" onchange="_consiCustF=this.value;consiRender()" style="height:34px;padding:4px 8px">
@@ -3261,7 +3325,7 @@ function consiRender(){
 }
 function expConsi(){
   if(!_consiRows.length){toast('ไม่มีข้อมูล CONSI');return;}
-  let rows=_consiRows;
+  let rows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
   if(_consiCustF) rows=rows.filter(r=>r.cust_code===_consiCustF);
   if(_consiProdF) rows=rows.filter(r=>r.prod_code===_consiProdF);
   if(_consiBranchF) rows=rows.filter(r=>(r.branch||'')===_consiBranchF);
