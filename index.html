@@ -5070,27 +5070,93 @@ async function _crOcrSend(file){
 
 function _crParseCert(text){
   const out={};
-  // ชื่อบริษัท / ห้างฯ
-  const compM=text.match(/บริษัท\s+([\s\S]+?)\s+จำกัด/);
-  if(compM) out.shopname='บริษัท '+compM[1].replace(/\s+/g,' ').trim()+' จำกัด';
-  else{
-    const hM=text.match(/ห้างหุ้นส่วน(?:จำกัด)?\s+([\s\S]+?)(?=\n|\(|จำกัด)/);
-    if(hM) out.shopname=('ห้างหุ้นส่วนจำกัด '+hM[1]).replace(/\s+/g,' ').trim();
-    else{const rM=text.match(/ร้าน\s+(.+?)(?:\n|$)/);if(rM) out.shopname=rM[0].replace(/\s+/g,' ').trim();}
+  // ── normalize: ลบ / ท้ายบรรทัด (DBD ใส่ / เป็น line delimiter)
+  const t=text.replace(/\/\s*\n/g,'\n').replace(/\r/g,'');
+
+  // ── 1. ชื่อบริษัท ──────────────────────────────────────────────
+  // DBD: "1. ชื่อบริษัท บริษัท XXX จำกัด" หรือ "ชื่อบริษัท บริษัท XXX จำกัด"
+  const nameAnchors=[
+    /ชื่อบริษัท\s+(?:บริษัท\s+)?(.+?)\s+จำกัด/s,
+    /บริษัท\s+(.+?)\s+จำกัด/s,
+    /ห้างหุ้นส่วนจำกัด\s+(.+?)(?:\n|จำกัด|$)/,
+    /ห้างหุ้นส่วน(?:สามัญนิติบุคคล)?\s+(.+?)(?:\n|$)/,
+    /ร้าน\s+(.+?)(?:\n|$)/,
+  ];
+  for(const pat of nameAnchors){
+    const m=t.match(pat);
+    if(!m) continue;
+    const raw=m[1].replace(/\s+/g,' ').trim();
+    if(raw.length<2) continue;
+    if(pat.source.includes('ห้างหุ้นส่วนจำกัด')) out.shopname='ห้างหุ้นส่วนจำกัด '+raw;
+    else if(pat.source.includes('ห้างหุ้นส่วน')) out.shopname='ห้างหุ้นส่วน '+raw;
+    else if(pat.source.startsWith('ร้าน')) out.shopname='ร้าน '+raw;
+    else out.shopname='บริษัท '+raw.replace(/^บริษัท\s+/,'')+' จำกัด';
+    break;
   }
-  // เลขทะเบียนนิติบุคคล 13 หลัก
-  const tL=text.match(/(?:เลขทะเบียน(?:นิติบุคคล)?|เลขประจำตัวผู้เสียภาษีอากร|ทะเบียนเลขที่)[^\d]*(\d[\d\s\-]{11,17})/);
-  if(tL) out.taxid=tL[1].replace(/[\s\-]/g,'').slice(0,13);
-  else{const bare=text.match(/\b(\d{13})\b/);if(bare) out.taxid=bare[1];}
-  // ที่อยู่สำนักงานใหญ่
-  const addrM=text.match(/(?:ที่ตั้ง(?:สำนักงานใหญ่)?|ที่อยู่(?:สำนักงาน)?)\s*[:\n]?\s*([\s\S]+?)(?=\n(?:เลข|ทะเบียน|วัน|จด|ได้|กรรม|หนังสือ|ทุน|\n)|$)/m);
-  if(addrM) out.addr=addrM[1].replace(/\n/g,' ').replace(/\s+/g,' ').trim().slice(0,250);
-  // รหัสไปรษณีย์
-  const zips=[...text.matchAll(/\b(\d{5})\b/g)].map(m=>m[1]).filter(z=>z!=='00000'&&z!=='00001');
-  if(zips.length) out.zip=zips[zips.length-1];
-  // กรรมการ (contact)
-  const dirM=text.match(/(?:กรรมการผู้มีอำนาจ|กรรมการ)[^\n]*\n\s*([ก-๙a-zA-Z\s\.]+?)(?:\n|$)/);
-  if(dirM){const n=dirM[1].replace(/\s+/g,' ').trim();if(n.length>2&&n.length<60) out.contact=n;}
+
+  // ── 2. เลขทะเบียนนิติบุคคล 13 หลัก ───────────────────────────
+  // DBD: "ทะเบียนนิติบุคคลเลขที่ 0105563043141"
+  const taxPatterns=[
+    /ทะเบียนนิติบุคคลเลขที่\s*([\d\s]{13,16})/,
+    /(?:เลขทะเบียน(?:นิติบุคคล)?|เลขประจำตัวผู้เสียภาษีอากร|เลขประจำตัวผู้เสียภาษี)[^\d]*([\d\s\-]{13,17})/,
+    /(?:เลขที่|เลขทะเบียน)[^\d]*([\d\s\-]{13,17})/,
+  ];
+  for(const pat of taxPatterns){
+    const m=t.match(pat);
+    if(!m) continue;
+    const clean=m[1].replace(/[\s\-]/g,'').slice(0,13);
+    if(clean.length===13){out.taxid=clean;break;}
+  }
+  if(!out.taxid){
+    // fallback: หา 13 หลักใดก็ได้ ที่ไม่ใช่ reference/date
+    const all=[...t.matchAll(/\b(\d{13})\b/g)].map(m=>m[1]);
+    if(all.length) out.taxid=all[0];
+  }
+
+  // ── 3. ที่อยู่สำนักงานแห่งใหญ่ ───────────────────────────────
+  // DBD: "5. สำนักงานแห่งใหญ่ ตั้งอยู่เลขที่ XXX..."
+  const addrPatterns=[
+    /สำนักงานแห่งใหญ่\s+ตั้งอยู่(?:เลขที่)?\s*([\s\S]+?)(?=\n\d+\.|วัตถุที่|$)/m,
+    /สำนักงานแห่งใหญ่[^\n]*\n\s*([\s\S]+?)(?=\n\d+\.|วัตถุที่|$)/m,
+    /ที่ตั้ง(?:สำนักงานใหญ่)?\s*[:\n]?\s*([\s\S]+?)(?=\n(?:\d+\.|เลข|ทะเบียน|วัน)|$)/m,
+    /ที่อยู่(?:สำนักงาน)?\s*[:\n]?\s*([\s\S]+?)(?=\n\n|$)/m,
+  ];
+  for(const pat of addrPatterns){
+    const m=t.match(pat);
+    if(!m) continue;
+    const addr=m[1].replace(/\n/g,' ').replace(/\s+/g,' ').trim();
+    if(addr.length>10){out.addr=addr.slice(0,300);break;}
+  }
+
+  // ── 4. รหัสไปรษณีย์ ─────────────────────────────────────────
+  // ดึงจากบริเวณที่อยู่ก่อน แล้วค่อย fallback ทั้ง document
+  const addrBlock=out.addr||'';
+  const zipInAddr=[...addrBlock.matchAll(/\b(\d{5})\b/g)].map(m=>m[1]).filter(z=>!/^0+$/.test(z));
+  if(zipInAddr.length){
+    out.zip=zipInAddr[zipInAddr.length-1];
+  } else {
+    // fallback: หาใน document แต่กรอง ref numbers ออก
+    const allZips=[...t.matchAll(/\b([1-9]\d{4})\b/g)].map(m=>m[1]).filter(z=>{
+      const n=Number(z);return n>=10000&&n<=99999;
+    });
+    if(allZips.length) out.zip=allZips[allZips.length-1];
+  }
+
+  // ── 5. ชื่อกรรมการคนแรก ─────────────────────────────────────
+  // DBD: "1. นางภาวิณี สุจริตพุทธังกูร  2. นายสุรักษ์..."
+  const titlePfx='(?:นาง(?:สาว)?|นาย|ดร\\.?|Mr\\.|Ms\\.|Mrs\\.)';
+  const dirPatterns=[
+    new RegExp(`กรรมการ[\\s\\S]*?1\\.\\s+(${titlePfx}\\s+[ก-๙a-zA-Z]+\\s+[ก-๙a-zA-Z]+)`,'m'),
+    new RegExp(`1\\.\\s+(${titlePfx}\\s+[ก-๙a-zA-Z]+\\s+[ก-๙a-zA-Z]+)`,'m'),
+    new RegExp(`(${titlePfx}\\s+[ก-๙a-zA-Z]+\\s+[ก-๙a-zA-Z]+)`,'m'),
+  ];
+  for(const pat of dirPatterns){
+    const m=t.match(pat);
+    if(!m) continue;
+    const n=m[1].replace(/\s+/g,' ').trim();
+    if(n.length>4&&n.length<60){out.contact=n;break;}
+  }
+
   return out;
 }
 
