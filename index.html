@@ -859,6 +859,19 @@ const CACHE = {
   clearAll()  { this._store = {}; this._time = {}; },
 };
 
+function mergeById(remote=[], local=[], idKey='id') {
+  const ids = new Set((remote||[]).map(item => item?.[idKey]));
+  return [...(remote||[]), ...(local||[]).filter(item => item && !ids.has(item[idKey]))];
+}
+function mergeForecasts(remote, local) { return mergeById(remote, local, 'id'); }
+function mergePOPlans(remote, local) { return mergeById(remote, local, 'id'); }
+function mergeProdOrders(remote, local) { return mergeById(remote, local, 'id'); }
+function mergeBookings(remote, local) { return mergeById(remote, local, 'id'); }
+
+function useForecastRows() { return mergeForecasts(window._sbForecasts||[], DB.get('forecasts')||[]); }
+function usePORows() { return mergePOPlans(window._poMerged||[], DB.get('po_log')||[]); }
+function useProdOrders() { return mergeProdOrders(window._prodOrders||[], DB.get('prod_orders')||[]); }
+
 // ════════════════════════════════════════════════
 // MIGRATION — ย้าย localStorage → Supabase ครั้งแรก
 // ════════════════════════════════════════════════
@@ -1037,11 +1050,15 @@ async function pgForecast() {
     CACHE.get('fc_booking_links',()=>SB.getBookings()),
     CACHE.get('fc_prod_links',()=>SB.getProdOrders())
   ]);
-  fcAll=fcLoads[0].status==='fulfilled' ? (fcLoads[0].value||[]) : (DB.get('forecasts')||[]);
+  const localFc = DB.get('forecasts')||[];
+  const localPo = DB.get('po_log')||[];
+  const localBk = DB.get('bookings')||[];
+  const localProd = DB.get('prod_orders')||[];
+  fcAll=fcLoads[0].status==='fulfilled' ? mergeForecasts(fcLoads[0].value||[], localFc) : localFc;
   products=fcLoads[1].status==='fulfilled' ? (fcLoads[1].value||[]) : [];
-  poRows=fcLoads[3]?.status==='fulfilled' ? (fcLoads[3].value||[]) : (window._poMerged||DB.get('po_log')||[]);
-  bookingRows=fcLoads[4]?.status==='fulfilled' ? (fcLoads[4].value||[]) : (DB.get('bookings')||[]);
-  prodRows=fcLoads[5]?.status==='fulfilled' ? (fcLoads[5].value||[]) : (window._prodOrders||DB.get('prod_orders')||[]);
+  poRows=fcLoads[3]?.status==='fulfilled' ? mergePOPlans(fcLoads[3].value||[], localPo) : (window._poMerged||localPo);
+  bookingRows=fcLoads[4]?.status==='fulfilled' ? mergeBookings(fcLoads[4].value||[], localBk) : localBk;
+  prodRows=fcLoads[5]?.status==='fulfilled' ? mergeProdOrders(fcLoads[5].value||[], localProd) : (window._prodOrders||localProd);
   if(fcLoads[2].status==='rejected') console.warn('forecast sales history:',fcLoads[2].reason?.message||fcLoads[2].reason);
   const SKUS = typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
   const skuMap = Object.fromEntries([...SKUS.map(s=>[s.code,{name:s.name,lead_time:s.lt||7}]),...products.map(p=>[p.code,p])]);
@@ -1049,7 +1066,10 @@ async function pgForecast() {
   const custMap  = Object.fromEntries(custRows.map(c=>[c.c,c.n]));
   fcAll.forEach(f=>{f.skuName=skuMap[f.sku]?.name||f.sku;f.leadTime=skuMap[f.sku]?.lead_time||7;f.custName=custMap[f.custCode]||f.custCode||'';});
   window._fcListCache = fcAll;
+  window._sbForecasts = fcAll;
+  window._sbPOPlans = poRows;
   window._prodOrders = prodRows;
+  window._poMerged = poRows;
   window._fcLinkCache = { po: poRows, bookings: bookingRows, prod: prodRows };
   const custSet=custRows.map(c=>({code:c.c,name:c.n||c.c})).sort((a,b)=>a.code.localeCompare(b.code,'th'));
   const tBtn=(id,lbl)=>`<button class="btn btn-sm" onclick="window._fcTab='${id}';pgForecast()" style="${tab===id?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">${lbl}</button>`;
@@ -1762,8 +1782,14 @@ async function pgPlanStock() {
 
   // โหลดจาก Supabase view
   await CACHE.get('sales_hist_2y',()=>loadDashboardSalesHist()).catch(e=>console.warn('sales_hist_2y:',e));
-  const rows = await CACHE.get('stock_planning', () => SB.getStockPlanning());
+  const [rows, fcSB, poSB] = await Promise.all([
+    CACHE.get('stock_planning', () => SB.getStockPlanning()),
+    CACHE.get('fc_forecasts', () => SB.getForecasts()),
+    CACHE.get('fc_po_links', () => SB.getPOPlans())
+  ]);
   window._planRows = rows;
+  window._sbForecasts = fcSB || [];
+  window._sbPOPlans = poSB || [];
   // init multi-select filter
   _skuFilter = _skuFilter || { active: [], presets: {} };
   _skuFilter.presets = DB.get('filter_presets') || {};
@@ -2051,8 +2077,8 @@ function ppRenderGantt(orders, cols, pt) {
 
   // ── ดึงข้อมูลเปรียบเทียบ ─────────────────────────
   const planRows = window._planRows || [];
-  const fcAll    = DB.get('forecasts') || [];
-  const poAll    = window._poMerged || DB.get('po_log') || [];
+  const fcAll    = useForecastRows();
+  const poAll    = usePORows();
   const actualAll = DB.get('stock_in_actual') || [];
 
   const today = new Date().toISOString().slice(0,10);
@@ -2749,9 +2775,9 @@ async function pgDash(){
       CACHE.get('dash_ss',()=>SB.getSkuSettings()),
       CACHE.get('dash_sales_hist',()=>loadDashboardSalesHist()),
     ]);
-    if(remote[0]?.length) po=remote[0];
+    if(remote[0]?.length) po=mergePOPlans(remote[0], DB.get('po_log')||[]);
     if(remote[1]&&Object.keys(remote[1]).length) stk=remote[1];
-    if(remote[2]?.length) fc=remote[2];
+    if(remote[2]?.length) fc=mergeForecasts(remote[2], DB.get('forecasts')||[]);
     if(remote[3]&&Object.keys(remote[3]).length) ss=remote[3];
     if(remote[4]&&Object.keys(remote[4]).length) hist=remote[4];
   }catch(e){
@@ -2852,9 +2878,16 @@ function dashCharts(){
   dashSummaryTables(mths,actual,fcData,poData);
 }
 function dashSalesValue(m){
-  const api=(_sdApi?.monthly||[]).find(x=>x.ym===m);
+  const rows = window._dashSalesRows || [];
+  const monthly = rows.reduce((acc,r)=>{
+    if(!r.ym) return acc;
+    acc[r.ym] = (acc[r.ym]||0) + (Number(r.amount)||0);
+    return acc;
+  }, {});
+  if(monthly[m] != null) return monthly[m];
+  const api = (_sdApi?.monthly||[]).find(x=>x.ym===m);
   if(api) return api.total||0;
-  const mm=parseInt(m.substring(5,7),10)-1;
+  const mm = parseInt(m.substring(5,7),10)-1;
   return SD_MD[mm]?.t||0;
 }
 function dashSummaryTables(mths,actual,fcData,poData){
@@ -3030,6 +3063,8 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId=''){
 function _sdFmtTotal(n){return _sdF(n);}
 function _sdUseLatestMonthIfEmpty(monthly){
   const cur=_sdApiMonth();
+  if(Array.isArray(monthly) && monthly.some(m=>m.ym===cur)) return cur;
+  if(Array.isArray(monthly) && monthly.length) return monthly[monthly.length-1].ym;
   return cur;
 }
 
@@ -3767,7 +3802,9 @@ function sdExport(){
     const isAll=(ROLE==='manager'||ROLE==='superadmin')&&_sd.mgrView;
     const q=(_sd.q||'').toLowerCase();
     const allCusts=salesCustomers();
-    const base=isAll?allCusts:allCusts.slice(0,1);
+    const me=(DB.get('users')||[]).find(x=>x.uid===UID);
+    const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+    const base=isAll?allCusts:allCusts.filter(c=>c.slm===slmId);
     const filtered=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)):base;
     const custRows=filtered.map(c=>({...c,_cv:Math.round(T*(c.w[wi]||c.w[0]))}));
     if(_sd.sort.col==='val') custRows.sort((a,b)=>_sd.sort.dir*(b._cv-a._cv));
@@ -3782,13 +3819,17 @@ function sdExport(){
     });
     sheet='รายลูกค้า';
   } else if(_sd.at==='prod'){
+    const q=(_sd.q||'').toLowerCase();
     if(_sdApi.loaded){
-      cols=['กลุ่มสินค้า / สินค้า','ยอดขาย/จำนวน','สัดส่วน%','ลูกค้าที่ซื้อ'];
+      cols=['กลุ่มสินค้า / สินค้า','ยอดขาย/จำนวน','สัด่วน%','ลูกค้าที่ซื้อ'];
       const T2=_sdApi.total||1;
-      (_sdApi.prods||[]).forEach(p=>{rows.push([p.n,_sdV(p._tot),Math.round((p._tot||0)/T2*100),'']);(p.it||[]).forEach(it=>rows.push(['  '+it.c+' — '+it.n,_sdV(it._tot),Math.round((it._tot||0)/(p._tot||1)*100),(it.custs||[]).flatMap(t=>(t.cs||[]).map(c=>c.n)).join(', ')]));});
+      let prods=[...(_sdApi.prods||[])];
+      if(q) prods = prods.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)));
+      if(_sd.sort.col==='val') prods.sort((a,b)=>_sd.sort.dir*(b._tot-a._tot));
+      else if(_sd.sort.col==='vs') prods.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
+      prods.forEach(p=>{rows.push([p.n,_sdV(p._tot),Math.round((p._tot||0)/T2*100),'']);(p.it||[]).forEach(it=>rows.push(['  '+it.c+' — '+it.n,_sdV(it._tot),Math.round((it._tot||0)/(p._tot||1)*100),(it.custs||[]).flatMap(t=>(t.cs||[]).map(c=>c.n)).join(', ')]));});
       return toXLSX([['รายสินค้า', cols, rows]], `Sales_${period}_รายสินค้า.xlsx`);
     }
-    const q=(_sd.q||'').toLowerCase();
     const base=q?SD_PRODS.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q))):SD_PRODS;
     const prods=base.map(p=>({...p,_pv:Math.round(T*p.w)}));
     if(_sd.sort.col==='val') prods.sort((a,b)=>_sd.sort.dir*(b._pv-a._pv));
@@ -3802,13 +3843,18 @@ function sdExport(){
     });
     sheet='รายสินค้า';
   } else {
-    if(_sdApi.loaded){
-      cols=['เซลส์','รหัส','ยอดขาย/จำนวน','ลูกค้า'];
-      (_sdApi.slms||[]).forEach(s=>rows.push([s.name,s.code,_sdV(s._tot),(s.custs||[]).length]));
-      return toXLSX([['รายเซลส์', cols, rows]], `Sales_${period}_รายเซลส์.xlsx`);
-    }
     const q=(_sd.q||'').toLowerCase();
     const sf=_sd.slmF||'';
+    if(_sdApi.loaded){
+      cols=['เซลส์','รหัส','ยอดขาย/จำนวน','ลูกค้า'];
+      let slms=[...(_sdApi.slms||[])];
+      if(q) slms = slms.filter(s=>s.name.toLowerCase().includes(q)||s.code.toLowerCase().includes(q));
+      if(sf) slms = slms.filter(s=>s.code===sf);
+      if(_sd.sort.col==='val') slms.sort((a,b)=>_sd.sort.dir*(b._tot-a._tot));
+      else if(_sd.sort.col==='vs') slms.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
+      slms.forEach(s=>rows.push([s.name,s.code,_sdV(s._tot),(s.custs||[]).length]));
+      return toXLSX([['รายเซลส์', cols, rows]], `Sales_${period}_รายเซลส์.xlsx`);
+    }
     const filtered=SD_SALES.filter(s=>(!q||(s.n.toLowerCase().includes(q)||s.c.toLowerCase().includes(q)))&&(!sf||s.c===sf));
     const sales=filtered.map(s=>({...s,_sv:Math.round(T*s.w)}));
     if(_sd.sort.col==='val') sales.sort((a,b)=>_sd.sort.dir*(b._sv-a._sv));
@@ -3914,7 +3960,7 @@ function expConsi(){
 // ── FORECAST ─────────────────────────────────────────────────────
 
 function fcT(){
-  const fc=DB.get('forecasts')||[];
+  const fc=window._fcListCache||DB.get('forecasts')||[];
   const isAll=ROLE!=='sales';
   const slmF=document.getElementById('fc-sf')?.value||'';
   let rows=isAll?fc:fc.filter(f=>f.by===UID);
@@ -4009,7 +4055,7 @@ async function saveFc(){
   }
 }
 function expFCLocal(){
-  const fc=DB.get('forecasts')||[];
+  const fc=window._fcListCache||DB.get('forecasts')||[];
   toXLSX([['Forecast',['Sales','รหัสสินค้า','ชื่อสินค้า','จำนวน','วันต้องการ','หมายเหตุ','อนุมัติ','แก้ไขโดย'],
     fc.map(f=>[f.by,f.sku,skuI(f.sku).name,f.qty,f.delivDate||'',f.note||'',f.approved?'Y':'N',f.edited_by||f.by])]],
     'Forecast_'+todayStr()+'.xlsx');
@@ -6232,9 +6278,23 @@ function filterSkuList(containerId) {
 // ════════════════════════════════════════════════
 // pgPlanBooking() — จองสินค้า PO/SO (Planning)
 // ════════════════════════════════════════════════
-function pgPlanBooking() {
+async function pgPlanBooking() {
   const canEdit = ['planning','manager','superadmin'].includes(ROLE);
-  const bks = DB.get('bookings') || [];
+  const ct = document.getElementById('ct');
+  if (ct) ct.innerHTML = '<div class="al ali">กำลังโหลดข้อมูลการจองจาก Supabase...</div>';
+
+  const localBks = DB.get('bookings') || [];
+  let bks = localBks;
+  try {
+    const remote = await CACHE.get('bookings', () => SB.getBookings());
+    if (remote?.length) {
+      bks = mergeBookings(remote, localBks);
+      DB.set('bookings', bks);
+    }
+  } catch (e) {
+    console.warn('pgPlanBooking: remote bookings load failed', e?.message || e);
+  }
+
   const typeFilter = document.getElementById('bk-tf')?.value || '';
   const statusFilter = document.getElementById('bk-sf')?.value || '';
   const searchText = (document.getElementById('bk-search')?.value || '').toLowerCase();
@@ -6406,7 +6466,7 @@ function deleteBk(id) {
 }
 
 function expBookings() {
-  const bks = DB.get('bookings') || [];
+  const bks = useBookings();
   toXLSX([['Bookings',
     ['ประเภท','เลขที่ PO/SO','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','ผู้จอง','วันรับสินค้า','สต๊อก/ผลิต','สถานะ','หมายเหตุ','บันทึกโดย'],
     bks.map(b => [b.type,b.refNo||b.poNo||b.soNo||'',b.sku,b.skuName||'',b.qty,b.custName||'',b.receiveDate||'',b.stockStatus==='produce'?'สั่งผลิต':'จากสต๊อก',b.status,b.note||'',b.by||''])
@@ -6417,7 +6477,7 @@ function expBookings() {
 // pgBookingSummary() — สรุปสถานะการจอง PO/SO
 // ════════════════════════════════════════════════
 function pgBookingSummary() {
-  const bks = DB.get('bookings') || [];
+  const bks = useBookings();
   const active = bks.filter(b => b.status !== 'cancelled');
   const bysku = {};
   active.forEach(b => {
@@ -6562,7 +6622,7 @@ function psvImportFile(e){
 function psvSetPeriod(p) { _psv.period = p; pgProdSummary(); }
 
 function psvRender() {
-  const orders = window._prodOrders || DB.get('prod_orders') || [];
+  const orders = useProdOrders();
   const ref = new Date(_psv.ref);
   const period = _psv.period;
   const cols = [];
@@ -6658,7 +6718,7 @@ function psvRender() {
 }
 
 function expPsvSummary() {
-  const orders = window._prodOrders || DB.get('prod_orders') || [];
+  const orders = useProdOrders();
   const stockInActual = DB.get('stock_in_actual') || [];
   const today7 = new Date(_psv.ref); today7.setDate(today7.getDate() - 6);
   const rows = [];
