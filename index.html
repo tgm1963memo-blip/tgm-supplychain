@@ -2818,7 +2818,9 @@ async function pgDash(){
   }catch(e){
     console.warn('Dashboard remote data unavailable, using local cache',e.message);
   }
-  const yearSales=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
+  const yearSalesValue=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.amount)||0),0);
+  const yearSalesQty=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
+  const yearSales=yearSalesValue || yearSalesQty;
   window._dashData={po,stk,fc,ss};
   const pending=po.filter(p=>p.status==='pending').length;
   const overdue=po.filter(p=>p.status==='overdue').length;
@@ -2828,7 +2830,7 @@ async function pgDash(){
   },0);
   document.getElementById('ct').innerHTML=`
   <div class="krow">
-    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">${fmt(yearSales)}</div><div class="kh">กก. รวมทั้งปี</div></div>
+    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">บาท รวมทั้งปี</div></div>
     <div class="kpi a"><div class="kl">PO รอส่ง</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
     <div class="kpi r"><div class="kl">PO เลยกำหนด</div><div class="kv">${overdue}</div><div class="kh">รายการ</div></div>
     <div class="kpi r"><div class="kl">Stock ต่ำกว่าขั้นต่ำ</div><div class="kv">${lowStk}</div><div class="kh">SKU</div></div>
@@ -3001,12 +3003,20 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   let allData=[];
   let from=0;
   while(true){
-    const {data,error}=await getSupabaseClient()
+    let {data,error}=await getSupabaseClient()
       .from('sales_history')
-      .select('slm_id,sku,ym,qty')
+      .select('slm_id,sku,ym,qty,amount')
       .gte('ym',startYm).lte('ym',endYm)
       .order('ym')
       .range(from,from+PAGE-1);
+    if(error && /amount/i.test(error.message||'')){
+      ({data,error}=await getSupabaseClient()
+        .from('sales_history')
+        .select('slm_id,sku,ym,qty')
+        .gte('ym',startYm).lte('ym',endYm)
+        .order('ym')
+        .range(from,from+PAGE-1));
+    }
     if(error) throw error;
     allData=allData.concat(data||[]);
     if(!data||data.length<PAGE) break;
@@ -4789,9 +4799,9 @@ function _crSave(){
   const flds=['cr-shopname','cr-contact','cr-position','cr-phone','cr-email','cr-taxid','cr-branch','cr-addr','cr-zip',
     'cr-delplace','cr-receiver','cr-delphone','cr-deladdr','cr-route-bkk','cr-route-upc',
     'cr-disc','cr-crdays','cr-billdate','cr-detail','cr-cashday','cr-creditday','cr-sign-sales','cr-sign-mgr','cr-final-note',
-    'cr-inv-email-addr','cr-inv-post-addr','cr-inv-other-docs'];
+    'cr-inv-email-addr','cr-inv-post-addr','cr-inv-other-docs','cr-existing-cust','cr-sales-owner','cr-drive-link','cr-external-emails','cr-tax-addr','cr-tax-zip','cr-vat-reg-date'];
   flds.forEach(id=>{const e=document.getElementById(id);if(e)_cr.data[id]=e.value;});
-  const cbs=['cr-c-new','cr-c-branch','cr-c-contact','cr-c-cash','cr-c-credit',
+  const cbs=['cr-c-new','cr-c-branch','cr-c-contact','cr-c-cash','cr-c-credit','cr-c-change-cust-addr','cr-c-change-tax-addr','cr-c-change-info',
     'cr-st-food','cr-st-bakery','cr-st-hotel','cr-st-hyper','cr-st-agent','cr-st-other',
     'cr-tr-bkk','cr-tr-upc','cr-del-near','cr-del-far','cr-del-box','cr-del-dry',
     'cr-pr-c','cr-pr-d','cr-pr-e','cr-pr-f','cr-pr-g','cr-pr-z','cr-pr-special','cr-pr-disc',
@@ -4810,8 +4820,8 @@ function pgCustReg(){
   _crInitIfNeeded();
   const isApprover=ROLE==='manager'||ROLE==='superadmin';
   const isAdmin=ROLE==='superadmin';
-  const tabViews=isAdmin?['form','approve','settings']:isApprover?['form','approve']:['form'];
-  const tabLabels={form:'📝 กรอกฟอร์ม',approve:'✅ อนุมัติ',settings:'⚙️ ตั้งค่า Workflow'};
+  const tabViews=isAdmin?['form','approve','summary','settings']:isApprover?['form','approve','summary']:['form','summary'];
+  const tabLabels={form:'📝 กรอกฟอร์ม',approve:'✅ อนุมัติ',summary:'📊 สรุป',settings:'⚙️ ตั้งค่า Workflow'};
   const steps=[['📋','ทั่วไป'],['🏪','ร้านค้า'],['🚚','ส่งสินค้า'],['💳','การเงิน'],['📁','เอกสาร'],['✅','สรุป']];
   const pct=_cr.step>=5?100:Math.round((_cr.step/5)*100);
   const sidebarSteps=steps.map(([ico,lbl],i)=>{
@@ -4853,6 +4863,7 @@ function crToSummary(){_crSave();_cr.step=5;crRender();}
 function crRender(){
   if(_cr.view==='approve'){crRenderApprove();return;}
   if(_cr.view==='settings'){pgCrWorkflowSettings();return;}
+  if(_cr.view==='summary'){crRenderSummary();return;}
   const el=document.getElementById('cr-body');if(!el)return;
   const steps=[['📋','ทั่วไป'],['🏪','ร้านค้า'],['🚚','ส่งสินค้า'],['💳','การเงิน'],['📁','เอกสาร'],['✅','สรุป']];
   // อัปเดต sidebar steps
@@ -4872,6 +4883,57 @@ function crRender(){
   if(_cr.step===4)crRenderDocSlots();
 }
 
+function crRequestTypes(d=_cr.data){
+  const pairs=[['cr-c-new','ร้านค้าใหม่'],['cr-c-branch','เพิ่มสาขา'],['cr-c-contact','ลูกค้าติดต่อที่บริษัท'],['cr-c-cash','เงินสด'],['cr-c-credit','เครดิต'],['cr-c-change-cust-addr','เปลี่ยนที่อยู่ลูกค้า'],['cr-c-change-tax-addr','เปลี่ยนที่อยู่ใบกำกับภาษี'],['cr-c-change-info','เปลี่ยนแปลงข้อมูลลูกค้า']];
+  return pairs.filter(([id])=>d[id]).map(([,lbl])=>lbl).join(', ')||'—';
+}
+function crSalesUsers(){return (DB.get('users')||[]).filter(u=>u.role==='sales'||u.role==='manager'||u.role==='superadmin');}
+function crSalesName(uid){const u=(DB.get('users')||[]).find(x=>x.uid===uid);return u?.name||uid||'—';}
+function crOwnerUid(){return _crV('cr-sales-owner')||UID;}
+function crCustomerMasterRows(){return (typeof allCustomerRows==='function'?allCustomerRows():[]).sort((a,b)=>String(a.n||'').localeCompare(String(b.n||''),'th'));}
+function crCustomerOptionHtml(selected=''){
+  return `<option value="">เลือกลูกค้าเดิม</option>`+crCustomerMasterRows().slice(0,2000).map(c=>`<option value="${esc(c.c)}" ${selected===c.c?'selected':''}>${esc(c.c)} — ${esc(c.n||'')}</option>`).join('');
+}
+function crLoadExistingCustomer(code){
+  if(!code)return;
+  const c=crCustomerMasterRows().find(x=>x.c===code);if(!c)return;
+  _cr.data['cr-existing-cust']=c.c;
+  _cr.data['cr-shopname']=c.n||'';
+  _cr.data['cr-sales-owner']=(DB.get('users')||[]).find(u=>(u.slm_id||u.uid)===(c.slm||''))?.uid||_cr.data['cr-sales-owner']||UID;
+  _cr.data['cr-detail']=(_cr.data['cr-detail']||'') || `อ้างอิงลูกค้าเดิม ${c.c} ${c.n||''}`;
+  ['cr-shopname','cr-detail'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=_cr.data[id]||'';});
+  const so=document.getElementById('cr-sales-owner');if(so)so.value=_cr.data['cr-sales-owner']||'';
+  toast('ดึงข้อมูลลูกค้าเดิมแล้ว');
+}
+function crVisibleSubs(){
+  const subs=DB.get('custreg_subs')||[];
+  if(ROLE==='superadmin'||ROLE==='manager')return subs;
+  return subs.filter(s=>s.salesUid===UID||s.ownerSalesUid===UID||s.createdByUid===UID);
+}
+function crSubMailBody(sub){
+  const docs=(sub.docs||[]).map(d=>`- ${d.label}: ${d.files?.length||0} ไฟล์${d.note?' | '+d.note:''}`).join('%0D%0A');
+  return `เรียนผู้อนุมัติ%0D%0A%0D%0Aขออนุมัติเอกสาร ${encodeURIComponent(sub.docNo)}%0D%0Aลูกค้า: ${encodeURIComponent(sub.shop||'')}%0D%0Aประเภทคำขอ: ${encodeURIComponent(sub.requestType||'')}%0D%0ASales เจ้าของงาน: ${encodeURIComponent(sub.ownerSalesName||sub.sales||'')}%0D%0ADrive: ${encodeURIComponent(sub.driveLink||'-')}%0D%0A%0D%0Aเอกสาร:%0D%0A${docs||'-'}%0D%0A%0D%0Aหมายเหตุ: ${encodeURIComponent(sub.finalNote||sub.note||'-')}`;
+}
+function crMailExternal(id){
+  const sub=(DB.get('custreg_subs')||[]).find(s=>s.id===id);if(!sub)return;
+  const to=(sub.externalEmails||'').split(/[;,\s]+/).filter(Boolean).join(',');
+  const subject=encodeURIComponent(`ขออนุมัติลงทะเบียนลูกค้า ${sub.docNo} ${sub.shop||''}`);
+  window.location.href=`mailto:${encodeURIComponent(to)}?subject=${subject}&body=${crSubMailBody(sub)}`;
+}
+function crRenderSummary(){
+  const el=document.getElementById('cr-body');if(!el)return;
+  const q=(document.getElementById('cr-sum-q')?.value||'').toLowerCase();
+  const st=document.getElementById('cr-sum-st')?.value||'';
+  let rows=crVisibleSubs();
+  if(st)rows=rows.filter(s=>s.status===st);
+  if(q)rows=rows.filter(s=>[s.docNo,s.shop,s.sales,s.ownerSalesName,s.requestType].join(' ').toLowerCase().includes(q));
+  const counts={all:rows.length,pending:rows.filter(s=>s.status==='pending').length,approved:rows.filter(s=>s.status==='approved').length,rejected:rows.filter(s=>s.status==='rejected').length};
+  const stLbl={pending:'รออนุมัติ',approved:'อนุมัติแล้ว',rejected:'ไม่อนุมัติ'};
+  el.innerHTML=`<div class="krow" style="margin-bottom:10px"><div class="kpi b"><div class="kl">ทั้งหมด</div><div class="kv">${counts.all}</div></div><div class="kpi a"><div class="kl">รออนุมัติ</div><div class="kv">${counts.pending}</div></div><div class="kpi g"><div class="kl">อนุมัติแล้ว</div><div class="kv">${counts.approved}</div></div><div class="kpi r"><div class="kl">ไม่อนุมัติ</div><div class="kv">${counts.rejected}</div></div></div>
+  <div class="frow" style="gap:8px;margin-bottom:10px"><input id="cr-sum-q" placeholder="ค้นหาเอกสาร/ลูกค้า/Sales" value="${esc(q)}" oninput="crRenderSummary()" style="width:260px;padding:7px 10px;border:1px solid var(--BD);border-radius:7px"><select id="cr-sum-st" class="btn btn-sm" onchange="crRenderSummary()"><option value="">ทุกสถานะ</option><option value="pending" ${st==='pending'?'selected':''}>รออนุมัติ</option><option value="approved" ${st==='approved'?'selected':''}>อนุมัติแล้ว</option><option value="rejected" ${st==='rejected'?'selected':''}>ไม่อนุมัติ</option></select></div>
+  <div class="card"><div class="ch"><div class="ct2">สรุปการลงทะเบียนลูกค้า</div><div style="font-size:11px;color:var(--TX3)">${ROLE==='sales'?'เฉพาะรายการของคุณ':'ดูได้ทุก Sales'}</div></div><div class="tw"><table><thead><tr><th>เลขที่</th><th>ลูกค้า</th><th>ประเภทคำขอ</th><th>Sales เจ้าของงาน</th><th>ผู้กรอก</th><th>สถานะ</th><th>Drive</th><th>วันที่</th><th>Action</th></tr></thead><tbody>${rows.map(s=>`<tr><td class="mono">${esc(s.docNo)}</td><td>${esc(s.shop||'')}</td><td>${esc(s.requestType||'—')}</td><td>${esc(s.ownerSalesName||s.sales||'')}</td><td>${esc(s.sales||'')}</td><td>${stLbl[s.status]||s.status}</td><td>${s.driveLink?`<a href="${esc(s.driveLink)}" target="_blank">เปิด Drive</a>`:'—'}</td><td style="font-size:11px;color:var(--TX3)">${esc(s.date||'')}</td><td><button class="btn btn-xs" onclick="crShowSummaryDetail('${s.id}')">ดู</button></td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--TX3);padding:18px">ไม่มีข้อมูล</td></tr>'}</tbody></table></div></div>`;
+}
+function crShowSummaryDetail(id){_cr.view='approve';_cr.viewSubId=id;pgCustReg();}
 function crSec0(){return`<div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">👤 ผู้บันทึกและเลขที่เอกสาร</div>
   <div class="cr-ro"><span class="cr-rl">ผู้บันทึก</span><span class="cr-rv">${UNAME}</span></div>
@@ -4887,6 +4949,9 @@ function crSec0(){return`<div class="card">
     <label class="cr-cbi"><input type="checkbox" id="cr-c-contact" ${_crCk('cr-c-contact')}> ลูกค้าติดต่อที่บริษัท</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-c-cash" ${_crCk('cr-c-cash')}> เงินสด</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-c-credit" ${_crCk('cr-c-credit')}> เครดิต</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-cust-addr" ${_crCk('cr-c-change-cust-addr')}> เปลี่ยนที่อยู่ลูกค้า</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-tax-addr" ${_crCk('cr-c-change-tax-addr')}> เปลี่ยนที่อยู่ใบกำกับภาษี</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-info" ${_crCk('cr-c-change-info')}> เปลี่ยนข้อมูลลูกค้า</label>
   </div>
   <div class="cr-r2" style="margin-top:8px">
     <div class="cr-ri"><label>เงินสด</label><input type="number" id="cr-cashday" placeholder="0" value="${_crV('cr-cashday')}"><span style="font-size:12px;color:var(--TX3)">วัน</span></div>
@@ -4894,6 +4959,12 @@ function crSec0(){return`<div class="card">
   </div>
 </div>
 <div class="card">
+  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">👥 ลูกค้าเดิมและ Sales เจ้าของงาน</div>
+  <div class="cr-r2">
+    <div class="field"><label>เลือกลูกค้าเดิมเมื่อเป็นการเปลี่ยนแปลง</label><select id="cr-existing-cust" onchange="crLoadExistingCustomer(this.value)">${crCustomerOptionHtml(_crV('cr-existing-cust'))}</select></div>
+    <div class="field"><label>Sales เจ้าของงาน</label><select id="cr-sales-owner">${crSalesUsers().map(u=>`<option value="${esc(u.uid)}" ${(_crV('cr-sales-owner')||UID)===u.uid?'selected':''}>${esc(u.name)} (${esc(u.role||'')})</option>`).join('')}</select></div>
+  </div>
+</div><div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">🔄 วัตถุประสงค์การแก้ไข</div>
   <div class="cr-cb">
     <label class="cr-cbi"><input type="radio" name="cr-purpose" value="change-name" ${_crV('cr-purpose')==='change-name'?'checked':''}> เปลี่ยนชื่อร้านค้า</label>
@@ -4912,10 +4983,10 @@ function crSec1(){return`<div class="card" style="border:1.5px dashed var(--BL);
     📖 กรอกข้อมูลอัตโนมัติจากหนังสือรับรองบริษัท
     <span style="font-size:10px;background:var(--BL);color:#fff;padding:1px 7px;border-radius:99px">AI</span>
   </div>
-  <div style="font-size:12px;color:var(--TX2);margin-bottom:10px">อัปโหลดหนังสือรับรองบริษัทหรือทะเบียนพาณิชย์ — ระบบจะอ่านและกรอกฟอร์มให้อัตโนมัติ (ไม่บังคับ)</div>
+  <div style="font-size:12px;color:var(--TX2);margin-bottom:10px">อัปโหลดหนังสือรับรองบริษัท ทะเบียนพาณิชย์ หรือใบ ภ.พ.20 — ระบบจะอ่านและกรอกฟอร์มให้อัตโนมัติ (ไม่บังคับ)</div>
   <div class="cr-uz" id="cr-ocr-dz" onclick="crOcrTrigger()" style="border-color:var(--BL)">
     <div style="font-size:24px;margin-bottom:4px">📄</div>
-    <div style="font-size:12px;color:var(--TX2)">กดเพื่ออัปโหลดหนังสือรับรอง</div>
+    <div style="font-size:12px;color:var(--TX2)">กดเพื่ออัปโหลดหนังสือรับรอง / ภ.พ.20</div>
     <div style="font-size:11px;color:var(--TX3);margin-top:3px">JPG · PNG · PDF · อ่านด้วย Google Vision AI</div>
   </div>
   <div id="cr-ocr-result" style="display:none"></div>
@@ -4934,7 +5005,12 @@ function crSec1(){return`<div class="card" style="border:1.5px dashed var(--BL);
   <div class="field"><label>เลขผู้เสียภาษี / บัตรประชาชน</label><input type="text" id="cr-taxid" placeholder="0-0000-00000-00-0" maxlength="17" value="${_crV('cr-taxid')}"></div>
   <div class="field"><label>ลำดับ / ชื่อสาขา</label><input type="text" id="cr-branch" placeholder="สำนักงานใหญ่ / สาขา 1" value="${_crV('cr-branch')}"></div>
   <div class="field"><label>ที่อยู่หลัก <span style="color:var(--R);font-size:11px">*</span></label><textarea id="cr-addr" placeholder="บ้านเลขที่ ถนน ซอย แขวง เขต จังหวัด">${_crV('cr-addr')}</textarea></div>
-  <div class="field" style="margin-bottom:0"><label>รหัสไปรษณีย์</label><input type="text" id="cr-zip" placeholder="10xxx" maxlength="5" value="${_crV('cr-zip')}"></div>
+  <div class="field"><label>รหัสไปรษณีย์</label><input type="text" id="cr-zip" placeholder="10xxx" maxlength="5" value="${_crV('cr-zip')}"></div>
+  <hr style="border:none;border-top:1px solid var(--BD);margin:10px 0">
+  <div style="font-size:12px;font-weight:700;color:var(--TX);margin-bottom:8px">ที่อยู่ใบกำกับภาษี</div>
+  <div class="field"><label>ที่อยู่ใบกำกับภาษี</label><textarea id="cr-tax-addr" placeholder="เว้นว่างหากเหมือนที่อยู่หลัก">${_crV('cr-tax-addr')}</textarea></div>
+  <div class="field"><label>รหัสไปรษณีย์ใบกำกับภาษี</label><input type="text" id="cr-tax-zip" placeholder="10xxx" maxlength="5" value="${_crV('cr-tax-zip')}"></div>
+  <div class="field" style="margin-bottom:0"><label>วันที่เป็นผู้ประกอบการจดทะเบียน VAT</label><input type="text" id="cr-vat-reg-date" placeholder="เช่น 5 มกราคม 2565" value="${_crV('cr-vat-reg-date')}"></div>
 </div>
 <div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">🏷️ ประเภทร้านค้า</div>
@@ -5067,6 +5143,11 @@ function crSec4(){
   <div class="cr-dsb-prog"><div class="cr-dsb-fill" style="width:${Math.round((filled/total)*100)}%"></div></div>
 </div>
 <div class="card">
+  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">🔗 Google Drive และผู้อนุมัติภายนอก</div>
+  <div class="field"><label>ลิงก์โฟลเดอร์ Google Drive ของลูกค้า</label><input type="url" id="cr-drive-link" placeholder="https://drive.google.com/drive/folders/..." value="${_crV('cr-drive-link')}"></div>
+  <div class="field" style="margin-bottom:0"><label>อีเมลผู้อนุมัติภายนอก / บัญชี</label><input type="text" id="cr-external-emails" placeholder="account@example.com; external@example.com" value="${_crV('cr-external-emails')}"></div>
+  <div style="font-size:11px;color:var(--TX3);margin-top:7px">วางลิงก์ไฟล์ Drive ในหมายเหตุของแต่ละเอกสารได้ ระบบจะแนบลิงก์ไปในอีเมลอนุมัติ</div>
+</div><div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📄 เอกสารลูกค้า / ร้านค้า</div>
   <div id="cr-slots-main"></div>
 </div>
@@ -5242,6 +5323,55 @@ function _crParseCert(text){
   return out;
 }
 
+function _crCleanVatText(text){
+  return String(text||'').replace(/\r/g,'').replace(/[|]/g,' ').replace(/\s+\n/g,'\n').replace(/\n\s+/g,'\n');
+}
+function _crVatAfter(t,label,nextLabels){
+  const start=t.search(label);if(start<0)return '';
+  let s=t.slice(start).replace(label,'');
+  const next=nextLabels.map(p=>s.search(p)).filter(i=>i>0).sort((a,b)=>a-b)[0];
+  if(next) s=s.slice(0,next);
+  return s.replace(/\n/g,' ').replace(/[.·•]{2,}/g,' ').replace(/\s+/g,' ').trim();
+}
+function _crParseVat20(text){
+  const out={docType:'ภ.พ.20'};
+  const t=_crCleanVatText(text);
+  if(!/ภ\.?\s*พ\.?\s*20|ทะเบียนภาษีมูลค่าเพิ่ม|เลขประจำตัวผู้เสียภาษีอากร/.test(t)) return null;
+  const top=t.slice(0,900);
+  const topDigits=(top.match(/\d/g)||[]).join('');
+  if(topDigits.length>=13) out.taxid=topDigits.slice(0,13);
+  if(!out.taxid){
+    const m=t.match(/(?:เลขประจำตัวผู้เสียภาษีอากร|เลขประจำตัวผู้เสียภาษี|เลขทะเบียน)[^\d]*([\d\s\-]{13,25})/);
+    if(m){const clean=(m[1].match(/\d/g)||[]).join('').slice(0,13);if(clean.length===13)out.taxid=clean;}
+  }
+  const name=_crVatAfter(t,/ชื่อผู้ประกอบการ\s*/,[/ชื่อสถานประกอบการ/,/เป็น\s+สำนักงาน/,/ตั้งอยู่/]);
+  if(name&&name.length>2) out.shopname=name.replace(/^[:\-]+/,'').trim();
+  const place=_crVatAfter(t,/ชื่อสถานประกอบการ\s*/,[/เป็น\s+สำนักงาน/,/ตั้งอยู่/,/อาคาร/]);
+  if(place&&place.length>2&&!out.shopname) out.shopname=place.replace(/^[:\-]+/,'').trim();
+  if(/สำนักงานใหญ่|สํานักงานใหญ่/.test(t)) out.branch='สำนักงานใหญ่';
+  else {const br=t.match(/สาขา(?:ที่)?\s*([\d\-]+)/); if(br) out.branch='สาขา '+br[1];}
+  const addrParts=[];
+  const labels=['อาคาร','ห้องเลขที่','ชั้นที่','หมู่บ้าน','เลขที่','หมู่ที่','ตรอก\\/ซอย|ตรอก|ซอย','ถนน','ตำบล\\/แขวง|ตำบล|แขวง','อำเภอ\\/เขต|อำเภอ|เขต','จังหวัด'];
+  labels.forEach(lbl=>{
+    const re=new RegExp('(?:'+lbl+')\\s*([^\\n]+?)(?=\\s*(?:อาคาร|ห้องเลขที่|ชั้นที่|หมู่บ้าน|เลขที่|หมู่ที่|ตรอก|ซอย|ถนน|ตำบล|แขวง|อำเภอ|เขต|จังหวัด|รหัสไปรษณีย์|โทรศัพท์|วันที่|ออกให้|$))','m');
+    const m=t.match(re); if(m){const val=m[1].replace(/[.·•]+/g,' ').replace(/\s+/g,' ').trim(); if(val&&val!=='-') addrParts.push(val);}
+  });
+  const addr=addrParts.join(' ').replace(/\s+/g,' ').trim();
+  if(addr.length>5) out.addr=addr;
+  const zipM=t.match(/รหัสไปรษณีย์\s*([1-9]\d{4})/)||t.match(/\b([1-9]\d{4})\b(?![\d\-])/);
+  if(zipM) out.zip=zipM[1];
+  const phoneM=t.match(/โทรศัพท์\s*([0-9\-\s]{7,20})/);
+  if(phoneM) out.phone=phoneM[1].replace(/\s+/g,'').trim();
+  const dateM=t.match(/วันที่เป็นผู้ประกอบการจดทะเบียน\s*([\d\sก-๙A-Za-z\.]+?)(?=ออกให้|ผู้|$)/)||t.match(/วันที่เป็นผู้ประกอบการจดทะเบียน[^\n]*\n\s*([^\n]+)/);
+  if(dateM) out.vatRegDate=dateM[1].replace(/[.·•]+/g,' ').replace(/\s+/g,' ').trim();
+  if(out.addr){out.taxAddr=out.addr;out.taxZip=out.zip||'';}
+  return out;
+}
+function _crParseAnyOcr(text){
+  const vat=_crParseVat20(text);
+  if(vat&&Object.values(vat).some(Boolean)) return vat;
+  const cert=_crParseCert(text);cert.docType='หนังสือรับรอง/ทะเบียนพาณิชย์';return cert;
+}
 function crOcrTrigger(){
   const inp=document.getElementById('cr-ocr-inp');
   inp.value='';inp.onchange=crOcrHandleFile;inp.click();
@@ -5258,13 +5388,18 @@ async function crOcrHandleFile(e){
   try{
     const text=await _crOcrSend(file);
     if(!text.trim()) throw new Error('ไม่พบข้อความในเอกสาร — กรุณาใช้ไฟล์ที่ชัดเจนกว่านี้');
-    _crOcrParsed=_crParseCert(text);
+    _crOcrParsed=_crParseAnyOcr(text);
     const fields=[
       {id:'cr-shopname',label:'ชื่อร้าน / บริษัท',val:_crOcrParsed.shopname},
       {id:'cr-taxid',label:'เลขผู้เสียภาษี',val:_crOcrParsed.taxid},
       {id:'cr-contact',label:'ผู้ติดต่อ (กรรมการ)',val:_crOcrParsed.contact},
+      {id:'cr-phone',label:'โทรศัพท์',val:_crOcrParsed.phone},
+      {id:'cr-branch',label:'สาขา',val:_crOcrParsed.branch},
       {id:'cr-addr',label:'ที่อยู่',val:_crOcrParsed.addr},
       {id:'cr-zip',label:'รหัสไปรษณีย์',val:_crOcrParsed.zip},
+      {id:'cr-tax-addr',label:'ที่อยู่ใบกำกับภาษี',val:_crOcrParsed.taxAddr},
+      {id:'cr-tax-zip',label:'รหัสไปรษณีย์ใบกำกับ',val:_crOcrParsed.taxZip},
+      {id:'cr-vat-reg-date',label:'วันที่จด VAT',val:_crOcrParsed.vatRegDate},
     ].filter(f=>f.val);
     dz.innerHTML=`<div style="text-align:center;padding:6px 0;font-size:12px;color:var(--G)">✅ อ่านสำเร็จ — ${esc(file.name)} <span onclick="crOcrRetry()" style="cursor:pointer;color:var(--TX3);margin-left:8px;font-size:11px">เปลี่ยนไฟล์</span></div>`;
     if(!fields.length){
@@ -5289,7 +5424,7 @@ async function crOcrHandleFile(e){
 
 function crOcrApply(){
   if(!_crOcrParsed)return;
-  const map={shopname:'cr-shopname',taxid:'cr-taxid',contact:'cr-contact',addr:'cr-addr',zip:'cr-zip'};
+  const map={shopname:'cr-shopname',taxid:'cr-taxid',contact:'cr-contact',phone:'cr-phone',branch:'cr-branch',addr:'cr-addr',zip:'cr-zip',taxAddr:'cr-tax-addr',taxZip:'cr-tax-zip',vatRegDate:'cr-vat-reg-date'};
   let filled=0;
   Object.entries(map).forEach(([key,id])=>{
     const val=_crOcrParsed[key];if(!val)return;
@@ -5305,7 +5440,7 @@ function crOcrRetry(){
   _crOcrParsed=null;
   const dz=document.getElementById('cr-ocr-dz');
   const res=document.getElementById('cr-ocr-result');
-  if(dz){dz.innerHTML=`<div style="font-size:22px;margin-bottom:4px">📄</div><div style="font-size:12px;color:var(--TX2)">กดเพื่ออัปโหลดหนังสือรับรอง</div><div style="font-size:11px;color:var(--TX3);margin-top:3px">JPG · PNG · PDF · อ่านด้วย Google Vision AI</div>`;dz.onclick=crOcrTrigger;}
+  if(dz){dz.innerHTML=`<div style="font-size:22px;margin-bottom:4px">📄</div><div style="font-size:12px;color:var(--TX2)">กดเพื่ออัปโหลดหนังสือรับรอง / ภ.พ.20</div><div style="font-size:11px;color:var(--TX3);margin-top:3px">JPG · PNG · PDF · อ่านด้วย Google Vision AI</div>`;dz.onclick=crOcrTrigger;}
   if(res){res.style.display='none';res.innerHTML='';}
 }
 
@@ -5395,7 +5530,7 @@ function crConfirmApproval(){
   const priceType=[['cr-pr-c','C'],['cr-pr-d','D'],['cr-pr-e','E'],['cr-pr-f','F'],['cr-pr-g','G'],['cr-pr-z','Z'],['cr-pr-special','พิเศษ']].filter(([id])=>d[id]).map(([,lbl])=>lbl).join(', ')||'—';
   const docSnap=CR_DOC_SLOTS.filter(s=>(_cr.slotFiles[s.id]||[]).length>0).map(s=>({id:s.id,label:s.label,files:(_cr.slotFiles[s.id]||[]).map(f=>({name:f.name,size:f.size})),note:_cr.slotNotes[s.id]||''}));
   const users=DB.get('users')||[];
-  const sub={id:'CR-'+Date.now(),docNo:_cr.docNo,shop:d['cr-shopname']||'(ไม่ระบุ)',sales:UNAME,salesUid:UID,
+  const sub={id:'CR-'+Date.now(),docNo:_cr.docNo,shop:d['cr-shopname']||'(ไม่ระบุ)',sales:UNAME,salesUid:UID,createdByUid:UID,ownerSalesUid:ownerUid,ownerSalesName:ownerName,requestType,existingCust:d['cr-existing-cust']||'',driveLink:d['cr-drive-link']||'',externalEmails:d['cr-external-emails']||'',taxAddr:d['cr-tax-addr']||'',taxZip:d['cr-tax-zip']||'',
     phone:d['cr-phone']||'',taxid:d['cr-taxid']||'',crdays:d['cr-crdays']||'',price:priceType,
     date:ts,note,finalNote:d['cr-final-note']||'',approvers:_cr.selectedApprovers.map(uid=>{const u=users.find(x=>x.uid===uid)||{};return{uid,name:u.name||uid,role:u.role||'',status:'pending'};}),
     status:'pending',custcode:'',docs:docSnap,ts:Date.now()};
@@ -5479,13 +5614,17 @@ function crRenderApproveDetail(sub,el){
   el.innerHTML=`<div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📋 รายละเอียด ${sub.docNo}</div>
   <div class="cr-sr"><span style="color:var(--TX2)">🏪 ร้านค้า</span><span style="font-weight:600">${sub.shop}</span></div>
-  <div class="cr-sr"><span style="color:var(--TX2)">👤 Sales</span><span style="font-weight:600">${sub.sales}</span></div>
+  <div class="cr-sr"><span style="color:var(--TX2)">👤 ผู้กรอก</span><span style="font-weight:600">${sub.sales}</span></div>
+  <div class="cr-sr"><span style="color:var(--TX2)">Sales เจ้าของงาน</span><span style="font-weight:600">${sub.ownerSalesName||sub.sales||'—'}</span></div>
+  <div class="cr-sr"><span style="color:var(--TX2)">ประเภทคำขอ</span><span style="font-weight:600">${sub.requestType||'—'}</span></div>
+  <div class="cr-sr"><span style="color:var(--TX2)">ลูกค้าเดิม</span><span style="font-weight:600">${sub.existingCust||'—'}</span></div>
+  <div class="cr-sr"><span style="color:var(--TX2)">Drive</span><span style="font-weight:600">${sub.driveLink?`<a href="${esc(sub.driveLink)}" target="_blank">เปิดโฟลเดอร์</a>`:'—'}</span></div>
   <div class="cr-sr"><span style="color:var(--TX2)">📞 เบอร์โทร</span><span style="font-weight:600">${sub.phone||'—'}</span></div>
   <div class="cr-sr"><span style="color:var(--TX2)">🏷️ ราคา</span><span style="font-weight:600">${sub.price}</span></div>
   <div class="cr-sr"><span style="color:var(--TX2)">📅 วันที่ส่ง</span><span style="font-weight:600">${sub.date}</span></div>
 </div>
 ${workflowHtml}
-<div class="card"><div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📁 เอกสาร</div>${docsHtml}</div>
+<div class="card"><div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📁 เอกสาร</div>${docsHtml}${sub.externalEmails?`<button class="btn btn-sm btn-t" style="margin-top:10px" onclick="crMailExternal('${sub.id}')">ส่งอีเมลภายนอก</button>`:''}</div>
 ${sub.note?`<div class="card"><div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:6px">💬 หมายเหตุจาก Sales</div><div style="font-size:13px;color:var(--TX2)">${sub.note}</div></div>`:''}
 ${canAct?`<div class="card"><div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:8px">💬 ความเห็น</div><div class="field" style="margin-bottom:0"><textarea id="cr-apv-comment" placeholder="ระบุความเห็น..." style="height:56px"></textarea></div></div>
 <div style="display:flex;gap:7px;margin-top:12px">
@@ -5618,7 +5757,7 @@ function crConfirmWithWorkflow(wfLevels){
   }));
   const sub={
     id:'CR-'+Date.now(),docNo:_cr.docNo,shop:d['cr-shopname']||'(ไม่ระบุ)',
-    sales:UNAME,salesUid:UID,phone:d['cr-phone']||'',taxid:d['cr-taxid']||'',
+    sales:UNAME,salesUid:UID,createdByUid:UID,ownerSalesUid:ownerUid,ownerSalesName:ownerName,requestType,existingCust:d['cr-existing-cust']||'',driveLink:d['cr-drive-link']||'',externalEmails:d['cr-external-emails']||'',taxAddr:d['cr-tax-addr']||'',taxZip:d['cr-tax-zip']||'',phone:d['cr-phone']||'',taxid:d['cr-taxid']||'',
     crdays:d['cr-crdays']||'',price:priceType,date:ts,note:'',finalNote:d['cr-final-note']||'',
     levels,currentLevel:0,
     // backward compat: flat approvers list = all approvers from all levels
