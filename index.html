@@ -2849,7 +2849,7 @@ async function pgDash(){
   </div>
   <div class="cgrid c2">
     <div class="card"><div class="ch"><div class="ct2">ยอดขายจริง vs Forecast vs PO Plan</div></div><div class="cbox"><canvas id="c-main"></canvas></div></div>
-    <div class="card"><div class="ch"><div class="ct2">Top 8 SKU ยอดสูงสุด</div></div><div class="cbox"><canvas id="c-top"></canvas></div></div>
+    <div class="card"><div class="ch"><div class="ct2">Top 8 สินค้ายอดสูงสุด</div></div><div class="cbox"><canvas id="c-top"></canvas></div></div>
   </div>
   <div class="cgrid c2">
     <div class="card"><div class="ch"><div class="ct2">Stock vs ขั้นต่ำ</div></div><div class="cbox2"><canvas id="c-stk"></canvas></div></div>
@@ -2899,7 +2899,7 @@ function dashCharts(){
     {label:'Forecast (Sales)',data:fcData,backgroundColor:'rgba(10,89,64,.65)',borderRadius:4},
     {label:'PO Plan',data:poData,backgroundColor:'rgba(196,75,10,.65)',borderRadius:4},
   ],{scales:{y:{beginAtZero:true,title:{display:true,text:'กก.'}}}});
-  const topSKU=Object.entries(hist).filter(([k])=>skuAllowed(k)).map(([k,h])=>({k,n:h.name.substring(0,18),v:h.avg3})).sort((a,b)=>b.v-a.v).slice(0,8);
+  const topSKU=Object.entries(hist).filter(([k])=>skuAllowed(k)).map(([k,h])=>{const sk=skuI(k);const name=(h.name&&h.name!==k?h.name:sk.name)||k;return {k,n:name.substring(0,28),v:h.avg3};}).sort((a,b)=>b.v-a.v).slice(0,8);
   mkChart('c-top','bar',topSKU.map(s=>s.n),[{label:'เฉลี่ย/เดือน',data:topSKU.map(s=>s.v),backgroundColor:'rgba(65,43,138,.72)',borderRadius:4}],{indexAxis:'y',scales:{x:{beginAtZero:true}}});
   const stkE=Object.entries(stk).filter(([k])=>skuAllowed(k)).map(([k,s])=>({k,qty:s.qty,min:(ss[k]?.min_stock||50),name:(skuI(k).name||k).substring(0,16)})).sort((a,b)=>a.qty/a.min-b.qty/b.min).slice(0,8);
   mkChart('c-stk','bar',stkE.map(s=>s.name),[
@@ -3059,7 +3059,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
         const ratio=(Number(w)||0)/totalW;
         const grp=customerGroupForCode(code,_isConsiBranch(sp.branch)?'ฝากขาย':'อื่นๆ');
         const prof=getCustomerProfile({c:code,n:CUST_NAMES?.[code]||code,ty:_isConsiBranch(sp.branch)?'ฝากขาย':'ขายจริง',grp,slm:sp.slm});
-        return {...base,cust_code:code,cust_name:prof.n||code,cust_group:prof.corp||grp,category:prof.category,qty:qty*ratio,amount:qty*ratio};
+        return {...base,cust_code:code,cust_name:prof.n||code,cust_group:prof.corp||grp,category:prof.category,qty:qty*ratio,amount:amount*ratio};
       });
     });
   const modeRows=_salesRowsForMode(mapped,opts);
@@ -4799,9 +4799,9 @@ function _crSave(){
   const flds=['cr-shopname','cr-contact','cr-position','cr-phone','cr-email','cr-taxid','cr-branch','cr-addr','cr-zip',
     'cr-delplace','cr-receiver','cr-delphone','cr-deladdr','cr-route-bkk','cr-route-upc',
     'cr-disc','cr-crdays','cr-billdate','cr-detail','cr-cashday','cr-creditday','cr-sign-sales','cr-sign-mgr','cr-final-note',
-    'cr-inv-email-addr','cr-inv-post-addr','cr-inv-other-docs','cr-existing-cust','cr-sales-owner','cr-drive-link','cr-external-emails','cr-tax-addr','cr-tax-zip','cr-vat-reg-date'];
+    'cr-inv-email-addr','cr-inv-post-addr','cr-inv-other-docs','cr-existing-cust','cr-sales-owner','cr-drive-link','cr-external-emails','cr-tax-addr','cr-tax-zip','cr-vat-reg-date','cr-change-creditday'];
   flds.forEach(id=>{const e=document.getElementById(id);if(e)_cr.data[id]=e.value;});
-  const cbs=['cr-c-new','cr-c-branch','cr-c-contact','cr-c-cash','cr-c-credit','cr-c-change-cust-addr','cr-c-change-tax-addr','cr-c-change-info',
+  const cbs=['cr-c-new','cr-c-branch','cr-c-contact','cr-c-cash','cr-c-credit','cr-c-change-existing','cr-c-change-cust-addr','cr-c-change-credit','cr-c-change-tax-addr','cr-c-change-info',
     'cr-st-food','cr-st-bakery','cr-st-hotel','cr-st-hyper','cr-st-agent','cr-st-other',
     'cr-tr-bkk','cr-tr-upc','cr-del-near','cr-del-far','cr-del-box','cr-del-dry',
     'cr-pr-c','cr-pr-d','cr-pr-e','cr-pr-f','cr-pr-g','cr-pr-z','cr-pr-special','cr-pr-disc',
@@ -4884,8 +4884,15 @@ function crRender(){
 }
 
 function crRequestTypes(d=_cr.data){
-  const pairs=[['cr-c-new','ร้านค้าใหม่'],['cr-c-branch','เพิ่มสาขา'],['cr-c-contact','ลูกค้าติดต่อที่บริษัท'],['cr-c-cash','เงินสด'],['cr-c-credit','เครดิต'],['cr-c-change-cust-addr','เปลี่ยนที่อยู่ลูกค้า'],['cr-c-change-tax-addr','เปลี่ยนที่อยู่ใบกำกับภาษี'],['cr-c-change-info','เปลี่ยนแปลงข้อมูลลูกค้า']];
+  const pairs=[['cr-c-new','ร้านค้าใหม่'],['cr-c-branch','เพิ่มสาขา'],['cr-c-contact','ลูกค้าติดต่อที่บริษัท'],['cr-c-cash','เงินสด'],['cr-c-credit','เครดิต'],['cr-c-change-existing','เปลี่ยนแปลงข้อมูลลูกค้าเก่า'],['cr-c-change-cust-addr','เปลี่ยนที่อยู่จัดส่งลูกค้า'],['cr-c-change-credit','เปลี่ยนเครดิต'],['cr-c-change-tax-addr','เปลี่ยนที่อยู่ใบกำกับภาษี'],['cr-c-change-info','เปลี่ยนข้อมูลทั่วไป']];
   return pairs.filter(([id])=>d[id]).map(([,lbl])=>lbl).join(', ')||'—';
+}
+function crIsExistingChange(d=_cr.data){return !!(d['cr-c-change-existing']||d['cr-c-change-cust-addr']||d['cr-c-change-credit']||d['cr-c-change-tax-addr']||d['cr-c-change-info']||d['cr-existing-cust']);}
+function crToggleExistingChange(){_crSave();if(!_cr.data['cr-c-change-existing']){['cr-existing-cust','cr-c-change-cust-addr','cr-c-change-credit','cr-c-change-tax-addr','cr-c-change-info','cr-purpose'].forEach(k=>delete _cr.data[k]);}crRender();}
+function crIsChangeSub(s){return !!(s.existingCust||String(s.requestType||'').includes('เปลี่ยน'));}
+function crDocFileLink(f,label='เปิดไฟล์'){
+  if(f?.dataUrl)return '<a href="'+f.dataUrl+'" target="_blank" download="'+esc(f.name||'document')+'">'+label+'</a>';
+  return '<span style="color:var(--TX3)">ไม่มีลิงก์ไฟล์</span>';
 }
 function crSalesUsers(){return (DB.get('users')||[]).filter(u=>u.role==='sales'||u.role==='manager'||u.role==='superadmin');}
 function crSalesName(uid){const u=(DB.get('users')||[]).find(x=>x.uid===uid);return u?.name||uid||'—';}
@@ -4927,14 +4934,18 @@ function crRenderSummary(){
   let rows=crVisibleSubs();
   if(st)rows=rows.filter(s=>s.status===st);
   if(q)rows=rows.filter(s=>[s.docNo,s.shop,s.sales,s.ownerSalesName,s.requestType].join(' ').toLowerCase().includes(q));
-  const counts={all:rows.length,pending:rows.filter(s=>s.status==='pending').length,approved:rows.filter(s=>s.status==='approved').length,rejected:rows.filter(s=>s.status==='rejected').length};
+  const counts={all:rows.length,newOpen:rows.filter(s=>!crIsChangeSub(s)).length,changes:rows.filter(crIsChangeSub).length,pending:rows.filter(s=>s.status==='pending').length,approved:rows.filter(s=>s.status==='approved').length,rejected:rows.filter(s=>s.status==='rejected').length};
+  const bySales=[...rows.reduce((m,s)=>{const k=s.ownerSalesUid||s.salesUid||'unknown';const r=m.get(k)||{name:s.ownerSalesName||s.sales||'—',newOpen:0,changes:0,total:0};r.total++;if(crIsChangeSub(s))r.changes++;else r.newOpen++;m.set(k,r);return m;},new Map()).values()].sort((a,b)=>b.total-a.total);
   const stLbl={pending:'รออนุมัติ',approved:'อนุมัติแล้ว',rejected:'ไม่อนุมัติ'};
-  el.innerHTML=`<div class="krow" style="margin-bottom:10px"><div class="kpi b"><div class="kl">ทั้งหมด</div><div class="kv">${counts.all}</div></div><div class="kpi a"><div class="kl">รออนุมัติ</div><div class="kv">${counts.pending}</div></div><div class="kpi g"><div class="kl">อนุมัติแล้ว</div><div class="kv">${counts.approved}</div></div><div class="kpi r"><div class="kl">ไม่อนุมัติ</div><div class="kv">${counts.rejected}</div></div></div>
+  el.innerHTML=`<div class="krow" style="margin-bottom:10px"><div class="kpi b"><div class="kl">ทั้งหมด</div><div class="kv">${counts.all}</div></div><div class="kpi g"><div class="kl">เปิดบัญชีใหม่</div><div class="kv">${counts.newOpen}</div></div><div class="kpi a"><div class="kl">แก้ไขเปลี่ยนแปลง</div><div class="kv">${counts.changes}</div></div><div class="kpi r"><div class="kl">รออนุมัติ</div><div class="kv">${counts.pending}</div></div></div>
   <div class="frow" style="gap:8px;margin-bottom:10px"><input id="cr-sum-q" placeholder="ค้นหาเอกสาร/ลูกค้า/Sales" value="${esc(q)}" oninput="crRenderSummary()" style="width:260px;padding:7px 10px;border:1px solid var(--BD);border-radius:7px"><select id="cr-sum-st" class="btn btn-sm" onchange="crRenderSummary()"><option value="">ทุกสถานะ</option><option value="pending" ${st==='pending'?'selected':''}>รออนุมัติ</option><option value="approved" ${st==='approved'?'selected':''}>อนุมัติแล้ว</option><option value="rejected" ${st==='rejected'?'selected':''}>ไม่อนุมัติ</option></select></div>
-  <div class="card"><div class="ch"><div class="ct2">สรุปการลงทะเบียนลูกค้า</div><div style="font-size:11px;color:var(--TX3)">${ROLE==='sales'?'เฉพาะรายการของคุณ':'ดูได้ทุก Sales'}</div></div><div class="tw"><table><thead><tr><th>เลขที่</th><th>ลูกค้า</th><th>ประเภทคำขอ</th><th>Sales เจ้าของงาน</th><th>ผู้กรอก</th><th>สถานะ</th><th>Drive</th><th>วันที่</th><th>Action</th></tr></thead><tbody>${rows.map(s=>`<tr><td class="mono">${esc(s.docNo)}</td><td>${esc(s.shop||'')}</td><td>${esc(s.requestType||'—')}</td><td>${esc(s.ownerSalesName||s.sales||'')}</td><td>${esc(s.sales||'')}</td><td>${stLbl[s.status]||s.status}</td><td>${s.driveLink?`<a href="${esc(s.driveLink)}" target="_blank">เปิด Drive</a>`:'—'}</td><td style="font-size:11px;color:var(--TX3)">${esc(s.date||'')}</td><td><button class="btn btn-xs" onclick="crShowSummaryDetail('${s.id}')">ดู</button></td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--TX3);padding:18px">ไม่มีข้อมูล</td></tr>'}</tbody></table></div></div>`;
+  <div class="card"><div class="ch"><div class="ct2">สรุปตาม Sales</div><div style="font-size:11px;color:var(--TX3)">${ROLE==='sales'?'เฉพาะรายการของคุณ':'รวมทุก Sales ที่มีสิทธิ์เห็น'}</div></div><div class="tw"><table><thead><tr><th>Sales</th><th>เปิดบัญชีใหม่</th><th>แก้ไขเปลี่ยนแปลง</th><th>รวม</th></tr></thead><tbody>${bySales.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.newOpen}</td><td>${r.changes}</td><td>${r.total}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--TX3);padding:14px">ไม่มีข้อมูล</td></tr>'}</tbody></table></div></div>
+  <div class="card"><div class="ch"><div class="ct2">รายการลงทะเบียนลูกค้า</div><div style="font-size:11px;color:var(--TX3)">${ROLE==='sales'?'เฉพาะรายการของคุณ':'ดูได้ทุก Sales'}</div></div><div class="tw"><table><thead><tr><th>เลขที่</th><th>ลูกค้า</th><th>ประเภทคำขอ</th><th>Sales เจ้าของงาน</th><th>ผู้กรอก</th><th>สถานะ</th><th>เอกสาร</th><th>วันที่</th><th>Action</th></tr></thead><tbody>${rows.map(s=>`<tr><td class="mono">${esc(s.docNo)}</td><td>${esc(s.shop||'')}</td><td>${esc(s.requestType||'—')}</td><td>${esc(s.ownerSalesName||s.sales||'')}</td><td>${esc(s.sales||'')}</td><td>${stLbl[s.status]||s.status}</td><td>${(s.docs||[]).reduce((n,d)=>n+(d.files?.length||0),0)} ไฟล์</td><td style="font-size:11px;color:var(--TX3)">${esc(s.date||'')}</td><td><button class="btn btn-xs" onclick="crShowSummaryDetail('${s.id}')">ดู</button></td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--TX3);padding:18px">ไม่มีข้อมูล</td></tr>'}</tbody></table></div></div>`;
 }
 function crShowSummaryDetail(id){_cr.view='approve';_cr.viewSubId=id;pgCustReg();}
-function crSec0(){return`<div class="card">
+function crSec0(){
+  const isExistingChange=crIsExistingChange();
+  return`<div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">👤 ผู้บันทึกและเลขที่เอกสาร</div>
   <div class="cr-ro"><span class="cr-rl">ผู้บันทึก</span><span class="cr-rv">${UNAME}</span></div>
   <div class="cr-ro"><span class="cr-rl">เลขที่เอกสาร</span><span class="cr-rv">${_cr.docNo} <span class="badge bbl" style="font-size:10px">Auto</span></span></div>
@@ -4949,9 +4960,7 @@ function crSec0(){return`<div class="card">
     <label class="cr-cbi"><input type="checkbox" id="cr-c-contact" ${_crCk('cr-c-contact')}> ลูกค้าติดต่อที่บริษัท</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-c-cash" ${_crCk('cr-c-cash')}> เงินสด</label>
     <label class="cr-cbi"><input type="checkbox" id="cr-c-credit" ${_crCk('cr-c-credit')}> เครดิต</label>
-    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-cust-addr" ${_crCk('cr-c-change-cust-addr')}> เปลี่ยนที่อยู่ลูกค้า</label>
-    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-tax-addr" ${_crCk('cr-c-change-tax-addr')}> เปลี่ยนที่อยู่ใบกำกับภาษี</label>
-    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-info" ${_crCk('cr-c-change-info')}> เปลี่ยนข้อมูลลูกค้า</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-existing" onchange="crToggleExistingChange()" ${_crCk('cr-c-change-existing')}> เปลี่ยนแปลงข้อมูลลูกค้าเก่า</label>
   </div>
   <div class="cr-r2" style="margin-top:8px">
     <div class="cr-ri"><label>เงินสด</label><input type="number" id="cr-cashday" placeholder="0" value="${_crV('cr-cashday')}"><span style="font-size:12px;color:var(--TX3)">วัน</span></div>
@@ -4959,21 +4968,24 @@ function crSec0(){return`<div class="card">
   </div>
 </div>
 <div class="card">
-  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">👥 ลูกค้าเดิมและ Sales เจ้าของงาน</div>
+  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">👥 ลูกค้าและ Sales เจ้าของงาน</div>
   <div class="cr-r2">
-    <div class="field"><label>เลือกลูกค้าเดิมเมื่อเป็นการเปลี่ยนแปลง</label><select id="cr-existing-cust" onchange="crLoadExistingCustomer(this.value)">${crCustomerOptionHtml(_crV('cr-existing-cust'))}</select></div>
     <div class="field"><label>Sales เจ้าของงาน</label><select id="cr-sales-owner">${crSalesUsers().map(u=>`<option value="${esc(u.uid)}" ${(_crV('cr-sales-owner')||UID)===u.uid?'selected':''}>${esc(u.name)} (${esc(u.role||'')})</option>`).join('')}</select></div>
+    ${isExistingChange?`<div class="field"><label>เลือกลูกค้าเดิม</label><select id="cr-existing-cust" onchange="crLoadExistingCustomer(this.value)">${crCustomerOptionHtml(_crV('cr-existing-cust'))}</select></div>`:''}
   </div>
-</div><div class="card">
-  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">🔄 วัตถุประสงค์การแก้ไข</div>
+</div>${isExistingChange?`<div class="card">
+  <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">🔄 ข้อมูลที่ต้องการเปลี่ยน</div>
   <div class="cr-cb">
-    <label class="cr-cbi"><input type="radio" name="cr-purpose" value="change-name" ${_crV('cr-purpose')==='change-name'?'checked':''}> เปลี่ยนชื่อร้านค้า</label>
-    <label class="cr-cbi"><input type="radio" name="cr-purpose" value="change-cond" ${_crV('cr-purpose')==='change-cond'?'checked':''}> เปลี่ยนเงื่อนไข</label>
-    <label class="cr-cbi"><input type="radio" name="cr-purpose" value="change-price" ${_crV('cr-purpose')==='change-price'?'checked':''}> เปลี่ยนฐานราคา</label>
-    <label class="cr-cbi"><input type="radio" name="cr-purpose" value="eff-date" ${_crV('cr-purpose')==='eff-date'?'checked':''}> วันที่มีผล</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-cust-addr" ${_crCk('cr-c-change-cust-addr')}> เปลี่ยนที่อยู่จัดส่งลูกค้า</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-credit" ${_crCk('cr-c-change-credit')}> เปลี่ยนเครดิต</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-tax-addr" ${_crCk('cr-c-change-tax-addr')}> เปลี่ยนที่อยู่ใบกำกับภาษี</label>
+    <label class="cr-cbi"><input type="checkbox" id="cr-c-change-info" ${_crCk('cr-c-change-info')}> เปลี่ยนข้อมูลทั่วไป</label>
   </div>
-  <div class="field" style="margin-top:8px;margin-bottom:0"><label>รายละเอียดเพิ่มเติม</label><textarea id="cr-detail" placeholder="ระบุรายละเอียด...">${_crV('cr-detail')}</textarea></div>
-</div>
+  <div class="cr-r2" style="margin-top:8px">
+    <div class="cr-ri"><label>เครดิตใหม่</label><input type="number" id="cr-change-creditday" placeholder="0" value="${_crV('cr-change-creditday')}"><span style="font-size:12px;color:var(--TX3)">วัน</span></div>
+    <div class="field" style="margin-bottom:0"><label>รายละเอียดเพิ่มเติม</label><textarea id="cr-detail" placeholder="ระบุรายละเอียดที่ต้องการแก้ไข...">${_crV('cr-detail')}</textarea></div>
+  </div>
+</div>`:''}
 <div style="display:flex;gap:7px;margin-top:12px">
   <button class="btn btn-g" style="flex:1;padding:10px;justify-content:center" onclick="crNext()">ถัดไป →</button>
 </div>`;}
@@ -5144,9 +5156,9 @@ function crSec4(){
 </div>
 <div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">🔗 Google Drive และผู้อนุมัติภายนอก</div>
-  <div class="field"><label>ลิงก์โฟลเดอร์ Google Drive ของลูกค้า</label><input type="url" id="cr-drive-link" placeholder="https://drive.google.com/drive/folders/..." value="${_crV('cr-drive-link')}"></div>
+  <div class="field"><label>ลิงก์โฟลเดอร์เอกสารของลูกค้า (ไม่บังคับ)</label><input type="url" id="cr-drive-link" placeholder="ถ้ามี Google Drive / SharePoint ให้ใส่เพิ่มได้" value="${_crV('cr-drive-link')}"></div>
   <div class="field" style="margin-bottom:0"><label>อีเมลผู้อนุมัติภายนอก / บัญชี</label><input type="text" id="cr-external-emails" placeholder="account@example.com; external@example.com" value="${_crV('cr-external-emails')}"></div>
-  <div style="font-size:11px;color:var(--TX3);margin-top:7px">วางลิงก์ไฟล์ Drive ในหมายเหตุของแต่ละเอกสารได้ ระบบจะแนบลิงก์ไปในอีเมลอนุมัติ</div>
+  <div style="font-size:11px;color:var(--TX3);margin-top:7px">ไฟล์ที่อัปโหลดในช่องด้านล่างจะถูกแนบเป็นลิงก์ในรายการอนุมัติและอีเมล ไม่ต้องอัปโหลดแยกอีกครั้ง</div>
 </div><div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📄 เอกสารลูกค้า / ร้านค้า</div>
   <div id="cr-slots-main"></div>
@@ -5180,7 +5192,7 @@ function crRenderSlot(s){
     const isPdf=ext==='pdf';const isImg=['jpg','jpeg','png','gif','webp','heic'].includes(ext);
     const bg=isPdf?'var(--LY)':isImg?'var(--LG)':'var(--LBL)';
     const sz=f.size>1048576?(f.size/1048576).toFixed(1)+'MB':(f.size/1024).toFixed(0)+'KB';
-    return`<div class="cr-fi"><div class="cr-ft" style="background:${bg}">${isPdf?'📄':isImg?'🖼️':'📎'}</div><span style="flex:1;font-size:12px;color:var(--TX2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span><span style="font-size:11px;color:var(--TX3);flex-shrink:0">${sz}</span><span onclick="crDelFile('${s.id}',${i})" style="cursor:pointer;color:var(--TX3);padding:2px 4px" title="ลบ">✕</span></div>`;
+    return`<div class="cr-fi"><div class="cr-ft" style="background:${bg}">${isPdf?'📄':isImg?'🖼️':'📎'}</div><span style="flex:1;font-size:12px;color:var(--TX2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span><span style="font-size:11px;color:var(--TX3);flex-shrink:0">${sz}</span><span style="font-size:11px;flex-shrink:0">${crDocFileLink(f)}</span><span onclick="crDelFile('${s.id}',${i})" style="cursor:pointer;color:var(--TX3);padding:2px 4px" title="ลบ">✕</span></div>`;
   }).join('');
   return`<div class="cr-slot" id="crslot-${s.id}">
   <div class="cr-slot-h" onclick="crToggleSlot('${s.id}')">
@@ -5203,11 +5215,17 @@ function crTrigUpload(slotId){
   _cr.currentSlot=slotId;
   const fi=document.getElementById('cr-file-inp');fi.value='';fi.onchange=crHandleFiles;fi.click();
 }
-function crHandleFiles(e){
+function crReadFileDataUrl(f){return new Promise((ok,rej)=>{const r=new FileReader();r.onload=e=>ok(e.target.result);r.onerror=rej;r.readAsDataURL(f);});}
+async function crHandleFiles(e){
   const files=Array.from(e.target.files);
   const slot=CR_DOC_SLOTS.find(s=>s.id===_cr.currentSlot);if(!slot)return;
   const rem=slot.maxFiles-(_cr.slotFiles[_cr.currentSlot]||[]).length;
-  files.slice(0,rem).forEach(f=>{_cr.slotFiles[_cr.currentSlot].push({name:f.name,size:f.size,type:f.type});_cr.fileRefs[_cr.currentSlot].push(f);});
+  for(const f of files.slice(0,rem)){
+    let dataUrl='';
+    try{dataUrl=await crReadFileDataUrl(f);}catch(err){console.warn('read file failed',err);}
+    _cr.slotFiles[_cr.currentSlot].push({name:f.name,size:f.size,type:f.type,dataUrl});
+    _cr.fileRefs[_cr.currentSlot].push(f);
+  }
   _cr.openSlots[_cr.currentSlot]=true;e.target.value='';crRenderDocSlots();
 }
 function crDelFile(slotId,idx){_cr.slotFiles[slotId].splice(idx,1);_cr.fileRefs[slotId].splice(idx,1);_cr.openSlots[slotId]=true;crRenderDocSlots();}
@@ -5450,7 +5468,7 @@ function crSec5(){
   const regType=crCkList([['cr-c-new','ร้านค้าใหม่'],['cr-c-branch','เพิ่มสาขา'],['cr-c-contact','ลูกค้าติดต่อที่บริษัท'],['cr-c-cash','เงินสด'],['cr-c-credit','เครดิต']]);
   const storeType=crCkList([['cr-st-food','ร้านอาหาร'],['cr-st-bakery','เบเกอรี่'],['cr-st-hotel','โรงแรม'],['cr-st-hyper','ไฮเปอร์มาร์เกต'],['cr-st-agent','เอเย่นต์'],['cr-st-other','อื่นๆ']]);
   const priceType=crCkList([['cr-pr-c','C'],['cr-pr-d','D'],['cr-pr-e','E'],['cr-pr-f','F'],['cr-pr-g','G'],['cr-pr-z','Z'],['cr-pr-special','พิเศษ']]);
-  const docsHtml=CR_DOC_SLOTS.filter(s=>(_cr.slotFiles[s.id]||[]).length>0).map(s=>`<div class="cr-sr"><span style="color:var(--TX2)">📄 ${s.label}</span><span style="font-weight:600">${_cr.slotFiles[s.id].length} ไฟล์</span></div>`).join('')||`<div style="font-size:12px;color:var(--TX3)">ไม่มีเอกสาร</div>`;
+  const docsHtml=CR_DOC_SLOTS.filter(s=>(_cr.slotFiles[s.id]||[]).length>0).map(s=>`<div class="cr-sr"><span style="color:var(--TX2)">📄 ${s.label}</span><span style="font-weight:600">${_cr.slotFiles[s.id].length} ไฟล์ · ${_cr.slotFiles[s.id].map((f,i)=>crDocFileLink(f,'ไฟล์ '+(i+1))).join(' · ')}</span></div>`).join('')||`<div style="font-size:12px;color:var(--TX3)">ไม่มีเอกสาร</div>`;
   return`<div style="background:var(--LBL);border:1px solid var(--BD);border-radius:8px;padding:7px 11px;font-size:12px;color:var(--BL);margin-bottom:12px">ℹ️ ตรวจสอบก่อนส่งอนุมัติ — วันที่จะถูกบันทึกอัตโนมัติเมื่อส่ง</div>
 <div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📋 ข้อมูลทั่วไป</div>
@@ -5528,8 +5546,9 @@ function crConfirmApproval(){
   const note=document.getElementById('cr-apv-note')?.value||'';
   const d=_cr.data;
   const priceType=[['cr-pr-c','C'],['cr-pr-d','D'],['cr-pr-e','E'],['cr-pr-f','F'],['cr-pr-g','G'],['cr-pr-z','Z'],['cr-pr-special','พิเศษ']].filter(([id])=>d[id]).map(([,lbl])=>lbl).join(', ')||'—';
-  const docSnap=CR_DOC_SLOTS.filter(s=>(_cr.slotFiles[s.id]||[]).length>0).map(s=>({id:s.id,label:s.label,files:(_cr.slotFiles[s.id]||[]).map(f=>({name:f.name,size:f.size})),note:_cr.slotNotes[s.id]||''}));
+  const docSnap=CR_DOC_SLOTS.filter(s=>(_cr.slotFiles[s.id]||[]).length>0).map(s=>({id:s.id,label:s.label,files:(_cr.slotFiles[s.id]||[]).map(f=>({name:f.name,size:f.size,type:f.type||'',dataUrl:f.dataUrl||''})),note:_cr.slotNotes[s.id]||''}));
   const users=DB.get('users')||[];
+  const ownerUid=crOwnerUid(),ownerName=crSalesName(ownerUid),requestType=crRequestTypes(d);
   const sub={id:'CR-'+Date.now(),docNo:_cr.docNo,shop:d['cr-shopname']||'(ไม่ระบุ)',sales:UNAME,salesUid:UID,createdByUid:UID,ownerSalesUid:ownerUid,ownerSalesName:ownerName,requestType,existingCust:d['cr-existing-cust']||'',driveLink:d['cr-drive-link']||'',externalEmails:d['cr-external-emails']||'',taxAddr:d['cr-tax-addr']||'',taxZip:d['cr-tax-zip']||'',
     phone:d['cr-phone']||'',taxid:d['cr-taxid']||'',crdays:d['cr-crdays']||'',price:priceType,
     date:ts,note,finalNote:d['cr-final-note']||'',approvers:_cr.selectedApprovers.map(uid=>{const u=users.find(x=>x.uid===uid)||{};return{uid,name:u.name||uid,role:u.role||'',status:'pending'};}),
@@ -5572,7 +5591,7 @@ function crRenderApprove(){
 </div>`;}
 function crShowDetail(id){_cr.viewSubId=id;crRenderApprove();}
 function crRenderApproveDetail(sub,el){
-  const docsHtml=sub.docs&&sub.docs.length?sub.docs.map(d=>`<div class="cr-sr"><span style="color:var(--TX2)">📄 ${d.label}</span><span style="font-weight:600">${d.files.length} ไฟล์${d.note?' — '+d.note:''}</span></div>`).join(''):`<div style="font-size:12px;color:var(--TX3)">ไม่มีเอกสาร</div>`;
+  const docsHtml=sub.docs&&sub.docs.length?sub.docs.map(d=>`<div class="cr-sr"><span style="color:var(--TX2)">📄 ${d.label}</span><span style="font-weight:600">${d.files.length} ไฟล์${d.files?.length?' · '+d.files.map((f,i)=>crDocFileLink(f,'ไฟล์ '+(i+1))).join(' · '):''}${d.note?' — '+d.note:''}</span></div>`).join(''):`<div style="font-size:12px;color:var(--TX3)">ไม่มีเอกสาร</div>`;
 
   // Multi-level workflow UI
   let workflowHtml='';
@@ -5748,8 +5767,9 @@ function crOpenApproval(){
 function crConfirmWithWorkflow(wfLevels){
   const d=_cr.data;
   const priceType=[['cr-pr-c','C'],['cr-pr-d','D'],['cr-pr-e','E'],['cr-pr-f','F'],['cr-pr-g','G'],['cr-pr-z','Z'],['cr-pr-special','พิเศษ']].filter(([id])=>d[id]).map(([,lbl])=>lbl).join(', ')||'—';
-  const docSnap=CR_DOC_SLOTS.filter(s=>(_cr.slotFiles[s.id]||[]).length>0).map(s=>({id:s.id,label:s.label,files:(_cr.slotFiles[s.id]||[]).map(f=>({name:f.name,size:f.size})),note:_cr.slotNotes[s.id]||''}));
+  const docSnap=CR_DOC_SLOTS.filter(s=>(_cr.slotFiles[s.id]||[]).length>0).map(s=>({id:s.id,label:s.label,files:(_cr.slotFiles[s.id]||[]).map(f=>({name:f.name,size:f.size,type:f.type||'',dataUrl:f.dataUrl||''})),note:_cr.slotNotes[s.id]||''}));
   const ts=new Date().toLocaleString('th-TH',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const ownerUid=crOwnerUid(),ownerName=crSalesName(ownerUid),requestType=crRequestTypes(d);
   // Clone levels with pending status
   const levels=wfLevels.map((lv,i)=>({
     id:lv.id,label:lv.label||`ขั้น ${i+1}`,mode:lv.mode||'any',
@@ -6952,6 +6972,9 @@ function expFcDoc(custCode, month) {
 </script>
 </body>
 </html>
+
+
+
 
 
 
