@@ -237,6 +237,9 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 .crit-cb{display:flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--BD);border-radius:20px;cursor:pointer;font-size:12.5px;background:var(--W);transition:.12s}
 .crit-cb:hover{background:var(--bg2)}.crit-cb.sel{background:var(--LBL);border-color:var(--BL);color:var(--BL);font-weight:600}
 .crit-cb input{accent-color:var(--BL);margin:0}
+.cr-ocr-ok{background:var(--LG);border-radius:7px;padding:8px 11px;font-size:12px;color:var(--G);display:flex;align-items:center;gap:6px;margin-top:8px}
+@keyframes ocrSpin{to{transform:rotate(360deg)}}
+.ocr-spin{width:22px;height:22px;border:2.5px solid var(--BD);border-top-color:var(--BL);border-radius:50%;animation:ocrSpin .7s linear infinite;margin:0 auto 7px}
 </style>
 </head>
 <body>
@@ -288,11 +291,13 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
   <div class="mbox" id="modal-box" onclick="event.stopPropagation()"></div>
 </div>
 <input type="file" id="cr-file-inp" style="display:none" multiple>
+<input type="file" id="cr-ocr-inp" style="display:none" accept="image/*,.pdf">
 
 <script>
 // ── CONFIG (แก้ค่านี้) ────────────────────────────────────────────
 const SUPABASE_URL      = 'https://wjhqvjlcshwnrukbdlgr.supabase.co';   // ← Project URL
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqaHF2amxjc2h3bnJ1a2JkbGdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTg4MDcsImV4cCI6MjA5MzQ5NDgwN30.5Px3wsyf4DtZL6TfMqaF5uyTBNo8axrmdbOrZsuYIMY'; // ← anon key
+const VISION_API_KEY    = 'AIzaSyBRhT3jP7rgAwk_L3Qy5br0AnAOInZFoUY';   // ← Google Vision (OCR)
 
 // ── INIT ──────────────────────────────────────────────────────────
 // ต้องมี <script src="supabase-js@2"><\/script> วางใน <head> ก่อน script block นี้
@@ -2922,11 +2927,27 @@ function _salesRowsForMode(rows,{includeConsi=false}={}){
   });
 }
 async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
-  let q=getSupabaseClient().from('sales_history').select('*,products(name,group_name)').gte('ym',startYm).lte('ym',endYm).order('ym');
-  const {data,error}=await q;
-  if(error) throw error;
+  // Paginate to bypass Supabase 1000-row default limit (sales_history has 30k+ rows)
+  const PAGE=1000;
+  let allData=[];
+  let from=0;
+  while(true){
+    const {data,error}=await getSupabaseClient()
+      .from('sales_history')
+      .select('slm_id,sku,ym,qty,amount')
+      .gte('ym',startYm).lte('ym',endYm)
+      .order('ym')
+      .range(from,from+PAGE-1);
+    if(error) throw error;
+    allData=allData.concat(data||[]);
+    if(!data||data.length<PAGE) break;
+    from+=PAGE;
+  }
+  // Separate products lookup (avoids FK join overhead; uses cache)
+  const products=await CACHE.get('products',()=>SB.getProducts());
+  const prodMap=Object.fromEntries((products||[]).map(p=>[String(p.code||p.sku||''),p]));
   const names=_salesNameMap();
-  const mapped=(data||[])
+  const mapped=(allData)
     .filter(r=>r.slm_id)
     .flatMap(r=>{
       const sp=_splitBranchSlm(r.slm_id);
@@ -2934,6 +2955,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
       const name=names[sp.slm]||names[sp.raw]||(isAll?'ทั้งหมด':sp.slm);
       const qty=Number(r.qty ?? r.quantity ?? 0)||0;
       const amount=Number(r.amount ?? r.total ?? r.sales_amount ?? r.net_amount ?? r.value ?? 0)||0;
+      const prod=prodMap[r.sku]||{};
       const base={
     branch:sp.branch,
     prefixed:sp.prefixed,
@@ -2944,9 +2966,9 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     cust_code:`SLM-${sp.raw}`,
     cust_name:name||`Sales ${sp.slm}`,
     cust_group:_isConsiBranch(sp.branch)?'ฝากขาย':'ขายจริง',
-    prod_group:productGroupForSku(r.sku,r.products?.group_name||'อื่นๆ'),
+    prod_group:productGroupForSku(r.sku,prod.group_name||'อื่นๆ'),
     prod_code:r.sku,
-    prod_name:r.products?.name||r.sku,
+    prod_name:prod.name||r.sku,
     qty,
     amount: amount || qty,
     ym:r.ym,
@@ -4803,7 +4825,20 @@ function crSec0(){return`<div class="card">
   <button class="btn btn-g" style="flex:1;padding:10px;justify-content:center" onclick="crNext()">ถัดไป →</button>
 </div>`;}
 
-function crSec1(){return`<div class="card">
+function crSec1(){return`<div class="card" style="border:1.5px dashed var(--BL);background:var(--LBL)">
+  <div style="font-size:13px;font-weight:700;color:var(--BL);margin-bottom:6px;display:flex;align-items:center;gap:8px">
+    📖 กรอกข้อมูลอัตโนมัติจากหนังสือรับรองบริษัท
+    <span style="font-size:10px;background:var(--BL);color:#fff;padding:1px 7px;border-radius:99px">AI</span>
+  </div>
+  <div style="font-size:12px;color:var(--TX2);margin-bottom:10px">อัปโหลดหนังสือรับรองบริษัทหรือทะเบียนพาณิชย์ — ระบบจะอ่านและกรอกฟอร์มให้อัตโนมัติ (ไม่บังคับ)</div>
+  <div class="cr-uz" id="cr-ocr-dz" onclick="crOcrTrigger()" style="border-color:var(--BL)">
+    <div style="font-size:24px;margin-bottom:4px">📄</div>
+    <div style="font-size:12px;color:var(--TX2)">กดเพื่ออัปโหลดหนังสือรับรอง</div>
+    <div style="font-size:11px;color:var(--TX3);margin-top:3px">JPG · PNG · PDF · อ่านด้วย Google Vision AI</div>
+  </div>
+  <div id="cr-ocr-result" style="display:none"></div>
+</div>
+<div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">🏪 ข้อมูลร้านค้า / ลูกค้า</div>
   <div class="field"><label>ชื่อร้าน / ลูกค้า <span style="color:var(--R);font-size:11px">*</span></label><input type="text" id="cr-shopname" placeholder="ชื่อร้านหรือชื่อลูกค้า" value="${_crV('cr-shopname')}"></div>
   <div class="cr-r2">
@@ -5013,6 +5048,118 @@ function crHandleFiles(e){
   _cr.openSlots[_cr.currentSlot]=true;e.target.value='';crRenderDocSlots();
 }
 function crDelFile(slotId,idx){_cr.slotFiles[slotId].splice(idx,1);_cr.fileRefs[slotId].splice(idx,1);_cr.openSlots[slotId]=true;crRenderDocSlots();}
+
+// ── OCR: อ่านหนังสือรับรองบริษัทอัตโนมัติ ────────────────────────────
+let _crOcrParsed=null;
+
+async function _crOcrSend(file){
+  const b64=await new Promise((ok,rej)=>{const r=new FileReader();r.onload=e=>ok(e.target.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file);});
+  if(file.type==='application/pdf'){
+    const body={requests:[{inputConfig:{content:b64,mimeType:'application/pdf'},features:[{type:'DOCUMENT_TEXT_DETECTION'}],pages:[1]}]};
+    const r=await fetch(`https://vision.googleapis.com/v1/files:annotate?key=${VISION_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||'Vision API error');}
+    const d=await r.json();
+    return(d.responses?.[0]?.responses||[]).map(x=>x.fullTextAnnotation?.text||'').join('\n');
+  }
+  const body={requests:[{image:{content:b64},features:[{type:'DOCUMENT_TEXT_DETECTION'}],imageContext:{languageHints:['th','en']}}]};
+  const r=await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||'Vision API error');}
+  const d=await r.json();
+  return d.responses?.[0]?.fullTextAnnotation?.text||'';
+}
+
+function _crParseCert(text){
+  const out={};
+  // ชื่อบริษัท / ห้างฯ
+  const compM=text.match(/บริษัท\s+([\s\S]+?)\s+จำกัด/);
+  if(compM) out.shopname='บริษัท '+compM[1].replace(/\s+/g,' ').trim()+' จำกัด';
+  else{
+    const hM=text.match(/ห้างหุ้นส่วน(?:จำกัด)?\s+([\s\S]+?)(?=\n|\(|จำกัด)/);
+    if(hM) out.shopname=('ห้างหุ้นส่วนจำกัด '+hM[1]).replace(/\s+/g,' ').trim();
+    else{const rM=text.match(/ร้าน\s+(.+?)(?:\n|$)/);if(rM) out.shopname=rM[0].replace(/\s+/g,' ').trim();}
+  }
+  // เลขทะเบียนนิติบุคคล 13 หลัก
+  const tL=text.match(/(?:เลขทะเบียน(?:นิติบุคคล)?|เลขประจำตัวผู้เสียภาษีอากร|ทะเบียนเลขที่)[^\d]*(\d[\d\s\-]{11,17})/);
+  if(tL) out.taxid=tL[1].replace(/[\s\-]/g,'').slice(0,13);
+  else{const bare=text.match(/\b(\d{13})\b/);if(bare) out.taxid=bare[1];}
+  // ที่อยู่สำนักงานใหญ่
+  const addrM=text.match(/(?:ที่ตั้ง(?:สำนักงานใหญ่)?|ที่อยู่(?:สำนักงาน)?)\s*[:\n]?\s*([\s\S]+?)(?=\n(?:เลข|ทะเบียน|วัน|จด|ได้|กรรม|หนังสือ|ทุน|\n)|$)/m);
+  if(addrM) out.addr=addrM[1].replace(/\n/g,' ').replace(/\s+/g,' ').trim().slice(0,250);
+  // รหัสไปรษณีย์
+  const zips=[...text.matchAll(/\b(\d{5})\b/g)].map(m=>m[1]).filter(z=>z!=='00000'&&z!=='00001');
+  if(zips.length) out.zip=zips[zips.length-1];
+  // กรรมการ (contact)
+  const dirM=text.match(/(?:กรรมการผู้มีอำนาจ|กรรมการ)[^\n]*\n\s*([ก-๙a-zA-Z\s\.]+?)(?:\n|$)/);
+  if(dirM){const n=dirM[1].replace(/\s+/g,' ').trim();if(n.length>2&&n.length<60) out.contact=n;}
+  return out;
+}
+
+function crOcrTrigger(){
+  const inp=document.getElementById('cr-ocr-inp');
+  inp.value='';inp.onchange=crOcrHandleFile;inp.click();
+}
+
+async function crOcrHandleFile(e){
+  const file=e.target.files[0];if(!file)return;
+  const dz=document.getElementById('cr-ocr-dz');
+  const res=document.getElementById('cr-ocr-result');
+  if(!dz||!res)return;
+  dz.onclick=null;
+  dz.innerHTML=`<div class="ocr-spin"></div><div style="font-size:12px;color:var(--TX2)">กำลังอ่านข้อมูลด้วย AI...</div>`;
+  res.style.display='none';
+  try{
+    const text=await _crOcrSend(file);
+    if(!text.trim()) throw new Error('ไม่พบข้อความในเอกสาร — กรุณาใช้ไฟล์ที่ชัดเจนกว่านี้');
+    _crOcrParsed=_crParseCert(text);
+    const fields=[
+      {id:'cr-shopname',label:'ชื่อร้าน / บริษัท',val:_crOcrParsed.shopname},
+      {id:'cr-taxid',label:'เลขผู้เสียภาษี',val:_crOcrParsed.taxid},
+      {id:'cr-contact',label:'ผู้ติดต่อ (กรรมการ)',val:_crOcrParsed.contact},
+      {id:'cr-addr',label:'ที่อยู่',val:_crOcrParsed.addr},
+      {id:'cr-zip',label:'รหัสไปรษณีย์',val:_crOcrParsed.zip},
+    ].filter(f=>f.val);
+    dz.innerHTML=`<div style="text-align:center;padding:6px 0;font-size:12px;color:var(--G)">✅ อ่านสำเร็จ — ${esc(file.name)} <span onclick="crOcrRetry()" style="cursor:pointer;color:var(--TX3);margin-left:8px;font-size:11px">เปลี่ยนไฟล์</span></div>`;
+    if(!fields.length){
+      res.style.display='block';
+      res.innerHTML=`<div style="font-size:12px;color:var(--A);padding:8px 0">⚠️ อ่านข้อความได้แต่ไม่พบข้อมูลที่ต้องการ — ลองใช้รูปที่ชัดกว่า หรือกรอกด้วยตนเอง</div>`;
+      return;
+    }
+    res.style.display='block';
+    res.innerHTML=`<div style="border-top:1px solid var(--BD);margin-top:8px;padding-top:10px">
+      <div style="font-size:12px;font-weight:600;color:var(--TX);margin-bottom:7px">ข้อมูลที่อ่านได้ — ตรวจสอบก่อนกรอก</div>
+      ${fields.map(f=>`<div style="display:flex;gap:6px;margin-bottom:5px;font-size:12px;align-items:flex-start">
+        <span style="color:var(--TX3);min-width:130px;flex-shrink:0">${f.label}</span>
+        <span style="color:var(--TX);font-weight:500;word-break:break-all">${esc(f.val)}</span>
+      </div>`).join('')}
+      <button class="btn btn-t" style="margin-top:10px;width:100%;justify-content:center" onclick="crOcrApply()">✅ กรอกข้อมูลอัตโนมัติ ${fields.length} ช่อง</button>
+    </div>`;
+  }catch(err){
+    dz.innerHTML=`<div onclick="crOcrTrigger()" style="cursor:pointer;text-align:center;padding:10px 0"><div style="font-size:18px;margin-bottom:4px">⚠️</div><div style="font-size:12px;color:var(--R)">${esc(err.message)}</div><div style="font-size:11px;color:var(--TX3);margin-top:4px">กดเพื่อลองใหม่</div></div>`;
+    dz.onclick=crOcrTrigger;
+  }
+}
+
+function crOcrApply(){
+  if(!_crOcrParsed)return;
+  const map={shopname:'cr-shopname',taxid:'cr-taxid',contact:'cr-contact',addr:'cr-addr',zip:'cr-zip'};
+  let filled=0;
+  Object.entries(map).forEach(([key,id])=>{
+    const val=_crOcrParsed[key];if(!val)return;
+    const el=document.getElementById(id);
+    if(el){el.value=val;_cr.data[id]=val;filled++;}
+  });
+  toast(`กรอกอัตโนมัติ ${filled} ช่อง ✓`);
+  const res=document.getElementById('cr-ocr-result');
+  if(res) res.innerHTML=`<div class="cr-ocr-ok">✅ กรอกข้อมูลแล้ว — ตรวจสอบและแก้ไขในฟอร์มด้านล่างได้เลย <button onclick="crOcrRetry()" style="margin-left:auto;background:none;border:none;color:var(--TX3);cursor:pointer;font-size:11px;padding:0">เปลี่ยนไฟล์</button></div>`;
+}
+
+function crOcrRetry(){
+  _crOcrParsed=null;
+  const dz=document.getElementById('cr-ocr-dz');
+  const res=document.getElementById('cr-ocr-result');
+  if(dz){dz.innerHTML=`<div style="font-size:22px;margin-bottom:4px">📄</div><div style="font-size:12px;color:var(--TX2)">กดเพื่ออัปโหลดหนังสือรับรอง</div><div style="font-size:11px;color:var(--TX3);margin-top:3px">JPG · PNG · PDF · อ่านด้วย Google Vision AI</div>`;dz.onclick=crOcrTrigger;}
+  if(res){res.style.display='none';res.innerHTML='';}
+}
 
 function crSec5(){
   const d=_cr.data;
