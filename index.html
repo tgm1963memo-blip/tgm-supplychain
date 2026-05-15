@@ -66,6 +66,8 @@ td.r{text-align:right;font-variant-numeric:tabular-nums}
 .kpi.p{border-left:3px solid var(--P)}.kpi.p .kv{color:var(--P)}
 .kpi.t{border-left:3px solid var(--T)}.kpi.t .kv{color:var(--T)}
 .tw{overflow-x:auto;border:1px solid var(--BD);border-radius:8px}
+.tw.tw-scroll{max-height:calc(100vh - 330px);min-height:220px;overflow:auto;-webkit-overflow-scrolling:touch}
+.tw.tw-scroll table{min-width:860px}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:400px}
 th{background:var(--bg2);padding:8px 12px;text-align:left;font-weight:600;font-size:11.5px;color:var(--TX2);border-bottom:1px solid var(--BD);white-space:nowrap;position:sticky;top:0;z-index:1}
 td{padding:8px 12px;border-bottom:1px solid var(--bg2);vertical-align:middle}
@@ -418,12 +420,22 @@ const SB = {
   // PRODUCTS / SKU
   // ──────────────────────────────
   async getProducts() {
-    const { data } = await getSupabaseClient()
-      .from('products')
-      .select('*')
-      .eq('is_active', true)
-      .order('code');
-    return data || [];
+    const pageSize = 1000;
+    let from = 0;
+    let rows = [];
+    while (true) {
+      const { data, error } = await getSupabaseClient()
+        .from('products')
+        .select('*')
+        .eq('is_active', true)
+        .order('code')
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      rows = rows.concat(data || []);
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
+    }
+    return rows;
   },
 
   // ──────────────────────────────
@@ -2471,24 +2483,41 @@ function expAudit() {
 // ════════════════════════════════════════════════
 // pgUsers() — จัดการผู้ใช้จาก localStorage
 // ════════════════════════════════════════════════
+function userRoleDefs(){
+  const roles=typeof _getRoles==='function'?_getRoles():{};
+  return {superadmin:{label:'Super Admin',pages:(ALL_NAV_PAGES||[]).map(p=>p.id)},...roles};
+}
+function userRoleLabel(role){
+  return userRoleDefs()[role]?.label||role||'';
+}
+function userRoleOptions(selected=''){
+  return Object.entries(userRoleDefs()).map(([k,r])=>`<option value="${esc(k)}" ${String(selected)===String(k)?'selected':''}>${esc(r.label||k)}</option>`).join('');
+}
 function pgUsers() {
   const ROLE_BADGE = {superadmin:'bbr',manager:'bba',planning:'bbl',warehouse:'bbg',sales:'bbp'};
-  const ROLE_LABEL = {superadmin:'Super Admin',manager:'Manager',planning:'Planning',warehouse:'Warehouse',sales:'Sales'};
   const users = DB.get('users') || [];
   document.getElementById('ct').innerHTML = `
   <div class="ch" style="margin-bottom:14px">
-    <div class="ct2">ผู้ใช้ทั้งหมด (${users.length})</div>
-    <button class="btn btn-sm btn-p" onclick="showAddUser()">+ เพิ่มผู้ใช้</button>
+    <div>
+      <div class="ct2">ผู้ใช้ทั้งหมด (${users.length})</div>
+      <div style="font-size:12px;color:var(--TX3)">Role ใช้ชุดเดียวกับหน้า "สิทธิ์การใช้งาน" และมีผลกับเมนูหลัง Login ใหม่</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="_permTab='roles';nav('perms')">จัดการ Role</button>
+      <button class="btn btn-sm btn-p" onclick="showAddUser()">+ เพิ่มผู้ใช้</button>
+    </div>
   </div>
-  <div class="card"><div class="tw"><table>
-    <thead><tr><th>UID</th><th>ชื่อ</th><th>Role</th><th>SLM ID</th><th>อีเมล</th><th>Sales Match</th><th>สถานะ</th><th></th></tr></thead>
+  <div class="card"><div class="tw tw-scroll"><table>
+    <thead><tr><th>UID</th><th>ชื่อ</th><th>แผนก</th><th>ตำแหน่ง</th><th>Role</th><th>SLM ID</th><th>อีเมล</th><th>Sales Match</th><th>สถานะ</th><th></th></tr></thead>
     <tbody>${users.map((u,i) => `<tr>
-      <td><b class="mono">${u.uid}</b></td>
-      <td>${u.name}</td>
-      <td><span class="badge ${ROLE_BADGE[u.role]||'bbgr'}">${ROLE_LABEL[u.role]||u.role}</span></td>
-      <td class="mono" style="font-size:12px">${u.slm_id||'—'}</td>
-      <td style="font-size:12px">${u.email||'—'}</td>
-      <td>${SALES_MAP[u.slm_id] || '-'}</td>
+      <td><b class="mono">${esc(u.uid)}</b></td>
+      <td>${esc(u.name)}</td>
+      <td>${esc(u.department||'—')}</td>
+      <td>${esc(u.position||'—')}</td>
+      <td><span class="badge ${ROLE_BADGE[u.role]||'bbgr'}">${esc(userRoleLabel(u.role))}</span></td>
+      <td class="mono" style="font-size:12px">${esc(u.slm_id||'—')}</td>
+      <td style="font-size:12px">${esc(u.email||'—')}</td>
+      <td>${esc((typeof salesNameFor==='function'?salesNameFor(u.slm_id):SALES_MAP[u.slm_id]) || '-')}</td>
       <td>${(u.active||u.is_active)?'<span class="badge bbg">Active</span>':'<span class="badge bbgr">Inactive</span>'}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-xs" onclick="showEditUser(${i})">แก้ไข</button>
@@ -2500,7 +2529,8 @@ function pgUsers() {
 function toggleUserActive(i){
   const us=DB.get('users')||[];if(!us[i])return;
   us[i].active=!(us[i].active||us[i].is_active);
-  DB.set('users',us);pgUsers();
+  us[i].edited_by=UID;us[i].edited_at=new Date().toISOString();
+  DB.set('users',us);audit('TOGGLE_USER',us[i].uid,{active:us[i].active});pgUsers();
 }
 
 
@@ -2619,11 +2649,12 @@ function buildSB(){
     const lookup={};
     Object.values(RNAV).flat().forEach(([id,ico,lbl])=>{if(!lookup[id])lookup[id]=[id,ico,lbl];});
     navItems=deptPerms[dkey].pages.map(id=>lookup[id]).filter(Boolean);
-  } else if(ROLE!=='superadmin' && customPerms[ROLE]?.pages?.length){
-    // Build all-pages lookup from every role's RNAV
+  } else if(ROLE!=='superadmin'){
+    // Direct role pages come from the same Role manager used by Users.
     const lookup={};
     Object.values(RNAV).flat().forEach(([id,ico,lbl])=>{if(!lookup[id])lookup[id]=[id,ico,lbl];});
-    navItems=customPerms[ROLE].pages.map(id=>lookup[id]).filter(Boolean);
+    const rolePages=(typeof _getRoles==='function'&&_getRoles()[ROLE]?.pages)||customPerms[ROLE]?.pages||[];
+    if(rolePages.length) navItems=rolePages.map(id=>lookup[id]).filter(Boolean);
   }
   document.getElementById('sb-nav').innerHTML=navItems.map(([id,ico,lbl])=>`<div class="ni" id="ni-${id}" onclick="nav('${id}')"><span class="ni-ico">${ico}</span><span>${lbl}</span></div>`).join('');
   document.getElementById('sb-av').textContent=UID.substring(0,2).toUpperCase();
@@ -2700,11 +2731,24 @@ function statusBadge(s){
   return `<span class="badge ${cls}">${lbl}</span>`;
 }
 function gF(){return document.getElementById('gf')?.value||''}
+function productGroupExclusions(){return DB.get('product_group_exclusions')||{};}
+function saveProductGroupExclusions(ex){DB.set('product_group_exclusions',ex);}
+function deletedProductGroups(){return new Set(DB.get('product_groups_deleted')||[]);}
+function saveDeletedProductGroups(set){DB.set('product_groups_deleted',[...set]);}
 function productGroups(){
   const custom=DB.get('product_groups')||{};
+  const excluded=productGroupExclusions();
+  const deleted=deletedProductGroups();
   const out={};
-  Object.entries(SKU_GROUPS).forEach(([g,items])=>out[g]=[...new Set(items||[])]);
-  Object.entries(custom).forEach(([g,items])=>out[g]=[...new Set([...(out[g]||[]),...(items||[])])]);
+  Object.entries(SKU_GROUPS).forEach(([g,items])=>{
+    if(deleted.has(g))return;
+    const ex=new Set(excluded[g]||[]);
+    out[g]=[...new Set(items||[])].filter(c=>!ex.has(c));
+  });
+  Object.entries(custom).forEach(([g,items])=>{
+    if(deleted.has(g))return;
+    out[g]=[...new Set([...(out[g]||[]),...(items||[])])];
+  });
   return out;
 }
 function saveProductGroups(groups){DB.set('product_groups',groups);}
@@ -2718,6 +2762,54 @@ function productGroupForSku(code,fallback='อื่นๆ'){
   return fallback||'อื่นๆ';
 }
 function customerProfiles(){return DB.get('customer_profiles')||{};}
+function salesMasterOverrides(){
+  const raw=DB.get('sales_master')||{};
+  if(Array.isArray(raw)){
+    const out={};
+    raw.forEach(r=>{const code=String(r.code||r.slm||r.id||'').trim();if(code)out[code]={...r,code};});
+    return out;
+  }
+  return raw||{};
+}
+function salesMaster(){
+  const rows={};
+  const add=(code,name='',source='Express')=>{
+    code=String(code||'').trim();if(!code)return;
+    if(!rows[code])rows[code]={code,name:name||code,nickname:'',phone:'',email:'',active:true,source};
+    else if(name&&(!rows[code].name||rows[code].name===rows[code].code))rows[code].name=name;
+  };
+  (SLM_IDS||[]).forEach(code=>add(code,code,'Express'));
+  Object.keys(SLM_CUSTS||{}).forEach(code=>add(code,code,'Express customer map'));
+  (SD_SALES||[]).forEach(s=>add(s.c,s.n,'Sales history'));
+  (DB.get('users')||[]).forEach(u=>{if(u.slm_id||u.role==='sales')add(u.slm_id||u.uid,u.name,'User');});
+  const overrides=salesMasterOverrides();
+  Object.entries(overrides).forEach(([code,row])=>{
+    code=String(row.code||code||'').trim();if(!code)return;
+    rows[code]={...(rows[code]||{code,source:'Manual'}),...row,code};
+    if(rows[code].active!==false)rows[code].active=true;
+  });
+  return Object.values(rows).sort((a,b)=>String(a.code).localeCompare(String(b.code),'th',{numeric:true}));
+}
+function saveSalesMasterRow(code,patch){
+  code=String(code||'').trim();if(!code)return;
+  const overrides=salesMasterOverrides();
+  const base=salesMaster().find(s=>s.code===code)||{code,source:'Manual',active:true};
+  overrides[code]={...base,...(overrides[code]||{}),...patch,code,edited_by:UID,edited_at:new Date().toISOString()};
+  DB.set('sales_master',overrides);
+}
+function salesNameFor(code){
+  const s=salesMaster().find(x=>x.code===String(code||''));
+  return s?.name||code||'';
+}
+function salesOptionsHtml(selected=''){
+  return '<option value="">-- Unassigned --</option>'+salesMaster().filter(s=>s.active!==false).map(s=>'<option value="'+esc(s.code)+'" '+(String(selected||'')===String(s.code)?'selected':'')+'>'+esc(s.code+' - '+(s.name||s.code))+'</option>').join('');
+}
+function salesCustomerCounts(){
+  const out={};
+  allCustomerRows().forEach(c=>{const code=String(c.slm||'').trim();if(code)out[code]=(out[code]||0)+1;});
+  Object.entries(SLM_CUSTS||{}).forEach(([code,list])=>{out[code]=Math.max(out[code]||0,(list||[]).length);});
+  return out;
+}
 function customerGroupForCode(code,fallback='อื่นๆ'){
   const prof=customerProfiles()[code]||{};
   if(prof.corporate||prof.corp) return prof.corporate||prof.corp;
@@ -2973,7 +3065,8 @@ function _sdMonthRange(){
 }
 function _salesNameMap(){
   const out={};
-  (DB.get('users')||[]).forEach(u=>{if(u.slm_id||u.role==='sales')out[u.slm_id||u.uid]=u.name;});
+  salesMaster().forEach(s=>{if(s.active!==false)out[s.code]=s.name||s.code;});
+  (DB.get('users')||[]).forEach(u=>{const code=u.slm_id||u.uid;if((u.slm_id||u.role==='sales')&&!out[code])out[code]=u.name;});
   (SD_SALES||[]).forEach(s=>{if(!out[s.c])out[s.c]=s.n;});
   return out;
 }
@@ -4707,7 +4800,8 @@ function showAddUser(){
     <div class="field"><label>รหัสพนักงาน (UID)</label><input type="text" id="u-uid" placeholder="เช่น 210"></div>
     <div class="field"><label>ชื่อ-นามสกุล</label><input type="text" id="u-name"></div>
     <div class="field"><label>แผนก</label><input type="text" id="u-dept" placeholder="เช่น Sales / Planning / Warehouse"></div>
-    <div class="field"><label>Role</label><select id="u-role"><option value="user">User</option><option value="manager">Manager</option><option value="superadmin">Super Admin</option></select></div>
+    <div class="field"><label>ตำแหน่ง</label><input type="text" id="u-pos" placeholder="เช่น Manager / Staff"></div>
+    <div class="field"><label>Role</label><select id="u-role">${userRoleOptions('sales')}</select></div>
     <div class="field"><label>SLM ID (สำหรับ Sales)</label><input type="text" id="u-slm" placeholder="เช่น 210"></div>
     <div class="field"><label>รหัสผ่าน</label><input type="password" id="u-pwd" value="1234"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email"></div>
@@ -4723,8 +4817,9 @@ function showEditUser(i){
   <div class="fg">
     <div class="field"><label>รหัสพนักงาน</label><input type="text" id="u-uid" value="${u.uid}"></div>
     <div class="field"><label>ชื่อ-นามสกุล</label><input type="text" id="u-name" value="${u.name}"></div>
-    <div class="field"><label>แผนก</label><input type="text" id="u-dept" value="${u.department||''}"></div>
-    <div class="field"><label>Role</label><select id="u-role"><option value="user" ${u.role==='user'?'selected':''}>User</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option><option value="superadmin" ${u.role==='superadmin'?'selected':''}>Super Admin</option></select></div>
+    <div class="field"><label>แผนก</label><input type="text" id="u-dept" value="${esc(u.department||'')}"></div>
+    <div class="field"><label>ตำแหน่ง</label><input type="text" id="u-pos" value="${esc(u.position||'')}"></div>
+    <div class="field"><label>Role</label><select id="u-role">${userRoleOptions(u.role)}</select></div>
     <div class="field"><label>SLM ID</label><input type="text" id="u-slm" value="${u.slm_id||''}"></div>
     <div class="field"><label>รหัสผ่านใหม่ (ว่าง=ไม่เปลี่ยน)</label><input type="password" id="u-pwd" placeholder="(ว่าง=ไม่เปลี่ยน)"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email" value="${u.email||''}"></div>
@@ -4756,12 +4851,12 @@ function saveUser(idx){
     u.edited_by=UID;u.edited_at=new Date().toISOString();
     audit('EDIT_USER',uid,{role,department});
   }
-  DB.set('users',users);closeM();renderUserTbl();toast('บันทึกผู้ใช้ '+uid+' สำเร็จ');
+  DB.set('users',users);closeM();pgUsers();toast('บันทึกผู้ใช้ '+uid+' สำเร็จ');
 }
 function toggleUser(i){
   const users=DB.get('users')||[];const u=users[i];if(!u)return;
   u.active=!u.active;u.edited_by=UID;u.edited_at=new Date().toISOString();
-  DB.set('users',users);audit('TOGGLE_USER',u.uid,{active:u.active});renderUserTbl();
+  DB.set('users',users);audit('TOGGLE_USER',u.uid,{active:u.active});pgUsers();
 }
 
 // ── AUDIT LOG ─────────────────────────────────────────────────────
@@ -5836,12 +5931,14 @@ function pgGroupAdmin(){
   <div class="tabs">
     <div class="tab ${_grpTab==='prod'?'act':''}" onclick="_grpTab='prod';pgGroupAdmin()">กลุ่มสินค้า</div>
     <div class="tab ${_grpTab==='cust'?'act':''}" onclick="_grpTab='cust';pgGroupAdmin()">กลุ่มลูกค้า</div>
+    <div class="tab ${_grpTab==='sales'?'act':''}" onclick="_grpTab='sales';pgGroupAdmin()">Sales</div>
   </div>
   <div id="grp-body"></div>`;
-  if(_grpTab==='prod')renderProdGroups();else renderCustGroups();
+  if(_grpTab==='prod')renderProdGroups();else if(_grpTab==='cust')renderCustGroups();else renderSalesMaster();
 }
 let _pgItemTab='items';
 function renderProdGroups(){
+  ensureGroupProductsLoaded();
   const groups=productGroups(),skus=getSkusMerged();
   const groupNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'th'));
   const skuGrpMap={};
@@ -5878,8 +5975,8 @@ function renderProdGroups(){
     document.getElementById('pg-content').innerHTML=`
     <div class="card">
       <div class="ch"><div class="ct2">รายการสินค้าทั้งหมด</div><div style="font-size:11px;color:var(--TX3)">${rows.length} รายการ</div></div>
-      <div class="tw"><table>
-        <thead><tr><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>โรง</th><th style="min-width:190px">กลุ่มสินค้า</th><th>Action</th></tr></thead>
+      <div class="tw tw-scroll"><table>
+        <thead><tr><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>โรง</th><th style="min-width:240px">กลุ่มสินค้า</th><th>Action</th></tr></thead>
         <tbody>${rows.map(s=>{
           const grp=skuGrpMap[s.code]||'';
           return `<tr>
@@ -5896,31 +5993,61 @@ function renderProdGroups(){
       </table></div>
     </div>`;
   } else {
+    const memberships=groupNames.flatMap(g=>(groups[g]||[]).map(code=>({group:g,code,sku:skus.find(s=>s.code===code)||skuI(code)})))
+      .filter(r=>!q2 || r.group.toLowerCase().includes(q2) || r.code.toLowerCase().includes(q2) || (r.sku.name||'').toLowerCase().includes(q2));
     document.getElementById('pg-content').innerHTML=`
-    <div class="card"><div class="ch"><div class="ct2">จัดการกลุ่มสินค้า</div><div style="font-size:11px;color:var(--TX3)">เลือกสินค้าแล้วกดเพิ่มเข้าแต่ละกลุ่ม หรือ import จาก Excel</div></div>
-      <div class="tw"><table>
-        <thead><tr><th>กลุ่ม</th><th class="r">จำนวน SKU</th><th style="min-width:260px">เพิ่ม SKU</th><th>รายการ (8 แรก)</th><th>Action</th></tr></thead>
+    <div class="card"><div class="ch"><div class="ct2">จัดการกลุ่มสินค้า</div><div style="font-size:11px;color:var(--TX3)">แก้ชื่อกลุ่ม ลบกลุ่ม เพิ่ม SKU และลบรายการสินค้าในกลุ่มได้</div></div>
+      <div class="tw tw-scroll" style="margin-bottom:12px"><table>
+        <thead><tr><th>กลุ่ม</th><th class="r">จำนวน SKU</th><th style="min-width:330px">เพิ่ม SKU</th><th>Action</th></tr></thead>
         <tbody>${groupNames.map(g=>{
-          const items=groups[g];const isBase=!!SKU_GROUPS[g];
+          const items=groups[g]||[];const isBase=!!SKU_GROUPS[g];
           return `<tr>
-            <td><input class="inp-cell" value="${esc(g)}" ${isBase?'readonly':''} onchange="renameProductGroup('${esc(g)}',this.value)"> ${isBase?'<span class="badge bbgr" style="font-size:10px">ตั้งต้น</span>':''}</td>
+            <td><input class="inp-cell" value="${esc(g)}" onchange="renameProductGroup('${esc(g)}',this.value)"> ${isBase?'<span class="badge bbgr" style="font-size:10px">ตั้งต้น</span>':''}</td>
             <td class="r">${items.length}</td>
-            <td><select id="pg-sku-${esc(g)}" style="width:190px;padding:5px;border:1px solid var(--BD);border-radius:6px">${skus.map(s=>`<option value="${esc(s.code)}">${esc(s.code)} — ${esc((s.name||'').substring(0,22))}</option>`).join('')}</select>
+            <td><select id="pg-sku-${esc(g)}" style="width:245px;padding:5px;border:1px solid var(--BD);border-radius:6px">${skus.map(s=>`<option value="${esc(s.code)}">${esc(s.code)} — ${esc((s.name||'').substring(0,34))}</option>`).join('')}</select>
               <button class="btn btn-xs btn-t" onclick="addSkuToGroup('${esc(g)}')">+ เพิ่ม</button></td>
-            <td style="font-size:12px;color:var(--TX2)">${items.slice(0,8).map(esc).join(', ')}${items.length>8?` ... (+${items.length-8})`:''}</td>
-            <td>${isBase?'<span style="font-size:11px;color:var(--TX3)">ลบไม่ได้</span>':`<button class="btn btn-xs btn-r" onclick="deleteProductGroup('${esc(g)}')">ลบกลุ่ม</button>`}</td>
+            <td><button class="btn btn-xs btn-r" onclick="deleteProductGroup('${esc(g)}')">ลบกลุ่ม</button></td>
           </tr>`;
         }).join('')}</tbody>
+      </table></div>
+      <div class="ch" style="margin-top:6px"><div class="ct2">รายการสินค้าในกลุ่ม</div><div style="font-size:11px;color:var(--TX3)">${memberships.length} rows</div></div>
+      <div class="tw tw-scroll"><table>
+        <thead><tr><th>กลุ่ม</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>โรง</th><th>Action</th></tr></thead>
+        <tbody>${memberships.map(r=>`<tr>
+          <td>${esc(r.group)}</td>
+          <td class="mono">${esc(r.code)}</td>
+          <td>${esc(r.sku.name||'')}</td>
+          <td style="color:var(--TX3);font-size:12px">${esc(r.sku.plant||'')}</td>
+          <td><button class="btn btn-xs btn-r" onclick="removeSkuFromGroup('${esc(r.group)}','${esc(r.code)}')">ลบออก</button></td>
+        </tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--TX3);padding:18px">ไม่มีรายการ</td></tr>'}</tbody>
       </table></div>
     </div>`;
   }
 }
 function saveSkuGroupMapping(code,newGrp){
   const groups=DB.get('product_groups')||{};
+  const ex=productGroupExclusions();
+  Object.entries(productGroups()).forEach(([g,items])=>{
+    if((items||[]).includes(code)){
+      ex[g]=[...new Set([...(ex[g]||[]),code])];
+    }
+  });
   Object.keys(groups).forEach(g=>{groups[g]=(groups[g]||[]).filter(c=>c!==code);});
   if(newGrp){if(!groups[newGrp])groups[newGrp]=[];if(!groups[newGrp].includes(code))groups[newGrp].push(code);}
+  saveProductGroupExclusions(ex);
   saveProductGroups(groups);audit('EDIT_SKU_GROUP',code,{grp:newGrp});
   toast(newGrp?`กำหนด ${code} → กลุ่ม ${newGrp}`:`นำ ${code} ออกจากกลุ่มแล้ว`);
+  renderProdGroups();
+}
+function removeSkuFromGroup(group,code){
+  const groups=DB.get('product_groups')||{};
+  groups[group]=(groups[group]||[]).filter(c=>c!==code);
+  const ex=productGroupExclusions();
+  ex[group]=[...new Set([...(ex[group]||[]),code])];
+  saveProductGroups(groups);
+  saveProductGroupExclusions(ex);
+  audit('REMOVE_SKU_FROM_GROUP',group,{code});
+  toast('ลบ '+code+' ออกจาก '+group+' แล้ว');
   renderProdGroups();
 }
 
@@ -5931,18 +6058,27 @@ function addProductGroup(){
 }
 function renameProductGroup(oldName,newName){
   newName=(newName||'').trim();if(!newName||oldName===newName)return;
-  const groups=DB.get('product_groups')||{};groups[newName]=[...(groups[newName]||[]),...(productGroups()[oldName]||[])];
-  delete groups[oldName];saveProductGroups(groups);audit('RENAME_PRODUCT_GROUP',oldName,{newName});pgGroupAdmin();
+  const groups=DB.get('product_groups')||{};
+  groups[newName]=[...new Set([...(groups[newName]||[]),...(productGroups()[oldName]||[])])];
+  delete groups[oldName];
+  const deleted=deletedProductGroups();
+  if(SKU_GROUPS[oldName])deleted.add(oldName);
+  deleted.delete(newName);
+  saveDeletedProductGroups(deleted);
+  saveProductGroups(groups);audit('RENAME_PRODUCT_GROUP',oldName,{newName});pgGroupAdmin();
 }
 function addSkuToGroup(g){
   const code=document.getElementById('pg-sku-'+g)?.value;if(!code)return;
   const groups=DB.get('product_groups')||{};if(!groups[g])groups[g]=[];
   if(!groups[g].includes(code))groups[g].push(code);
+  const deleted=deletedProductGroups();deleted.delete(g);saveDeletedProductGroups(deleted);
   saveProductGroups(groups);audit('ADD_SKU_TO_GROUP',g,{code});pgGroupAdmin();
 }
 function deleteProductGroup(g){
   if(!confirm('ลบกลุ่มสินค้า '+g+' ?'))return;
-  const groups=DB.get('product_groups')||{};delete groups[g];saveProductGroups(groups);audit('DEL_PRODUCT_GROUP',g,{});pgGroupAdmin();
+  const groups=DB.get('product_groups')||{};delete groups[g];saveProductGroups(groups);
+  const deleted=deletedProductGroups();deleted.add(g);saveDeletedProductGroups(deleted);
+  audit('DEL_PRODUCT_GROUP',g,{});pgGroupAdmin();
 }
 function importProductGroupsFile(){
   const file=document.getElementById('pg-file').files[0];if(!file)return;
@@ -6017,7 +6153,6 @@ function renderCustGroups(){
   const rows=allCustomerRows();
   const corps=[...new Set(rows.map(c=>c.corp||'อื่นๆ'))].sort((a,b)=>a.localeCompare(b,'th'));
   const cats=[...new Set(rows.map(c=>c.category||'ไม่ระบุ'))].sort((a,b)=>a.localeCompare(b,'th'));
-  const sales=DB.get('users')||[];
   document.getElementById('grp-body').innerHTML=`
   <div class="frow">
     <input type="file" id="cg-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importCustomerGroupsFile()">
@@ -6027,14 +6162,14 @@ function renderCustGroups(){
     <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / Category แล้วระบบจะบันทึกทันที</span>
   </div>
   <div class="card"><div class="ch"><div class="ct2">Customer Group Mapping</div><div style="font-size:11px;color:var(--TX3)">${rows.length} ลูกค้า</div></div>
-    <div class="tw"><table><thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th>Corporate group</th><th>Category</th><th>Sales</th><th>แก้ไขโดย</th></tr></thead>
+    <div class="tw tw-scroll"><table><thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th>Corporate group</th><th>Category</th><th>Sales</th><th>แก้ไขโดย</th></tr></thead>
     <tbody>${rows.map(c=>{const p=profs[c.c]||{};return `<tr>
       <td class="mono">${esc(c.c)}</td>
       <td><input class="inp-cell" value="${esc(c.n)}" onchange="saveCustomerGroup('${esc(c.c)}','name',this.value)"></td>
       <td><input class="inp-cell" list="corp-list" value="${esc(c.corp||'')}" onchange="saveCustomerGroup('${esc(c.c)}','corporate',this.value)"></td>
       <td><input class="inp-cell" list="cat-list" value="${esc(c.category||'')}" onchange="saveCustomerGroup('${esc(c.c)}','category',this.value)"></td>
-      <td><select onchange="saveCustomerGroup('${esc(c.c)}','slm',this.value)" style="padding:5px;border:1px solid var(--BD);border-radius:6px">
-        ${sales.filter(u=>u.role==='sales').map(u=>`<option value="${esc(u.slm_id||u.uid)}" ${(c.slm===(u.slm_id||u.uid))?'selected':''}>${esc(u.name)}</option>`).join('')}
+      <td><select onchange="saveCustomerGroup('${esc(c.c)}','slm',this.value)" style="width:100%;padding:5px;border:1px solid var(--BD);border-radius:6px;font-family:var(--font);font-size:12.5px">
+        ${salesOptionsHtml(c.slm)}
       </select></td>
       <td><span class="edby">${esc(p.edited_by||'—')}</span></td>
     </tr>`;}).join('')}</tbody></table></div>
@@ -6042,6 +6177,114 @@ function renderCustGroups(){
     <datalist id="cat-list">${cats.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
   </div>`;
 }
+function renderSalesMaster(){
+  const q=(document.getElementById('sm-q')?.value||'').toLowerCase();
+  const rows=salesMaster().filter(s=>{
+    if(!q)return true;
+    return [s.code,s.name,s.nickname,s.phone,s.email,s.source].some(v=>String(v||'').toLowerCase().includes(q));
+  });
+  const all=salesMaster();
+  const counts=salesCustomerCounts();
+  const active=all.filter(s=>s.active!==false).length;
+  document.getElementById('grp-body').innerHTML=`<div class="frow">
+    <input id="sm-code" type="text" placeholder="Sales code" style="width:120px">
+    <input id="sm-name" type="text" placeholder="Clean sales name" style="width:220px">
+    <button class="btn btn-sm btn-t" onclick="addSalesMaster()">+ Add Sales</button>
+    <input type="file" id="sm-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importSalesMasterFile()">
+    <button class="btn btn-sm btn-p" onclick="document.getElementById('sm-file').click()">Import Excel</button>
+    <button class="btn btn-sm btn-g" onclick="expSalesTemplate()">Template</button>
+    <button class="btn btn-sm btn-g" onclick="expSalesMaster()">Export</button>
+    <input id="sm-q" type="text" value="${esc(q)}" placeholder="Search sales..." style="width:170px;padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:12.5px;font-family:var(--font)" oninput="renderSalesMaster()">
+    <span style="font-size:12px;color:var(--TX3)">Clean sales master for Express references and customer mapping by sales code</span>
+  </div>
+  <div class="grid kpi" style="grid-template-columns:repeat(3,minmax(180px,1fr));margin-bottom:12px">
+    <div class="card"><div class="muted">Total Sales</div><div class="big">${all.length}</div><div class="muted">Express/User/Manual codes</div></div>
+    <div class="card"><div class="muted">Active</div><div class="big">${active}</div><div class="muted">Used in filters and mapping</div></div>
+    <div class="card"><div class="muted">Linked Customers</div><div class="big">${Object.values(counts).reduce((a,b)=>a+b,0)}</div><div class="muted">By sales code</div></div>
+  </div>
+  <div class="card"><div class="ch"><div class="ct2">Sales Master</div><div style="font-size:11px;color:var(--TX3)">${rows.length} rows</div></div>
+    <div class="tw tw-scroll"><table>
+      <thead><tr><th>Sales Code</th><th style="min-width:220px">Clean Name</th><th>Nickname</th><th>Phone</th><th>Email</th><th class="r">Customers</th><th>Active</th><th>Source</th><th>Edited By</th><th>Action</th></tr></thead>
+      <tbody>${rows.map(s=>`<tr>
+        <td class="mono">${esc(s.code)}</td>
+        <td><input class="inp-cell" value="${esc(s.name||'')}" onchange="saveSalesMasterField('${esc(s.code)}','name',this.value)"></td>
+        <td><input class="inp-cell" value="${esc(s.nickname||'')}" onchange="saveSalesMasterField('${esc(s.code)}','nickname',this.value)"></td>
+        <td><input class="inp-cell" value="${esc(s.phone||'')}" onchange="saveSalesMasterField('${esc(s.code)}','phone',this.value)"></td>
+        <td><input class="inp-cell" value="${esc(s.email||'')}" onchange="saveSalesMasterField('${esc(s.code)}','email',this.value)"></td>
+        <td class="r">${counts[s.code]||0}</td>
+        <td><input type="checkbox" ${s.active!==false?'checked':''} onchange="saveSalesMasterField('${esc(s.code)}','active',this.checked)"></td>
+        <td style="color:var(--TX3);font-size:12px">${esc(s.source||'')}</td>
+        <td><span class="edby">${esc(s.edited_by||'-')}</span></td>
+        <td>
+          <button class="btn btn-xs btn-t" onclick="applySalesToCustomers('${esc(s.code)}')">Link</button>
+          <button class="btn btn-xs btn-r" onclick="disableSalesMaster('${esc(s.code)}')">Disable</button>
+        </td>
+      </tr>`).join('')||'<tr><td colspan="10" style="text-align:center;color:var(--TX3);padding:18px">No sales data</td></tr>'}</tbody>
+    </table></div>
+  </div>`;
+}
+function addSalesMaster(){
+  const code=document.getElementById('sm-code')?.value.trim();
+  const name=document.getElementById('sm-name')?.value.trim();
+  if(!code||!name){toast('Fill sales code and name first');return;}
+  saveSalesMasterRow(code,{name,active:true,source:'Manual'});
+  audit('ADD_SALES_MASTER',code,{name});
+  toast('Sales Master saved');
+  renderSalesMaster();
+}
+function saveSalesMasterField(code,field,val){
+  saveSalesMasterRow(code,{[field]:val});
+  audit('EDIT_SALES_MASTER',code,{field,val});
+  toast('Sales Master saved');
+}
+function disableSalesMaster(code){
+  if(!confirm('Disable Sales '+code+' ?'))return;
+  saveSalesMasterRow(code,{active:false});
+  audit('DISABLE_SALES_MASTER',code,{});
+  renderSalesMaster();
+}
+function applySalesToCustomers(code){
+  const list=SLM_CUSTS?.[code]||[];
+  if(!list.length){toast('No Express customer map for '+code);return;}
+  const profs=customerProfiles();
+  let count=0;
+  list.forEach(c=>{if(!profs[c])profs[c]={};profs[c].slm=code;profs[c].edited_by=UID;profs[c].edited_at=new Date().toISOString();count++;});
+  DB.set('customer_profiles',profs);
+  audit('LINK_SALES_CUSTOMERS',code,{count});
+  toast('Linked '+count+' customers to '+code);
+  renderSalesMaster();
+}
+function expSalesTemplate(){
+  toXLSX([['Sales Master Template',['Sales code','Sales name','Nickname','Phone','Email','Active'],[['103','Clean sales name','','','', 'Y']]]],'Sales_Master_Template.xlsx');
+}
+function expSalesMaster(){
+  const rows=salesMaster().map(s=>[s.code,s.name||'',s.nickname||'',s.phone||'',s.email||'',s.active!==false?'Y':'N',s.source||'',s.edited_by||'']);
+  toXLSX([['Sales Master',['Sales code','Sales name','Nickname','Phone','Email','Active','Source','Edited by'],rows]],'Sales_Master_'+todayStr()+'.xlsx');
+}
+function importSalesMasterFile(){
+  const file=document.getElementById('sm-file').files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=new Uint8Array(e.target.result);
+      const workbook=XLSX.read(data,{type:'array'});
+      const sheet=workbook.Sheets[workbook.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(sheet,{header:1});
+      let count=0;
+      rows.slice(1).forEach(r=>{
+        const code=String(r[0]||'').trim();if(!code)return;
+        const active=String(r[5]||'Y').trim().toUpperCase();
+        saveSalesMasterRow(code,{name:String(r[1]||code).trim(),nickname:String(r[2]||'').trim(),phone:String(r[3]||'').trim(),email:String(r[4]||'').trim(),active:!['N','NO','FALSE','0'].includes(active),source:'Import'});
+        count++;
+      });
+      audit('IMPORT_SALES_MASTER','sales_master',{count});
+      toast('Imported '+count+' sales rows');
+      renderSalesMaster();
+    }catch(err){toast('File import error: '+err.message);}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 function expGroupTemplate(mode){
   if(mode==='prod') toXLSX([['Product Group Template',['Product Group','SKU'],[['Sample product group','10001']]]],'Product_Group_Template.xlsx');
   else toXLSX([['Customer Group Template',['Corporate group','Customer code'],[['Sample customer group','01-LF-0001']]]],'Customer_Group_Template.xlsx');
@@ -6370,9 +6613,33 @@ function saveNewSku(){
   toast('เพิ่มสินค้า '+code+' แล้ว');
   pgSKUAdmin();
 }
+let _groupProductsLoading=false;
+function normalizeSkuRow(s){
+  return {code:String(s.code||s.sku||s.sku_code||'').trim(),name:String(s.name||s.name_th||s.sku_name||s.code||'').trim(),plant:s.plant||s.group_name||'',lt:s.lt||s.lead_time||7,moq:s.moq||0,custom:!!s.custom};
+}
+async function ensureGroupProductsLoaded(){
+  if(_groupProductsLoading||DB.get('remote_products_loaded'))return;
+  _groupProductsLoading=true;
+  try{
+    const products=await CACHE.get('group_products',()=>SB.getProducts());
+    const rows=(products||[]).map(normalizeSkuRow).filter(s=>s.code);
+    if(rows.length){
+      DB.set('remote_products_cache',rows);
+      DB.set('remote_products_loaded',true);
+      if(page==='groups'&&_grpTab==='prod')renderProdGroups();
+    }
+  }catch(e){console.warn('load products for groups failed',e.message);}
+  finally{_groupProductsLoading=false;}
+}
 function getSkusMerged(){
   const custom=DB.get('custom_skus')||[];
-  return [...SKUS_MASTER,...custom.filter(c=>!SKUS_MASTER.find(m=>m.code===c.code))];
+  const remote=DB.get('remote_products_cache')||[];
+  const map=new Map();
+  [...SKUS_MASTER,...remote,...custom].map(normalizeSkuRow).filter(s=>s.code).forEach(s=>{
+    const old=map.get(s.code)||{};
+    map.set(s.code,{...old,...s,name:s.name||old.name||s.code});
+  });
+  return [...map.values()].sort((a,b)=>String(a.code).localeCompare(String(b.code),'th'));
 }
 
 // ════════════════════════════════════════════════
@@ -6972,6 +7239,9 @@ function expFcDoc(custCode, month) {
 </script>
 </body>
 </html>
+
+
+
 
 
 
