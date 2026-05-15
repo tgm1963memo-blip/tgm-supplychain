@@ -334,12 +334,12 @@ const SB = {
     try {
       const { data } = await getSupabaseClient()
         .from('sc_users')
-        .select('uid, name, role, slm_id, email, active')
+        .select('uid, name, role, slm_id, email, is_active')
         .or(`uid.eq.${uid},email.eq.${uid}`)
         .eq('pwd_hash', pwd)
-        .eq('active', true)
+        .eq('is_active', true)
         .maybeSingle();
-      if (data) return data;
+      if (data) return { ...data, active: data.is_active !== false };
     } catch (e) {
       console.warn('[login] Supabase unreachable, falling back to local:', e.message);
     }
@@ -367,7 +367,11 @@ const SB = {
   },
 
   async upsertUser(u) {
-    return sbThrow(getSupabaseClient().from('sc_users').upsert(u), 'upsertUser');
+    const row = { ...u, is_active: u.is_active ?? u.active ?? true };
+    if (row.pwd && !row.pwd_hash) row.pwd_hash = row.pwd;
+    delete row.active;
+    delete row.pwd;
+    return sbThrow(getSupabaseClient().from('sc_users').upsert(row), 'upsertUser');
   },
 
   // ──────────────────────────────
@@ -615,7 +619,8 @@ const SB = {
       const { data, error } = await getSupabaseClient()
         .from('bookings')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(2000);
       if (error) throw error;
       const rows = data || [];
       // sync กลับ localStorage เป็น fallback cache
@@ -930,7 +935,7 @@ async function doLogin() {
       if (ss && Object.keys(ss).length > 0) DB.set('sku_settings', ss);
     }).catch(console.warn);
     // โหลด bookings จาก Supabase แล้ว sync ลง localStorage (fallback)
-    getSupabaseClient().from('bookings').select('*').order('created_at', { ascending: false })
+    getSupabaseClient().from('bookings').select('*').order('created_at', { ascending: false }).limit(2000)
       .then(({ data }) => { if (data && data.length > 0) DB.set('bookings', data); })
       .catch(console.warn);
     try {
@@ -6470,6 +6475,8 @@ function expFcDoc(custCode, month) {
 </script>
 </body>
 </html>
+
+
 
 
 
