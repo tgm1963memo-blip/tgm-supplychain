@@ -326,6 +326,41 @@ let ROLE = null;
 let UID = null;
 let UNAME = null;
 
+function bookingSoNo(b = {}) {
+  const direct = b.soNo || b.so_no || b.salesOrderNo || b.sales_order_no || '';
+  if (direct) return String(direct).trim();
+  const noteMatch = String(b.note || '').match(/\bSO\s+([^\s|,]+)/i);
+  if (noteMatch) return noteMatch[1].trim();
+  if (String(b.type || '').toUpperCase() === 'SO') return String(b.refNo || b.ref_no || '').trim();
+  return '';
+}
+function bookingDocNo(b = {}) {
+  const type = String(b.type || '').toUpperCase();
+  if (type === 'SO') return bookingSoNo(b) || b.refNo || b.ref_no || '';
+  return b.poNo || b.po_no || b.refNo || b.ref_no || '';
+}
+function normalizeBookingRow(b = {}) {
+  const soNo = bookingSoNo(b);
+  const refNo = b.refNo || b.ref_no || (String(b.type || '').toUpperCase() === 'SO' ? soNo : (b.poNo || b.po_no || ''));
+  const soDate = b.soDate || b.so_date || b.orderDate || b.order_date || b.docDate || b.doc_date || '';
+  const receiveDate = b.receiveDate || b.receive_date || b.needDate || b.need_date || '';
+  return {
+    ...b,
+    type: b.type || 'SO',
+    refNo,
+    poNo: b.poNo || b.po_no || (String(b.type || '').toUpperCase() === 'PO' ? refNo : ''),
+    soNo,
+    soDate,
+    skuName: b.skuName || b.sku_name || b.name || b.sku || '',
+    custName: b.custName || b.cust_name || b.customer || b.customer_name || b.cust_code || '',
+    custCode: b.custCode || b.cust_code || '',
+    receiveDate,
+    stockStatus: b.stockStatus || b.stock_status || 'stock',
+    status: b.status || 'pending',
+    by: b.by || b.created_by || '',
+    ts: b.ts || (b.created_at ? new Date(b.created_at).getTime() : 0),
+  };
+}
 // ════════════════════════════════════════════════
 // SB — Supabase API Wrapper
 // ════════════════════════════════════════════════
@@ -627,7 +662,7 @@ const SB = {
         .order('created_at', { ascending: false })
         .limit(2000);
       if (error) throw error;
-      const rows = data || [];
+      const rows = (data || []).map(normalizeBookingRow);
       // sync กลับ localStorage เป็น fallback cache
       if (rows.length > 0) DB.set('bookings', rows);
       return rows;
@@ -2954,7 +2989,8 @@ function _isConsignmentRow(r){
 }
 function _salesRowsForMode(rows,{includeConsi=false}={}){
   const hasPrefixed=(rows||[]).some(r=>r.prefixed);
-  return (rows||[]).filter(r=>{
+  const scoped=hasPrefixed ? (rows||[]).filter(r=>r.prefixed||r.is_all) : (rows||[]);
+  return scoped.filter(r=>{
     if(includeConsi) return _isConsignmentRow(r);
     return !_isConsignmentRow(r);
   });
@@ -2967,7 +3003,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   while(true){
     const {data,error}=await getSupabaseClient()
       .from('sales_history')
-      .select('slm_id,sku,ym,qty,amount')
+      .select('slm_id,sku,ym,qty')
       .gte('ym',startYm).lte('ym',endYm)
       .order('ym')
       .range(from,from+PAGE-1);
@@ -6288,12 +6324,13 @@ async function pgPlanBooking() {
   try {
     const remote = await CACHE.get('bookings', () => SB.getBookings());
     if (remote?.length) {
-      bks = mergeBookings(remote, localBks);
+      bks = mergeBookings(remote, localBks).map(normalizeBookingRow);
       DB.set('bookings', bks);
     }
   } catch (e) {
     console.warn('pgPlanBooking: remote bookings load failed', e?.message || e);
   }
+  bks = (bks || []).map(normalizeBookingRow);
 
   const typeFilter = document.getElementById('bk-tf')?.value || '';
   const statusFilter = document.getElementById('bk-sf')?.value || '';
@@ -6306,7 +6343,9 @@ async function pgPlanBooking() {
     (b.sku || '').toLowerCase().includes(searchText) ||
     (b.skuName || '').toLowerCase().includes(searchText) ||
     (b.custName || '').toLowerCase().includes(searchText) ||
-    (b.refNo || '').toLowerCase().includes(searchText)
+    (b.refNo || '').toLowerCase().includes(searchText) ||
+    (b.soNo || '').toLowerCase().includes(searchText) ||
+    bookingDocNo(b).toLowerCase().includes(searchText)
   );
   const produceCount = bks.filter(b => b.stockStatus === 'produce' && b.status !== 'cancelled').length;
 
@@ -6339,7 +6378,7 @@ async function pgPlanBooking() {
     ${filtered.length === 0 ? '<div style="padding:20px;color:var(--TX3);text-align:center">ยังไม่มีรายการจอง</div>' : `
     <div class="tw"><table>
       <thead><tr>
-        <th>ประเภท</th><th>เลขที่ PO/SO</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
+        <th>ประเภท</th><th>เลขที่ PO/SO</th><th>วันที่ SO</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
         <th class="r">จำนวน(กก.)</th>
         <th>ผู้จอง/ลูกค้า</th>
         <th>วันที่รับสินค้า</th>
@@ -6350,20 +6389,23 @@ async function pgPlanBooking() {
         ${canEdit ? '<th>Action</th>' : ''}
       </tr></thead>
       <tbody>${filtered.map(b => {
+        const docNo = bookingDocNo(b);
+        const soDate = String(b.type||'').toUpperCase()==='SO' ? (b.soDate || '') : '';
         const late = b.receiveDate && new Date(b.receiveDate) < new Date() && b.status !== 'received' && b.status !== 'cancelled';
         const ssB = b.stockStatus === 'produce' ? '<span class="badge bba">สั่งผลิต</span>' : '<span class="badge bbg">จากสต๊อก</span>';
         const stB = {pending:'<span class="badge bbl">รอดำเนินการ</span>',confirmed:'<span class="badge bbg">ยืนยันแล้ว</span>',received:'<span class="badge bbg">รับแล้ว</span>',cancelled:'<span class="badge bbgr">ยกเลิก</span>'}[b.status]||`<span class="badge bbgr">${b.status}</span>`;
         const typeSt = b.type === 'PO' ? 'background:var(--LBL);color:var(--BL)' : 'background:var(--LG);color:var(--G)';
         return `<tr style="${late?'background:#FEF3F2':''}">
           <td><span class="badge" style="${typeSt}">${b.type}</span></td>
-          <td class="mono" style="font-size:12px">${esc(b.refNo||b.poNo||b.soNo||'—')}</td>
+          <td class="mono" style="font-size:12px">${esc(docNo||'—')}</td>
+          <td>${soDate ? fmtD(soDate) : '—'}</td>
           <td class="mono">${b.sku}</td>
           <td>${esc((b.skuName||'').substring(0,28))}</td>
           <td class="r" style="font-weight:700">${fmt(b.qty)}</td>
           <td>${esc(b.custName||'')}</td>
           <td style="${late?'color:var(--R);font-weight:700':''}">${fmtD(b.receiveDate)}</td>
           <td>${ssB}</td>
-          <td>${stB}</td>
+          <td>${canEdit ? bkStatusControl(b.id,b.status) : stB}</td>
           <td><span class="edby">${b.by||''}</span></td>
           <td style="font-size:11px;color:var(--TX3)">${b.ts?new Date(b.ts).toLocaleDateString('th-TH'):''}</td>
           ${canEdit ? `<td style="white-space:nowrap">
@@ -6378,7 +6420,7 @@ async function pgPlanBooking() {
 
 function showBkModal(id = '') {
   const SKUS = typeof getSkusMerged === 'function' ? getSkusMerged() : SKUS_MASTER;
-  const b = id ? (DB.get('bookings') || []).find(x => x.id === id) : null;
+  const b = id ? normalizeBookingRow((DB.get('bookings') || []).find(x => x.id === id) || {}) : null;
   const isEdit = !!b;
   openMod(`<div class="mh">
     <div class="mt2">${isEdit ? 'แก้ไขการจอง' : '+ เพิ่มการจองสินค้า'}</div>
@@ -6393,6 +6435,8 @@ function showBkModal(id = '') {
       </select></div>
     <div class="field"><label>เลขที่ PO / SO</label>
       <input type="text" id="bk-ref" placeholder="เลขที่อ้างอิง PO หรือ SO" value="${esc(b?.refNo||'')}"></div>
+    <div class="field"><label>วันที่ SO</label>
+      <input type="date" id="bk-so-date" value="${b?.soDate||''}"></div>
     <div class="field"><label>เลขที่ PO</label>
       <input type="text" id="bk-po" placeholder="กรอกเมื่อเป็น PO" value="${esc(b?.poNo||(b?.type==='PO'?b?.refNo:'')||'')}"></div>
     <div class="field"><label>เลขที่ SO</label>
@@ -6434,6 +6478,7 @@ function saveBk(id) {
   const sku  = document.getElementById('bk-sku')?.value;
   const qty  = parseFloat(document.getElementById('bk-qty')?.value) || 0;
   const custName = (document.getElementById('bk-cust')?.value || '').trim();
+  const soDate = document.getElementById('bk-so-date')?.value;
   const receiveDate = document.getElementById('bk-date')?.value;
   const stockStatus = document.getElementById('bk-ss')?.value || 'stock';
   const status = document.getElementById('bk-status')?.value || 'pending';
@@ -6444,10 +6489,10 @@ function saveBk(id) {
   const bks = DB.get('bookings') || [];
   if (id) {
     const idx = bks.findIndex(b => b.id === id);
-    if (idx !== -1) Object.assign(bks[idx], { type, refNo, poNo, soNo, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, edited_by: UID, edited_at: new Date().toISOString() });
+    if (idx !== -1) Object.assign(bks[idx], { type, refNo, poNo, soNo, soDate, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, edited_by: UID, edited_at: new Date().toISOString() });
     audit('EDIT_BK', id, { sku, qty, stockStatus });
   } else {
-    const newBk = { id: genId('BK'), type, refNo, poNo, soNo, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, by: UID, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString() };
+    const newBk = { id: genId('BK'), type, refNo, poNo, soNo, soDate, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, by: UID, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString() };
     bks.unshift(newBk);
     audit('ADD_BK', newBk.id, { type, refNo, sku, qty, custName, stockStatus });
     if (stockStatus === 'produce') toast(`⚠️ จอง ${type} ${sku} ${qty}กก. — ต้องสั่งผลิต รอ confirm`);
@@ -6458,6 +6503,26 @@ function saveBk(id) {
   pgPlanBooking();
 }
 
+function bkStatusControl(id, status) {
+  const safeId = String(id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const current = status || 'pending';
+  return `<select class="btn btn-xs" style="min-width:116px" onchange="bkChangeStatus('${safeId}',this.value)">
+    <option value="pending" ${current==='pending'?'selected':''}>รอดำเนินการ</option>
+    <option value="confirmed" ${current==='confirmed'?'selected':''}>ยืนยันแล้ว</option>
+    <option value="received" ${current==='received'?'selected':''}>รับสินค้าแล้ว</option>
+    <option value="cancelled" ${current==='cancelled'?'selected':''}>ยกเลิก</option>
+  </select>`;
+}
+
+async function bkChangeStatus(id, status) {
+  const rows = (DB.get('bookings') || []).map(normalizeBookingRow);
+  DB.set('bookings', rows.map(b => b.id === id ? { ...b, status } : b));
+  CACHE.clear('bookings');
+  const saved = await SB.updateBooking(id, { status });
+  if (!saved) toast('อัปเดตสถานะใน Supabase ไม่สำเร็จ', 'warn');
+  else toast('อัปเดตสถานะแล้ว');
+  pgPlanBooking();
+}
 function deleteBk(id) {
   if (!confirm('ลบรายการจองนี้?')) return;
   DB.set('bookings', (DB.get('bookings') || []).filter(b => b.id !== id));
@@ -6468,8 +6533,8 @@ function deleteBk(id) {
 function expBookings() {
   const bks = useBookings();
   toXLSX([['Bookings',
-    ['ประเภท','เลขที่ PO/SO','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','ผู้จอง','วันรับสินค้า','สต๊อก/ผลิต','สถานะ','หมายเหตุ','บันทึกโดย'],
-    bks.map(b => [b.type,b.refNo||b.poNo||b.soNo||'',b.sku,b.skuName||'',b.qty,b.custName||'',b.receiveDate||'',b.stockStatus==='produce'?'สั่งผลิต':'จากสต๊อก',b.status,b.note||'',b.by||''])
+    ['ประเภท','เลขที่ PO/SO','วันที่ SO','รหัสสินค้า','ชื่อสินค้า','จำนวน(กก.)','ผู้จอง','วันรับสินค้า','สต๊อก/ผลิต','สถานะ','หมายเหตุ','บันทึกโดย'],
+    bks.map(b => { b=normalizeBookingRow(b); return [b.type,bookingDocNo(b),b.soDate||'',b.sku,b.skuName||'',b.qty,b.custName||'',b.receiveDate||'',b.stockStatus==='produce'?'สั่งผลิต':'จากสต๊อก',b.status,b.note||'',b.by||'']; })
   ]], 'Bookings_' + todayStr() + '.xlsx');
 }
 
