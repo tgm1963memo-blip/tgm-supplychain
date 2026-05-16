@@ -79,6 +79,7 @@ create table if not exists sales_history (
   sku           text not null references products(code),
   ym            text not null,                  -- ปี-เดือน เช่น '2026-01'
   qty           numeric not null default 0,     -- ยอดขาย (กก.)
+  amount        numeric not null default 0,     -- มูลค่าขาย (บาท)
   created_at    timestamptz not null default now(),
   unique(slm_id, sku, ym)
 );

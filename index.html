@@ -242,6 +242,18 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 .cr-ocr-ok{background:var(--LG);border-radius:7px;padding:8px 11px;font-size:12px;color:var(--G);display:flex;align-items:center;gap:6px;margin-top:8px}
 @keyframes ocrSpin{to{transform:rotate(360deg)}}
 .ocr-spin{width:22px;height:22px;border:2.5px solid var(--BD);border-top-color:var(--BL);border-radius:50%;animation:ocrSpin .7s linear infinite;margin:0 auto 7px}
+/* ── AI Assistant ─────────────────────────────────── */
+.ai-card{background:linear-gradient(135deg,#eef5ff 0%,#f8faff 100%);border:1.5px solid #c0d4f0;border-radius:10px;padding:16px 18px;margin-bottom:14px}
+.ai-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-weight:700;color:#1a56a0;font-size:14px}
+.ai-hd .ai-sub{font-size:11px;color:#5b7fa8;font-weight:400;margin-left:4px}
+.ai-box{min-height:56px;background:#fff;border:1px solid #d0e0f5;border-radius:8px;padding:12px 14px;font-size:13px;color:var(--TX);line-height:1.65}
+.ai-box.empty{color:var(--TX3);font-size:12px;font-style:italic}
+.ai-loading{color:#1a56a0;font-style:italic;display:flex;align-items:center;gap:8px}
+.ai-loading::before{content:'';display:inline-block;width:14px;height:14px;border:2px solid #c0d4f0;border-top-color:#1a56a0;border-radius:50%;animation:ocrSpin .7s linear infinite;flex-shrink:0}
+.ai-result{white-space:pre-wrap;color:var(--TX)}
+.ai-error{color:var(--R);font-weight:500}
+.btn-ai{background:#1a56a0;color:#fff;border-color:#1a56a0;font-weight:600}
+.btn-ai:hover{background:#154888}
 </style>
 </head>
 <body>
@@ -1122,7 +1134,7 @@ async function pgForecast() {
   const tBtn=(id,lbl)=>`<button class="btn btn-sm" onclick="window._fcTab='${id}';pgForecast()" style="${tab===id?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">${lbl}</button>`;
   ct.innerHTML=`
   <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-    ${tBtn('grid','ตารางแผน')}${tBtn('summary','สรุปรับของ')}${tBtn('entry','นำเข้าตาราง')}${tBtn('list','รายการ')}${tBtn('doc','เอกสารลูกค้า')}
+    ${tBtn('grid','ตารางแผน')}${tBtn('summary','สรุปรับของ')}${tBtn('entry','นำเข้าตาราง')}${tBtn('list','รายการ')}${tBtn('doc','เอกสารลูกค้า')}${tBtn('ai','🤖 AI Forecast')}
     <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <select onchange="window._fcTpl=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px">
       <option value="day" ${(window._fcTpl||'week')==='day'?'selected':''}>Template: วัน</option>
@@ -1146,7 +1158,23 @@ async function pgForecast() {
   else if(tab==='summary') _renderFcSummary(fcAll,selMonth,selCust);
   else if(tab==='entry') _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap);
   else if(tab==='list') _renderFcList(fcAll,isAll,selMonth,selCust);
+  else if(tab==='ai')   _renderFcAI();
   else                  _renderFcDoc(fcAll,SKUS,skuMap,selMonth,selCust,custMap);
+}
+
+function _renderFcAI(){
+  const el = document.getElementById('fc-tab-body');
+  if(!el) return;
+  el.innerHTML = _aiCard('ai-fc-box','AI Forecast Assistant','วิเคราะห์ยอดขายย้อนหลังและแนะนำ Forecast','aiForecast') + `
+  <div class="card" style="margin-top:0">
+    <div class="ch"><div class="ct2" style="font-size:13px;color:var(--TX2)">📊 วิธีใช้งาน AI Forecast</div></div>
+    <ul style="font-size:13px;color:var(--TX2);line-height:2;margin:0;padding-left:18px">
+      <li>กด <strong>🤖 วิเคราะห์ด้วย AI</strong> — AI จะอ่านยอดขายจริง 6 เดือนล่าสุด + Forecast ที่มีอยู่</li>
+      <li>AI จะแนะนำ <strong>5 สินค้าที่ต้องวาง Forecast เร่งด่วน</strong> พร้อมปริมาณแนะนำ</li>
+      <li>แสดงแนวโน้มสินค้า (เพิ่ม/ลด) เพื่อช่วยตัดสินใจปรับ Forecast</li>
+      <li>ตั้งค่า Claude API Key ได้ที่ปุ่ม <strong>⚙️</strong></li>
+    </ul>
+  </div>`;
 }
 
 function _fcNormBooking(b={}){
@@ -1817,8 +1845,11 @@ async function pgPlanStock() {
     <select id="ps-yr" onchange="_psInitPeriod();planStkT()" style="height:34px;padding:4px 8px;border:1px solid var(--BD);border-radius:7px;font-size:13px">
       ${[new Date().getFullYear()-1,new Date().getFullYear()].map(y=>`<option value="${y}" ${y===new Date().getFullYear()?'selected':''}>${y}</option>`).join('')}
     </select>
-    <span style="margin-left:auto;font-size:12px;color:var(--TX3)">🔴 Live จาก WMS</span>
+    <span style="font-size:12px;color:var(--TX3)">🔴 Live จาก WMS</span>
+    <button class="btn btn-sm btn-ai" onclick="aiStockPlan()" style="margin-left:auto">🤖 AI วิเคราะห์สต็อก</button>
+    <button class="btn btn-sm" onclick="showAISettings()" title="AI Settings">⚙️</button>
   </div>
+  ${_aiCard('ai-ps-box','AI Stock Advisor','วิเคราะห์ความเสี่ยงสต็อกและแนะนำการสั่งซื้อ','aiStockPlan')}
   <div class="card">
     <div class="ch">
       <div class="ct2" id="ps-title">Stock Planning</div>
@@ -2862,6 +2893,232 @@ function openMod(html){document.getElementById('modal-box').innerHTML=html;docum
 function closeMod(e){if(e&&e.target!==document.getElementById('modal-bg'))return;document.getElementById('modal-bg').classList.add('hidden');}
 function closeM(){document.getElementById('modal-bg').classList.add('hidden');}
 
+// ═══════════════════════════════════════════════════════════════════
+// AI ASSISTANT  — รองรับทั้ง Groq และ Claude
+// ═══════════════════════════════════════════════════════════════════
+const _AI_PROVIDERS = {
+  groq: {
+    label: 'Groq (เร็วมาก · ฟรี)',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    models: ['llama-3.3-70b-versatile','llama-3.1-8b-instant','gemma2-9b-it','mixtral-8x7b-32768'],
+    defaultModel: 'llama-3.3-70b-versatile',
+    keyPlaceholder: 'gsk_...',
+    keyHint: 'console.groq.com',
+    keyHintUrl: 'https://console.groq.com/keys',
+  },
+  claude: {
+    label: 'Claude (Anthropic)',
+    url: 'https://api.anthropic.com/v1/messages',
+    models: ['claude-haiku-4-5-20251001','claude-sonnet-4-6'],
+    defaultModel: 'claude-haiku-4-5-20251001',
+    keyPlaceholder: 'sk-ant-api03-...',
+    keyHint: 'console.anthropic.com',
+    keyHintUrl: 'https://console.anthropic.com',
+  },
+};
+
+function _aiProvider(){ return DB.get('ai_provider') || 'groq'; }
+function _aiKey(){ return DB.get('ai_key') || ''; }
+function _aiModel(){
+  const saved = DB.get('ai_model');
+  const p = _AI_PROVIDERS[_aiProvider()];
+  return (saved && p.models.includes(saved)) ? saved : p.defaultModel;
+}
+
+async function callAI(system, user){
+  const key = _aiKey();
+  const prov = _aiProvider();
+  const cfg = _AI_PROVIDERS[prov];
+  if(!key) throw new Error(`ยังไม่ได้ตั้งค่า API Key\nกด ⚙️ AI Settings เพื่อใส่ Key`);
+  const model = _aiModel();
+
+  let res;
+  if(prov === 'claude'){
+    res = await fetch(cfg.url, {
+      method:'POST',
+      headers:{ 'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true','content-type':'application/json' },
+      body: JSON.stringify({ model, max_tokens:1500, system, messages:[{role:'user',content:user}] })
+    });
+    if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`Claude Error ${res.status}`); }
+    const d = await res.json();
+    return d.content?.[0]?.text || '';
+  } else {
+    // Groq / OpenAI-compatible
+    res = await fetch(cfg.url, {
+      method:'POST',
+      headers:{ 'Authorization':`Bearer ${key}`,'content-type':'application/json' },
+      body: JSON.stringify({ model, max_tokens:1500, messages:[{role:'system',content:system},{role:'user',content:user}] })
+    });
+    if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`Groq Error ${res.status}`); }
+    const d = await res.json();
+    return d.choices?.[0]?.message?.content || '';
+  }
+}
+
+// backward compat
+const callClaude = callAI;
+
+function showAISettings(){
+  const prov = _aiProvider();
+  const key = _aiKey();
+  const model = _aiModel();
+  const cfg = _AI_PROVIDERS[prov];
+  openMod(`<div style="padding:22px;max-width:460px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:14px">⚙️ AI Settings</div>
+    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">AI Provider</label>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      ${Object.entries(_AI_PROVIDERS).map(([k,v])=>`
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px solid ${prov===k?'#1a56a0':'var(--BD)'};border-radius:8px;cursor:pointer;background:${prov===k?'#eef5ff':'var(--W)'}">
+          <input type="radio" name="ai-prov" value="${k}" ${prov===k?'checked':''} onchange="
+            DB.set('ai_provider',this.value);
+            DB.set('ai_model','');
+            showAISettings();">
+          <div><div style="font-size:13px;font-weight:600">${v.label}</div>
+          <div style="font-size:11px;color:var(--TX3)">${v.models[0]}</div></div>
+        </label>`).join('')}
+    </div>
+    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Model</label>
+    <select id="ai-model-sel" style="width:100%;padding:8px 10px;border:1.5px solid var(--BD);border-radius:8px;font-size:13px;margin-bottom:14px">
+      ${cfg.models.map(m=>`<option value="${m}" ${model===m?'selected':''}>${m}</option>`).join('')}
+    </select>
+    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">API Key
+      <a href="${cfg.keyHintUrl}" target="_blank" style="font-size:11px;font-weight:400;color:#1a56a0;margin-left:6px">รับ Key ที่ ${cfg.keyHint}</a>
+    </label>
+    <input id="ai-key-inp" type="password" value="${esc(key)}" placeholder="${cfg.keyPlaceholder}"
+      style="width:100%;padding:9px 12px;border:1.5px solid var(--BD);border-radius:8px;font-size:13px;box-sizing:border-box;font-family:monospace">
+    <div style="font-size:11px;color:var(--TX3);margin-top:6px">Key เก็บเฉพาะในเครื่องนี้ (localStorage) ไม่ส่งไปที่ Server</div>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn btn-ai" onclick="
+        DB.set('ai_key',document.getElementById('ai-key-inp').value.trim());
+        DB.set('ai_model',document.getElementById('ai-model-sel').value);
+        closeM();toast('บันทึก AI Settings แล้ว ✓')">บันทึก</button>
+      <button class="btn" onclick="closeM()">ยกเลิก</button>
+    </div>
+  </div>`);
+}
+
+// ── Forecast AI ─────────────────────────────────────────────────
+async function aiForecast(){
+  if(!_aiKey()){ showAISettings(); return; }
+  const el = document.getElementById('ai-fc-box');
+  if(!el) return;
+  el.innerHTML = '<div class="ai-loading">AI กำลังวิเคราะห์ข้อมูล Forecast...</div>';
+  try{
+    const hist = window._salesHistCache || {};
+    const now = new Date();
+    const curYm = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const fcAll = window._fcListCache || [];
+    const lines = Object.entries(hist).slice(0,30).map(([sku,h])=>{
+      const monthly = Object.entries(h.monthly||{})
+        .filter(([ym])=>ym<=curYm).sort(([a],[b])=>b.localeCompare(a)).slice(0,6)
+        .map(([ym,qty])=>`${ym.slice(5)}:${Math.round(qty)}`).reverse();
+      const fc = fcAll.filter(f=>f.sku===sku).slice(0,3).map(f=>`${(f.delivDate||f.month||'').slice(0,7)}:${f.qty}กก.`);
+      return `• ${sku}[${monthly.join(' ')}]${fc.length?' FC('+fc.join(',')+')':''}`;
+    }).join('\n');
+    const reply = await callClaude(
+      'คุณเป็นผู้เชี่ยวชาญวางแผนการขายสินค้าอาหาร ตอบภาษาไทย กระชับ ให้ตัวเลขชัดเจน ใช้ bullet point',
+      `ยอดขายจริง 6 เดือน (กก./เดือน) และ Forecast ที่มีอยู่:\n${lines}\n\nวิเคราะห์:\n1. 🚨 5 สินค้าที่ต้องวาง Forecast เร่งด่วน + ปริมาณแนะนำ 3 เดือนข้างหน้า\n2. 📈 สินค้าแนวโน้มเพิ่มขึ้น (ควรเพิ่ม Forecast)\n3. 📉 สินค้าแนวโน้มลดลง (ควรระวัง Overstock)\n4. 💡 คำแนะนำเพิ่มเติม`
+    );
+    el.innerHTML = `<div class="ai-result">${esc(reply).replace(/\n/g,'<br>')}</div>`;
+  }catch(e){
+    el.innerHTML = `<div class="ai-error">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Stock & Planning AI ─────────────────────────────────────────
+async function aiStockPlan(){
+  if(!_aiKey()){ showAISettings(); return; }
+  const el = document.getElementById('ai-ps-box');
+  if(!el) return;
+  el.innerHTML = '<div class="ai-loading">AI กำลังวิเคราะห์สต็อก...</div>';
+  try{
+    const rows = (window._planRows||[]).slice(0,50);
+    const lines = rows.map(r=>{
+      const eff = Math.round(r.effective_qty??r.available_qty??r.qty??0);
+      const avg = Math.round(r.avg3m??0);
+      const days = avg>0 ? Math.round(eff/(avg/30)) : 999;
+      const min = r.min_stock??0;
+      return `• ${r.code||r.sku}(${(r.name||'').slice(0,18)}): ${eff}กก. avg=${avg}กก. ${days}วัน min=${min}`;
+    }).join('\n');
+    const reply = await callClaude(
+      'คุณเป็นผู้เชี่ยวชาญวางแผนสต็อกสินค้าอาหาร ตอบภาษาไทย กระชับ ให้ตัวเลขและ action ที่ชัดเจน',
+      `Stock Planning ปัจจุบัน (stock / avg3m / คงเหลือ / min):\n${lines}\n\nวิเคราะห์:\n1. 🔴 วิกฤต (<30วัน) สั่งทันที + ปริมาณแนะนำ (เท่า avg3m)\n2. 🟡 ควรเตรียมสั่ง (30–60วัน)\n3. 🟢 สต็อกเพียงพอ\n4. ⚠️ สินค้าที่ stock เกิน min มากผิดปกติ (อาจ Overstock)\n5. 💡 สรุปและคำแนะนำบริหารสต็อก`
+    );
+    el.innerHTML = `<div class="ai-result">${esc(reply).replace(/\n/g,'<br>')}</div>`;
+  }catch(e){
+    el.innerHTML = `<div class="ai-error">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Dashboard AI ────────────────────────────────────────────────
+async function aiDashInsight(){
+  if(!_aiKey()){ showAISettings(); return; }
+  const el = document.getElementById('ai-dash-box');
+  if(!el) return;
+  el.innerHTML = '<div class="ai-loading">AI กำลังสรุปภาพรวมธุรกิจ...</div>';
+  try{
+    const d = window._dashData||{};
+    const po = d.po||[];
+    const stk = d.stk||{};
+    const ss = d.ss||{};
+    const sales = (window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.amount)||Number(r.qty)||0),0);
+    const pending = po.filter(p=>p.status==='pending').length;
+    const overdue = po.filter(p=>p.status==='overdue').length;
+    const lowList = Object.entries(stk).filter(([c,s])=>s.qty<(ss[c]?.min_stock||50)).map(([c])=>c).slice(0,8);
+    const expiring = Object.values(stk).reduce((a,s)=>a+(s.lots||[]).filter(l=>l.exp&&dUntil(l.exp)>=0&&dUntil(l.exp)<=30).length,0);
+    const summary = [
+      `ยอดขายปีนี้: ${sales.toLocaleString()} บาท`,
+      `PO รอส่ง: ${pending} รายการ, เลยกำหนด: ${overdue} รายการ`,
+      `Stock ต่ำกว่าขั้นต่ำ: ${lowList.length} SKU (${lowList.join(', ')})`,
+      `Lot ใกล้หมดอายุ ≤30วัน: ${expiring} Lot`,
+    ].join('\n');
+    const reply = await callClaude(
+      'คุณเป็น COO บริษัทอาหาร ตอบภาษาไทย สรุปกระชับสำหรับผู้บริหาร ระบุความเร่งด่วนชัดเจน',
+      `ข้อมูล Dashboard วันนี้:\n${summary}\n\nสรุป:\n1. สถานการณ์โดยรวม\n2. ประเด็นเร่งด่วน (ต้องดำเนินการวันนี้)\n3. ประเด็นติดตาม (ภายใน 1 สัปดาห์)\n4. คำแนะนำเชิงกลยุทธ์`
+    );
+    el.innerHTML = `<div class="ai-result">${esc(reply).replace(/\n/g,'<br>')}</div>`;
+  }catch(e){
+    el.innerHTML = `<div class="ai-error">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Sales Overview AI ───────────────────────────────────────────
+async function aiSalesInsight(){
+  if(!_aiKey()){ showAISettings(); return; }
+  const el = document.getElementById('ai-sd-box');
+  if(!el) return;
+  el.innerHTML = '<div class="ai-loading">AI กำลังวิเคราะห์ยอดขาย...</div>';
+  try{
+    const rows = window._salesRows2Y || window._dashSalesRows || [];
+    const bySlm = {};
+    rows.forEach(r=>{ if(!bySlm[r.slm_name||r.slm_id]) bySlm[r.slm_name||r.slm_id]={qty:0,amount:0}; bySlm[r.slm_name||r.slm_id].qty+=r.qty||0; bySlm[r.slm_name||r.slm_id].amount+=r.amount||0; });
+    const top = Object.entries(bySlm).sort(([,a],[,b])=>b.amount-a.amount).slice(0,10).map(([n,v])=>`${n}: ${Math.round(v.amount).toLocaleString()}บาท / ${Math.round(v.qty)}กก.`).join('\n');
+    const bySku = {};
+    rows.forEach(r=>{ if(!bySku[r.prod_name||r.prod_code]) bySku[r.prod_name||r.prod_code]={qty:0,amount:0}; bySku[r.prod_name||r.prod_code].qty+=r.qty||0; bySku[r.prod_name||r.prod_code].amount+=r.amount||0; });
+    const topSku = Object.entries(bySku).sort(([,a],[,b])=>b.qty-a.qty).slice(0,8).map(([n,v])=>`${n}: ${Math.round(v.qty)}กก.`).join('\n');
+    const reply = await callClaude(
+      'คุณเป็นผู้จัดการฝ่ายขาย ตอบภาษาไทย วิเคราะห์เชิงลึก ให้ข้อเสนอแนะเชิงปฏิบัติ',
+      `ยอดขายแยกตาม Sales (2ปีล่าสุด):\n${top}\n\nสินค้าขายดีสุด:\n${topSku}\n\nวิเคราะห์:\n1. Sales ที่ทำผลงานดีและควรขยาย\n2. Sales ที่ควรพัฒนาหรือช่วยเหลือ\n3. สินค้า Hero และโอกาสเพิ่มยอดขาย\n4. คำแนะนำเพื่อเพิ่ม Revenue`
+    );
+    el.innerHTML = `<div class="ai-result">${esc(reply).replace(/\n/g,'<br>')}</div>`;
+  }catch(e){
+    el.innerHTML = `<div class="ai-error">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Render AI card helper ───────────────────────────────────────
+function _aiCard(boxId, title, subTitle, btnFn, btnLabel='🤖 วิเคราะห์ด้วย AI'){
+  return `<div class="ai-card">
+    <div class="ai-hd">🤖 ${esc(title)}<span class="ai-sub">${esc(subTitle)}</span>
+      <div style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn btn-sm btn-ai" onclick="${btnFn}()">${btnLabel}</button>
+        <button class="btn btn-sm" onclick="showAISettings()" title="AI Settings">⚙️</button>
+      </div>
+    </div>
+    <div id="${boxId}" class="ai-box empty">กด "วิเคราะห์ด้วย AI" เพื่อให้ AI วิเคราะห์ข้อมูลปัจจุบัน</div>
+  </div>`;
+}
+
 // ── DASHBOARD ─────────────────────────────────────────────────────
 function _histFromSalesRows(rows){
   const bySku={};
@@ -2931,6 +3188,7 @@ async function pgDash(){
   </div>
   ${overdue?`<div class="al ald">⚠️ มี ${overdue} PO เลยกำหนดส่ง</div>`:''}
   ${expiring?`<div class="al alw">⚠️ มี ${expiring} Lot ใกล้หมดอายุ ≤30 วัน</div>`:''}
+  ${_aiCard('ai-dash-box','AI Executive Summary','สรุปภาพรวมธุรกิจและแนะนำแนวทางบริหาร','aiDashInsight')}
   <div class="frow">
     <label>กลุ่มสินค้า:</label>
     <select id="gf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${skuGroupNames().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
@@ -3482,7 +3740,7 @@ function sdTogOp(k){_sd.op[k]=!_sd.op[k];sdRender();}
 
 function pgMySales(){
   const isAll=ROLE==='manager'||ROLE==='superadmin';
-  document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
+  document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-ai" onclick="aiSalesInsight()" style="margin-right:6px">🤖 AI วิเคราะห์</button><button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
   const ptBtn=t=>`<button class="btn btn-sm" id="sd-pt-${t[0]}" onclick="sdSetPT('${t}')" style="${_sd.pt===t?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายเดือน${t==='week'?'สัปดาห์':t==='year'?'ปี':''}</button>`;
   document.getElementById('ct').innerHTML=`<div id="sd-root">
   <div class="frow" style="border-radius:8px;margin-bottom:10px;gap:6px;flex-wrap:wrap">
@@ -3513,6 +3771,7 @@ function pgMySales(){
     </div>
     <div id="sd-ta" style="padding:4px 8px 12px"></div>
   </div>
+  ${_aiCard('ai-sd-box','AI Sales Insight','วิเคราะห์ประสิทธิภาพ Sales และโอกาสเพิ่มยอดขาย','aiSalesInsight')}
   </div>`;
   _sdUpdateSlmDrop();
   if(_sd.pt==='year') sdLoadYear(); else sdLoad();
