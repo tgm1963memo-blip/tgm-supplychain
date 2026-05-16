@@ -266,11 +266,11 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
   <div class="ls">กรอกรหัสพนักงานและรหัสผ่านเพื่อเข้าสู่ระบบ</div>
   <div class="field">
     <label>รหัสพนักงาน</label>
-    <input id="l-uid" type="text" value="Username" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
+    <input id="l-uid" type="text" placeholder="รหัสพนักงาน" autocomplete="username" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
   </div>
   <div class="field">
     <label>รหัสผ่าน</label>
-    <input id="l-pwd" type="password" value="Password" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
+    <input id="l-pwd" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
   </div>
   <button class="btn btn-p" style="width:100%;justify-content:center;padding:13px 0;border-radius:8px;font-size:14px" onclick="doLogin()">เข้าสู่ระบบ</button>
   <div id="l-err" style="color:var(--R);font-size:12px;text-align:center;background:#FFF1F1;border:1px solid #FECACA;border-radius:7px;padding:8px 12px;display:none"></div>
@@ -1631,8 +1631,9 @@ function _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap){
     <div style="padding:14px 16px">
       <textarea id="fc-entry-paste" style="width:100%;height:260px;padding:10px;border:1px solid var(--BD);border-radius:8px;font-family:Consolas,monospace;font-size:12px" placeholder="SKU001\t100\t200\t0\t300"></textarea>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-        <button class="btn btn-sm" onclick="fcEntryTemplate()">Template Excel</button>
-        <button class="btn btn-sm btn-p" onclick="saveFcEntryTable()">บันทึกจากตาราง</button>
+        <button class="btn btn-sm" onclick="fcEntryTemplate()">⬇ Template Excel</button>
+        <label class="btn btn-sm btn-t" style="cursor:pointer">📂 นำเข้า Excel<input type="file" accept=".xlsx,.xls" style="display:none" onchange="fcImportExcel(this)"></label>
+        <button class="btn btn-sm btn-p" onclick="saveFcEntryTable()">💾 บันทึกจากตาราง</button>
       </div>
     </div>
   </div>`;
@@ -1642,6 +1643,24 @@ function fcEntryTemplate(){
   const tpl=window._fcTpl||'week';
   const cols=_fcTemplateCols(selMonth,tpl);
   toXLSX([['Forecast_Template',['รหัสสินค้า','ชื่อสินค้า',...cols.map(c=>c.lbl)],(typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).slice(0,30).map(s=>[s.code,s.name,...cols.map(()=> '')])]],`Forecast_Template_${tpl}_${selMonth}.xlsx`);
+}
+function fcImportExcel(input){
+  const file=input.files[0];if(!file)return;
+  const rd=new FileReader();
+  rd.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      const rows=data.slice(1).filter(r=>r.some(v=>String(v||'').trim()!==''));
+      const txt=rows.map(r=>r.join('\t')).join('\n');
+      const ta=document.getElementById('fc-entry-paste');
+      if(ta)ta.value=txt;
+      toast(`โหลด ${rows.length} แถวจาก Excel — กด "💾 บันทึกจากตาราง" เพื่อบันทึก`);
+    }catch(ex){toast('อ่านไฟล์ไม่ได้: '+ex.message,'warn');}
+    input.value='';
+  };
+  rd.readAsBinaryString(file);
 }
 async function saveFcEntryTable(){
   const txt=document.getElementById('fc-entry-paste')?.value||'';
@@ -1670,24 +1689,27 @@ function _renderFcList(fcAll,isAll,selMonth,selCust){
   el.innerHTML=`<div class="card">
     <div class="ch"><div class="ct2">รายการ Forecast (${filtered.length} รายการ)</div></div>
     ${!filtered.length?'<p style="padding:16px;color:var(--TX3)">ยังไม่มีข้อมูล</p>':`
-    <div class="tw"><table><thead><tr>
-      <th>Sales</th><th>รหัสลูกค้า</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
+    <div class="tw tw-scroll"><table><thead><tr>
+      <th>Sales</th><th>รหัสลูกค้า</th><th>ประเภท</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
       <th class="r">จำนวน</th><th>วันต้องการ</th><th>วันต้องสั่ง</th>
-      <th>สถานะ</th><th>หมายเหตุ</th>${isAll?'<th>อนุมัติ</th>':''}
+      <th>สถานะ</th><th>หมายเหตุ</th>${isAll?'<th>อนุมัติ</th>':''}<th>แก้ไข</th>
     </tr></thead>
     <tbody>${filtered.map(f=>{
       const od=f.delivDate?new Date(new Date(f.delivDate)-(f.leadTime||7)*864e5):null;
       const late=od&&od<todayD;
-      const ful=_fcFulfillmentForForecast(f);
+      const canEdit=isAll||(f.by===UID&&!f.approved);
+      const typeBadge=f.fcType==='production'?'<span class="badge bbp" style="font-size:10px">ผลิต</span>':'<span class="badge bbl" style="font-size:10px">PO</span>';
       return`<tr style="${late?'background:#FEF3F2':''}">
         <td class="mono" style="font-size:11px">${f.by}</td><td class="mono" style="font-size:11px">${f.custCode||'—'}</td>
+        <td>${typeBadge}</td>
         <td class="mono">${f.sku}</td><td style="font-size:12px">${(f.skuName||'').substring(0,26)}</td>
         <td class="r" style="font-weight:700">${Math.round(f.qty||0).toLocaleString()}</td>
         <td>${f.delivDate?new Date(f.delivDate).toLocaleDateString('th-TH',{day:'2-digit',month:'short'}):'—'}</td>
         <td style="${late?'color:var(--R);font-weight:700':''}">${od?od.toLocaleDateString('th-TH',{day:'2-digit',month:'short'}):'—'}</td>
         <td>${late?'<span class="badge bbr">สั่งด่วน</span>':od&&od<=new Date(Date.now()+3*864e5)?'<span class="badge bba">ใกล้กำหนด</span>':'<span class="badge bbg">ปกติ</span>'}</td>
         <td style="font-size:11px;color:var(--TX2)">${f.note||''}</td>
-        ${isAll?`<td>${f.approved?'<span class="badge bbg">✓</span>':`<button class="btn btn-xs btn-g" onclick="apvFC_SB('${f.id}')">อนุมัติ</button>`}</td>`:''}</tr>`;
+        ${isAll?`<td>${f.approved?'<span class="badge bbg">✓</span>':`<button class="btn btn-xs btn-g" onclick="apvFC_SB('${f.id}')">อนุมัติ</button>`}</td>`:''}
+        <td>${canEdit?`<button class="btn btn-xs" onclick="showEditFcModal('${f.id}')">✏️ แก้ไข</button>`:'—'}</td></tr>`;
     }).join('')}</tbody></table></div>`}
   </div>`;
 }
@@ -1764,6 +1786,40 @@ async function apvFC_SB(id) {
     console.error('approveForecast:', e);
     toast('อนุมัติไม่สำเร็จ: ' + (e.message || e), 'warn');
   }
+}
+
+function showEditFcModal(id){
+  const fc=(window._fcListCache||DB.get('forecasts')||[]).find(f=>f.id===id);
+  if(!fc){toast('ไม่พบ Forecast','warn');return;}
+  openMod(`<div class="mh"><div class="mt2">✏️ แก้ไข Forecast</div><span class="mx" onclick="closeM()">✕</span></div>
+  <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+    <div class="al ali" style="margin:0">รหัสสินค้า: <strong>${esc(fc.sku)}</strong> &nbsp;|&nbsp; Sales: <strong>${esc(fc.by)}</strong></div>
+    <div class="field"><label>ประเภท Forecast</label>
+      <select id="ef-type" class="inp">
+        <option value="PO" ${(fc.fcType||'PO')==='PO'?'selected':''}>PO (สั่งซื้อ)</option>
+        <option value="production" ${fc.fcType==='production'?'selected':''}>Production (สั่งผลิต)</option>
+      </select>
+    </div>
+    <div class="field"><label>จำนวน (กก.)</label><input id="ef-qty" type="number" class="inp" value="${fc.qty||0}" min="1"></div>
+    <div class="field"><label>วันต้องการ (เลื่อนวันส่ง)</label><input id="ef-date" type="date" class="inp" value="${fc.delivDate||''}"></div>
+    <div class="field"><label>หมายเหตุ</label><input id="ef-note" class="inp" value="${esc(fc.note||'')}"></div>
+    <button class="btn btn-p" onclick="saveEditFc('${id}')">💾 บันทึกการแก้ไข</button>
+  </div>`);
+}
+async function saveEditFc(id){
+  const qty=parseFloat(document.getElementById('ef-qty')?.value)||0;
+  const delivDate=document.getElementById('ef-date')?.value||'';
+  const note=document.getElementById('ef-note')?.value||'';
+  const fcType=document.getElementById('ef-type')?.value||'PO';
+  if(!qty||!delivDate){toast('กรุณากรอกข้อมูลให้ครบ','warn');return;}
+  const patch={qty,delivDate,fcType,note,edited_by:UID,edited_at:new Date().toISOString()};
+  try{await SB.updateForecast(id,patch);toast('แก้ไข Forecast แล้ว');}
+  catch(e){
+    const arr=(DB.get('forecasts')||[]).map(f=>f.id===id?{...f,...patch}:f);
+    DB.set('forecasts',arr);
+    toast('บันทึกแล้ว (offline)');
+  }
+  closeM();CACHE.clear('fc_forecasts');setTimeout(pgForecast,350);
 }
 
 // override cfmFCPaste ให้ใช้ Supabase
@@ -1860,14 +1916,16 @@ async function pgPlanStock() {
 
   // โหลดจาก Supabase view
   await CACHE.get('sales_hist_2y',()=>loadDashboardSalesHist()).catch(e=>console.warn('sales_hist_2y:',e));
-  const [rows, fcSB, poSB] = await Promise.all([
+  const [rows, fcSB, poSB, prodSB] = await Promise.all([
     CACHE.get('stock_planning', () => SB.getStockPlanning()),
     CACHE.get('fc_forecasts', () => SB.getForecasts()),
-    CACHE.get('fc_po_links', () => SB.getPOPlans())
+    CACHE.get('fc_po_links', () => SB.getPOPlans()),
+    CACHE.get('fc_prod_links', () => SB.getProdOrders()).catch(()=>[])
   ]);
   window._planRows = rows;
   window._sbForecasts = fcSB || [];
   window._sbPOPlans = poSB || [];
+  window._prodOrders = prodSB || window._prodOrders || [];
   // init multi-select filter
   _skuFilter = _skuFilter || { active: [], presets: {} };
   _skuFilter.presets = DB.get('filter_presets') || {};
@@ -1917,7 +1975,7 @@ function planStkT() {
   const fcSB = window._sbForecasts || [];
   const poSB = window._sbPOPlans   || [];
   const bkAll = DB.get('bookings') || [];
-  const fc   = [...fcLS, ...fcSB.map(f => ({sku: f.sku, qty: f.qty}))];
+  const fc   = [...fcLS, ...fcSB.map(f => ({sku: f.sku, qty: f.qty, fcType: f.fcType||f.fc_type||'PO'}))];
   const po   = [...poLS, ...poSB.map(p => ({sku: p.sku, qty: p.qty, status: p.status}))];
 
   filtered = filtered.map(r => {
@@ -1942,6 +2000,8 @@ function planStkT() {
     const bench = benchMap[crits[0]] || a3; // primary benchmark for sort
 
     const fcTotal = fc.filter(f => f.sku === r.code).reduce((s,f) => s + (f.qty||0), 0);
+    const fcPO   = fc.filter(f => f.sku === r.code && (f.fcType||'PO')==='PO').reduce((s,f)=>s+(f.qty||0),0);
+    const fcProd = fc.filter(f => f.sku === r.code && (f.fcType||'PO')==='production').reduce((s,f)=>s+(f.qty||0),0);
     const poTotal = po.filter(p => p.sku === r.code && p.status !== 'completed').reduce((s,p) => s + (p.qty||0), 0);
     const bkProduce = bkAll.filter(b => b.sku === r.code && b.stockStatus === 'produce' && b.status !== 'cancelled').reduce((s,b) => s + (b.qty||0), 0);
 
@@ -1963,7 +2023,9 @@ function planStkT() {
     });
     const daysComp = daysMap[crits[0]] || 9999;
 
-    return {...r, _bench: bench, _days: daysComp, _effStock: effStock, _fcTotal: fcTotal, _poTotal: poTotal, _benchMap: benchMap, _daysMap: daysMap, _bkProduce: bkProduce, _reserved: reservedQty};
+    const prodOrd=(window._prodOrders||[]).filter(o=>o.sku===r.code&&o.status!=='done').reduce((s,o)=>s+(Number(o.qty)||0),0);
+    const recQty=Math.max(0,Math.ceil(Math.max((r.min_stock||0)-effStock,0)+bench));
+    return {...r, _bench: bench, _days: daysComp, _effStock: effStock, _fcTotal: fcTotal, _fcPO: fcPO, _fcProd: fcProd, _poTotal: poTotal, _benchMap: benchMap, _daysMap: daysMap, _bkProduce: bkProduce, _reserved: reservedQty, _prodOrdered: prodOrd, _recQty: recQty};
   });
 
   const sc = _psSort.col, sd = _psSort.dir;
@@ -1994,10 +2056,13 @@ function planStkT() {
     <th style="text-align:right;color:var(--P)">จอง (SC)</th>
     <th ${thS('min')}>ขั้นต่ำ ${sA('min')}</th>
     ${critCols}
-    <th style="text-align:right;color:var(--P)">Forecast รวม</th>
+    <th style="text-align:right;color:var(--P)">FC-PO</th>
+    <th style="text-align:right;color:var(--P)">FC-ผลิต</th>
     <th style="text-align:right;color:var(--G)">PO รวม</th>
+    <th style="text-align:right;color:var(--O)">สั่งผลิตแล้ว</th>
     <th style="text-align:right;color:var(--A)">ต้องผลิต</th>
-    <th>แนะนำ</th>
+    <th style="text-align:right;color:var(--P)">แนะนำผลิต</th>
+    <th>สถานะ</th>
     <th>Action</th>
   </tr></thead>
   <tbody>${filtered.slice(0, 150).map(r => {
@@ -2028,9 +2093,12 @@ function planStkT() {
       ${reservedTd}
       <td style="text-align:right">${r.min_stock}</td>
       ${critTds}
-      <td style="text-align:right;color:var(--P)">${r._fcTotal>0?fmt(r._fcTotal):'—'}</td>
+      <td style="text-align:right;color:var(--P)">${r._fcPO>0?fmt(r._fcPO):'—'}</td>
+      <td style="text-align:right;color:var(--P)">${r._fcProd>0?fmt(r._fcProd):'—'}</td>
       <td style="text-align:right;color:var(--G)">${r._poTotal>0?fmt(r._poTotal):'—'}</td>
+      <td style="text-align:right;color:var(--O)">${r._prodOrdered>0?`<span class="badge bba">${fmt(r._prodOrdered)}</span>`:'—'}</td>
       <td style="text-align:right;color:var(--A)">${r._bkProduce>0?`<span class="badge bba">${fmt(r._bkProduce)}</span>`:'—'}</td>
+      <td><input type="number" class="ps-rec-inp" data-sku="${r.code}" value="${r._recQty||0}" min="0" step="100" style="width:80px;text-align:right;padding:3px 6px;border:1px solid var(--BD);border-radius:5px;font-size:12px;font-family:var(--mono)"></td>
       <td>${rec}</td>
       <td>${needOrder?`<button class="btn btn-xs btn-p" onclick="quickOrder('${r.code}')">สั่งผลิต</button>`:'-'}</td>
     </tr>`;
@@ -3754,7 +3822,9 @@ function pgMySales(){
     <button class="btn btn-sm" onclick="sdGoNow()" style="font-size:12px">ปัจจุบัน</button>
     ${isAll?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span style="font-size:12px;color:var(--TX2);align-self:center">มุมมอง:</span>
-    <button class="btn btn-sm" id="sd-rv" onclick="sdTogView()">${_sd.mgrView?'Manager':'Sales'}</button>`:''}
+    <button class="btn btn-sm" id="sd-rv" onclick="sdTogView()">${_sd.mgrView?'Manager':'Sales'}</button>`
+    :ROLE==='sales'?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
+    <span class="badge bbl" style="font-size:11px;align-self:center">🔒 ข้อมูลของคุณเท่านั้น</span>`:''}
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
     <input id="sd-q" type="text" placeholder="🔍 ค้นหา..." oninput="sdSetQ(this.value)" style="padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font);color:var(--TX);outline:none;min-width:180px;flex:1;max-width:280px">
@@ -4335,13 +4405,32 @@ function consiRender(){
     <div class="kpi o"><div class="kl">จำนวนลูกค้า</div><div class="kv">${custs.length}</div><div class="kh">บัญชี</div></div>
   </div>
   ${!rows.length?`<div class="al alw">ไม่มีข้อมูล CONSI ในช่วงนี้</div>`:`
-  <div class="cgrid c2">
-    <div class="card"><div class="ch"><div class="ct2">CONSI รายเดือน</div></div><div class="tw"><table><thead><tr><th>เดือน</th><th class="r">จำนวน (กก.)</th></tr></thead><tbody>
-      ${monthly.map(m=>`<tr><td>${mL(m.ym)}</td><td class="r">${fmt(m.qty||m.total)}</td></tr>`).join('')||'<tr><td colspan="2" style="color:var(--TX3)">ไม่มีข้อมูล</td></tr>'}
+  <div class="cgrid c2" style="margin-bottom:12px">
+    <div class="card"><div class="ch"><div class="ct2">CONSI รายเดือน</div></div><div class="tw"><table><thead><tr><th>เดือน</th><th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th></tr></thead><tbody>
+      ${monthly.map(m=>`<tr><td>${mL(m.ym)}</td><td class="r">${fmt(m.qty||m.total)}</td><td class="r">${fmt(m.amount||0)}</td></tr>`).join('')||'<tr><td colspan="3" style="color:var(--TX3)">ไม่มีข้อมูล</td></tr>'}
     </tbody></table></div></div>
-    <div class="card"><div class="ch"><div class="ct2">CONSI ตามกลุ่มสินค้า</div></div><div class="tw"><table><thead><tr><th>กลุ่ม/สินค้า</th><th class="r">จำนวน</th></tr></thead><tbody>
-      ${byProd.map(g=>`<tr><td><strong>${esc(g.n)}</strong></td><td class="r"><strong>${fmt(g._tot)}</strong></td></tr>${g.it.slice(0,8).map(i=>`<tr><td style="padding-left:20px"><span class="mono">${esc(i.c)}</span> ${esc(i.n)}</td><td class="r">${fmt(i._tot)}</td></tr>`).join('')}`).join('')||'<tr><td colspan="2" style="color:var(--TX3)">ไม่มีข้อมูล</td></tr>'}
+    <div class="card"><div class="ch"><div class="ct2">CONSI ตามกลุ่มสินค้า</div></div><div class="tw"><table><thead><tr><th>กลุ่ม/สินค้า</th><th class="r">จำนวน</th><th class="r">มูลค่า</th></tr></thead><tbody>
+      ${byProd.map(g=>`<tr><td><strong>${esc(g.n)}</strong></td><td class="r"><strong>${fmt(g._tot)}</strong></td><td class="r">${fmt(g._totAmt||0)}</td></tr>${g.it.slice(0,8).map(i=>`<tr><td style="padding-left:20px"><span class="mono">${esc(i.c)}</span> ${esc(i.n)}</td><td class="r">${fmt(i._tot)}</td><td class="r">${fmt(i._totAmt||0)}</td></tr>`).join('')}`).join('')||'<tr><td colspan="3" style="color:var(--TX3)">ไม่มีข้อมูล</td></tr>'}
     </tbody></table></div></div>
+  </div>
+  <div class="card" style="margin-bottom:0">
+    <div class="ch"><div class="ct2">รายละเอียดธุรกรรม CONSI (${rows.length} รายการ)</div>
+      <button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button>
+    </div>
+    <div class="tw tw-scroll"><table><thead><tr>
+      <th>เดือน</th><th>สาขา</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
+      <th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th>
+    </tr></thead><tbody>
+      ${rows.slice(0,500).map(r=>`<tr>
+        <td>${r.ym||'—'}</td>
+        <td><span class="badge bbp" style="font-size:10px">${esc(r.branch||'—')}</span></td>
+        <td class="mono" style="font-size:11px">${esc(r.prod_code||'—')}</td>
+        <td style="font-size:12px">${esc((r.prod_name||'').substring(0,30))}</td>
+        <td class="r" style="font-weight:600">${fmt(r.qty||0)}</td>
+        <td class="r" style="color:var(--G)">${r.amount?fmt(r.amount):'—'}</td>
+      </tr>`).join('')}
+      ${rows.length>500?`<tr><td colspan="6" style="text-align:center;color:var(--TX3);padding:10px">แสดง 500 จาก ${rows.length} รายการ — Export Excel เพื่อดูทั้งหมด</td></tr>`:''}
+    </tbody></table></div>
   </div>`}`;
 }
 function expConsi(){
@@ -4402,6 +4491,12 @@ function showFcModal(){
   const custOpts=allCustomerRows().map(c=>`<option value="${c.c} — ${c.n}">${c.c} — ${c.n}</option>`).join('');
   openMod(`<div class="mh"><div class="mt2">เพิ่ม Forecast</div><span class="mx" onclick="closeM()">✕</span></div>
     <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div class="field"><label>ประเภท Forecast</label>
+        <select id="f-type" class="inp">
+          <option value="PO">PO (สั่งซื้อ)</option>
+          <option value="production">Production (สั่งผลิต)</option>
+        </select>
+      </div>
       <div class="field"><label>รหัสสินค้า</label>
         <select id="f-sku" class="inp">
           <option value="">-- เลือกสินค้า --</option>
@@ -4426,7 +4521,8 @@ async function saveFc(){
   if(!sku || !qty || !delivDate){alert('กรุณากรอกข้อมูลให้ครบ');return;}
   const rawCustCode = rawCust.includes('—') ? rawCust.split('—')[0].trim() : rawCust;
   const custCode = rawCustCode && CUST_NAMES[rawCustCode] ? rawCustCode : null;
-  const fc = {id: genId('FC'), by: UID, custCode, sku, qty, delivDate, note: document.getElementById('f-note').value.trim(), approved: false, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString()};
+  const fcType = document.getElementById('f-type')?.value || 'PO';
+  const fc = {id: genId('FC'), by: UID, custCode, sku, qty, delivDate, fcType, note: document.getElementById('f-note').value.trim(), approved: false, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString()};
   let ok = false;
   if (SB?.addForecast) {
     try {
@@ -5324,7 +5420,10 @@ function crSec0(){
 <div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">👥 ลูกค้าและ Sales เจ้าของงาน</div>
   <div class="cr-r2">
-    <div class="field"><label>Sales เจ้าของงาน</label><select id="cr-sales-owner">${crSalesUsers().map(u=>`<option value="${esc(u.uid)}" ${(_crV('cr-sales-owner')||UID)===u.uid?'selected':''}>${esc(u.name)} (${esc(u.role||'')})</option>`).join('')}</select></div>
+    <div class="field"><label>Sales เจ้าของงาน</label>${ROLE==='sales'
+      ?`<div style="padding:8px 10px;border:1px solid var(--BD);border-radius:7px;background:var(--bg2);color:var(--TX);font-size:13px">${esc(UNAME)} <span class="badge bbl" style="font-size:10px">🔒 คุณ</span></div><input type="hidden" id="cr-sales-owner" value="${esc(UID)}">`
+      :`<select id="cr-sales-owner">${crSalesUsers().map(u=>`<option value="${esc(u.uid)}" ${(_crV('cr-sales-owner')||UID)===u.uid?'selected':''}>${esc(u.name)} (${esc(u.role||'')})</option>`).join('')}</select>`
+    }</div>
     ${isExistingChange?`<div class="field"><label>เลือกลูกค้าเดิม</label><select id="cr-existing-cust" onchange="crLoadExistingCustomer(this.value)">${crCustomerOptionHtml(_crV('cr-existing-cust'))}</select></div>`:''}
   </div>
 </div>${isExistingChange?`<div class="card">
@@ -6609,13 +6708,23 @@ function expCustomerGroups(){
 
 // ── PERMISSIONS ───────────────────────────────────────────────────
 const ALL_NAV_PAGES=[
-  {id:'dash',lbl:'📊 Dashboard'},{id:'mysales',lbl:'📈 Sales Overview'},
-  {id:'forecast',lbl:'📝 Sales Forecast'},{id:'planstock',lbl:'📦 Stock & Planning'},
-  {id:'po',lbl:'📋 PO Planning'},{id:'custmap',lbl:'🗺️ Customer Map / สรุปยอดขาย'},
-  {id:'custreg',lbl:'🏪 ลงทะเบียนลูกค้า'},{id:'skuadmin',lbl:'⚙️ SKU Settings'},
+  {id:'dash',lbl:'📊 Dashboard'},
+  {id:'mysales',lbl:'📈 Sales Overview'},
+  {id:'consi',lbl:'📦 ฝากขาย CONSI'},
+  {id:'forecast',lbl:'📝 Sales Forecast'},
+  {id:'planstock',lbl:'📦 Stock & Planning'},
+  {id:'po',lbl:'📋 PO Planning'},
+  {id:'planbook',lbl:'📋 จองสินค้า PO/SO'},
+  {id:'booksummary',lbl:'📊 สรุปการจอง'},
+  {id:'prodplan',lbl:'🏭 สั่งยอดผลิต'},
+  {id:'prodsummary',lbl:'📈 เปรียบเทียบผลิต'},
+  {id:'custmap',lbl:'🗺️ Customer Map / สรุปยอดขาย'},
+  {id:'custreg',lbl:'🏪 ลงทะเบียนลูกค้า'},
+  {id:'skuadmin',lbl:'⚙️ SKU Settings'},
   {id:'groups',lbl:'🏷️ จัดการกลุ่มสินค้า/ลูกค้า'},
-  {id:'reports',lbl:'📄 Reports'},{id:'users',lbl:'👥 จัดการผู้ใช้'},
-  {id:'wms',lbl:'🔗 WMS System'},{id:'reserve',lbl:'📦 การจองสินค้า'},
+  {id:'reports',lbl:'📄 Reports'},
+  {id:'users',lbl:'👥 จัดการผู้ใช้'},
+  {id:'wms',lbl:'🔗 WMS System'},
   {id:'auditlog',lbl:'🔍 Audit Log'},
 ];
 const ALL_ROLES_PERM=['manager','planning','warehouse','sales'];
@@ -6999,6 +7108,7 @@ function filterSkuList(containerId) {
 // ════════════════════════════════════════════════
 // pgPlanBooking() — จองสินค้า PO/SO (Planning)
 // ════════════════════════════════════════════════
+let _bkFilters = null; // persist filters across re-renders
 async function pgPlanBooking() {
   const canEdit = ['planning','manager','superadmin'].includes(ROLE);
   const ct = document.getElementById('ct');
@@ -7017,13 +7127,21 @@ async function pgPlanBooking() {
   }
   bks = (bks || []).map(normalizeBookingRow);
 
-  const typeFilter = document.getElementById('bk-tf')?.value || '';
-  const statusFilter = document.getElementById('bk-sf')?.value || '';
-  const searchText = (document.getElementById('bk-search')?.value || '').toLowerCase();
+  // restore saved filters (Item 4)
+  if(!_bkFilters) _bkFilters = DB.get('bk_filters') || {type:'',status:'',search:'',tab:'active'};
+  const typeFilter = document.getElementById('bk-tf')?.value ?? _bkFilters.type;
+  const statusFilter = document.getElementById('bk-sf')?.value ?? _bkFilters.status;
+  const searchText = (document.getElementById('bk-search')?.value ?? _bkFilters.search).toLowerCase();
+  const bkTab = window._bkTab || _bkFilters.tab || 'active';
 
-  let filtered = [...bks];
+  // Tab split: active vs cancelled (Item 3)
+  const activeBks = bks.filter(b => b.status !== 'cancelled');
+  const cancelledBks = bks.filter(b => b.status === 'cancelled');
+  const srcBks = bkTab === 'cancelled' ? cancelledBks : activeBks;
+
+  let filtered = [...srcBks];
   if (typeFilter) filtered = filtered.filter(b => b.type === typeFilter);
-  if (statusFilter) filtered = filtered.filter(b => b.status === statusFilter);
+  if (statusFilter && bkTab !== 'cancelled') filtered = filtered.filter(b => b.status === statusFilter);
   if (searchText) filtered = filtered.filter(b =>
     (b.sku || '').toLowerCase().includes(searchText) ||
     (b.skuName || '').toLowerCase().includes(searchText) ||
@@ -7032,45 +7150,55 @@ async function pgPlanBooking() {
     (b.soNo || '').toLowerCase().includes(searchText) ||
     bookingDocNo(b).toLowerCase().includes(searchText)
   );
-  const produceCount = bks.filter(b => b.stockStatus === 'produce' && b.status !== 'cancelled').length;
+
+  // Save filters (Item 4)
+  _bkFilters = {type:typeFilter, status:statusFilter, search:searchText, tab:bkTab};
+  DB.set('bk_filters', _bkFilters);
+
+  const produceCount = activeBks.filter(b => b.stockStatus === 'produce').length;
+  const tTab=(id,lbl)=>`<div class="tab ${bkTab===id?'act':''}" onclick="window._bkTab='${id}';pgPlanBooking()">${lbl}</div>`;
 
   document.getElementById('ct').innerHTML = `
   <div class="krow">
-    <div class="kpi b"><div class="kl">จองทั้งหมด</div><div class="kv">${bks.length}</div></div>
-    <div class="kpi g"><div class="kl">ยืนยันแล้ว</div><div class="kv">${bks.filter(b=>b.status==='confirmed').length}</div></div>
-    <div class="kpi a"><div class="kl">รอดำเนินการ</div><div class="kv">${bks.filter(b=>b.status==='pending').length}</div></div>
+    <div class="kpi b"><div class="kl">จองทั้งหมด</div><div class="kv">${activeBks.length}</div></div>
+    <div class="kpi g"><div class="kl">ยืนยันแล้ว</div><div class="kv">${activeBks.filter(b=>b.status==='confirmed').length}</div></div>
+    <div class="kpi a"><div class="kl">รอดำเนินการ</div><div class="kv">${activeBks.filter(b=>b.status==='pending').length}</div></div>
     <div class="kpi r"><div class="kl">ต้องสั่งผลิต</div><div class="kv">${produceCount}</div><div class="kh">รายการ</div></div>
   </div>
+  <div class="tabs" style="margin-bottom:10px">
+    ${tTab('active','📋 รายการจอง ('+activeBks.length+')')}
+    ${tTab('cancelled','❌ ยกเลิก/เปิดใหม่ ('+cancelledBks.length+')')}
+  </div>
   <div class="frow" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <input id="bk-search" type="text" placeholder="ค้นหา รหัส/ชื่อสินค้า/ลูกค้า" style="width:210px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font)" oninput="pgPlanBooking()" value="${esc(searchText)}">
-    <select id="bk-tf" class="btn btn-sm" onchange="pgPlanBooking()">
+    <input id="bk-search" type="text" placeholder="ค้นหา รหัส/ชื่อสินค้า/ลูกค้า" style="width:210px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font)" oninput="bkSaveAndRefresh()" value="${esc(searchText)}">
+    <select id="bk-tf" class="btn btn-sm" onchange="bkSaveAndRefresh()">
       <option value="">ประเภททั้งหมด</option>
       <option value="PO" ${typeFilter==='PO'?'selected':''}>PO</option>
       <option value="SO" ${typeFilter==='SO'?'selected':''}>SO</option>
     </select>
-    <select id="bk-sf" class="btn btn-sm" onchange="pgPlanBooking()">
+    ${bkTab!=='cancelled'?`<select id="bk-sf" class="btn btn-sm" onchange="bkSaveAndRefresh()">
       <option value="">สถานะทั้งหมด</option>
       <option value="pending" ${statusFilter==='pending'?'selected':''}>รอดำเนินการ</option>
       <option value="confirmed" ${statusFilter==='confirmed'?'selected':''}>ยืนยันแล้ว</option>
       <option value="received" ${statusFilter==='received'?'selected':''}>รับสินค้าแล้ว</option>
-      <option value="cancelled" ${statusFilter==='cancelled'?'selected':''}>ยกเลิก</option>
-    </select>
+    </select>`:''}
     ${canEdit ? `<button class="btn btn-sm btn-p" onclick="showBkModal()">+ เพิ่มการจอง</button>` : ''}
     <button class="btn btn-sm btn-g" onclick="expBookings()">Export Excel</button>
+    <button class="btn btn-xs" onclick="bkClearFilters()" style="color:var(--TX3)">ล้าง filter</button>
   </div>
   <div class="card">
-    <div class="ch"><div class="ct2">รายการจองสินค้า (${filtered.length} รายการ)</div></div>
+    <div class="ch"><div class="ct2">${bkTab==='cancelled'?'รายการยกเลิก/เปิดใหม่':'รายการจองสินค้า'} (${filtered.length} รายการ)</div></div>
     ${filtered.length === 0 ? '<div style="padding:20px;color:var(--TX3);text-align:center">ยังไม่มีรายการจอง</div>' : `
-    <div class="tw"><table>
+    <div class="tw tw-scroll"><table>
       <thead><tr>
         <th>ประเภท</th><th>เลขที่ PO/SO</th><th>วันที่ SO</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
         <th class="r">จำนวน(กก.)</th>
         <th>ผู้จอง/ลูกค้า</th>
         <th>วันที่รับสินค้า</th>
+        <th>วันยืนยัน</th>
         <th>สต๊อก/ผลิต</th>
         <th>สถานะ</th>
         <th>บันทึกโดย</th>
-        <th>วันที่บันทึก</th>
         ${canEdit ? '<th>Action</th>' : ''}
       </tr></thead>
       <tbody>${filtered.map(b => {
@@ -7080,6 +7208,10 @@ async function pgPlanBooking() {
         const ssB = b.stockStatus === 'produce' ? '<span class="badge bba">สั่งผลิต</span>' : '<span class="badge bbg">จากสต๊อก</span>';
         const stB = {pending:'<span class="badge bbl">รอดำเนินการ</span>',confirmed:'<span class="badge bbg">ยืนยันแล้ว</span>',received:'<span class="badge bbg">รับแล้ว</span>',cancelled:'<span class="badge bbgr">ยกเลิก</span>'}[b.status]||`<span class="badge bbgr">${b.status}</span>`;
         const typeSt = b.type === 'PO' ? 'background:var(--LBL);color:var(--BL)' : 'background:var(--LG);color:var(--G)';
+        const safeId=String(b.id||'').replace(/'/g,"\\'");
+        const confirmDateTd = canEdit
+          ? `<td><input type="date" value="${esc(b.confirmDate||'')}" style="width:130px;padding:3px 6px;border:1px solid var(--BD);border-radius:5px;font-size:12px" onchange="bkSetConfirmDate('${safeId}',this.value)"></td>`
+          : `<td style="font-size:12px;color:var(--TX2)">${b.confirmDate?fmtD(b.confirmDate):'—'}</td>`;
         return `<tr style="${late?'background:#FEF3F2':''}">
           <td><span class="badge" style="${typeSt}">${b.type}</span></td>
           <td class="mono" style="font-size:12px">${esc(docNo||'—')}</td>
@@ -7089,10 +7221,10 @@ async function pgPlanBooking() {
           <td class="r" style="font-weight:700">${fmt(b.qty)}</td>
           <td>${esc(b.custName||'')}</td>
           <td style="${late?'color:var(--R);font-weight:700':''}">${fmtD(b.receiveDate)}</td>
+          ${confirmDateTd}
           <td>${ssB}</td>
           <td>${canEdit ? bkStatusControl(b.id,b.status) : stB}</td>
           <td><span class="edby">${b.by||''}</span></td>
-          <td style="font-size:11px;color:var(--TX3)">${b.ts?new Date(b.ts).toLocaleDateString('th-TH'):''}</td>
           ${canEdit ? `<td style="white-space:nowrap">
             <button class="btn btn-xs" onclick="showBkModal('${b.id}')">✏️</button>
             <button class="btn btn-xs btn-r" onclick="deleteBk('${b.id}')">ลบ</button>
@@ -7101,6 +7233,31 @@ async function pgPlanBooking() {
       }).join('')}</tbody>
     </table></div>`}
   </div>`;
+}
+
+function bkSaveAndRefresh(){
+  // read current filter values, save, and re-run
+  _bkFilters={
+    type: document.getElementById('bk-tf')?.value||'',
+    status: document.getElementById('bk-sf')?.value||'',
+    search: document.getElementById('bk-search')?.value||'',
+    tab: window._bkTab||'active'
+  };
+  DB.set('bk_filters',_bkFilters);
+  pgPlanBooking();
+}
+function bkClearFilters(){
+  window._bkTab='active';
+  _bkFilters={type:'',status:'',search:'',tab:'active'};
+  DB.set('bk_filters',_bkFilters);
+  pgPlanBooking();
+}
+async function bkSetConfirmDate(id,confirmDate){
+  const rows=(DB.get('bookings')||[]).map(normalizeBookingRow);
+  DB.set('bookings',rows.map(b=>b.id===id?{...b,confirmDate}:b));
+  CACHE.clear('bookings');
+  try{await SB.updateBooking(id,{confirmDate});toast('บันทึกวันยืนยันแล้ว');}
+  catch(e){toast('บันทึก offline เท่านั้น','warn');}
 }
 
 function showBkModal(id = '') {
