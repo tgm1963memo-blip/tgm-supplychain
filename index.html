@@ -460,10 +460,10 @@ const SB = {
       const chunk = unique.slice(i, i + 200);
       const { data, error } = await getSupabaseClient()
         .from('products')
-        .select('code,name,group_name,unit')
+        .select('code,name,group_name')
         .in('code', chunk);
       if (error) throw error;
-      rows.push(...(data || []));
+      rows.push(...(data || []).map(p => ({ unit: 'กก.', ...p })));
     }
     return rows;
   },
