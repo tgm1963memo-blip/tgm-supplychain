@@ -460,7 +460,7 @@ const SB = {
       const chunk = unique.slice(i, i + 200);
       const { data, error } = await getSupabaseClient()
         .from('products')
-        .select('code,name,group_name,plant')
+        .select('code,name,group_name,plant,company')
         .in('code', chunk);
       if (error) throw error;
       rows.push(...(data || []).map(p => ({ unit: 'กก.', ...p })));
@@ -2842,6 +2842,7 @@ function _plantCompany(plant){
   return p.startsWith('TGM') ? 'TGM' : 'TSS';
 }
 function _skuCompanyFromProduct(prod={}, code=''){
+  if(prod?.company) return String(prod.company).trim().toUpperCase()==='TGM' ? 'TGM' : 'TSS';
   if(prod?.plant) return _plantCompany(prod.plant);
   const skuCode=String(code || prod?.code || prod?.sku || prod?.sku_code || '').trim();
   const master=(typeof SKUS_MASTER!=='undefined' ? SKUS_MASTER : []).find(s=>String(s.code)===skuCode);
@@ -3443,7 +3444,7 @@ async function loadDashboardSalesHist(includeTgm = false){
   const range=_twoYearWindow();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
-  const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId,fastProducts:true,includeTgm:includeTgm===true});
+  const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
   window._salesRows2Y=rows;
   window._salesHistCache=_histFromSalesRows(rows);
   const dashRows=rows.filter(r=>r.ym>=range.currentStart&&r.ym<=range.currentEnd);
@@ -3650,6 +3651,8 @@ function _splitBranchSlm(raw){
   return {branch:'LEGACY',slm:s||'ALL',raw:s,prefixed:false};
 }
 function _isConsiBranch(branch){return String(branch||'').toUpperCase()==='CONSI';}
+function _companyFromExpressBranch(branch){return String(branch||'').trim().toUpperCase()==='TGM' ? 'TGM' : 'TSS';}
+function _companyFromExpressSlm(slm){return _companyFromExpressBranch(String(slm||'').split(':',1)[0]);}
 function _isConsignmentRow(r){
   return _isConsiBranch(r.branch) || /ฝากขาย|CONSI/i.test(`${r.cust_group||''} ${r.category||''} ${r.cust_name||''}`);
 }
@@ -3667,20 +3670,28 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   const querySlmId=slmId && !opts.disableQuerySlm ? String(slmId).trim() : '';
   let allData=[];
   let from=0;
+  const salesSource=opts.forceBaseSales ? 'sales_history' : 'v_sales_history_company';
+  const salesSelect=salesSource==='v_sales_history_company'
+    ? 'slm_id,sku,ym,qty,amount,company,product_name,group_name,plant'
+    : 'slm_id,sku,ym,qty,amount';
   while(true){
     let q=getSupabaseClient()
-      .from('sales_history')
-      .select('slm_id,sku,ym,qty,amount')
+      .from(salesSource)
+      .select(salesSelect)
       .gte('ym',startYm).lte('ym',endYm)
       .order('ym')
       .range(from,from+PAGE-1);
     if(opts.summaryOnly && !slmId) q=q.eq('slm_id','ALL');
     else if(querySlmId) q=q.or('slm_id.eq.'+querySlmId+',slm_id.like.*:'+querySlmId);
     let {data,error}=await q;
+    if(error && !opts.forceBaseSales && /(v_sales_history_company|relation|schema cache|does not exist|not found)/i.test(error.message||'')){
+      console.warn('v_sales_history_company unavailable; retry sales_history', error.message || error);
+      return _sbSalesRows(startYm,endYm,slmId,{...opts,forceBaseSales:true});
+    }
     if(error && /amount/i.test(error.message||'')){
       let q2=getSupabaseClient()
-        .from('sales_history')
-        .select('slm_id,sku,ym,qty')
+        .from(salesSource)
+        .select(salesSource==='v_sales_history_company' ? 'slm_id,sku,ym,qty,company,product_name,group_name,plant' : 'slm_id,sku,ym,qty')
         .gte('ym',startYm).lte('ym',endYm)
         .order('ym')
         .range(from,from+PAGE-1);
@@ -3697,6 +3708,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     if(!data||data.length<PAGE) break;
     from+=PAGE;
   }
+  if(opts.excludeAllRows) allData=allData.filter(r=>String(r.slm_id||'').trim().toUpperCase()!=='ALL');
   if(slmId && querySlmId && !allData.length){
     console.warn('sales_history slm filter returned no rows; retry unfiltered');
     return _sbSalesRows(startYm,endYm,slmId,{...opts,disableQuerySlm:true});
@@ -3720,7 +3732,8 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
       const name=names[sp.slm]||names[sp.raw]||(isAll?'ทั้งหมด':sp.slm);
       const qty=Number(r.qty ?? r.quantity ?? 0)||0;
       const amount=Number(r.amount ?? r.total ?? r.sales_amount ?? r.net_amount ?? r.value ?? 0)||0;
-      const prod=prodMap[r.sku]||{};
+      const prod={...(prodMap[r.sku]||{}), code:r.sku, name:r.product_name || prodMap[r.sku]?.name, group_name:r.group_name || prodMap[r.sku]?.group_name, plant:r.plant || prodMap[r.sku]?.plant, company:r.company || prodMap[r.sku]?.company};
+      const rowCompany=String(r.company||'').trim().toUpperCase();
       const base={
     branch:sp.branch,
     prefixed:sp.prefixed,
@@ -3736,7 +3749,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     prod_name:prod.name||r.sku,
     qty,
     amount: amount || qty,
-    company:_skuCompanyFromProduct(prod,r.sku),
+    company:(rowCompany==='TGM'||rowCompany==='TSS') ? rowCompany : (sp.prefixed ? _companyFromExpressBranch(sp.branch) : _skuCompanyFromProduct(prod,r.sku)),
     ym:r.ym,
       };
       const custWeights=(PROD_CUST?.[r.sku]?.[sp.slm])||null;
@@ -8040,6 +8053,11 @@ function expFcDoc(custCode, month) {
 </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
