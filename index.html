@@ -2832,13 +2832,13 @@ function cleanupSampleData(){
 // ── AUTH ──────────────────────────────────────────────────────────
 ROLE='', UID='', UNAME='';
 const RNAV={
-  superadmin:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ลงทะเบียนลูกค้า'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['perms','🔐','สิทธิ์การใช้งาน'],['auditlog','🔍','Audit Log']],
-  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า'],['custreg','🏪','ลงทะเบียนลูกค้า']],
+  superadmin:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['perms','🔐','สิทธิ์การใช้งาน'],['auditlog','🔍','Audit Log']],
+  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า'],['custreg','🏪','ข้อมูลลูกค้า']],
   planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','สรุปยอดขาย'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
   warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า']],
-  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ลงทะเบียนลูกค้า'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
+  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
-const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custmap:'สรุปยอดขาย',custreg:'ลงทะเบียนลูกค้า',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
+const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custmap:'สรุปยอดขาย',custreg:'ข้อมูลลูกค้า',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
 
 function doLogout(){audit('LOGOUT','system',{});localStorage.removeItem('tgm_session');document.getElementById('ls').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('l-err').textContent='';}
@@ -3348,22 +3348,24 @@ async function pgDash(){
   let fc=DB.get('forecasts')||[];
   let hist=myHist();
   let ss=DB.get('sku_settings')||{};
-  try{
-    const remote = await Promise.all([
-      CACHE.get('dash_po',()=>SB.getPOPlans()),
-      CACHE.get('dash_stock',()=>SB.getStock()),
-      CACHE.get('dash_fc',()=>SB.getForecasts()),
-      CACHE.get('dash_ss',()=>SB.getSkuSettings()),
-      CACHE.get('dash_sales_hist',()=>loadDashboardSalesHist()),
-    ]);
-    if(remote[0]?.length) po=mergePOPlans(remote[0], DB.get('po_log')||[]);
-    if(remote[1]&&Object.keys(remote[1]).length) stk=remote[1];
-    if(remote[2]?.length) fc=mergeForecasts(remote[2], DB.get('forecasts')||[]);
-    if(remote[3]&&Object.keys(remote[3]).length) ss=remote[3];
-    if(remote[4]&&Object.keys(remote[4]).length) hist=remote[4];
-  }catch(e){
-    console.warn('Dashboard remote data unavailable, using local cache',e.message);
-  }
+  const remote = await Promise.allSettled([
+    CACHE.get('dash_po',()=>SB.getPOPlans()),
+    CACHE.get('dash_stock',()=>SB.getStock()),
+    CACHE.get('dash_fc',()=>SB.getForecasts()),
+    CACHE.get('dash_ss',()=>SB.getSkuSettings()),
+    CACHE.get('dash_sales_hist',()=>loadDashboardSalesHist()),
+  ]);
+  const value=(i,fallback=null)=>{
+    if(remote[i]?.status==='fulfilled') return remote[i].value;
+    console.warn('Dashboard data part failed', i, remote[i]?.reason?.message || remote[i]?.reason);
+    return fallback;
+  };
+  const rPo=value(0,[]), rStk=value(1,null), rFc=value(2,[]), rSs=value(3,null), rHist=value(4,null);
+  if(rPo?.length) po=mergePOPlans(rPo, DB.get('po_log')||[]);
+  if(rStk&&Object.keys(rStk).length) stk=rStk;
+  if(rFc?.length) fc=mergeForecasts(rFc, DB.get('forecasts')||[]);
+  if(rSs&&Object.keys(rSs).length) ss=rSs;
+  if(rHist&&Object.keys(rHist).length) hist=rHist;
   const yearSalesValue=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.amount)||0),0);
   const yearSalesQty=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
   const yearSales=yearSalesValue || yearSalesQty;
@@ -3549,6 +3551,7 @@ function _salesRowsForMode(rows,{includeConsi=false}={}){
 async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   // Paginate to bypass Supabase 1000-row default limit (sales_history has 30k+ rows)
   const PAGE=1000;
+  const querySlmId=slmId && !opts.disableQuerySlm ? String(slmId).trim() : '';
   let allData=[];
   let from=0;
   while(true){
@@ -3559,7 +3562,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
       .order('ym')
       .range(from,from+PAGE-1);
     if(opts.summaryOnly && !slmId) q=q.eq('slm_id','ALL');
-    else if(slmId) q=q.or('slm_id.eq.'+slmId+',slm_id.like.*:'+slmId);
+    else if(querySlmId) q=q.or('slm_id.eq.'+querySlmId+',slm_id.like.*:'+querySlmId);
     let {data,error}=await q;
     if(error && /amount/i.test(error.message||'')){
       let q2=getSupabaseClient()
@@ -3569,13 +3572,21 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
         .order('ym')
         .range(from,from+PAGE-1);
       if(opts.summaryOnly && !slmId) q2=q2.eq('slm_id','ALL');
-      else if(slmId) q2=q2.or('slm_id.eq.'+slmId+',slm_id.like.*:'+slmId);
+      else if(querySlmId) q2=q2.or('slm_id.eq.'+querySlmId+',slm_id.like.*:'+querySlmId);
       ({data,error}=await q2);
+    }
+    if(error && querySlmId){
+      console.warn('sales_history slm filter failed; retry unfiltered', error.message || error);
+      return _sbSalesRows(startYm,endYm,slmId,{...opts,disableQuerySlm:true});
     }
     if(error) throw error;
     allData=allData.concat(data||[]);
     if(!data||data.length<PAGE) break;
     from+=PAGE;
+  }
+  if(slmId && querySlmId && !allData.length){
+    console.warn('sales_history slm filter returned no rows; retry unfiltered');
+    return _sbSalesRows(startYm,endYm,slmId,{...opts,disableQuerySlm:true});
   }
   // Keep dashboard light: fetch only product names used by this sales-history window.
   let products;
@@ -3663,7 +3674,7 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
 }
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId=''){
   const key=`sales_rows_${startYm}_${endYm}_${slmId||'ALL'}`;
-  const rows=await CACHE.get(key,()=>_sbSalesRows(startYm,endYm,slmId,{includeConsi:false}));
+  const rows=await CACHE.get(key,()=>_sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true}));
   window._salesRows2Y=rows;
   try{DB.set('sales_rows_cache',rows);}catch(_){}
   _applySalesRowsToSd(rows,activeMonth,slmId);
@@ -5423,11 +5434,11 @@ const CR_DOC_SLOTS=[
   {id:'shop-photo',group:'other',  label:'รูปถ่ายหน้าร้าน / สถานที่',        req:true,  hint:'อย่างน้อย 1 รูป',                    maxFiles:10},
   {id:'other-doc',group:'other',   label:'เอกสารอื่นๆ',                       req:false, hint:'ระบุชื่อในหมายเหตุ',                  maxFiles:10},
 ];
-let _cr={step:0,view:'form',data:{},openSlots:{},slotFiles:{},fileRefs:{},slotNotes:{},currentSlot:'',selectedApprovers:[],viewSubId:null,docNo:''};
+let _cr={step:0,view:'customers',data:{},openSlots:{},slotFiles:{},fileRefs:{},slotNotes:{},currentSlot:'',selectedApprovers:[],viewSubId:null,docNo:''};
 
-function _crReset(){
+function _crReset(view='form'){
   const subs=DB.get('custreg_subs')||[];
-  _cr={step:0,view:ROLE==='sales'?'form':(_cr.view||'form'),data:{},openSlots:{},slotFiles:{},fileRefs:{},slotNotes:{},currentSlot:'',selectedApprovers:[],viewSubId:null,docNo:'REG-'+(6073+subs.length)};
+  _cr={step:0,view,data:{},openSlots:{},slotFiles:{},fileRefs:{},slotNotes:{},currentSlot:'',selectedApprovers:[],viewSubId:null,docNo:'REG-'+(6073+subs.length)};
   CR_DOC_SLOTS.forEach(s=>{_cr.slotFiles[s.id]=[];_cr.fileRefs[s.id]=[];_cr.slotNotes[s.id]='';});
 }
 function _crInitIfNeeded(){
@@ -5458,8 +5469,65 @@ function _crSave(){
 function _crV(id,def=''){return _cr.data[id]!==undefined&&_cr.data[id]!==null?_cr.data[id]:def;}
 function _crCk(id){return _cr.data[id]?'checked':'';}
 
+function crVisibleCustomerRows(){
+  const rows=allCustomerRows();
+  const me=(DB.get('users')||[]).find(u=>u.uid===UID)||{};
+  const mySlm=String(me.slm_id||'').trim();
+  if(ROLE==='superadmin'||ROLE==='manager') return rows;
+  if(ROLE==='sales' && mySlm) return rows.filter(c=>String(c.slm||'')===mySlm);
+  return rows.filter(c=>String(c.slm||'')==='' || String(c.slm||'')===String(UID));
+}
+function crRenderCustomerHome(){
+  const q=(document.getElementById('cr-cust-q')?.value||'').toLowerCase();
+  const scopeRows=crVisibleCustomerRows();
+  const rows=scopeRows.filter(c=>!q||[c.c,c.n,c.corp,c.category,c.slm].some(v=>String(v||'').toLowerCase().includes(q)));
+  const subs=crVisibleSubs();
+  const pending=subs.filter(s=>s.status==='pending').length;
+  const approved=subs.filter(s=>s.status==='approved').length;
+  document.getElementById('ct').innerHTML=`
+  <div class="krow">
+    <div class="kpi b"><div class="kl">ลูกค้าในสิทธิ์</div><div class="kv">${fmt(scopeRows.length)}</div><div class="kh">บัญชี</div></div>
+    <div class="kpi a"><div class="kl">คำขอรออนุมัติ</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
+    <div class="kpi g"><div class="kl">อนุมัติแล้ว</div><div class="kv">${approved}</div><div class="kh">รายการ</div></div>
+    <div class="kpi p"><div class="kl">Sales owner</div><div class="kv">${ROLE==='sales'?esc((DB.get('users')||[]).find(u=>u.uid===UID)?.slm_id||UID):'All'}</div><div class="kh">${esc(userRoleLabel?.(ROLE)||ROLE)}</div></div>
+  </div>
+  <div class="frow" style="justify-content:space-between">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="cr-cust-q" value="${esc(q)}" oninput="crRenderCustomerHome()" placeholder="ค้นหารหัส/ชื่อลูกค้า/Sales..." style="width:280px">
+      <button class="btn btn-sm" onclick="_cr.view='summary';pgCustReg()">สรุปคำขอ</button>
+      ${(ROLE==='manager'||ROLE==='superadmin')?'<button class="btn btn-sm" onclick="_cr.view=\'approve\';pgCustReg()">อนุมัติ</button>':''}
+    </div>
+    <button class="btn btn-sm btn-p" onclick="crNewForm()">+ เพิ่ม/ลงทะเบียนลูกค้า</button>
+  </div>
+  <div class="card">
+    <div class="ch"><div class="ct2">ข้อมูลลูกค้า</div><span style="font-size:12px;color:var(--TX3)">${fmt(rows.length)} จาก ${fmt(scopeRows.length)} บัญชี</span></div>
+    <div class="tw" style="max-height:calc(100vh - 300px);overflow:auto">
+      <table><thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th>Corporate group</th><th>Category</th><th>Sales</th><th>สินค้า/กลุ่ม</th><th>Action</th></tr></thead><tbody>
+      ${rows.slice(0,1000).map(c=>`<tr>
+        <td class="mono">${esc(c.c)}</td>
+        <td>${esc(c.n||'')}</td>
+        <td>${esc(c.corp||'อื่นๆ')}</td>
+        <td>${esc(c.category||'ไม่ระบุ')}</td>
+        <td>${esc(c.slm?c.slm+' - '+salesNameFor(c.slm):'ไม่ระบุ')}</td>
+        <td style="font-size:12px;color:var(--TX2)">${esc((c.g||[]).slice(0,2).map(g=>g.n).join(', ')||'-')}</td>
+        <td><button class="btn btn-xs btn-t" onclick="crStartCustomerChange('${esc(c.c)}')">เปลี่ยนข้อมูล</button></td>
+      </tr>`).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--TX3);padding:18px">ไม่พบข้อมูลลูกค้า</td></tr>'}
+      ${rows.length>1000?'<tr><td colspan="7" style="text-align:center;color:var(--TX3);padding:10px">แสดง 1,000 รายการแรก กรุณาค้นหาเพื่อจำกัดผลลัพธ์</td></tr>':''}
+      </tbody></table>
+    </div>
+  </div>`;
+}
+function crStartCustomerChange(code){
+  _crReset('form');
+  _cr.data['cr-c-change-existing']=true;
+  _cr.data['cr-existing-cust']=code;
+  crLoadExistingCustomer(code);
+  pgCustReg();
+}
+
 function pgCustReg(){
   _crInitIfNeeded();
+  if(_cr.view==='customers'){crRenderCustomerHome();return;}
   const isApprover=ROLE==='manager'||ROLE==='superadmin';
   const isAdmin=ROLE==='superadmin';
   const tabViews=isAdmin?['form','approve','summary','settings']:isApprover?['form','approve','summary']:['form','summary'];
@@ -6165,7 +6233,7 @@ function crSec6(){
   <button class="btn btn-g" onclick="crNewForm()" style="margin:0 auto">➕ ลงทะเบียนใหม่</button>
 </div>`;}
 
-function crNewForm(){_crReset();pgCustReg();}
+function crNewForm(){_crReset('form');pgCustReg();}
 
 function crApListHtml(approvers){
   return approvers.map(u=>{
@@ -6911,7 +6979,7 @@ const ALL_NAV_PAGES=[
   {id:'prodplan',lbl:'🏭 สั่งยอดผลิต'},
   {id:'prodsummary',lbl:'📈 เปรียบเทียบผลิต'},
   {id:'custmap',lbl:'🗺️ Customer Map / สรุปยอดขาย'},
-  {id:'custreg',lbl:'🏪 ลงทะเบียนลูกค้า'},
+  {id:'custreg',lbl:'🏪 ข้อมูลลูกค้า'},
   {id:'skuadmin',lbl:'⚙️ SKU Settings'},
   {id:'groups',lbl:'🏷️ จัดการกลุ่มสินค้า/ลูกค้า'},
   {id:'reports',lbl:'📄 Reports'},
