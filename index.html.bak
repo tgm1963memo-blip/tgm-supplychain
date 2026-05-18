@@ -935,95 +935,33 @@ const SB = {
 const CACHE = {
   _store: {},
   _time:  {},
-  _pending: {},
-  TTL: 180000, // 3 minutes: fresh enough for live work, fast enough for page switching.
-  PREFIX: 'tgm_sc_cache_',
-  PERSIST_KEYS: new Set(['products', 'stock', 'stock_lots', 'bookings', 'po_plans', 'group_products']),
+  TTL: 900000, // 15 minutes: keep page navigation fast; the button can refresh the current page.
 
-  _now() { return Date.now(); },
-  _lsKey(key) { return this.PREFIX + key; },
-  _isFresh(key, ttl = this.TTL) {
-    return this._store[key] !== undefined && this._now() - (this._time[key] || 0) < ttl;
-  },
-  _readPersisted(key, ttl = this.TTL) {
-    if (!this.PERSIST_KEYS.has(key)) return null;
-    try {
-      const cached = JSON.parse(localStorage.getItem(this._lsKey(key)) || 'null');
-      if (!cached || this._now() - cached.time >= ttl) return null;
-      this._store[key] = cached.data;
-      this._time[key] = cached.time;
-      return cached.data;
-    } catch (_) { return null; }
-  },
-  _persist(key, data) {
-    if (!this.PERSIST_KEYS.has(key)) return;
-    try { localStorage.setItem(this._lsKey(key), JSON.stringify({ time: this._time[key], data })); }
-    catch (_) { /* storage full: memory cache still works */ }
+  async get(key, fetcher) {
+    if (this._store[key] && Date.now() - (this._time[key] || 0) < this.TTL)
+      return this._store[key];
+    const data = await fetcher();
+    this._store[key] = data;
+    this._time[key]  = Date.now();
+    return data;
   },
 
-  async get(key, fetcher, opts = {}) {
-    const ttl = opts.ttl ?? this.TTL;
-    if (!opts.force && this._isFresh(key, ttl)) return this._store[key];
-    if (!opts.force) {
-      const persisted = this._readPersisted(key, ttl);
-      if (persisted !== null) return persisted;
-    }
-    if (!opts.force && this._pending[key]) return this._pending[key];
-
-    this._pending[key] = Promise.resolve()
-      .then(fetcher)
-      .then(data => {
-        this._store[key] = data;
-        this._time[key]  = this._now();
-        this._persist(key, data);
-        return data;
-      })
-      .finally(() => { delete this._pending[key]; });
-    return this._pending[key];
-  },
-
-  peek(key) {
-    return this._store[key] ?? this._readPersisted(key, 24 * 60 * 60 * 1000);
-  },
-  prefetch(key, fetcher, opts = {}) {
-    return this.get(key, fetcher, opts).catch(e => console.warn('[cache prefetch]', key, e?.message || e));
-  },
-  warmCommon() {
-    return Promise.allSettled([
-      this.prefetch('products', () => SB.getProducts()),
-      this.prefetch('stock', () => SB.getStock()),
-      this.prefetch('bookings', () => SB.getBookings()),
-      this.prefetch('po_plans', () => SB.getPOPlans()),
-    ]);
-  },
-
-  clear(key) {
-    delete this._store[key]; delete this._time[key]; delete this._pending[key];
-    try { localStorage.removeItem(this._lsKey(key)); } catch (_) {}
-  },
+  clear(key) { delete this._store[key]; delete this._time[key]; },
   clearPrefix(prefix) {
     Object.keys(this._store).filter(k => k.startsWith(prefix)).forEach(k => this.clear(k));
-    try {
-      Object.keys(localStorage)
-        .filter(k => k.startsWith(this.PREFIX + prefix))
-        .forEach(k => localStorage.removeItem(k));
-    } catch (_) {}
   },
   clearPage(page) {
     const prefixes = {
-      dash: ['dash_', 'sales_hist_', 'products_subset_', 'stock', 'bookings', 'po_plans'],
+      dash: ['dash_', 'sales_hist_', 'products_subset_'],
       mysales: ['sales_', 'sales_hist_', 'products_subset_'],
-      forecast: ['fc_', 'sales_hist_', 'products', 'bookings', 'po_plans'],
-      planstock: ['stock', 'stock_lots', 'fc_', 'po_plans', 'bookings'],
+      forecast: ['fc_', 'sales_hist_'],
+      planstock: ['stock_', 'fc_'],
       groups: ['group_', 'products'],
       planbook: ['bookings']
     }[page] || [];
     prefixes.forEach(p => this.clearPrefix(p));
   },
-  clearAll()  {
-    this._store = {}; this._time = {}; this._pending = {};
-    try { Object.keys(localStorage).filter(k => k.startsWith(this.PREFIX)).forEach(k => localStorage.removeItem(k)); } catch (_) {}
-  },
+  clearAll()  { this._store = {}; this._time = {}; },
 };
 
 function mergeById(remote=[], local=[], idKey='id') {
@@ -1116,7 +1054,6 @@ async function doLogin() {
 
     // Supabase background tasks (ไม่บล็อก login)
     migrateFromLocalStorage().catch(console.warn);
-    CACHE.warmCommon().catch(console.warn);
     SB.audit('LOGIN', 'system', { role: ROLE }).catch(console.warn);
     // โหลด sku_settings จาก Supabase แล้ว sync ลง localStorage
     SB.getSkuSettings().then(ss => {
@@ -1165,9 +1102,7 @@ async function doLogin() {
       // Express sync tables — debounce 8s เพราะ upsert หลาย batch
       let _expressTimer = null;
       SB.subscribeExpressData(() => {
-        CACHE.clearPrefix('sales_hist_');
-        CACHE.clear('products');
-        CACHE.clear('stock');
+        CACHE.clearAll();
         const btn = document.getElementById('btn-sync');
         if (btn) btn.classList.add('syncing');
         clearTimeout(_expressTimer);
@@ -2916,7 +2851,7 @@ function restoreSession(){
     document.getElementById('app').classList.remove('hidden');
     buildSB();
     nav(sessionStorage.getItem('_pg')||'dash');
-    CACHE.warmCommon().catch(console.warn);
+    CACHE.clearAll();
     return true;
   }catch(e){console.warn('restoreSession failed',e);return false;}
 }
@@ -7176,7 +7111,7 @@ function pgWMS(){
   <div class="card">
     <div class="ch">
       <div class="ct2">📦 Stock จาก WMS (Live)</div>
-      <button class="btn btn-sm" onclick="wmsLoadStock(true)">🔄 รีเฟรช</button>
+      <button class="btn btn-sm" onclick="wmsLoadStock()">🔄 รีเฟรช</button>
     </div>
     <div id="wms-stk-body" style="padding:16px;text-align:center;color:var(--TX3)">กำลังโหลด...</div>
   </div>`;
@@ -7191,10 +7126,10 @@ function saveWmsUrl(){
   }
   toast('บันทึก WMS URL แล้ว');
 }
-async function wmsLoadStock(force=false){
+async function wmsLoadStock(){
   const el=document.getElementById('wms-stk-body');if(!el)return;
   try{
-    const stock=await CACHE.get('stock',()=>SB.getStock(), { force });
+    const stock=await CACHE.get('stock',()=>SB.getStock());
     const entries=Object.entries(stock);
     const kpis=document.getElementById('wms-kpis');
     if(kpis)kpis.innerHTML=`
@@ -7393,11 +7328,9 @@ let _bkFilters = null; // persist filters across re-renders
 async function pgPlanBooking() {
   const canEdit = ['planning','manager','superadmin'].includes(ROLE);
   const ct = document.getElementById('ct');
+  if (ct) ct.innerHTML = '<div class="al ali">กำลังโหลดข้อมูลการจองจาก Supabase...</div>';
+
   const localBks = DB.get('bookings') || [];
-  if (ct) {
-    const cachedBks = CACHE.peek('bookings') || localBks;
-    ct.innerHTML = `<div class="al ali">กำลังโหลดข้อมูลการจองจาก Supabase...${cachedBks.length ? ` แสดงข้อมูลล่าสุด ${cachedBks.length} รายการระหว่างรอ` : ''}</div>`;
-  }
   let bks = localBks;
   try {
     const remote = await CACHE.get('bookings', () => SB.getBookings());
