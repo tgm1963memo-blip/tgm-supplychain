@@ -433,7 +433,7 @@ const SB = {
   // ──────────────────────────────
   // PRODUCTS / SKU
   // ──────────────────────────────
-  async getProducts() {
+  async getProducts(opts = {}) {
     const pageSize = 1000;
     let from = 0;
     let rows = [];
@@ -449,10 +449,10 @@ const SB = {
       if (!data || data.length < pageSize) break;
       from += pageSize;
     }
-    return rows;
+    return _filterTgmRecords(rows, opts);
   },
 
-  async getProductsByCodes(codes = []) {
+  async getProductsByCodes(codes = [], opts = {}) {
     const unique = [...new Set((codes || []).map(c => String(c || '').trim()).filter(Boolean))];
     if (!unique.length) return [];
     const rows = [];
@@ -460,12 +460,12 @@ const SB = {
       const chunk = unique.slice(i, i + 200);
       const { data, error } = await getSupabaseClient()
         .from('products')
-        .select('code,name,group_name')
+        .select('code,name,group_name,plant')
         .in('code', chunk);
       if (error) throw error;
       rows.push(...(data || []).map(p => ({ unit: 'กก.', ...p })));
     }
-    return rows;
+    return _filterTgmRecords(rows, opts);
   },
 
   // ──────────────────────────────
@@ -518,14 +518,14 @@ const SB = {
   // ──────────────────────────────
   // FORECASTS
   // ──────────────────────────────
-  async getForecasts(slmId = null) {
+  async getForecasts(slmId = null, opts = {}) {
     let q = getSupabaseClient()
       .from('forecasts')
       .select('id,created_by,slm_id,sku,cust_code,qty,deliv_date,note,is_approved,approved_by,edited_by,created_at')
       .order('created_at', { ascending: false });
     if (slmId) q = q.eq('slm_id', slmId);
     const { data } = await q;
-    return (data || []).map(f => ({
+    const rows = (data || []).map(f => ({
       id:        f.id,
       by:        f.slm_id || f.created_by,
       sku:       f.sku,
@@ -537,6 +537,7 @@ const SB = {
       edited_by: f.edited_by,
       ts:        new Date(f.created_at).getTime(),
     }));
+    return _filterTgmSkuRows(rows, opts);
   },
 
   async addForecast(fc) {
@@ -604,12 +605,12 @@ const SB = {
   // ──────────────────────────────
   // PO PLANS
   // ──────────────────────────────
-  async getPOPlans() {
+  async getPOPlans(opts = {}) {
     const { data } = await getSupabaseClient()
       .from('po_plans')
       .select('*')
       .order('created_at', { ascending: false });
-    return (data || []).map(p => ({
+    const rows = (data || []).map(p => ({
       id:        p.id,
       sku:       p.sku,
       qty:       p.qty,
@@ -623,6 +624,7 @@ const SB = {
       ver:       p.version,
       ts:        new Date(p.created_at).getTime(),
     }));
+    return _filterTgmSkuRows(rows, opts);
   },
 
   async upsertPO(po) {
@@ -645,39 +647,39 @@ const SB = {
   // ──────────────────────────────
   // STOCK (WMS writes, SC reads)
   // ──────────────────────────────
-  async getStock() {
+  async getStock(opts = {}) {
     const { data } = await getSupabaseClient().from('stock').select('sku,qty,unit,last_updated');
     const result = {};
     for (const s of (data || [])) result[s.sku] = { qty: s.qty, unit: s.unit };
-    return result;
+    return _filterTgmStockMap(result, opts);
   },
 
-  async getStockLots(sku = null) {
+  async getStockLots(sku = null, opts = {}) {
     let q = getSupabaseClient().from('stock_lots').select('*').order('exp_date');
     if (sku) q = q.eq('sku', sku);
     const { data } = await q;
-    return data || [];
+    return _filterTgmSkuRows(data || [], opts);
   },
 
-  async getStockPlanning() {
+  async getStockPlanning(opts = {}) {
     const { data } = await getSupabaseClient()
       .from('v_stock_planning')
       .select('*')
       .order('days_remaining');
-    return data || [];
+    return _filterTgmSkuRows(data || [], opts);
   },
 
   // ──────────────────────────────
   // RESERVATIONS
   // ──────────────────────────────
-  async getReservations(status = null) {
+  async getReservations(status = null, opts = {}) {
     let q = getSupabaseClient()
       .from('v_reservation_status')
       .select('*')
       .order('created_at', { ascending: false });
     if (status) q = q.eq('status', status);
     const { data } = await q;
-    return data || [];
+    return _filterTgmSkuRows(data || [], opts);
   },
 
   async addReservation(res) {
@@ -705,7 +707,7 @@ const SB = {
   // ──────────────────────────────
   // BOOKINGS (Planning PO/SO จอง)
   // ──────────────────────────────
-  async getBookings() {
+  async getBookings(opts = {}) {
     try {
       const { data, error } = await getSupabaseClient()
         .from('bookings')
@@ -713,13 +715,13 @@ const SB = {
         .order('created_at', { ascending: false })
         .limit(2000);
       if (error) throw error;
-      const rows = (data || []).map(normalizeBookingRow);
+      const rows = _filterTgmSkuRows((data || []).map(normalizeBookingRow), opts);
       // sync กลับ localStorage เป็น fallback cache
       if (rows.length > 0) DB.set('bookings', rows);
       return rows;
     } catch(e) {
       console.warn('getBookings Supabase (fallback localStorage):', e.message || e);
-      return DB.get('bookings') || [];
+      return _filterTgmSkuRows(DB.get('bookings') || [], opts);
     }
   },
 
@@ -790,16 +792,16 @@ const SB = {
     };
   },
 
-  async getProdOrders() {
+  async getProdOrders(opts = {}) {
     try {
       const { data } = await getSupabaseClient()
         .from('prod_orders')
         .select('*')
         .order('plan_date', { ascending: false });
-      return (data || []).map(o => this._prodOrderFromRow(o));
+      return _filterTgmSkuRows((data || []).map(o => this._prodOrderFromRow(o)), opts);
     } catch(e) {
       console.warn('getProdOrders Supabase:', e.message || e);
-      return DB.get('prod_orders') || [];
+      return _filterTgmSkuRows(DB.get('prod_orders') || [], opts);
     }
   },
 
@@ -839,10 +841,11 @@ const SB = {
   // ──────────────────────────────
   // SKU SETTINGS
   // ──────────────────────────────
-  async getSkuSettings() {
+  async getSkuSettings(opts = {}) {
     const { data } = await getSupabaseClient().from('sku_settings').select('*');
     const result = {};
     for (const s of (data || [])) {
+      if (!opts?.includeTgm && _isTgmSkuRecord({code:s.sku})) continue;
       result[s.sku] = { min_stock: s.min_stock, shelf_life: s.shelf_life, moq: s.moq, lt: s.lead_time, note: s.note };
     }
     return result;
@@ -937,7 +940,7 @@ const CACHE = {
   _time:  {},
   _pending: {},
   TTL: 180000, // 3 minutes: fresh enough for live work, fast enough for page switching.
-  PREFIX: 'tgm_sc_cache_',
+  PREFIX: 'tgm_sc_cache_v2_',
   PERSIST_KEYS: new Set(['products', 'stock', 'stock_lots', 'bookings', 'po_plans', 'group_products']),
 
   _now() { return Date.now(); },
@@ -1030,10 +1033,10 @@ function mergeById(remote=[], local=[], idKey='id') {
   const ids = new Set((remote||[]).map(item => item?.[idKey]));
   return [...(remote||[]), ...(local||[]).filter(item => item && !ids.has(item[idKey]))];
 }
-function mergeForecasts(remote, local) { return mergeById(remote, local, 'id'); }
-function mergePOPlans(remote, local) { return mergeById(remote, local, 'id'); }
-function mergeProdOrders(remote, local) { return mergeById(remote, local, 'id'); }
-function mergeBookings(remote, local) { return mergeById(remote, local, 'id'); }
+function mergeForecasts(remote, local, opts = {}) { return _filterTgmSkuRows(mergeById(remote, local, 'id'), opts); }
+function mergePOPlans(remote, local, opts = {}) { return _filterTgmSkuRows(mergeById(remote, local, 'id'), opts); }
+function mergeProdOrders(remote, local, opts = {}) { return _filterTgmSkuRows(mergeById(remote, local, 'id'), opts); }
+function mergeBookings(remote, local, opts = {}) { return _filterTgmSkuRows(mergeById(remote, local, 'id'), opts); }
 
 function useForecastRows() { return mergeForecasts(window._sbForecasts||[], DB.get('forecasts')||[]); }
 function usePORows() { return mergePOPlans(window._poMerged||[], DB.get('po_log')||[]); }
@@ -2831,6 +2834,46 @@ const SLM_IDS=["103", "104", "106", "108", "110-1", "105", "112", "113", "114", 
 const SKUS_MASTER=[{"code": "10001", "name": "ค็อกเทลซอสเซส 1000 g. (OFF)", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10002", "name": "ค็อกเทลซอสเซส 1000 g. OFF", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10003", "name": "ไส้กรอกค็อกเทลรมควันหนังกรอบ 1000 g. OFF", "lt": 3, "moq": 0, "plant": "TGM1"}, {"code": "10004", "name": "ไส้กรอกค็อกเทลไก่ 1000 g. ", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10006", "name": "ไส้กรอกค็อกเทล 1000 g. OFF", "lt": 4, "moq": 130, "plant": "TGM1"}, {"code": "10008", "name": "แซนวิสแฮม 500 g. TOPS BK", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10009", "name": "แซนวิสแฮม (TOPS)", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10011", "name": "แซนวิสแฮม(แท่ง) ซ.ทวี", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10012", "name": "สโมคแซนวิสแฮม (ผ่าครึ่ง) TOPS", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10013", "name": "ไส้กรอกแฮม 1000 g.", "lt": 3, "moq": 0, "plant": "TGM1"}, {"code": "10017", "name": "ซาวเออร์เคร้า 1000 g.", "lt": 15, "moq": 50, "plant": "TGM1"}, {"code": "10019", "name": "บาโลน่าไก่ (แท่ง)", "lt": 5, "moq": 70, "plant": "TGM1"}, {"code": "10021", "name": "บาโลน่าพริกไก่ (แท่ง)", "lt": 5, "moq": 70, "plant": "TGM1"}, {"code": "10022", "name": "บาโลน่าพริก 1000 g.", "lt": 4, "moq": 140, "plant": "TGM1"}, {"code": "10023", "name": "บาโลน่าพริก (แท่ง)", "lt": 5, "moq": 70, "plant": "TGM1"}, {"code": "10025", "name": "บาโลน่า 1000 g.", "lt": 4, "moq": 120, "plant": "TGM1"}, {"code": "10026", "name": "บาโลน่า (แท่ง)", "lt": 5, "moq": 70, "plant": "TGM1"}, {"code": "10027", "name": "บาโลน่า (บาง) 1000 g.", "lt": 4, "moq": 120, "plant": "TGM1"}, {"code": "10028", "name": "สโมคเบค่อน (คัดพิเศษ) 1000 g. OFF", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10029", "name": "สโมคเบค่อน(บิท) 1,000 g.P.RORAL", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10030", "name": "สโมคเบค่อน (แผ่น) OFF", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10032", "name": "แซนวิสแฮม(บิท) 1,000 g. OFF", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10033", "name": "แซนวิสแฮม 500 g. โออิชิ", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10035", "name": "แฮมสลัดบาร์", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10037", "name": "สโมคเบค่อน 1000 g. BBQ PLAZA", "lt": 10, "moq": 0, "plant": "TGM2"}, {"code": "10045", "name": "ไส้กรอกเวียนนาหมู (7 นิ้ว) 1000 g.", "lt": 3, "moq": 100, "plant": "TGM1"}, {"code": "10046", "name": "แฟร้งเฟิตเตอร์(4.5 นิ้ว)1000 g. LOTUS BK", "lt": 3, "moq": 0, "plant": "TGM1"}, {"code": "10050", "name": "มอร์ตาเดลล่า (แท่ง)", "lt": 5, "moq": 10, "plant": "TGM1"}, {"code": "10053", "name": "ฮอทดอกรมควัน 1000 g.", "lt": 3, "moq": 120, "plant": "TGM1"}, {"code": "10056", "name": "สเต็กแฮม (แท่ง)", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10057", "name": "สโมคแฮม (ชิ้น)", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10059", "name": "ไส้กรอก 3 นิ้ว 500 g. (ถุงรวมสีเขียว)", "lt": 4, "moq": 130, "plant": "TGM1"}, {"code": "10061", "name": "ฮอทดอกรมควัน 7 นิ้ว 1000 g. OFF", "lt": 4, "moq": 120, "plant": "TGM1"}, {"code": "10062", "name": "ไส้กรอกเบรคฟัสรมควัน 1000 g. OFF แช่เย็น", "lt": 4, "moq": 130, "plant": "TGM1"}, {"code": "10063", "name": "สโมคซอสเซส 4 นิ้ว 1000 g.", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10064", "name": "สโมคชิกเก้นชีสซอสเซส 4 นิ้ว 1000 g. OFF", "lt": 4, "moq": 100, "plant": "TGM1"}, {"code": "10070", "name": "ไส้กรอก 5 นิ้ว 1000 g. OFF", "lt": 4, "moq": 130, "plant": "TGM1"}, {"code": "10071", "name": "ไส้กรอกแฟร้งเฟิตเตอร์ไก่ 1000 g.", "lt": 3, "moq": 0, "plant": "TGM1"}, {"code": "10072", "name": "ไส้กรอกรมควัน 5 นิ้ว 1000 g.", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10081", "name": "ไส้กรอกบราทเวริสต์ (8 นิ้ว) 1000 g.", "lt": 3, "moq": 50, "plant": "TGM1"}, {"code": "10083", "name": "คุ๊กแฮม 1000 g. OFF", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10085", "name": "แซนวิสแฮม 500 g. เดริก้า", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10086", "name": "คุ๊กแฮม 1000 g. Farmhouse", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10088", "name": "คุ๊กแฮม (แท่ง)", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10090", "name": "แซนวิสแฮม DK 500 g.", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10093", "name": "สโมคเบค่อนไดซ์ 1000 g.", "lt": 7, "moq": 100, "plant": "TGM2"}, {"code": "10095", "name": "ไส้กรอกค็อกเทลไก่จัมโบ้ 1000 g.", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10098", "name": "ค๊อกเทลชีส 1000 g.", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10099", "name": "ไส้กรอก 3 นิ้ว เบเกอรี่ เบอร์ 16 1000 g.", "lt": 4, "moq": 60, "plant": "TGM1"}, {"code": "10116", "name": "เบค่อนปลอดผงชูรส(ต้ม) (ชิ้น)", "lt": 10, "moq": 100, "plant": "TGM2"}, {"code": "10117", "name": "ไส้กรอกชีสไก่ 20 ตัว 1000 g.", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10118", "name": "บาโลน่า (หัว) 1000 g.", "lt": 7, "moq": 0, "plant": "TGM1"}, {"code": "10119", "name": "บาโลน่าพริก (หัว) 1000 g.", "lt": 7, "moq": 0, "plant": "TGM1"}, {"code": "10123", "name": "ไส้กรอกเวียนนาไก่ (พิเศษ) 1000 g.", "lt": 7, "moq": 0, "plant": "TGM1"}, {"code": "10124", "name": "ไส้กรอกรมควัน(พิเศษ) 1000 g.", "lt": 4, "moq": 150, "plant": "TGM1"}, {"code": "10129", "name": "บราทเวริสต์(พิเศษ) 1000 g. SP", "lt": 7, "moq": 0, "plant": "TGM1"}, {"code": "10130", "name": "หัวบาโลน่าสไลซ์ 1000 g.", "lt": 7, "moq": 0, "plant": "TGM1"}, {"code": "10134", "name": "ไส้กรอกชีสไก่ 12 ชิ้น 1000 g.", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10137", "name": "ไส้กรอก 19 นิ้ว (เบอร์ 20) UFM", "lt": 4, "moq": 130, "plant": "TGM1"}, {"code": "10147", "name": "ไส้กรอก 4 นิ้ว (ซี) 1000 g.", "lt": 4, "moq": 100, "plant": "TGM1"}, {"code": "10154", "name": "สโมคเบค่อน 1000 g. M.MAR", "lt": 10, "moq": 0, "plant": "TGM2"}, {"code": "10156", "name": "แซนวิสแฮม ดีเค(บิท) 1000 g. NSL", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10163", "name": "ไส้กรอกจูเนียร์ 1000 g. OFF", "lt": 4, "moq": 0, "plant": "TGM1"}, {"code": "10165", "name": "แฮม 4x4 (ชิ้น)", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10169", "name": "ไส้กรอก 3 นิ้ว (เล็ก) 1000 g. (OFF)", "lt": 4, "moq": 130, "plant": "TGM1"}, {"code": "10170", "name": "ค็อกเทลไก่รมควันหนังกรอบ 1000 g. (CUS.)", "lt": 3, "moq": 0, "plant": "TGM1"}, {"code": "10181", "name": "สโมคเบค่อน (หัว)", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10198", "name": "ไส้กรอกหั่น (เอสเอส) 1000 g. SP", "lt": 7, "moq": 0, "plant": "TGM1"}, {"code": "10201", "name": "สโมคเบค่อน(แผ่นสั้น) 1000 g.", "lt": 7, "moq": 0, "plant": "TGM2"}, {"code": "10209", "name": "ไส้กรอกไก่บิท 1000 g. OFF", "lt": 7, "moq": 0, "plant": "TGM1"}];
 
 
+
+// ── Company scope helpers ───────────────────────────────────────
+// Default app scope excludes TGM. Dashboard can opt in and split TSS/TGM.
+function _plantCompany(plant){
+  const p=String(plant||'').trim().toUpperCase();
+  return p.startsWith('TGM') ? 'TGM' : 'TSS';
+}
+function _skuCompanyFromProduct(prod={}, code=''){
+  if(prod?.plant) return _plantCompany(prod.plant);
+  const skuCode=String(code || prod?.code || prod?.sku || prod?.sku_code || '').trim();
+  const master=(typeof SKUS_MASTER!=='undefined' ? SKUS_MASTER : []).find(s=>String(s.code)===skuCode);
+  if(master?.plant) return _plantCompany(master.plant);
+  return 'TSS';
+}
+function _isTgmSkuRecord(row={}){
+  return _skuCompanyFromProduct(row, row.code || row.sku || row.sku_code) === 'TGM';
+}
+function _filterTgmRecords(rows=[], opts={}){
+  return opts?.includeTgm ? (rows||[]) : (rows||[]).filter(r=>!_isTgmSkuRecord(r));
+}
+function _rowSku(row={}){
+  return row?.sku || row?.code || row?.prod_code || row?.product_code || row?.sku_code || row?.item_code || '';
+}
+function _filterTgmSkuRows(rows=[], opts={}){
+  return opts?.includeTgm ? (rows||[]) : (rows||[]).filter(r=>!_isTgmSkuRecord({code:_rowSku(r)}));
+}
+function _filterTgmStockMap(map={}, opts={}){
+  if(opts?.includeTgm) return map || {};
+  return Object.fromEntries(Object.entries(map||{}).filter(([sku])=>!_isTgmSkuRecord({code:sku})));
+}
+function _companyTotals(rows=[]){
+  return (rows||[]).reduce((acc,r)=>{
+    const company=r.company || _skuCompanyFromProduct({}, r.prod_code || r.sku || r.code);
+    acc[company]=acc[company]||{qty:0,amount:0,count:0};
+    acc[company].qty += Number(r.qty)||0;
+    acc[company].amount += Number(r.amount)||0;
+    acc[company].count += 1;
+    return acc;
+  },{});
+}
 // ── DB ────────────────────────────────────────────────────────────
 const DB={
   get(k){try{return JSON.parse(localStorage.getItem('tgm3_'+k)||'null')}catch{return null}},
@@ -3396,11 +3439,11 @@ function _histFromSalesRows(rows){
   });
   return bySku;
 }
-async function loadDashboardSalesHist(){
+async function loadDashboardSalesHist(includeTgm = false){
   const range=_twoYearWindow();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
-  const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId,fastProducts:true});
+  const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId,fastProducts:true,includeTgm:includeTgm===true});
   window._salesRows2Y=rows;
   window._salesHistCache=_histFromSalesRows(rows);
   const dashRows=rows.filter(r=>r.ym>=range.currentStart&&r.ym<=range.currentEnd);
@@ -3414,11 +3457,11 @@ async function pgDash(){
   let hist=myHist();
   let ss=DB.get('sku_settings')||{};
   const remote = await Promise.allSettled([
-    CACHE.get('dash_po',()=>SB.getPOPlans()),
-    CACHE.get('dash_stock',()=>SB.getStock()),
-    CACHE.get('dash_fc',()=>SB.getForecasts()),
-    CACHE.get('dash_ss',()=>SB.getSkuSettings()),
-    CACHE.get('dash_sales_hist',()=>loadDashboardSalesHist()),
+    CACHE.get('dash_po_all',()=>SB.getPOPlans({includeTgm:true})),
+    CACHE.get('dash_stock_all',()=>SB.getStock({includeTgm:true})),
+    CACHE.get('dash_fc_all',()=>SB.getForecasts(null,{includeTgm:true})),
+    CACHE.get('dash_ss_all',()=>SB.getSkuSettings({includeTgm:true})),
+    CACHE.get('dash_sales_hist_all',()=>loadDashboardSalesHist(true)),
   ]);
   const value=(i,fallback=null)=>{
     if(remote[i]?.status==='fulfilled') return remote[i].value;
@@ -3426,15 +3469,18 @@ async function pgDash(){
     return fallback;
   };
   const rPo=value(0,[]), rStk=value(1,null), rFc=value(2,[]), rSs=value(3,null), rHist=value(4,null);
-  if(rPo?.length) po=mergePOPlans(rPo, DB.get('po_log')||[]);
+  if(rPo?.length) po=mergePOPlans(rPo, DB.get('po_log')||[], {includeTgm:true});
   if(rStk&&Object.keys(rStk).length) stk=rStk;
-  if(rFc?.length) fc=mergeForecasts(rFc, DB.get('forecasts')||[]);
+  if(rFc?.length) fc=mergeForecasts(rFc, DB.get('forecasts')||[], {includeTgm:true});
   if(rSs&&Object.keys(rSs).length) ss=rSs;
   if(rHist&&Object.keys(rHist).length) hist=rHist;
   const yearSalesValue=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.amount)||0),0);
   const yearSalesQty=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
   const yearSales=yearSalesValue || yearSalesQty;
-  window._dashData={po,stk,fc,ss};
+  const companySales=_companyTotals(window._dashSalesRows||[]);
+  const tssSales=companySales.TSS||{qty:0,amount:0,count:0};
+  const tgmSales=companySales.TGM||{qty:0,amount:0,count:0};
+  window._dashData={po,stk,fc,ss,companySales};
   const pending=po.filter(p=>p.status==='pending').length;
   const overdue=po.filter(p=>p.status==='overdue').length;
   const lowStk=Object.entries(stk).filter(([c,s])=>s.qty<(ss[c]?.min_stock||50)).length;
@@ -3443,7 +3489,9 @@ async function pgDash(){
   },0);
   document.getElementById('ct').innerHTML=`
   <div class="krow">
-    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">บาท รวมทั้งปี</div></div>
+    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">รวม TSS + TGM</div></div>
+    <div class="kpi g"><div class="kl">ยอดขาย TSS</div><div class="kv">฿${fmt(tssSales.amount || tssSales.qty)}</div><div class="kh">${fmt(tssSales.qty)} กก.</div></div>
+    <div class="kpi a"><div class="kl">ยอดขาย TGM</div><div class="kv">฿${fmt(tgmSales.amount || tgmSales.qty)}</div><div class="kh">${fmt(tgmSales.qty)} กก.</div></div>
     <div class="kpi a"><div class="kl">PO รอส่ง</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
     <div class="kpi r"><div class="kl">PO เลยกำหนด</div><div class="kv">${overdue}</div><div class="kh">รายการ</div></div>
     <div class="kpi r"><div class="kl">Stock ต่ำกว่าขั้นต่ำ</div><div class="kv">${lowStk}</div><div class="kh">SKU</div></div>
@@ -3658,9 +3706,9 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   if(opts.fastProducts){
     const codes=[...new Set(allData.map(r=>r.sku).filter(Boolean))];
     const key='products_subset_'+codes.length+'_'+codes.slice(0,20).join('_');
-    products=await CACHE.get(key,()=>SB.getProductsByCodes(codes));
+    products=await CACHE.get(key+(opts.includeTgm?'_all':'_scope'),()=>SB.getProductsByCodes(codes,{includeTgm:opts.includeTgm===true}));
   }else{
-    products=await CACHE.get('products',()=>SB.getProducts());
+    products=await CACHE.get(opts.includeTgm?'products_all':'products',()=>SB.getProducts({includeTgm:opts.includeTgm===true}));
   }
   const prodMap=Object.fromEntries((products||[]).map(p=>[String(p.code||p.sku||''),p]));
   const names=_salesNameMap();
@@ -3688,6 +3736,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     prod_name:prod.name||r.sku,
     qty,
     amount: amount || qty,
+    company:_skuCompanyFromProduct(prod,r.sku),
     ym:r.ym,
       };
       const custWeights=(PROD_CUST?.[r.sku]?.[sp.slm])||null;
@@ -3701,8 +3750,9 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
       });
     });
   const modeRows=_salesRowsForMode(mapped,opts);
-  const detailKeys=new Set(modeRows.filter(r=>!r.is_all).map(r=>`${r.branch}|${r.ym}|${r.prod_code}`));
-  const filteredByMode=modeRows.filter(r=>!r.is_all || !detailKeys.has(`${r.branch}|${r.ym}|${r.prod_code}`));
+  const scopedRows=opts.includeTgm ? modeRows : modeRows.filter(r=>r.company!=='TGM');
+  const detailKeys=new Set(scopedRows.filter(r=>!r.is_all).map(r=>`${r.branch}|${r.ym}|${r.prod_code}`));
+  const filteredByMode=scopedRows.filter(r=>!r.is_all || !detailKeys.has(`${r.branch}|${r.ym}|${r.prod_code}`));
   if(!slmId) return filteredByMode;
   return filteredByMode.filter(r=>r.slm_id===slmId || r.slm_key===slmId || r.slm_key.endsWith(':'+slmId));
 }
@@ -4574,7 +4624,7 @@ async function _sbConsiRows(startYm,endYm){
     const prod=prodMap[r.sku]||{};
     return [{branch:sp.branch,prefixed:sp.prefixed,is_all:String(sp.slm).toUpperCase().startsWith('ALL'),slm_id:sp.slm,slm_key:sp.raw,slm_name:name,cust_code:`SLM-${sp.raw}`,cust_name:name,cust_group:_isConsiBranch(sp.branch)?'ฝากขาย':'ขายจริง',prod_group:productGroupForSku(r.sku,prod.group_name||'อื่นๆ'),prod_code:r.sku,prod_name:prod.name||r.sku,qty,amount:amount||qty,ym:r.ym}];
   });
-  return mapped.filter(r=>_isConsignmentRow(r));
+  return mapped.filter(r=>r.company!=='TGM' && _isConsignmentRow(r));
 }
 function consiRender(){
   let rows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
@@ -4671,7 +4721,7 @@ function expConsi(){
 // ── FORECAST ─────────────────────────────────────────────────────
 
 function fcT(){
-  const fc=window._fcListCache||DB.get('forecasts')||[];
+  const fc=_filterTgmSkuRows(window._fcListCache||DB.get('forecasts')||[]);
   const isAll=ROLE!=='sales';
   const slmF=document.getElementById('fc-sf')?.value||'';
   let rows=isAll?fc:fc.filter(f=>f.by===UID);
@@ -4773,7 +4823,7 @@ async function saveFc(){
   }
 }
 function expFCLocal(){
-  const fc=window._fcListCache||DB.get('forecasts')||[];
+  const fc=_filterTgmSkuRows(window._fcListCache||DB.get('forecasts')||[]);
   toXLSX([['Forecast',['Sales','รหัสสินค้า','ชื่อสินค้า','จำนวน','วันต้องการ','หมายเหตุ','อนุมัติ','แก้ไขโดย'],
     fc.map(f=>[f.by,f.sku,skuI(f.sku).name,f.qty,f.delivDate||'',f.note||'',f.approved?'Y':'N',f.edited_by||f.by])]],
     'Forecast_'+todayStr()+'.xlsx');
@@ -4976,7 +5026,7 @@ async function syncSO(){
   }
 }
 function expPO(){
-  const po=DB.get('po_log')||[];
+  const po=_filterTgmSkuRows(DB.get('po_log')||[]);
   toXLSX([['PO Log',['PO Ref','รหัสสินค้า','ชื่อสินค้า','จำนวน','วันส่ง','ลูกค้า','สาขา','สถานะ','SO','Ver.','แก้ไขโดย','เหตุผล'],
     po.map(p=>[p.id,p.sku,p.skuName,p.qty,p.delivDate||'',p.customer,p.branch,p.status,p.so||'',p.ver,p.edited_by||p.by,p.note||''])]],
     'PO_Log_'+todayStr()+'.xlsx');
@@ -5227,7 +5277,7 @@ function cfmStkPaste(){
   stkT();renderStkLog();
 }
 function stkT(){
-  const stk=DB.get('stock')||{},ss=DB.get('sku_settings')||{};
+  const stk=_filterTgmStockMap(DB.get('stock')||{}),ss=DB.get('sku_settings')||{};
   const q=(document.getElementById('ss')?.value||'').toLowerCase();
   let rows=Object.entries(stk);
   if(q) rows=rows.filter(([c])=>{const sk=skuI(c);return c.toLowerCase().includes(q)||sk.name.toLowerCase().includes(q);});
@@ -5262,7 +5312,7 @@ function renderStkLog(){
   </tr>`).join('')}</tbody></table></div>`;
 }
 function expStk(){
-  const stk=DB.get('stock')||{},ss=DB.get('sku_settings')||{};
+  const stk=_filterTgmStockMap(DB.get('stock')||{}),ss=DB.get('sku_settings')||{};
   toXLSX([['Stock Balance',['รหัสสินค้า','ชื่อสินค้า','โรง','Stock (กก.)','ขั้นต่ำ','สถานะ','Lot ใกล้หมดอายุ','วันหมดอายุ'],
     Object.entries(stk).map(([c,s])=>{
       const sk=skuI(c),minS=(ss[c]?.min_stock||50);
@@ -5273,7 +5323,7 @@ function expStk(){
 
 // ── EXPIRY ───────────────────────────────────────────────────────
 function pgExpiry(){
-  const stk=DB.get('stock')||{},ss=DB.get('sku_settings')||{};
+  const stk=_filterTgmStockMap(DB.get('stock')||{}),ss=DB.get('sku_settings')||{};
   const lots=[];
   Object.entries(stk).forEach(([code,s])=>{
     const sk=skuI(code);const shelfLife=ss[code]?.shelf_life||30;
@@ -5309,7 +5359,7 @@ function pgExpiry(){
   }).join('')}</tbody></table></div></div>`;
 }
 function expExpiry(){
-  const stk=DB.get('stock')||{},ss=DB.get('sku_settings')||{};const lots=[];
+  const stk=_filterTgmStockMap(DB.get('stock')||{}),ss=DB.get('sku_settings')||{};const lots=[];
   Object.entries(stk).forEach(([c,s])=>{const sk=skuI(c);(s.lots||[]).forEach(l=>{if(l.exp)lots.push([c,sk.name,l.lot||'—',l.exp,dUntil(l.exp),l.qty,ss[c]?.shelf_life||30]);});});
   lots.sort((a,b)=>(a[4]??999)-(b[4]??999));
   toXLSX([['Expiry',['รหัสสินค้า','ชื่อสินค้า','Lot Number','วันหมดอายุ','วันคงเหลือ','จำนวน (กก.)','Shelf Life (วัน)'],lots]],'Expiry_'+todayStr()+'.xlsx');
@@ -7280,11 +7330,12 @@ async function ensureGroupProductsLoaded(){
   }catch(e){console.warn('load products for groups failed',e.message);}
   finally{_groupProductsLoading=false;}
 }
-function getSkusMerged(){
+function getSkusMerged(opts={}){
   const custom=DB.get('custom_skus')||[];
   const remote=DB.get('remote_products_cache')||[];
   const map=new Map();
-  [...SKUS_MASTER,...remote,...custom].map(normalizeSkuRow).filter(s=>s.code).forEach(s=>{
+  const baseSkus = SKUS_MASTER;
+  [...baseSkus,...remote,...custom].map(normalizeSkuRow).filter(s=>s.code).filter(s=>opts.includeTgm || !_isTgmSkuRecord(s)).forEach(s=>{
     const old=map.get(s.code)||{};
     map.set(s.code,{...old,...s,name:s.name||old.name||s.code});
   });
@@ -7989,6 +8040,10 @@ function expFcDoc(custCode, month) {
 </script>
 </body>
 </html>
+
+
+
+
 
 
 
