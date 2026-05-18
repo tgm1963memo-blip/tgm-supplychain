@@ -369,9 +369,11 @@ function normalizeBookingRow(b = {}) {
     custName: b.custName || b.cust_name || b.customer || b.customer_name || b.cust_code || '',
     custCode: b.custCode || b.cust_code || '',
     receiveDate,
+    confirmDate: b.confirmDate || b.confirm_date || '',
     stockStatus: b.stockStatus || b.stock_status || 'stock',
     status: b.status || 'pending',
     by: b.by || b.created_by || '',
+    editedBy: b.edited_by || b.updated_by || b.by || b.created_by || '',
     ts: b.ts || (b.created_at ? new Date(b.created_at).getTime() : 0),
   };
 }
@@ -450,31 +452,56 @@ const SB = {
     return rows;
   },
 
+  async getProductsByCodes(codes = []) {
+    const unique = [...new Set((codes || []).map(c => String(c || '').trim()).filter(Boolean))];
+    if (!unique.length) return [];
+    const rows = [];
+    for (let i = 0; i < unique.length; i += 200) {
+      const chunk = unique.slice(i, i + 200);
+      const { data, error } = await getSupabaseClient()
+        .from('products')
+        .select('code,name,group_name,unit')
+        .in('code', chunk);
+      if (error) throw error;
+      rows.push(...(data || []));
+    }
+    return rows;
+  },
+
   // ──────────────────────────────
   // SALES HISTORY
   // ──────────────────────────────
   async getSalesHistory(slmId = 'ALL') {
-    // ดึง 4 เดือนล่าสุด
     const cutoff = new Date();
     cutoff.setMonth(cutoff.getMonth() - 4);
     const startYm = cutoff.toISOString().slice(0, 7);
+    const PAGE = 1000;
+    let from = 0;
+    let rows = [];
 
-    let q = getSupabaseClient()
-      .from('sales_history')
-      .select('sku, ym, qty')
-      .gte('ym', startYm)
-      .order('sku').order('ym');
-    if (slmId && slmId !== 'ALL') q = q.eq('slm_id', slmId);
-    const { data } = await q;
-
-    // แปลงเป็น format เดิม {skuCode: {name:'', monthly:{}, avg3:0}}
-    const result = {};
-    for (const row of (data || [])) {
-      if (!result[row.sku]) result[row.sku] = { name: '', monthly: {}, avg3: 0 };
-      result[row.sku].monthly[row.ym] = row.qty;
+    while (true) {
+      let q = getSupabaseClient()
+        .from('sales_history')
+        .select('slm_id,sku,ym,qty,amount')
+        .gte('ym', startYm)
+        .order('sku').order('ym')
+        .range(from, from + PAGE - 1);
+      if (!slmId || slmId === 'ALL') q = q.eq('slm_id', 'ALL');
+      else q = q.or('slm_id.eq.' + slmId + ',slm_id.like.*:' + slmId);
+      const { data, error } = await q;
+      if (error) throw error;
+      rows = rows.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
     }
 
-    // คำนวณ avg3
+    const result = {};
+    for (const row of rows) {
+      if (!result[row.sku]) result[row.sku] = { name: '', monthly: {}, amountMonthly: {}, avg3: 0 };
+      result[row.sku].monthly[row.ym] = (result[row.sku].monthly[row.ym] || 0) + (Number(row.qty) || 0);
+      result[row.sku].amountMonthly[row.ym] = (result[row.sku].amountMonthly[row.ym] || 0) + (Number(row.amount) || 0);
+    }
+
     for (const sku in result) {
       const months3 = [];
       for (let i = 1; i <= 3; i++) {
@@ -704,11 +731,16 @@ const SB = {
         sku_name:     bk.skuName     || bk.sku,
         qty:          bk.qty,
         cust_name:    bk.custName    || null,
-        cust_code:    bk.custCode    || null,
+        cust_code:    bk.custCode    || bk.custName || null,
         receive_date: bk.receiveDate || null,
         stock_status: bk.stockStatus || 'stock',
         status:       bk.status      || 'pending',
         note:         bk.note        || null,
+        ref_no:       bk.refNo       || null,
+        po_no:        bk.poNo        || null,
+        so_no:        bk.soNo        || null,
+        so_date:      bk.soDate      || null,
+        confirm_date: bk.confirmDate || null,
         created_by:   CURRENT_USER?.uid,
       }).select().single(), 'addBooking');
       // sync localStorage
@@ -903,7 +935,7 @@ const SB = {
 const CACHE = {
   _store: {},
   _time:  {},
-  TTL: 300000, // 5 นาที ลดโหลดซ้ำจาก Supabase/Express
+  TTL: 900000, // 15 minutes: keep page navigation fast; the button can refresh the current page.
 
   async get(key, fetcher) {
     if (this._store[key] && Date.now() - (this._time[key] || 0) < this.TTL)
@@ -915,6 +947,20 @@ const CACHE = {
   },
 
   clear(key) { delete this._store[key]; delete this._time[key]; },
+  clearPrefix(prefix) {
+    Object.keys(this._store).filter(k => k.startsWith(prefix)).forEach(k => this.clear(k));
+  },
+  clearPage(page) {
+    const prefixes = {
+      dash: ['dash_', 'sales_hist_', 'products_subset_'],
+      mysales: ['sales_', 'sales_hist_', 'products_subset_'],
+      forecast: ['fc_', 'sales_hist_'],
+      planstock: ['stock_', 'fc_'],
+      groups: ['group_', 'products'],
+      planbook: ['bookings']
+    }[page] || [];
+    prefixes.forEach(p => this.clearPrefix(p));
+  },
   clearAll()  { this._store = {}; this._time = {}; },
 };
 
@@ -930,6 +976,8 @@ function mergeBookings(remote, local) { return mergeById(remote, local, 'id'); }
 function useForecastRows() { return mergeForecasts(window._sbForecasts||[], DB.get('forecasts')||[]); }
 function usePORows() { return mergePOPlans(window._poMerged||[], DB.get('po_log')||[]); }
 function useProdOrders() { return mergeProdOrders(window._prodOrders||[], DB.get('prod_orders')||[]); }
+function useBookings() { return mergeBookings(window._sbBookings||[], DB.get('bookings')||[]).map(normalizeBookingRow); }
+function uidToName(uid){ const u=(DB.get('users')||[]).find(x=>x.uid===uid||x.id===uid); return u?.name||uid||''; }
 
 // ════════════════════════════════════════════════
 // MIGRATION — ย้าย localStorage → Supabase ครั้งแรก
@@ -1011,10 +1059,7 @@ async function doLogin() {
     SB.getSkuSettings().then(ss => {
       if (ss && Object.keys(ss).length > 0) DB.set('sku_settings', ss);
     }).catch(console.warn);
-    // โหลด bookings จาก Supabase แล้ว sync ลง localStorage (fallback)
-    getSupabaseClient().from('bookings').select('*').order('created_at', { ascending: false }).limit(2000)
-      .then(({ data }) => { if (data && data.length > 0) DB.set('bookings', data); })
-      .catch(console.warn);
+    // Bookings are large; load them lazily only on booking pages.
     try {
       SB.subscribeStock(() => {
         CACHE.clear('stock');
@@ -1022,11 +1067,11 @@ async function doLogin() {
         CACHE.clear('stock_planning');
         if (document.getElementById('ps-tbl')) planStkT();
       });
-      SB.subscribeBookings(payload => {
-        // sync localStorage เมื่อมีการเปลี่ยนแปลง bookings ใน Supabase
-        SB.getBookings().then(rows => {
-          if (rows.length > 0) CACHE.clear('bookings');
-        }).catch(console.warn);
+      SB.subscribeBookings(() => {
+        CACHE.clear('bookings');
+        CACHE.clear('fc_booking_links');
+        if (sessionStorage.getItem('_pg') === 'planbook') pgPlanBooking();
+        if (sessionStorage.getItem('_pg') === 'booksummary') pgBookingSummary();
       });
       SB.subscribeReservations(payload => {
         if (payload.eventType === 'INSERT') {
@@ -1134,7 +1179,7 @@ async function pgForecast() {
   const tBtn=(id,lbl)=>`<button class="btn btn-sm" onclick="window._fcTab='${id}';pgForecast()" style="${tab===id?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">${lbl}</button>`;
   ct.innerHTML=`
   <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-    ${tBtn('grid','ตารางแผน')}${tBtn('summary','สรุปรับของ')}${tBtn('entry','นำเข้าตาราง')}${tBtn('list','รายการ')}${tBtn('doc','เอกสารลูกค้า')}${tBtn('ai','🤖 AI Forecast')}
+    ${tBtn('grid','ตารางแผน')}${tBtn('summary','สรุปรับของ')}${tBtn('entry','นำเข้าตาราง')}${tBtn('list','รายการ')}${tBtn('doc','เอกสารลูกค้า')}
     <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <select onchange="window._fcTpl=this.value;pgForecast()" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px">
       <option value="day" ${(window._fcTpl||'week')==='day'?'selected':''}>Template: วัน</option>
@@ -1158,7 +1203,6 @@ async function pgForecast() {
   else if(tab==='summary') _renderFcSummary(fcAll,selMonth,selCust);
   else if(tab==='entry') _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap);
   else if(tab==='list') _renderFcList(fcAll,isAll,selMonth,selCust);
-  else if(tab==='ai')   _renderFcAI();
   else                  _renderFcDoc(fcAll,SKUS,skuMap,selMonth,selCust,custMap);
 }
 
@@ -1269,6 +1313,7 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
           <th style="padding:8px 10px;text-align:right;color:var(--TX2)">เดือนก่อน</th>
           <th style="padding:8px 10px;text-align:right;color:var(--TX2)">avg 3 เดือน</th>
           <th style="padding:8px 10px;text-align:right;color:var(--TX2)">ปีก่อน</th>
+          <th style="padding:6px 8px;text-align:center;white-space:nowrap;background:var(--LBL);color:var(--BL);min-width:90px">🤖 AI แนะนำ<br><span style="font-size:9.5px;font-weight:400;color:var(--TX3)">กก./เดือน</span><br><button class="btn btn-xs btn-ai" onclick="aiForecastGridSuggest()" id="fc-ai-load-btn" style="margin-top:2px;padding:2px 6px;font-size:10px">โหลด</button></th>
           ${cols.map((c,i)=>`<th style="padding:7px 6px;text-align:center;color:var(--BL);min-width:${tpl==='day'?52:tpl==='month'?100:72}px;${i===0?'border-left:2px solid var(--BD)':''}">${esc(c.lbl)}<br><span style="font-weight:400;color:var(--TX3);font-size:10px">${esc(c.sub||'')}</span></th>`).join('')}
           <th style="padding:8px 10px;text-align:right;color:var(--N);font-weight:700;min-width:70px;border-left:2px solid var(--BD)">รวม</th>
           <th style="padding:8px 8px;text-align:center;min-width:46px"></th>
@@ -1286,6 +1331,7 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
             <td style="padding:5px 10px;text-align:right;font-size:11px;color:var(--TX3)">${(h[prevYm]||0)>0?fmt(h[prevYm]):'—'}</td>
             <td style="padding:5px 10px;text-align:right;font-size:11px;color:var(--TX3)">${avg3>0?avg3.toLocaleString():'—'}</td>
             <td style="padding:5px 10px;text-align:right;font-size:11px;color:var(--TX3)">${(h[prevYrYm]||0)>0?fmt(h[prevYrYm]):'—'}</td>
+            <td class="fc-ai-cell" data-sku="${esc(s.code)}" data-avg="${avg3}" style="padding:4px 8px;text-align:center;background:var(--LBL);white-space:nowrap"><span style="color:var(--TX3);font-size:11px">—</span></td>
             ${cols.map((c,i)=>`<td style="padding:3px 4px;${i===0?'border-left:2px solid var(--BD)':''}">
               <input class="fcg-inp" data-sku="${esc(s.code)}" data-col="${i}" type="number" min="0" step="100" value="${d[i]||''}" id="fcg-${esc(s.code)}-${i}"
                 oninput="fcgRow('${esc(s.code)}')"
@@ -1296,7 +1342,7 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
           </tr>`;
         }).join('')}</tbody>
         <tfoot><tr style="background:var(--bg2);font-weight:700;font-size:12px">
-          <td colspan="5" style="padding:8px 10px">รวมทั้งหมด</td>
+          <td colspan="6" style="padding:8px 10px">รวมทั้งหมด</td>
           ${cols.map((c,i)=>`<td style="padding:8px 6px;text-align:center;color:var(--BL);${i===0?'border-left:2px solid var(--BD)':''}" id="fcg-ftot-${i}"></td>`).join('')}
           <td style="padding:8px 10px;text-align:right;color:var(--N);border-left:2px solid var(--BD)" id="fcg-ftot-all"></td>
           <td></td>
@@ -1304,6 +1350,7 @@ function _renderFcGrid(fcAll,SKUS,skuMap,selMonth,selCust,custMap){
       </table>
     </div>
     <div style="padding:10px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--bg2)">
+      <button class="btn btn-sm btn-ai" id="fc-ai-fill-btn" onclick="fcFillAllAISuggest()" style="margin-right:auto">✅ กรอก AI ทั้งหมด</button>
       <button class="btn btn-p" onclick="saveFcGrid()">บันทึกแผน</button>
       <button class="btn btn-g" onclick="expFcGrid()">Export Excel</button>
     </div>
@@ -1359,6 +1406,76 @@ function fcRemoveSku(sku){
   const key=_fcGridKey(window._fcMonth||today().slice(0,7),window._fcCust||'',window._fcTpl||'week');
   window._fcGridSkus=window._fcGridSkus||{};window._fcGridSkus[key]=(window._fcGridSkus[key]||[]).filter(c=>c!==sku);
   pgForecast();
+}
+// AI Forecast Grid Suggest
+async function aiForecastGridSuggest(){
+  if(!_aiKey()){ showAISettings(); return; }
+  const loadBtn = document.getElementById('fc-ai-load-btn');
+  if(loadBtn){ loadBtn.textContent='...'; loadBtn.disabled=true; }
+  document.querySelectorAll('.fc-ai-cell').forEach(el=>{
+    el.innerHTML='<span style="color:var(--TX3);font-size:11px">...</span>';
+  });
+  try{
+    const hist = window._salesHistCache || {};
+    const now = new Date();
+    const curYm = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const selMonth = window._fcMonth || curYm;
+    const fcAll = window._fcListCache || [];
+    const stateKey = _fcGridKey(selMonth, window._fcCust||'', window._fcTpl||'week');
+    const showSkuCodes = window._fcGridSkus?.[stateKey] || [];
+    const lines = showSkuCodes.slice(0,25).map(code=>{
+      const h = hist[code]?.monthly||{};
+      const vals = Object.entries(h).filter(([ym])=>ym<=curYm).sort(([a],[b])=>b.localeCompare(a)).slice(0,6);
+      const monthly = vals.map(([ym,qty])=>`${ym.slice(5)}:${Math.round(qty)}`).reverse().join(' ');
+      const fc = fcAll.filter(f=>f.sku===code).slice(0,2).map(f=>(f.delivDate||f.month||'').slice(0,7)+':'+f.qty).join(',');
+      return `${code}[${monthly}]${fc?'FC('+fc+')':''}`; 
+    }).join('\n');
+    const reply = await callClaude(
+      'คุณเป็น AI Forecast ตอบ JSON เท่านั้น ห้ามมีข้อความอื่น รูปแบบ: {"SKU": ตัวเลขกก.ต่อเดือน} ปัดเป็นร้อย',
+      'ยอดขาย 6 เดือน (กก./เดือน):\n'+lines+'\n\nเดือน '+selMonth+': แนะนำ Forecast กก./เดือน แต่ละ SKU ตอบ JSON เท่านั้น'
+    );
+    const match = reply.match(/\{[\s\S]*\}/);
+    if(!match) throw new Error('ไม่ได้รับ JSON จาก AI');
+    const suggest = JSON.parse(match[0]);
+    window._fcAISuggest = suggest;
+    document.querySelectorAll('.fc-ai-cell').forEach(el=>{
+      const sku = el.dataset.sku;
+      const qty = suggest[sku] || 0;
+      if(qty > 0){
+        el.innerHTML = '<span style="color:var(--BL);font-weight:700;font-size:12px">'+Math.round(qty).toLocaleString()+'</span><br><button class="btn btn-xs btn-ai" onclick="fcFillAISuggest(\''+sku+'\')" style="padding:1px 6px;font-size:10px;margin-top:2px">กรอก</button>';
+      } else {
+        el.innerHTML = '<span style="color:var(--TX3);font-size:11px">—</span>';
+      }
+    });
+    toast('AI Suggest โหลดเสร็จ');
+  }catch(e){
+    document.querySelectorAll('.fc-ai-cell').forEach(el=>{
+      el.innerHTML='<span style="color:var(--R);font-size:10px">x</span>';
+    });
+    toast('AI: ' + e.message);
+  }finally{
+    if(loadBtn){ loadBtn.textContent='โหลด'; loadBtn.disabled=false; }
+  }
+}
+function fcFillAISuggest(sku){
+  const qty = Math.round((window._fcAISuggest||{})[sku] || 0);
+  if(!qty) return;
+  const cols = [...document.querySelectorAll('.fcg-inp[data-sku="'+sku+'"]')];
+  const n = cols.length;
+  if(!n) return;
+  const perCol = Math.round(qty / n / 100) * 100;
+  cols.forEach(function(el, i){
+    const v = i < n-1 ? perCol : Math.max(0, qty - perCol*(n-1));
+    el.value = v || '';
+    el.style.background = v > 0 ? '#eff6ff' : '';
+  });
+  fcgRow(sku);
+}
+function fcFillAllAISuggest(){
+  const suggest = window._fcAISuggest || {};
+  if(!Object.keys(suggest).length){ toast('กด "โหลด" ที่หัวคอลัมน์ AI ก่อน'); return; }
+  Object.keys(suggest).forEach(function(sku){ fcFillAISuggest(sku); });
+  toast('กรอก AI Suggest ทั้งหมดแล้ว');
 }
 async function saveFcGrid(){
   const selMonth=window._fcMonth||today().slice(0,7);const selCust=window._fcCust||'';
@@ -1902,10 +2019,9 @@ async function pgPlanStock() {
       ${[new Date().getFullYear()-1,new Date().getFullYear()].map(y=>`<option value="${y}" ${y===new Date().getFullYear()?'selected':''}>${y}</option>`).join('')}
     </select>
     <span style="font-size:12px;color:var(--TX3)">🔴 Live จาก WMS</span>
-    <button class="btn btn-sm btn-ai" onclick="aiStockPlan()" style="margin-left:auto">🤖 AI วิเคราะห์สต็อก</button>
+    <button class="btn btn-sm btn-ai" onclick="aiStockPlan()" style="margin-left:auto">🤖 AI กรอกแนะนำผลิต</button>
     <button class="btn btn-sm" onclick="showAISettings()" title="AI Settings">⚙️</button>
   </div>
-  ${_aiCard('ai-ps-box','AI Stock Advisor','วิเคราะห์ความเสี่ยงสต็อกและแนะนำการสั่งซื้อ','aiStockPlan')}
   <div class="card">
     <div class="ch">
       <div class="ct2" id="ps-title">Stock Planning</div>
@@ -2459,14 +2575,17 @@ function ppSaveOrder(){
   const SKUS=typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
   const sk=SKUS.find(s=>s.code===sku)||{name:sku};
   const orders=window._prodOrders||DB.get('prod_orders')||[];
-  const order={id:genId('PP'),sku,skuName:sk.name||sku,qty,planDate,receiveDate,line,note,status:'pending',by:UID,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()};
+  const order={id:genUUID(),sku,skuName:sk.name||sku,qty,planDate,receiveDate,line,note,status:'pending',by:UID,ts:Date.now(),edited_by:UID,edited_at:new Date().toISOString()};
   orders.unshift(order);
   window._prodOrders=orders;
   DB.set('prod_orders',orders);
   audit('ADD_PROD_ORDER',order.id,{sku,qty,planDate,line});
   closeM();
   toast('บันทึกรายการสั่งผลิตแล้ว');
-  SB.upsertProdOrder(order).then(ok=>{if(ok){CACHE.clear('fc_prod_links');toast('Sync แผนผลิตแล้ว');}}).catch(console.warn);
+  SB.upsertProdOrder(order).then(ok=>{
+    if(ok){CACHE.clear('fc_prod_links');toast('Sync แผนผลิตแล้ว');}
+    else toast('บันทึก offline — Supabase sync ล้มเหลว','warn');
+  }).catch(e=>{console.warn('upsertProdOrder:',e);toast('บันทึก offline เท่านั้น: '+e.message,'warn');});
   ppRender();
 }
 function ppEditOrder(id, field, value){
@@ -2774,10 +2893,11 @@ function mkChart(id,type,labels,datasets,opts={}){
 
 function syncAndReload(){
   const btn=document.getElementById('btn-sync');
-  if(btn){btn.textContent='⏳ กำลังโหลด...';btn.disabled=true;}
-  CACHE.clearAll();
-  nav(sessionStorage.getItem('_pg')||'dash');
-  setTimeout(()=>{if(btn){btn.textContent='🔄 ซิงค์';btn.disabled=false;}},1500);
+  const page=sessionStorage.getItem('_pg')||'dash';
+  if(btn){btn.textContent='⏳ รีเฟรช...';btn.disabled=true;}
+  CACHE.clearPage(page);
+  nav(page);
+  setTimeout(()=>{if(btn){btn.textContent='🔄 ซิงค์';btn.disabled=false;}},800);
 }
 
 function nav(page){
@@ -2803,6 +2923,8 @@ function nav(page){
 const fmt=n=>Math.round(n||0).toLocaleString();
 const fmtD=d=>{if(!d)return'—';const dt=new Date(d);return dt.toLocaleDateString('th-TH',{day:'2-digit',month:'short'})};
 const genId=p=>p+Date.now().toString(36).toUpperCase();
+// สร้าง UUID v4 ที่ Supabase UUID column รับได้
+function genUUID(){try{return crypto.randomUUID();}catch(_){return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16);});}}
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const skuI=c=>getSkusMerged().find(s=>s.code===c)||{code:c,name:'ไม่พบ',lt:7,moq:0,plant:''};
 const getSS=c=>(DB.get('sku_settings')||{})[c]||{min_stock:50,shelf_life:30,moq:0,lt:7};
@@ -3096,28 +3218,35 @@ async function aiForecast(){
 // ── Stock & Planning AI ─────────────────────────────────────────
 async function aiStockPlan(){
   if(!_aiKey()){ showAISettings(); return; }
-  const el = document.getElementById('ai-ps-box');
-  if(!el) return;
-  el.innerHTML = '<div class="ai-loading">AI กำลังวิเคราะห์สต็อก...</div>';
+  const btn = document.querySelector('.btn-ai[onclick="aiStockPlan()"]');
+  if(btn){ btn.disabled=true; btn.textContent='...'; }
   try{
-    const rows = (window._planRows||[]).slice(0,50);
+    const rows = (window._planRows||[]).slice(0,60);
     const lines = rows.map(r=>{
       const eff = Math.round(r.effective_qty??r.available_qty??r.qty??0);
       const avg = Math.round(r.avg3m??0);
-      const days = avg>0 ? Math.round(eff/(avg/30)) : 999;
       const min = r.min_stock??0;
-      return `• ${r.code||r.sku}(${(r.name||'').slice(0,18)}): ${eff}กก. avg=${avg}กก. ${days}วัน min=${min}`;
+      return (r.code||r.sku)+':'+eff+'กก.,avg3='+avg+',min='+min;
     }).join('\n');
     const reply = await callClaude(
-      'คุณเป็นผู้เชี่ยวชาญวางแผนสต็อกสินค้าอาหาร ตอบภาษาไทย กระชับ ให้ตัวเลขและ action ที่ชัดเจน',
-      `Stock Planning ปัจจุบัน (stock / avg3m / คงเหลือ / min):\n${lines}\n\nวิเคราะห์:\n1. 🔴 วิกฤต (<30วัน) สั่งทันที + ปริมาณแนะนำ (เท่า avg3m)\n2. 🟡 ควรเตรียมสั่ง (30–60วัน)\n3. 🟢 สต็อกเพียงพอ\n4. ⚠️ สินค้าที่ stock เกิน min มากผิดปกติ (อาจ Overstock)\n5. 💡 สรุปและคำแนะนำบริหารสต็อก`
+      'คุณเป็นผู้เชี่ยวชาญสต็อกสินค้า ตอบ JSON เท่านั้น ห้ามมีข้อความอื่น รูปแบบ: {"รหัสSKU": ปริมาณแนะนำสั่งผลิตกก. (0 ถ้าไม่ต้องสั่ง)} ปัดเป็นร้อย',
+      'Stock ปัจจุบัน (stock,avg3m,min):\n'+lines+'\n\nแนะนำปริมาณที่ควรสั่งผลิต/สั่งซื้อแต่ละ SKU ตอบ JSON เท่านั้น'
     );
-    el.innerHTML = `<div class="ai-result">${esc(reply).replace(/\n/g,'<br>')}</div>`;
+    const match = reply.match(/\{[\s\S]*\}/);
+    if(!match) throw new Error('AI ไม่ได้ตอบเป็น JSON');
+    const suggest = JSON.parse(match[0]);
+    let filled = 0;
+    Object.entries(suggest).forEach(function([sku,qty]){
+      const inp = document.querySelector('.ps-rec-inp[data-sku="'+sku+'"]');
+      if(inp && qty >= 0){ inp.value = Math.round(qty); inp.style.background = qty > 0 ? '#eff6ff' : ''; filled++; }
+    });
+    toast('AI กรอกแนะนำผลิต '+filled+' รายการแล้ว');
   }catch(e){
-    el.innerHTML = `<div class="ai-error">❌ ${esc(e.message)}</div>`;
+    toast('AI Error: ' + e.message);
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='🤖 AI กรอกแนะนำผลิต'; }
   }
 }
-
 // ── Dashboard AI ────────────────────────────────────────────────
 async function aiDashInsight(){
   if(!_aiKey()){ showAISettings(); return; }
@@ -3206,7 +3335,7 @@ async function loadDashboardSalesHist(){
   const range=_twoYearWindow();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
-  const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false});
+  const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId,fastProducts:true});
   window._salesRows2Y=rows;
   window._salesHistCache=_histFromSalesRows(rows);
   const dashRows=rows.filter(r=>r.ym>=range.currentStart&&r.ym<=range.currentEnd);
@@ -3266,7 +3395,7 @@ async function pgDash(){
     <select id="cgf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${[...new Set(salesCustomers().map(c=>c.corp||'อื่นๆ'))].sort().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
   </div>
   <div class="cgrid c2">
-    <div class="card"><div class="ch"><div class="ct2">ยอดขายจริง vs Forecast vs PO Plan</div></div><div class="cbox"><canvas id="c-main"></canvas></div></div>
+    <div class="card"><div class="ch"><div class="ct2">📊 ปริมาณการขาย: ยอดจริง vs Forecast vs PO Plan</div><span style="font-size:11px;color:var(--TX3);font-weight:400">หน่วย: กก.</span></div><div class="cbox"><canvas id="c-main"></canvas></div></div>
     <div class="card"><div class="ch"><div class="ct2">Top 8 สินค้ายอดสูงสุด</div></div><div class="cbox"><canvas id="c-top"></canvas></div></div>
   </div>
   <div class="cgrid c2">
@@ -3274,8 +3403,8 @@ async function pgDash(){
     <div class="card"><div class="ch"><div class="ct2">สถานะ PO</div></div><div class="cbox2"><canvas id="c-po"></canvas></div></div>
   </div>
   <div class="cgrid c2">
-    <div class="card"><div class="ch"><div class="ct2">Quantity summary</div></div><div id="dash-qty-tbl"></div></div>
-    <div class="card"><div class="ch"><div class="ct2">Sales value summary</div></div><div id="dash-val-tbl"></div></div>
+    <div class="card"><div class="ch"><div class="ct2">สรุปปริมาณการขาย (กก.)</div><span style="font-size:11px;color:var(--TX3);font-weight:400">Actual qty vs Forecast vs PO Plan</span></div><div id="dash-qty-tbl"></div></div>
+    <div class="card"><div class="ch"><div class="ct2">สรุปมูลค่าการขาย (฿)</div><span style="font-size:11px;color:var(--TX3);font-weight:400">Sales value รายเดือน</span></div><div id="dash-val-tbl"></div></div>
   </div>`;
   setTimeout(dashCharts,50);
 }
@@ -3333,25 +3462,26 @@ function dashCharts(){
   dashSummaryTables(mths,actual,fcData,poData);
 }
 function dashSalesValue(m){
+  // ใช้เฉพาะ _dashSalesRows — ไม่ fallback ไป _sdApi เพราะอาจคนละ scope
   const rows = window._dashSalesRows || [];
   const monthly = rows.reduce((acc,r)=>{
     if(!r.ym) return acc;
     acc[r.ym] = (acc[r.ym]||0) + (Number(r.amount)||0);
     return acc;
   }, {});
-  if(monthly[m] != null) return monthly[m];
-  const api = (_sdApi?.monthly||[]).find(x=>x.ym===m);
-  if(api) return api.total||0;
-  const mm = parseInt(m.substring(5,7),10)-1;
-  return SD_MD[mm]?.t||0;
+  return monthly[m] ?? 0;
 }
 function dashSummaryTables(mths,actual,fcData,poData){
   const qtyEl=document.getElementById('dash-qty-tbl'),valEl=document.getElementById('dash-val-tbl');
   if(!qtyEl||!valEl)return;
   const qtyRows=mths.map((m,i)=>({m,actual:actual[i]||0,fc:fcData[i]||0,po:poData[i]||0}));
-  qtyEl.innerHTML=`<div class="tw"><table><thead><tr><th>Period</th><th class="r">Actual qty</th><th class="r">Forecast</th><th class="r">PO Plan</th></tr></thead><tbody>${qtyRows.map(r=>`<tr><td>${mL(r.m)}</td><td class="r">${fmt(r.actual)}</td><td class="r">${fmt(r.fc)}</td><td class="r">${fmt(r.po)}</td></tr>`).join('')}</tbody></table></div>`;
+  const qtyTotA=qtyRows.reduce((s,r)=>s+r.actual,0);
+  const qtyTotF=qtyRows.reduce((s,r)=>s+r.fc,0);
+  const qtyTotP=qtyRows.reduce((s,r)=>s+r.po,0);
+  qtyEl.innerHTML=`<div class="tw"><table><thead><tr><th>เดือน</th><th class="r">ยอดขายจริง (กก.)</th><th class="r">Forecast (กก.)</th><th class="r">PO Plan (กก.)</th></tr></thead><tbody>${qtyRows.map(r=>`<tr><td>${mL(r.m)}</td><td class="r">${fmt(r.actual)}</td><td class="r">${fmt(r.fc)}</td><td class="r">${fmt(r.po)}</td></tr>`).join('')}</tbody><tfoot><tr style="font-weight:700;background:var(--bg2)"><td>รวม</td><td class="r">${fmt(qtyTotA)}</td><td class="r">${fmt(qtyTotF)}</td><td class="r">${fmt(qtyTotP)}</td></tr></tfoot></table></div>`;
   const valRows=mths.map(m=>({m,val:dashSalesValue(m)}));
-  valEl.innerHTML=`<div class="tw"><table><thead><tr><th>Period</th><th class="r">Sales value</th></tr></thead><tbody>${valRows.map(r=>`<tr><td>${mL(r.m)}</td><td class="r"><strong>${_sdF(r.val)}</strong></td></tr>`).join('')}</tbody></table></div>`;
+  const valTotal=valRows.reduce((s,r)=>s+r.val,0);
+  valEl.innerHTML=`<div class="tw"><table><thead><tr><th>เดือน</th><th class="r">มูลค่าขาย (฿)</th></tr></thead><tbody>${valRows.map(r=>`<tr><td>${mL(r.m)}</td><td class="r"><strong>${_sdF(r.val)}</strong></td></tr>`).join('')}</tbody><tfoot><tr style="font-weight:700;background:var(--bg2)"><td>รวมทั้งปี</td><td class="r"><strong>${_sdF(valTotal)}</strong></td></tr></tfoot></table></div>`;
 }
 
 // ── MY SALES / SALES DASHBOARD ───────────────────────────────────
@@ -3422,27 +3552,40 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   let allData=[];
   let from=0;
   while(true){
-    let {data,error}=await getSupabaseClient()
+    let q=getSupabaseClient()
       .from('sales_history')
       .select('slm_id,sku,ym,qty,amount')
       .gte('ym',startYm).lte('ym',endYm)
       .order('ym')
       .range(from,from+PAGE-1);
+    if(opts.summaryOnly && !slmId) q=q.eq('slm_id','ALL');
+    else if(slmId) q=q.or('slm_id.eq.'+slmId+',slm_id.like.*:'+slmId);
+    let {data,error}=await q;
     if(error && /amount/i.test(error.message||'')){
-      ({data,error}=await getSupabaseClient()
+      let q2=getSupabaseClient()
         .from('sales_history')
         .select('slm_id,sku,ym,qty')
         .gte('ym',startYm).lte('ym',endYm)
         .order('ym')
-        .range(from,from+PAGE-1));
+        .range(from,from+PAGE-1);
+      if(opts.summaryOnly && !slmId) q2=q2.eq('slm_id','ALL');
+      else if(slmId) q2=q2.or('slm_id.eq.'+slmId+',slm_id.like.*:'+slmId);
+      ({data,error}=await q2);
     }
     if(error) throw error;
     allData=allData.concat(data||[]);
     if(!data||data.length<PAGE) break;
     from+=PAGE;
   }
-  // Separate products lookup (avoids FK join overhead; uses cache)
-  const products=await CACHE.get('products',()=>SB.getProducts());
+  // Keep dashboard light: fetch only product names used by this sales-history window.
+  let products;
+  if(opts.fastProducts){
+    const codes=[...new Set(allData.map(r=>r.sku).filter(Boolean))];
+    const key='products_subset_'+codes.length+'_'+codes.slice(0,20).join('_');
+    products=await CACHE.get(key,()=>SB.getProductsByCodes(codes));
+  }else{
+    products=await CACHE.get('products',()=>SB.getProducts());
+  }
   const prodMap=Object.fromEntries((products||[]).map(p=>[String(p.code||p.sku||''),p]));
   const names=_salesNameMap();
   const mapped=(allData)
@@ -4335,22 +4478,71 @@ function sdExport(){
   toXLSX([[sheet, cols, rows]], `Sales_${period}_${sheet}.xlsx`);
 }
 
-let _consiRows=[], _consiCustF='', _consiProdF='', _consiBranchF='', _consiStartF='', _consiEndF='', _consiLoaded=false;
+let _consiRows=[], _consiCustF='', _consiProdF='', _consiBranchF='', _consiStartF='', _consiEndF='', _consiLoaded=false, _consiErr='';
 async function pgConsignment(){
-  document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button>`;
+  document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button><button class="btn btn-sm" onclick="pgConsignment()" style="margin-left:6px">🔄 โหลดใหม่</button>`;
   document.getElementById('ct').innerHTML='<div class="al ali">กำลังโหลดข้อมูลฝากขาย CONSI...</div>';
-  _consiRows=[];_consiLoaded=false;_consiCustF='';_consiProdF='';_consiBranchF='';
+  _consiRows=[];_consiLoaded=false;_consiCustF='';_consiProdF='';_consiBranchF='';_consiErr='';
   const range=_twoYearWindow();
   if(!_consiStartF) _consiStartF=range.start;
   if(!_consiEndF) _consiEndF=range.end;
   try{
-    _consiRows=await _sbSalesRows(range.start,range.end,'',{includeConsi:true});
+    // โหลดเฉพาะ CONSI rows โดยใช้ summaryOnly:false แต่ filter slm_id ที่มี prefix CONSI
+    const allRows=await _sbConsiRows(range.start,range.end);
+    _consiRows=allRows;
     _consiLoaded=true;
   }catch(e){
     console.warn('CONSI load failed:',e);
     _consiRows=[];_consiLoaded=false;
+    _consiErr=e.message||String(e);
   }
   consiRender();
+}
+async function _sbConsiRows(startYm,endYm){
+  // โหลด CONSI rows โดยตรง — filter slm_id ที่เป็น CONSI:* prefix
+  const PAGE=1000;let allData=[];let from=0;
+  while(true){
+    const {data,error}=await getSupabaseClient()
+      .from('sales_history')
+      .select('slm_id,sku,ym,qty,amount')
+      .gte('ym',startYm).lte('ym',endYm)
+      .ilike('slm_id','CONSI:%')
+      .order('ym')
+      .range(from,from+PAGE-1);
+    if(error) throw error;
+    allData=allData.concat(data||[]);
+    if(!data||data.length<PAGE) break;
+    from+=PAGE;
+  }
+  // ถ้าไม่มี CONSI: prefix ให้ลอง load ทั้งหมดแล้วกรองตาม cust_group/name
+  if(!allData.length){
+    let from2=0;let raw=[];
+    while(true){
+      const {data,error}=await getSupabaseClient()
+        .from('sales_history')
+        .select('slm_id,sku,ym,qty,amount')
+        .gte('ym',startYm).lte('ym',endYm)
+        .order('ym')
+        .range(from2,from2+PAGE-1);
+      if(error) throw error;
+      raw=raw.concat(data||[]);
+      if(!data||data.length<PAGE) break;
+      from2+=PAGE;
+    }
+    allData=raw;
+  }
+  const products=await CACHE.get('products',()=>SB.getProducts());
+  const prodMap=Object.fromEntries((products||[]).map(p=>[String(p.code||p.sku||''),p]));
+  const names=_salesNameMap();
+  const mapped=allData.filter(r=>r.slm_id).flatMap(r=>{
+    const sp=_splitBranchSlm(r.slm_id);
+    const name=names[sp.slm]||names[sp.raw]||sp.slm;
+    const qty=Number(r.qty||0)||0;
+    const amount=Number(r.amount||r.value||0)||0;
+    const prod=prodMap[r.sku]||{};
+    return [{branch:sp.branch,prefixed:sp.prefixed,is_all:String(sp.slm).toUpperCase().startsWith('ALL'),slm_id:sp.slm,slm_key:sp.raw,slm_name:name,cust_code:`SLM-${sp.raw}`,cust_name:name,cust_group:_isConsiBranch(sp.branch)?'ฝากขาย':'ขายจริง',prod_group:productGroupForSku(r.sku,prod.group_name||'อื่นๆ'),prod_code:r.sku,prod_name:prod.name||r.sku,qty,amount:amount||qty,ym:r.ym}];
+  });
+  return mapped.filter(r=>_isConsignmentRow(r));
 }
 function consiRender(){
   let rows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
@@ -4395,7 +4587,7 @@ function consiRender(){
           ${branches.map(b=>`<option value="${esc(b)}" ${_consiBranchF===b?'selected':''}>${esc(b)}</option>`).join('')}
         </select>
       </div>`:''}
-      ${!_consiLoaded?`<span style="color:var(--R);font-size:12px">⚠ ไม่สามารถโหลดจาก Supabase ได้ — ไม่มีข้อมูล CONSI ออฟไลน์</span>`:''}
+      ${!_consiLoaded?`<span style="color:var(--R);font-size:12px">⚠ โหลด Supabase ไม่สำเร็จ${_consiErr?' — '+_consiErr:' — ตรวจสอบ internet/permissions'} <button class="btn btn-xs" onclick="pgConsignment()">ลองอีกครั้ง</button></span>`:''}
     </div>
   </div>
   <div class="krow">
@@ -7128,10 +7320,11 @@ async function pgPlanBooking() {
   bks = (bks || []).map(normalizeBookingRow);
 
   // restore saved filters (Item 4)
-  if(!_bkFilters) _bkFilters = DB.get('bk_filters') || {type:'',status:'',search:'',tab:'active'};
+  if(!_bkFilters) _bkFilters = DB.get('bk_filters') || {type:'',status:'',search:'',tab:'active',skuF:''};
   const typeFilter = document.getElementById('bk-tf')?.value ?? _bkFilters.type;
   const statusFilter = document.getElementById('bk-sf')?.value ?? _bkFilters.status;
   const searchText = (document.getElementById('bk-search')?.value ?? _bkFilters.search).toLowerCase();
+  const skuFilter = document.getElementById('bk-sku-f')?.value ?? (_bkFilters.skuF||'');
   const bkTab = window._bkTab || _bkFilters.tab || 'active';
 
   // Tab split: active vs cancelled (Item 3)
@@ -7142,6 +7335,7 @@ async function pgPlanBooking() {
   let filtered = [...srcBks];
   if (typeFilter) filtered = filtered.filter(b => b.type === typeFilter);
   if (statusFilter && bkTab !== 'cancelled') filtered = filtered.filter(b => b.status === statusFilter);
+  if (skuFilter) filtered = filtered.filter(b => b.sku === skuFilter);
   if (searchText) filtered = filtered.filter(b =>
     (b.sku || '').toLowerCase().includes(searchText) ||
     (b.skuName || '').toLowerCase().includes(searchText) ||
@@ -7152,8 +7346,11 @@ async function pgPlanBooking() {
   );
 
   // Save filters (Item 4)
-  _bkFilters = {type:typeFilter, status:statusFilter, search:searchText, tab:bkTab};
+  _bkFilters = {type:typeFilter, status:statusFilter, search:searchText, tab:bkTab, skuF:skuFilter};
   DB.set('bk_filters', _bkFilters);
+
+  // รายการ SKU ที่มีการจอง (สำหรับ filter dropdown)
+  const allSkus = [...new Map(activeBks.map(b=>[b.sku,b.skuName||b.sku])).entries()].sort((a,b)=>a[0].localeCompare(b[0]));
 
   const produceCount = activeBks.filter(b => b.stockStatus === 'produce').length;
   const tTab=(id,lbl)=>`<div class="tab ${bkTab===id?'act':''}" onclick="window._bkTab='${id}';pgPlanBooking()">${lbl}</div>`;
@@ -7170,7 +7367,11 @@ async function pgPlanBooking() {
     ${tTab('cancelled','❌ ยกเลิก/เปิดใหม่ ('+cancelledBks.length+')')}
   </div>
   <div class="frow" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <input id="bk-search" type="text" placeholder="ค้นหา รหัส/ชื่อสินค้า/ลูกค้า" style="width:210px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font)" oninput="bkSaveAndRefresh()" value="${esc(searchText)}">
+    <input id="bk-search" type="text" placeholder="ค้นหา รหัส/ชื่อสินค้า/ลูกค้า" style="width:200px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font)" oninput="bkSaveAndRefresh()" value="${esc(searchText)}">
+    <select id="bk-sku-f" class="btn btn-sm" onchange="bkSaveAndRefresh()" style="min-width:160px">
+      <option value="">สินค้าทั้งหมด</option>
+      ${allSkus.map(([c,n])=>`<option value="${esc(c)}" ${skuFilter===c?'selected':''}>${esc(c)} — ${esc((n||'').substring(0,20))}</option>`).join('')}
+    </select>
     <select id="bk-tf" class="btn btn-sm" onchange="bkSaveAndRefresh()">
       <option value="">ประเภททั้งหมด</option>
       <option value="PO" ${typeFilter==='PO'?'selected':''}>PO</option>
@@ -7193,25 +7394,28 @@ async function pgPlanBooking() {
       <thead><tr>
         <th>ประเภท</th><th>เลขที่ PO/SO</th><th>วันที่ SO</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
         <th class="r">จำนวน(กก.)</th>
-        <th>ผู้จอง/ลูกค้า</th>
+        <th>ชื่อลูกค้า</th>
         <th>วันที่รับสินค้า</th>
         <th>วันยืนยัน</th>
         <th>สต๊อก/ผลิต</th>
         <th>สถานะ</th>
-        <th>บันทึกโดย</th>
+        <th>บันทึกล่าสุดโดย</th>
         ${canEdit ? '<th>Action</th>' : ''}
       </tr></thead>
       <tbody>${filtered.map(b => {
         const docNo = bookingDocNo(b);
         const soDate = String(b.type||'').toUpperCase()==='SO' ? (b.soDate || '') : '';
         const late = b.receiveDate && new Date(b.receiveDate) < new Date() && b.status !== 'received' && b.status !== 'cancelled';
-        const ssB = b.stockStatus === 'produce' ? '<span class="badge bba">สั่งผลิต</span>' : '<span class="badge bbg">จากสต๊อก</span>';
+        const safeId=String(b.id||'').replace(/'/g,"\\'");
+        const ssControl = canEdit
+          ? `<select class="btn btn-xs" style="min-width:90px" onchange="bkChangeStockStatus('${safeId}',this.value)"><option value="stock" ${b.stockStatus!=='produce'?'selected':''}>จากสต๊อก</option><option value="produce" ${b.stockStatus==='produce'?'selected':''}>สั่งผลิต</option></select>`
+          : (b.stockStatus === 'produce' ? '<span class="badge bba">สั่งผลิต</span>' : '<span class="badge bbg">จากสต๊อก</span>');
         const stB = {pending:'<span class="badge bbl">รอดำเนินการ</span>',confirmed:'<span class="badge bbg">ยืนยันแล้ว</span>',received:'<span class="badge bbg">รับแล้ว</span>',cancelled:'<span class="badge bbgr">ยกเลิก</span>'}[b.status]||`<span class="badge bbgr">${b.status}</span>`;
         const typeSt = b.type === 'PO' ? 'background:var(--LBL);color:var(--BL)' : 'background:var(--LG);color:var(--G)';
-        const safeId=String(b.id||'').replace(/'/g,"\\'");
         const confirmDateTd = canEdit
           ? `<td><input type="date" value="${esc(b.confirmDate||'')}" style="width:130px;padding:3px 6px;border:1px solid var(--BD);border-radius:5px;font-size:12px" onchange="bkSetConfirmDate('${safeId}',this.value)"></td>`
           : `<td style="font-size:12px;color:var(--TX2)">${b.confirmDate?fmtD(b.confirmDate):'—'}</td>`;
+        const lastEditor = uidToName(b.editedBy||b.by);
         return `<tr style="${late?'background:#FEF3F2':''}">
           <td><span class="badge" style="${typeSt}">${b.type}</span></td>
           <td class="mono" style="font-size:12px">${esc(docNo||'—')}</td>
@@ -7222,9 +7426,9 @@ async function pgPlanBooking() {
           <td>${esc(b.custName||'')}</td>
           <td style="${late?'color:var(--R);font-weight:700':''}">${fmtD(b.receiveDate)}</td>
           ${confirmDateTd}
-          <td>${ssB}</td>
+          <td>${ssControl}</td>
           <td>${canEdit ? bkStatusControl(b.id,b.status) : stB}</td>
-          <td><span class="edby">${b.by||''}</span></td>
+          <td><span class="edby" title="${esc(b.editedBy||b.by||'')}">${esc(lastEditor)}</span></td>
           ${canEdit ? `<td style="white-space:nowrap">
             <button class="btn btn-xs" onclick="showBkModal('${b.id}')">✏️</button>
             <button class="btn btn-xs btn-r" onclick="deleteBk('${b.id}')">ลบ</button>
@@ -7236,11 +7440,11 @@ async function pgPlanBooking() {
 }
 
 function bkSaveAndRefresh(){
-  // read current filter values, save, and re-run
   _bkFilters={
     type: document.getElementById('bk-tf')?.value||'',
     status: document.getElementById('bk-sf')?.value||'',
     search: document.getElementById('bk-search')?.value||'',
+    skuF: document.getElementById('bk-sku-f')?.value||'',
     tab: window._bkTab||'active'
   };
   DB.set('bk_filters',_bkFilters);
@@ -7248,16 +7452,26 @@ function bkSaveAndRefresh(){
 }
 function bkClearFilters(){
   window._bkTab='active';
-  _bkFilters={type:'',status:'',search:'',tab:'active'};
+  _bkFilters={type:'',status:'',search:'',skuF:'',tab:'active'};
   DB.set('bk_filters',_bkFilters);
+  pgPlanBooking();
+}
+async function bkChangeStockStatus(id,stockStatus){
+  const rows=(DB.get('bookings')||[]).map(normalizeBookingRow);
+  DB.set('bookings',rows.map(b=>b.id===id?{...b,stockStatus,stock_status:stockStatus,edited_by:UID,edited_at:new Date().toISOString()}:b));
+  CACHE.clear('bookings');
+  try{await SB.updateBooking(id,{stock_status:stockStatus});toast('อัปเดตสต๊อก/ผลิตแล้ว');}
+  catch(e){toast('บันทึก offline เท่านั้น','warn');}
   pgPlanBooking();
 }
 async function bkSetConfirmDate(id,confirmDate){
   const rows=(DB.get('bookings')||[]).map(normalizeBookingRow);
-  DB.set('bookings',rows.map(b=>b.id===id?{...b,confirmDate}:b));
+  DB.set('bookings',rows.map(b=>b.id===id?{...b,confirmDate,confirm_date:confirmDate,edited_by:UID,edited_at:new Date().toISOString()}:b));
   CACHE.clear('bookings');
-  try{await SB.updateBooking(id,{confirmDate});toast('บันทึกวันยืนยันแล้ว');}
-  catch(e){toast('บันทึก offline เท่านั้น','warn');}
+  try{
+    await SB.updateBooking(id,{confirm_date:confirmDate||null});
+    toast('บันทึกวันยืนยันแล้ว');
+  }catch(e){toast('บันทึก offline เท่านั้น: '+e.message,'warn');}
 }
 
 function showBkModal(id = '') {
@@ -7331,15 +7545,36 @@ function saveBk(id) {
   const bks = DB.get('bookings') || [];
   if (id) {
     const idx = bks.findIndex(b => b.id === id);
-    if (idx !== -1) Object.assign(bks[idx], { type, refNo, poNo, soNo, soDate, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, edited_by: UID, edited_at: new Date().toISOString() });
+    const upd = { type, refNo, poNo, soNo, soDate, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, edited_by: UID, edited_at: new Date().toISOString() };
+    if (idx !== -1) Object.assign(bks[idx], upd);
     audit('EDIT_BK', id, { sku, qty, stockStatus });
+    DB.set('bookings', bks);
+    CACHE.clear('bookings');
+    // sync to Supabase
+    SB.updateBooking(id, {
+      type, sku, sku_name: sk.name, qty,
+      cust_name: custName, cust_code: custName,
+      receive_date: receiveDate||null,
+      stock_status: stockStatus, status, note: note||null,
+      ref_no: refNo||null, po_no: poNo||null, so_no: soNo||null,
+      so_date: soDate||null,
+    }).catch(e=>toast('บันทึก offline เท่านั้น: '+e.message,'warn'));
   } else {
     const newBk = { id: genId('BK'), type, refNo, poNo, soNo, soDate, sku, skuName: sk.name, qty, custName, receiveDate, stockStatus, status, note, by: UID, ts: Date.now(), edited_by: UID, edited_at: new Date().toISOString() };
     bks.unshift(newBk);
     audit('ADD_BK', newBk.id, { type, refNo, sku, qty, custName, stockStatus });
     if (stockStatus === 'produce') toast(`⚠️ จอง ${type} ${sku} ${qty}กก. — ต้องสั่งผลิต รอ confirm`);
+    DB.set('bookings', bks);
+    CACHE.clear('bookings');
+    // sync to Supabase
+    SB.addBooking(newBk).then(saved=>{
+      if(saved?.id && saved.id!==newBk.id){
+        // อัปเดต id ใน localStorage ให้ตรงกับ Supabase UUID
+        const existing=DB.get('bookings')||[];
+        DB.set('bookings',existing.map(b=>b.id===newBk.id?{...b,id:saved.id}:b));
+      }
+    }).catch(e=>toast('บันทึก offline เท่านั้น: '+e.message,'warn'));
   }
-  DB.set('bookings', bks);
   closeM();
   toast('บันทึกการจองแล้ว');
   pgPlanBooking();
@@ -7383,7 +7618,15 @@ function expBookings() {
 // ════════════════════════════════════════════════
 // pgBookingSummary() — สรุปสถานะการจอง PO/SO
 // ════════════════════════════════════════════════
-function pgBookingSummary() {
+async function pgBookingSummary() {
+  document.getElementById('ct').innerHTML='<div class="al ali">กำลังโหลดข้อมูลการจอง...</div>';
+  try{
+    const remote=await CACHE.get('bookings',()=>SB.getBookings());
+    if(remote?.length){
+      window._sbBookings=remote;
+      DB.set('bookings',mergeBookings(remote,DB.get('bookings')||[]).map(normalizeBookingRow));
+    }
+  }catch(e){console.warn('pgBookingSummary: Supabase load failed',e?.message||e);}
   const bks = useBookings();
   const active = bks.filter(b => b.status !== 'cancelled');
   const bysku = {};
