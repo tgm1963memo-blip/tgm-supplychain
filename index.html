@@ -940,7 +940,7 @@ const CACHE = {
   _time:  {},
   _pending: {},
   TTL: 180000, // 3 minutes: fresh enough for live work, fast enough for page switching.
-  PREFIX: 'tgm_sc_cache_v2_',
+  PREFIX: 'tgm_sc_cache_v3_scope_',
   PERSIST_KEYS: new Set(['products', 'stock', 'stock_lots', 'bookings', 'po_plans', 'group_products']),
 
   _now() { return Date.now(); },
@@ -2835,39 +2835,57 @@ const SKUS_MASTER=[{"code": "10001", "name": "ค็อกเทลซอสเ�
 
 
 
-// ── Company scope helpers ───────────────────────────────────────
-// Default app scope excludes TGM. Dashboard can opt in and split TSS/TGM.
-function _plantCompany(plant){
-  const p=String(plant||'').trim().toUpperCase();
-  return p.startsWith('TGM') ? 'TGM' : 'TSS';
-}
-function _skuCompanyFromProduct(prod={}, code=''){
-  if(prod?.company) return String(prod.company).trim().toUpperCase()==='TGM' ? 'TGM' : 'TSS';
-  if(prod?.plant) return _plantCompany(prod.plant);
-  const skuCode=String(code || prod?.code || prod?.sku || prod?.sku_code || '').trim();
-  const master=(typeof SKUS_MASTER!=='undefined' ? SKUS_MASTER : []).find(s=>String(s.code)===skuCode);
-  if(master?.plant) return _plantCompany(master.plant);
+// ── Company scope helpers ────────────────────────────────────────
+// Default app scope shows TSS + TSSNV only. Dashboard can opt in to add TGM.
+function _normalizeCompanyScope(v){
+  const s=String(v||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(s.startsWith('TGM')) return 'TGM';
+  if(s.startsWith('CONSI')) return 'CONSI';
+  if(s==='TSSNV' || s.startsWith('TSSN') || s.includes('NV')) return 'TSSNV';
+  if(s.startsWith('TSS')) return 'TSS';
   return 'TSS';
 }
-function _isTgmSkuRecord(row={}){
-  return _skuCompanyFromProduct(row, row.code || row.sku || row.sku_code) === 'TGM';
-}
-function _filterTgmRecords(rows=[], opts={}){
-  return opts?.includeTgm ? (rows||[]) : (rows||[]).filter(r=>!_isTgmSkuRecord(r));
+function _plantCompany(plant){ return _normalizeCompanyScope(plant); }
+function _skuCompanyFromProduct(prod={}, code=''){
+  if(prod?.company) return _normalizeCompanyScope(prod.company);
+  if(prod?.plant) return _normalizeCompanyScope(prod.plant);
+  if(prod?.branch) return _normalizeCompanyScope(prod.branch);
+  const skuCode=String(code || prod?.code || prod?.sku || prod?.sku_code || '').trim();
+  const master=(typeof SKUS_MASTER!=='undefined' ? SKUS_MASTER : []).find(s=>String(s.code)===skuCode);
+  if(master?.company) return _normalizeCompanyScope(master.company);
+  if(master?.plant) return _normalizeCompanyScope(master.plant);
+  return 'TSS';
 }
 function _rowSku(row={}){
   return row?.sku || row?.code || row?.prod_code || row?.product_code || row?.sku_code || row?.item_code || '';
 }
+function _rowCompany(row={}){
+  if(row?.company) return _normalizeCompanyScope(row.company);
+  if(row?.branch) return _normalizeCompanyScope(row.branch);
+  if(row?.slm_id && String(row.slm_id).includes(':')) return _normalizeCompanyScope(String(row.slm_id).split(':')[0]);
+  return _skuCompanyFromProduct(row, _rowSku(row));
+}
+function _allowedCompanies(opts={}){
+  return opts?.includeTgm ? new Set(['TSS','TSSNV','TGM']) : new Set(['TSS','TSSNV']);
+}
+function _isAllowedCompanyRecord(row={}, opts={}){
+  return _allowedCompanies(opts).has(_rowCompany(row));
+}
+function _isTgmSkuRecord(row={}){
+  return !_isAllowedCompanyRecord(row);
+}
+function _filterTgmRecords(rows=[], opts={}){
+  return (rows||[]).filter(r=>_isAllowedCompanyRecord(r, opts));
+}
 function _filterTgmSkuRows(rows=[], opts={}){
-  return opts?.includeTgm ? (rows||[]) : (rows||[]).filter(r=>!_isTgmSkuRecord({code:_rowSku(r)}));
+  return (rows||[]).filter(r=>_isAllowedCompanyRecord(r, opts));
 }
 function _filterTgmStockMap(map={}, opts={}){
-  if(opts?.includeTgm) return map || {};
-  return Object.fromEntries(Object.entries(map||{}).filter(([sku])=>!_isTgmSkuRecord({code:sku})));
+  return Object.fromEntries(Object.entries(map||{}).filter(([sku])=>_isAllowedCompanyRecord({code:sku}, opts)));
 }
 function _companyTotals(rows=[]){
   return (rows||[]).reduce((acc,r)=>{
-    const company=r.company || _skuCompanyFromProduct({}, r.prod_code || r.sku || r.code);
+    const company=_rowCompany(r);
     acc[company]=acc[company]||{qty:0,amount:0,count:0};
     acc[company].qty += Number(r.qty)||0;
     acc[company].amount += Number(r.amount)||0;
@@ -3445,17 +3463,22 @@ async function loadDashboardSalesHist(includeTgm = false){
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
   const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
-  window._salesRows2Y=rows;
-  window._salesHistCache=_histFromSalesRows(rows);
+  if(!includeTgm){
+    window._salesRows2Y=rows;
+    window._salesHistCache=_histFromSalesRows(rows);
+  }
   const dashRows=rows.filter(r=>r.ym>=range.currentStart&&r.ym<=range.currentEnd);
   window._dashSalesRows=dashRows;
+  if(includeTgm){
+    window._dashSalesHistCache=_histFromSalesRows(dashRows);
+  }
   return _histFromSalesRows(dashRows);
 }
 async function pgDash(){
   let po=DB.get('po_log')||[];
   let stk=DB.get('stock')||{};
   let fc=DB.get('forecasts')||[];
-  let hist=myHist();
+  let hist=window._dashSalesHistCache || myHist();
   let ss=DB.get('sku_settings')||{};
   const remote = await Promise.allSettled([
     CACHE.get('dash_po_all',()=>SB.getPOPlans({includeTgm:true})),
@@ -3480,6 +3503,7 @@ async function pgDash(){
   const yearSales=yearSalesValue || yearSalesQty;
   const companySales=_companyTotals(window._dashSalesRows||[]);
   const tssSales=companySales.TSS||{qty:0,amount:0,count:0};
+  const tssnvSales=companySales.TSSNV||{qty:0,amount:0,count:0};
   const tgmSales=companySales.TGM||{qty:0,amount:0,count:0};
   window._dashData={po,stk,fc,ss,companySales};
   const pending=po.filter(p=>p.status==='pending').length;
@@ -3490,8 +3514,9 @@ async function pgDash(){
   },0);
   document.getElementById('ct').innerHTML=`
   <div class="krow">
-    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">รวม TSS + TGM</div></div>
+    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">รวม TSS + TSSNV + TGM</div></div>
     <div class="kpi g"><div class="kl">ยอดขาย TSS</div><div class="kv">฿${fmt(tssSales.amount || tssSales.qty)}</div><div class="kh">${fmt(tssSales.qty)} กก.</div></div>
+    <div class="kpi p"><div class="kl">ยอดขาย TSSNV</div><div class="kv">฿${fmt(tssnvSales.amount || tssnvSales.qty)}</div><div class="kh">${fmt(tssnvSales.qty)} กก.</div></div>
     <div class="kpi a"><div class="kl">ยอดขาย TGM</div><div class="kv">฿${fmt(tgmSales.amount || tgmSales.qty)}</div><div class="kh">${fmt(tgmSales.qty)} กก.</div></div>
     <div class="kpi a"><div class="kl">PO รอส่ง</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
     <div class="kpi r"><div class="kl">PO เลยกำหนด</div><div class="kv">${overdue}</div><div class="kh">รายการ</div></div>
@@ -3651,7 +3676,7 @@ function _splitBranchSlm(raw){
   return {branch:'LEGACY',slm:s||'ALL',raw:s,prefixed:false};
 }
 function _isConsiBranch(branch){return String(branch||'').toUpperCase()==='CONSI';}
-function _companyFromExpressBranch(branch){return String(branch||'').trim().toUpperCase()==='TGM' ? 'TGM' : 'TSS';}
+function _companyFromExpressBranch(branch){return _normalizeCompanyScope(branch);}
 function _companyFromExpressSlm(slm){return _companyFromExpressBranch(String(slm||'').split(':',1)[0]);}
 function _isConsignmentRow(r){
   return _isConsiBranch(r.branch) || /ฝากขาย|CONSI/i.test(`${r.cust_group||''} ${r.category||''} ${r.cust_name||''}`);
@@ -3749,7 +3774,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     prod_name:prod.name||r.sku,
     qty,
     amount: amount || qty,
-    company:(rowCompany==='TGM'||rowCompany==='TSS') ? rowCompany : (sp.prefixed ? _companyFromExpressBranch(sp.branch) : _skuCompanyFromProduct(prod,r.sku)),
+    company:(['TSS','TSSNV','TGM','CONSI'].includes(rowCompany)) ? rowCompany : (sp.prefixed ? _companyFromExpressBranch(sp.branch) : _skuCompanyFromProduct(prod,r.sku)),
     ym:r.ym,
       };
       const custWeights=(PROD_CUST?.[r.sku]?.[sp.slm])||null;
@@ -3763,7 +3788,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
       });
     });
   const modeRows=_salesRowsForMode(mapped,opts);
-  const scopedRows=opts.includeTgm ? modeRows : modeRows.filter(r=>r.company!=='TGM');
+  const scopedRows=modeRows.filter(r=>_isAllowedCompanyRecord(r, opts));
   const detailKeys=new Set(scopedRows.filter(r=>!r.is_all).map(r=>`${r.branch}|${r.ym}|${r.prod_code}`));
   const filteredByMode=scopedRows.filter(r=>!r.is_all || !detailKeys.has(`${r.branch}|${r.ym}|${r.prod_code}`));
   if(!slmId) return filteredByMode;
@@ -4637,7 +4662,7 @@ async function _sbConsiRows(startYm,endYm){
     const prod=prodMap[r.sku]||{};
     return [{branch:sp.branch,prefixed:sp.prefixed,is_all:String(sp.slm).toUpperCase().startsWith('ALL'),slm_id:sp.slm,slm_key:sp.raw,slm_name:name,cust_code:`SLM-${sp.raw}`,cust_name:name,cust_group:_isConsiBranch(sp.branch)?'ฝากขาย':'ขายจริง',prod_group:productGroupForSku(r.sku,prod.group_name||'อื่นๆ'),prod_code:r.sku,prod_name:prod.name||r.sku,qty,amount:amount||qty,ym:r.ym}];
   });
-  return mapped.filter(r=>r.company!=='TGM' && _isConsignmentRow(r));
+  return mapped.filter(r=>_isConsignmentRow(r));
 }
 function consiRender(){
   let rows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
@@ -7348,7 +7373,7 @@ function getSkusMerged(opts={}){
   const remote=DB.get('remote_products_cache')||[];
   const map=new Map();
   const baseSkus = SKUS_MASTER;
-  [...baseSkus,...remote,...custom].map(normalizeSkuRow).filter(s=>s.code).filter(s=>opts.includeTgm || !_isTgmSkuRecord(s)).forEach(s=>{
+  [...baseSkus,...remote,...custom].map(normalizeSkuRow).filter(s=>s.code).filter(s=>_isAllowedCompanyRecord(s, opts)).forEach(s=>{
     const old=map.get(s.code)||{};
     map.set(s.code,{...old,...s,name:s.name||old.name||s.code});
   });
@@ -8053,6 +8078,9 @@ function expFcDoc(custCode, month) {
 </script>
 </body>
 </html>
+
+
+
 
 
 
