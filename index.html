@@ -1171,6 +1171,10 @@ async function doLogin() {
         CACHE.clearPrefix('sales_hist_');
         CACHE.clear('products');
         CACHE.clear('stock');
+        window._salesRows2Y = null;
+        window._salesHistCache = null;
+        window._dashSalesRows = null;
+        window._dashSalesHistCache = null;
         const btn = document.getElementById('btn-sync');
         if (btn) btn.classList.add('syncing');
         clearTimeout(_expressTimer);
