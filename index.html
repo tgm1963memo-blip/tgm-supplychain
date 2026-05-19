@@ -3638,8 +3638,8 @@ const SD_CUSTS=[];
 const SD_PRODS=[];
 const SD_SALES=[];
 const SD_VS=[];
-let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1}};
-let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[]};
+let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false};
+let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[],yoy:null,yoyLoading:false};
 
 function _apiBase(){
   const saved=DB.get('api_base');
@@ -3947,6 +3947,10 @@ async function sdLoad(){
     const active=_sdUseLatestMonthIfEmpty(_sdApi.monthly);
     if(active!==_sdApi.month){sdLoad();return;}
   }
+  if(_sd.showYoY && _sdApi.loaded && !_sdApi.yoy){
+    _sdApi.yoyLoading=true;
+    _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
+  }
   sdRender();
 }
 
@@ -3991,6 +3995,10 @@ async function sdLoadYear(){
     }
   }
   finally{document.getElementById('sd-loading')?.remove();}
+  if(_sd.showYoY && _sdApi.loaded && !_sdApi.yoy){
+    _sdApi.yoyLoading=true;
+    _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
+  }
   sdRender();
 }
 
@@ -4078,25 +4086,123 @@ function _sdBar(v,mx){
 }
 function sdTogOp(k){_sd.op[k]=!_sd.op[k];sdRender();}
 
+// ── YoY helpers ────────────────────────────────────────────────
+function _ymAddYear(ym,delta){const y=parseInt(ym.substring(0,4))+delta;return`${y}${ym.substring(4)}`;}
+function _yoyPct(cur,prev){
+  if(!prev||prev===0)return cur>0?'<span style="color:var(--G);font-size:11px">↑ ใหม่</span>':'<span style="color:var(--TX3);font-size:11px">—</span>';
+  const p=Math.round((cur/prev-1)*100);const c=p>=0?'var(--G)':'var(--R)';
+  return`<span style="color:${c};font-size:11px">${p>=0?'▲':'▼'} ${Math.abs(p)}%</span>`;
+}
+function _sdYoYMaps(){
+  if(!_sdApi.yoy)return{cust:{},prod:{},grp:{},slm:{},cat:{}};
+  const cm={},pm={},gm={},sm={},catm={};
+  for(const c of _sdApi.yoy.custs||[]){cm[c.c]=c._tot;const cat=c.ty||'อื่นๆ';catm[cat]=(catm[cat]||0)+c._tot;}
+  for(const g of _sdApi.yoy.prods||[]){gm[g.n]=g._tot;for(const it of g.it||[])pm[it.c]=it._tot;}
+  for(const s of _sdApi.yoy.slms||[])sm[s.code]=s._tot;
+  return{cust:cm,prod:pm,grp:gm,slm:sm,cat:catm};
+}
+async function _sdLoadYoY(){
+  const me=(DB.get('users')||[]).find(x=>x.uid===UID);
+  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  let start,end;
+  if(_sd.pt==='custom'){
+    if(!_sd.dateFrom||!_sd.dateTo)return;
+    start=_ymAddYear(_sd.dateFrom,-1);end=_ymAddYear(_sd.dateTo,-1);
+  }else if(_sd.pt==='year'){
+    const gy=_sdApiYear();start=`${gy-1}-01`;end=`${gy-1}-12`;
+  }else{
+    const gy=_sd.cy-543;const mm=String(_sd.cm+1).padStart(2,'0');
+    start=`${gy-1}-${mm}`;end=`${gy-1}-${mm}`;
+  }
+  const rows=await _sbSalesRows(start,end,slmId,{includeConsi:false,fastProducts:true});
+  _sdApi.yoy={
+    total:rows.reduce((a,r)=>a+(Number(r.amount)||0),0),
+    qty:rows.reduce((a,r)=>a+(Number(r.qty)||0),0),
+    invoices:rows.length,
+    custs:_sdBuildCusts(rows),prods:_sdBuildProds(rows),slms:_sdBuildSlms(rows,_sdApi.slmList||[])
+  };
+}
+function sdTogYoY(){
+  _sd.showYoY=!_sd.showYoY;
+  const b=document.getElementById('sd-yoy');
+  if(b){if(_sd.showYoY){b.style.background='var(--T)';b.style.color='#fff';b.style.borderColor='var(--T)';b.style.fontWeight='600';}
+  else{b.style.background='';b.style.color='';b.style.borderColor='';b.style.fontWeight='';}}
+  if(_sd.showYoY&&_sdApi.loaded&&!_sdApi.yoy){
+    _sdApi.yoyLoading=true;sdRender();
+    _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
+  }else{if(!_sd.showYoY){_sdApi.yoy=null;_sdApi.yoyLoading=false;}sdRender();}
+}
+function sdSetDateRange(){
+  const f=document.getElementById('sd-date-from');const t=document.getElementById('sd-date-to');
+  if(f)_sd.dateFrom=f.value;if(t)_sd.dateTo=t.value;
+}
+function sdApplyCustomRange(){
+  sdSetDateRange();
+  if(!_sd.dateFrom||!_sd.dateTo){alert('กรุณาเลือกช่วงวันที่');return;}
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;sdLoadCustom();
+}
+async function sdLoadCustom(){
+  if(!_sd.dateFrom||!_sd.dateTo){sdRender();return;}
+  const me=(DB.get('users')||[]).find(x=>x.uid===UID);
+  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  const badge=document.createElement('div');
+  badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
+  badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
+  try{
+    const rows=await _sbSalesRows(_sd.dateFrom,_sd.dateTo,slmId,{includeConsi:false,fastProducts:true});
+    const monthly=_sdKpiFromRows(rows);
+    _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;
+    _sdApi.monthly=monthly;
+    _sdApi.total=rows.reduce((a,r)=>a+(Number(r.amount)||0),0);
+    _sdApi.qty=rows.reduce((a,r)=>a+(Number(r.qty)||0),0);
+    _sdApi.invoices=rows.length;_sdApi.ar=0;_sdApi.vs=0;
+    _sdApi.slmList=[...new Map(rows.map(r=>[r.slm_id,r.slm_name||r.slm_id]).filter(([c])=>c)).entries()].map(([code,name])=>({code,name}));
+    _sdApi.custs=_sdBuildCusts(rows);_sdApi.prods=_sdBuildProds(rows);
+    _sdApi.slms=_sdBuildSlms(rows,_sdApi.slmList);_sdApi.error=null;
+    _sdUpdateSlmDrop();
+    if(_sd.showYoY){
+      _sdApi.yoyLoading=true;
+      _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
+    }
+  }catch(e){_sdApi.loaded=false;_sdApi.error=e.message||'ไม่สามารถโหลดข้อมูลได้';console.error('Custom range load:',e);}
+  finally{document.getElementById('sd-loading')?.remove();}
+  sdRender();
+}
+
 function pgMySales(){
   const isAll=ROLE==='manager'||ROLE==='superadmin';
   document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-ai" onclick="aiSalesInsight()" style="margin-right:6px">🤖 AI วิเคราะห์</button><button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
-  const ptBtn=t=>`<button class="btn btn-sm" id="sd-pt-${t[0]}" onclick="sdSetPT('${t}')" style="${_sd.pt===t?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">รายเดือน${t==='week'?'สัปดาห์':t==='year'?'ปี':''}</button>`;
+  const now=new Date();
+  if(!_sd.dateFrom){_sd.dateFrom=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');}
+  if(!_sd.dateTo){_sd.dateTo=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');}
+  const isCustom=_sd.pt==='custom';
   document.getElementById('ct').innerHTML=`<div id="sd-root">
-  <div class="frow" style="border-radius:8px;margin-bottom:10px;gap:6px;flex-wrap:wrap">
+  <div class="frow" style="border-radius:8px;margin-bottom:10px;gap:6px;flex-wrap:wrap;align-items:center">
     <button class="btn btn-sm" id="sd-pt-w" onclick="sdSetPT('week')" style="${_sd.pt==='week'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">Week</button>
     <button class="btn btn-sm" id="sd-pt-m" onclick="sdSetPT('month')" style="${_sd.pt==='month'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">Month</button>
     <button class="btn btn-sm" id="sd-pt-y" onclick="sdSetPT('year')" style="${_sd.pt==='year'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">Year</button>
+    <button class="btn btn-sm" id="sd-pt-c" onclick="sdSetPT('custom')" style="${_sd.pt==='custom'?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">กำหนดเอง</button>
+    <div id="sd-nav-group" style="display:${isCustom?'none':'flex'};gap:6px;align-items:center">
+      <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
+      <button class="btn btn-sm" onclick="sdNav(-1)">‹</button>
+      <span id="sd-lbl" style="min-width:110px;text-align:center;font-size:13px;font-weight:600;color:var(--N);align-self:center"></span>
+      <button class="btn btn-sm" onclick="sdNav(1)">›</button>
+      <button class="btn btn-sm" onclick="sdGoNow()" style="font-size:12px">ปัจจุบัน</button>
+    </div>
     <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
-    <button class="btn btn-sm" onclick="sdNav(-1)">‹</button>
-    <span id="sd-lbl" style="min-width:110px;text-align:center;font-size:13px;font-weight:600;color:var(--N);align-self:center"></span>
-    <button class="btn btn-sm" onclick="sdNav(1)">›</button>
-    <button class="btn btn-sm" onclick="sdGoNow()" style="font-size:12px">ปัจจุบัน</button>
+    <button class="btn btn-sm" id="sd-yoy" onclick="sdTogYoY()" style="${_sd.showYoY?'background:var(--T);color:#fff;border-color:var(--T);font-weight:600':''}">📊 เทียบปีที่แล้ว</button>
     ${isAll?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span style="font-size:12px;color:var(--TX2);align-self:center">มุมมอง:</span>
     <button class="btn btn-sm" id="sd-rv" onclick="sdTogView()">${_sd.mgrView?'Manager':'Sales'}</button>`
     :ROLE==='sales'?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span class="badge bbl" style="font-size:11px;align-self:center">🔒 ข้อมูลของคุณเท่านั้น</span>`:''}
+  </div>
+  <div id="sd-custom-range" style="display:${isCustom?'flex':'none'};gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;background:var(--LBL);padding:10px 14px;border-radius:8px;border:1px solid rgba(21,83,160,.2)">
+    <span style="font-size:12px;font-weight:600;color:var(--BL)">ช่วงเวลา:</span>
+    <input type="month" id="sd-date-from" value="${_sd.dateFrom}" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font);color:var(--TX)">
+    <span style="font-size:12px;color:var(--TX2)">ถึง</span>
+    <input type="month" id="sd-date-to" value="${_sd.dateTo}" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font);color:var(--TX)">
+    <button class="btn btn-sm btn-p" onclick="sdApplyCustomRange()">ค้นหา</button>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
     <input id="sd-q" type="text" placeholder="🔍 ค้นหา..." oninput="sdSetQ(this.value)" style="padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font);color:var(--TX);outline:none;min-width:180px;flex:1;max-width:280px">
@@ -4116,7 +4222,9 @@ function pgMySales(){
   ${_aiCard('ai-sd-box','AI Sales Insight','วิเคราะห์ประสิทธิภาพ Sales และโอกาสเพิ่มยอดขาย','aiSalesInsight')}
   </div>`;
   _sdUpdateSlmDrop();
-  if(_sd.pt==='year') sdLoadYear(); else sdLoad();
+  if(_sd.pt==='year') sdLoadYear();
+  else if(_sd.pt==='custom'){if(_sd.dateFrom&&_sd.dateTo) sdLoadCustom(); else sdRender();}
+  else sdLoad();
 }
 
 function sdRender(){
@@ -4137,6 +4245,7 @@ function sdRender(){
 function sdUpdateLabel(){
   const lbl=document.getElementById('sd-lbl'); if(!lbl) return;
   if(_sd.pt==='year') lbl.textContent='พ.ศ. '+_sd.cy_y;
+  else if(_sd.pt==='custom') lbl.textContent=_sd.dateFrom&&_sd.dateTo?`${_sd.dateFrom} – ${_sd.dateTo}`:'เลือกช่วงเวลา';
   else lbl.textContent=SD_MTH[_sd.cm]+' '+_sd.cy;
   const wb=document.getElementById('sd-wbar'); if(!wb) return;
   if(_sd.pt==='week'){
@@ -4168,14 +4277,18 @@ function sdKPI(){
   const vsLbl=_sd.pt==='year'?'vs ปีก่อน':'vs เดือนก่อน';
   const vsC=vs>=0?'var(--G)':'var(--R)';
   const avg=inv?_sdF(Math.round(total/inv)):'—';
+  const yoy=_sdApi.yoy;
+  const _yoyLine=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${_sdFmtTotal(prev)} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳ กำลังโหลดข้อมูลปีที่แล้ว…':'')}</div>`:'';
+  const _yoyLineNum=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${Math.round(prev).toLocaleString()} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳':'')}</div>`:'';
   kr.innerHTML=`
     <div class="kpi b"><div class="kl">ยอดขายรวม (มูลค่า)</div><div class="kv">${_sdFmtTotal(total)}</div>
       <div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>
-      <div style="display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:8px">${sparks}</div></div>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:8px">${sparks}</div>
+      ${_yoyLine(total,yoy?.total||0,'ปีที่แล้ว')}</div>
     <div class="kpi g"><div class="kl">ปริมาณขาย (กก./ถุง)</div><div class="kv">${Math.round(qty).toLocaleString()}</div>
-      <div class="kh">Invoice ${inv} ใบ</div></div>
+      <div class="kh">Invoice ${inv} ใบ</div>${_yoyLineNum(qty,yoy?.qty||0,'ปีที่แล้ว')}</div>
     <div class="kpi t"><div class="kl">เฉลี่ย / Invoice</div><div class="kv">${avg}</div>
-      <div class="kh">${lbl2}</div></div>
+      <div class="kh">${lbl2}</div>${_yoyLineNum(inv,yoy?.invoices||0,'Invoice ปีที่แล้ว')}</div>
     <div class="kpi r"><div class="kl">ยอดค้างชำระ</div><div class="kv" style="font-size:20px">${_sdF(ar)}</div>
       <div class="kh">รอดำเนินการ</div></div>`;
 }
@@ -4203,11 +4316,12 @@ function sdCust(){
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=me?.slm_id||'';
   const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
+  const vsHdr=_sd.showYoY?'vs ปีที่แล้ว':'vs';
   const hHdr=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:42%">ประเภท / กลุ่มลูกค้า / ลูกค้า / กลุ่มสินค้า / สินค้า</th>
       <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
-      <th class="r" style="width:110px">สัดส่วน</th><th class="r">vs</th>
+      <th class="r" style="width:110px">สัดส่วน</th><th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
 
   if(_sdApi.loaded && _sdApi.histFallback && !_sdApi.custs?.length){
@@ -4218,6 +4332,8 @@ function sdCust(){
   if(_sdApi.loaded){
     // ─── API data: Category(ty) → Customer → ProdGroup → Product ───
     const T=_sdApi.total||1;
+    const yoyM=_sdYoYMaps();
+    const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
     let custs=isAll?_sdApi.custs:_sdApi.custs.filter(c=>c.slm===slmId);
     if(_sd.slmF) custs=custs.filter(c=>c.slm===_sd.slmF);
     if(q) custs=custs.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)||c.g.some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q))));
@@ -4228,15 +4344,17 @@ function sdCust(){
     let h=hHdr;
     Object.entries(tyMap).forEach(([ty,custs2])=>{
       const tyTot=custs2.reduce((s,c)=>s+c._tot,0);
+      const tyYoY=custs2.reduce((s,c)=>s+(yoyM.cust[c.c]||0),0);
       const otk='ty_'+ty;const oty=_sd.op[otk];
       h+=`<tr onclick="sdTogOp('${otk}')" style="cursor:pointer;background:var(--LN)">
         <td style="font-weight:700">${_xa(oty)}<span class="badge bbl">${ty}</span> <span style="font-size:11px;color:var(--TX3)">${custs2.length} ราย</span></td>
-        <td class="r"><strong>${_sdFmtTotal(_sdV(tyTot))}</strong></td><td class="r">${_sdBar(tyTot,T)}</td><td class="r">—</td></tr>`;
+        <td class="r"><strong>${_sdFmtTotal(_sdV(tyTot))}</strong></td><td class="r">${_sdBar(tyTot,T)}</td><td class="r">${_vc(tyTot,tyYoY)}</td></tr>`;
       if(oty) custs2.forEach(c=>{
         const cv=c._tot;const oc=_sd.op['c'+c.c];
+        const cvYoY=yoyM.cust[c.c]||0;
         h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:20px">${_xa(oc)}<strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span></td>
-          <td class="r"><strong>${_sdFmtTotal(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,tyTot)}</td><td class="r">—</td></tr>`;
+          <td class="r"><strong>${_sdFmtTotal(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,tyTot)}</td><td class="r">${_vc(cv,cvYoY)}</td></tr>`;
         if(oc) c.g.forEach((g,gi)=>{
           const gv=g._tot;const gk='g'+c.c+'_'+gi;const og=_sd.op[gk];
           h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg)">
@@ -4245,7 +4363,7 @@ function sdCust(){
           if(og) g.it.forEach(it=>{
             h+=`<tr style="background:var(--bg2);font-size:12px">
               <td style="padding-left:60px"><span class="mono">${it.c}</span> — ${it.n}</td>
-              <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,gv)}</td><td class="r">—</td></tr>`;
+              <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,gv)}</td><td class="r">${_vc(it._tot,yoyM.prod[it.c]||0)}</td></tr>`;
           });
         });
       });
@@ -4284,16 +4402,19 @@ function sdCust(){
 
 function sdProd(){
   const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
+  const vsHdr=_sd.showYoY?'vs ปีที่แล้ว':'vs';
   const hHdr=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:42%">กลุ่มสินค้า / สินค้า / ประเภทลูกค้า / ลูกค้า</th>
       <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
-      <th class="r" style="width:110px">สัดส่วน</th><th class="r">vs</th>
+      <th class="r" style="width:110px">สัดส่วน</th><th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
   const q=(_sd.q||'').toLowerCase();
 
   if(_sdApi.loaded){
     const T=_sdApi.total||1;
+    const yoyM=_sdYoYMaps();
+    const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
     let prods=[..._sdApi.prods];
     if(q) prods=prods.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)));
     if(_sd.sort.col==='val') prods.sort((a,b)=>_sd.sort.dir*(b._tot-a._tot));
@@ -4302,12 +4423,12 @@ function sdProd(){
       const ok='p'+p.n;const oo=_sd.op[ok];
       h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
         <td>${_xa(oo)}<strong>${p.n}</strong></td>
-        <td class="r"><strong>${_sdFmtTotal(_sdV(p._tot))}</strong></td><td class="r">${_sdBar(p._tot,T)}</td><td class="r">—</td></tr>`;
+        <td class="r"><strong>${_sdFmtTotal(_sdV(p._tot))}</strong></td><td class="r">${_sdBar(p._tot,T)}</td><td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
       if(oo) p.it.forEach(it=>{
         const ik='pi'+it.c;const oi=_sd.op[ik];
         h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
-          <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,p._tot)}</td><td class="r">—</td></tr>`;
+          <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,p._tot)}</td><td class="r">${_vc(it._tot,yoyM.prod[it.c]||0)}</td></tr>`;
         if(oi) it.custs.forEach(ty=>{
           const tyk='pit'+it.c+'_'+ty.n;const ot=_sd.op[tyk];
           h+=`<tr onclick="sdTogOp('${tyk}')" style="cursor:pointer;background:var(--LN)">
@@ -4359,14 +4480,17 @@ function sdSlm(){
   const q=(_sd.q||'').toLowerCase();
   const sf=_sd.slmF||'';
   const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
+  const vsHdr=_sd.showYoY?'vs ปีที่แล้ว':'vs';
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:35%">เซลส์ / ประเภทลูกค้า / ลูกค้า / กลุ่มสินค้า / สินค้า</th>
       <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
-      <th class="r">เป้า</th><th class="r">% บรรลุ</th><th class="r">vs</th>
+      <th class="r">เป้า</th><th class="r">% บรรลุ</th><th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
 
   if(_sdApi.loaded){
+    const yoyM=_sdYoYMaps();
+    const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
     let slms=[..._sdApi.slms];
     if(q) slms=slms.filter(s=>s.name.toLowerCase().includes(q)||s.code.toLowerCase().includes(q));
     if(sf) slms=slms.filter(s=>s.code===sf);
@@ -4377,7 +4501,7 @@ function sdSlm(){
       h+=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer">
         <td>${_xa(os)}<strong>${s.name}</strong> <span class="badge bbgr" style="font-size:10px">${s.code}</span></td>
         <td class="r"><strong>${_sdFmtTotal(_sdV(s._tot))}</strong></td>
-        <td class="r" style="color:var(--TX3)">—</td><td class="r">—</td><td class="r">—</td></tr>`;
+        <td class="r" style="color:var(--TX3)">—</td><td class="r">${_sdBar(s._tot,T)}</td><td class="r">${_vc(s._tot,yoyM.slm[s.code]||0)}</td></tr>`;
       if(os){
         const grpMap={};
         s.custs.forEach(c=>{const g=c.grp||'อื่นๆ';if(!grpMap[g])grpMap[g]=[];grpMap[g].push(c);});
@@ -4475,13 +4599,17 @@ function sdSlm(){
 
 function sdSetPT(t){
   _sd.pt=t;
-  ['m','w','y'].forEach(x=>{const b=document.getElementById('sd-pt-'+x);if(b){b.style.background='';b.style.color='';b.style.borderColor='';b.style.fontWeight='';}});
-  const idMap={month:'m',week:'w',year:'y'};
+  ['m','w','y','c'].forEach(x=>{const b=document.getElementById('sd-pt-'+x);if(b){b.style.background='';b.style.color='';b.style.borderColor='';b.style.fontWeight='';}});
+  const idMap={month:'m',week:'w',year:'y',custom:'c'};
   const active=document.getElementById('sd-pt-'+(idMap[t]||'m'));
   if(active){active.style.background='var(--N)';active.style.color='#fff';active.style.borderColor='var(--N)';active.style.fontWeight='600';}
   if(t==='week') _sd.cw=1;
-  _sdApi.loaded=false;
-  if(t==='year') sdLoadYear(); else sdLoad();
+  const ng=document.getElementById('sd-nav-group');if(ng)ng.style.display=(t==='custom'?'none':'flex');
+  const cr=document.getElementById('sd-custom-range');if(cr)cr.style.display=(t==='custom'?'flex':'none');
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
+  if(t==='year') sdLoadYear();
+  else if(t==='custom'){if(_sd.dateFrom&&_sd.dateTo) sdLoadCustom(); else sdRender();}
+  else sdLoad();
 }
 function sdNav(d){
   if(_sd.pt==='year'){
@@ -4495,13 +4623,13 @@ function sdNav(d){
     if(_sd.cw<1){_sd.cm--;if(_sd.cm<0){_sd.cm=11;_sd.cy--;}_sd.cw=4;}
     else if(_sd.cw>4){_sd.cm++;if(_sd.cm>11){_sd.cm=0;_sd.cy++;}_sd.cw=1;}
   }
-  _sdApi.loaded=false;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
   if(_sd.pt==='year') sdLoadYear(); else sdLoad();
 }
 function sdGoNow(){
   const now=new Date();
   _sd.cm=now.getMonth();_sd.cy=now.getFullYear()+543;_sd.cy_y=now.getFullYear()+543;_sd.cw=1;
-  _sdApi.loaded=false;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
   if(_sd.pt==='year') sdLoadYear(); else sdLoad();
 }
 function sdTab(el,t){
@@ -4527,7 +4655,7 @@ function sdClear(){
 }
 function sdExport(){
   const d=_sdD(),T=d.t,wi=_sdWI();
-  const period=(_sd.pt==='week'?'สัปดาห์'+_sd.cw+'_':'')+SD_MTH[_sd.cm]+'_'+_sd.cy;
+  const period=_sd.pt==='custom'?`${_sd.dateFrom}_${_sd.dateTo}`:(_sd.pt==='week'?'สัปดาห์'+_sd.cw+'_':'')+(_sd.pt==='year'?'ปี'+_sd.cy_y:SD_MTH[_sd.cm]+'_'+_sd.cy);
   let cols,rows=[],sheet;
   if(_sd.at==='cust'){
     if(_sdApi.loaded){
