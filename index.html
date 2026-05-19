@@ -3824,12 +3824,14 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     });
   const modeRows=_salesRowsForMode(mapped,opts);
   const scopedRows=modeRows.filter(r=>_isAllowedCompanyRecord(r, opts));
-  const detailKeys=new Set(scopedRows.filter(r=>!r.is_all).map(r=>`${r.branch}|${r.ym}|${r.prod_code}`));
+  // ใช้ ym|prod_code เป็น key (ไม่รวม branch) เพราะ ALL rows มี branch='LEGACY'
+  // ทำให้ ALL row ถูก exclude เมื่อมี detail row ของ ym+sku เดียวกัน ไม่ว่า branch จะเป็นอะไร
+  const detailKeys=new Set(scopedRows.filter(r=>!r.is_all).map(r=>`${r.ym}|${r.prod_code}`));
   const hasDetailRows=scopedRows.some(r=>!r.is_all);
   const filteredByMode=scopedRows.filter(r=>{
     // __73_* rows: Express monthly summary — only show in summary-only mode (no per-SLM detail present)
     if(String(r.prod_code||'').startsWith('__73_')) return !hasDetailRows;
-    return !r.is_all || !detailKeys.has(`${r.branch}|${r.ym}|${r.prod_code}`);
+    return !r.is_all || !detailKeys.has(`${r.ym}|${r.prod_code}`);
   });
   if(!slmId) return filteredByMode;
   return filteredByMode.filter(r=>r.slm_id===slmId || r.slm_key===slmId || r.slm_key.endsWith(':'+slmId));
@@ -4137,8 +4139,9 @@ async function _sdLoadYoY(){
   const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
   let start,end;
   if(_sd.pt==='custom'){
-    if(!_sd.dateFrom||!_sd.dateTo)return;
-    start=_ymAddYear(_sd.dateFrom,-1);end=_ymAddYear(_sd.dateTo,-1);
+    const fromYm=_dateToYm(_sd.dateFrom);const toYm=_dateToYm(_sd.dateTo);
+    if(!fromYm||!toYm)return;
+    start=_ymAddYear(fromYm,-1);end=_ymAddYear(toYm,-1);
   }else if(_sd.pt==='year'){
     const gy=_sdApiYear();start=`${gy-1}-01`;end=`${gy-1}-12`;
   }else{
@@ -4163,24 +4166,52 @@ function sdTogYoY(){
     _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
   }else{if(!_sd.showYoY){_sdApi.yoy=null;_sdApi.yoyLoading=false;}sdRender();}
 }
+function _dateToYm(d){return d?d.substring(0,7):'';}
+function _dateToDisplayTh(d){
+  if(!d||d.length<10) return d||'';
+  const[y,m,dd]=d.split('-');
+  return`${dd}/${m}/${parseInt(y)+543}`;
+}
 function sdSetDateRange(){
   const f=document.getElementById('sd-date-from');const t=document.getElementById('sd-date-to');
-  if(f)_sd.dateFrom=f.value;if(t)_sd.dateTo=t.value;
+  if(f&&f.value)_sd.dateFrom=f.value;if(t&&t.value)_sd.dateTo=t.value;
 }
 function sdApplyCustomRange(){
   sdSetDateRange();
   if(!_sd.dateFrom||!_sd.dateTo){alert('กรุณาเลือกช่วงวันที่');return;}
+  if(_sd.dateFrom>_sd.dateTo){alert('วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด');return;}
   _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;sdLoadCustom();
 }
+function sdSetDatePreset(p){
+  const now=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  const fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const today=fmt(now);
+  let from,to=today;
+  if(p==='month'){from=`${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;}
+  else if(p==='3m'){from=fmt(new Date(now.getFullYear(),now.getMonth()-2,1));}
+  else if(p==='6m'){from=fmt(new Date(now.getFullYear(),now.getMonth()-5,1));}
+  else if(p==='ytd'){from=`${now.getFullYear()}-01-01`;}
+  else if(p==='lastyear'){from=`${now.getFullYear()-1}-01-01`;to=`${now.getFullYear()-1}-12-31`;}
+  else return;
+  _sd.dateFrom=from;_sd.dateTo=to;
+  const f=document.getElementById('sd-date-from');const t=document.getElementById('sd-date-to');
+  if(f)f.value=from;if(t)t.value=to;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
+  sdLoadCustom();
+}
 async function sdLoadCustom(){
-  if(!_sd.dateFrom||!_sd.dateTo){sdRender();return;}
+  const startYm=_dateToYm(_sd.dateFrom);const endYm=_dateToYm(_sd.dateTo);
+  if(!startYm||!endYm){sdRender();return;}
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
   const badge=document.createElement('div');
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
+  const el=document.getElementById('sd-ta');
+  if(el) el.innerHTML=`<div class="al ali" style="margin:12px">⏳ กำลังโหลดข้อมูล ${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}…</div>`;
   try{
-    const rows=await _sbSalesRows(_sd.dateFrom,_sd.dateTo,slmId,{includeConsi:false,fastProducts:true});
+    const rows=await _sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true});
     const monthly=_sdKpiFromRows(rows);
     _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;
     _sdApi.monthly=monthly;
@@ -4204,8 +4235,11 @@ function pgMySales(){
   const isAll=ROLE==='manager'||ROLE==='superadmin';
   document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-ai" onclick="aiSalesInsight()" style="margin-right:6px">🤖 AI วิเคราะห์</button><button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
   const now=new Date();
-  if(!_sd.dateFrom){_sd.dateFrom=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');}
-  if(!_sd.dateTo){_sd.dateTo=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');}
+  const _pad=n=>String(n).padStart(2,'0');
+  const _today=`${now.getFullYear()}-${_pad(now.getMonth()+1)}-${_pad(now.getDate())}`;
+  const _mFirst=`${now.getFullYear()}-${_pad(now.getMonth()+1)}-01`;
+  if(!_sd.dateFrom||_sd.dateFrom.length<=7){_sd.dateFrom=_mFirst;}
+  if(!_sd.dateTo||_sd.dateTo.length<=7){_sd.dateTo=_today;}
   const isCustom=_sd.pt==='custom';
   document.getElementById('ct').innerHTML=`<div id="sd-root">
   <div class="frow" style="border-radius:8px;margin-bottom:10px;gap:6px;flex-wrap:wrap;align-items:center">
@@ -4228,12 +4262,23 @@ function pgMySales(){
     :ROLE==='sales'?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span class="badge bbl" style="font-size:11px;align-self:center">🔒 ข้อมูลของคุณเท่านั้น</span>`:''}
   </div>
-  <div id="sd-custom-range" style="display:${isCustom?'flex':'none'};gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;background:var(--LBL);padding:10px 14px;border-radius:8px;border:1px solid rgba(21,83,160,.2)">
-    <span style="font-size:12px;font-weight:600;color:var(--BL)">ช่วงเวลา:</span>
-    <input type="month" id="sd-date-from" value="${_sd.dateFrom}" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font);color:var(--TX)">
-    <span style="font-size:12px;color:var(--TX2)">ถึง</span>
-    <input type="month" id="sd-date-to" value="${_sd.dateTo}" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font);color:var(--TX)">
-    <button class="btn btn-sm btn-p" onclick="sdApplyCustomRange()">ค้นหา</button>
+  <div id="sd-custom-range" style="display:${isCustom?'block':'none'};margin-bottom:10px;background:var(--LBL);padding:12px 14px;border-radius:8px;border:1px solid rgba(21,83,160,.2)">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span style="font-size:12px;font-weight:600;color:var(--BL);white-space:nowrap">ช่วงวันที่:</span>
+      <input type="date" id="sd-date-from" value="${_sd.dateFrom}" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font);color:var(--TX);background:var(--W)">
+      <span style="font-size:12px;color:var(--TX2)">–</span>
+      <input type="date" id="sd-date-to" value="${_sd.dateTo}" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font);color:var(--TX);background:var(--W)">
+      <button class="btn btn-sm btn-p" onclick="sdApplyCustomRange()">🔍 ค้นหา</button>
+    </div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11px;color:var(--TX3)">ช่วงด่วน:</span>
+      <button class="btn btn-xs" onclick="sdSetDatePreset('month')">เดือนนี้</button>
+      <button class="btn btn-xs" onclick="sdSetDatePreset('3m')">3 เดือน</button>
+      <button class="btn btn-xs" onclick="sdSetDatePreset('6m')">6 เดือน</button>
+      <button class="btn btn-xs" onclick="sdSetDatePreset('ytd')">ปีนี้</button>
+      <button class="btn btn-xs" onclick="sdSetDatePreset('lastyear')">ปีที่แล้ว</button>
+      <span style="font-size:11px;color:var(--TX3);margin-left:4px">⚡ ข้อมูลรายเดือน</span>
+    </div>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
     <input id="sd-q" type="text" placeholder="🔍 ค้นหา..." oninput="sdSetQ(this.value)" style="padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font);color:var(--TX);outline:none;min-width:180px;flex:1;max-width:280px">
@@ -4276,7 +4321,7 @@ function sdRender(){
 function sdUpdateLabel(){
   const lbl=document.getElementById('sd-lbl'); if(!lbl) return;
   if(_sd.pt==='year') lbl.textContent='พ.ศ. '+_sd.cy_y;
-  else if(_sd.pt==='custom') lbl.textContent=_sd.dateFrom&&_sd.dateTo?`${_sd.dateFrom} – ${_sd.dateTo}`:'เลือกช่วงเวลา';
+  else if(_sd.pt==='custom') lbl.textContent=_sd.dateFrom&&_sd.dateTo?`${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}`:'เลือกช่วงวันที่';
   else lbl.textContent=SD_MTH[_sd.cm]+' '+_sd.cy;
   const wb=document.getElementById('sd-wbar'); if(!wb) return;
   if(_sd.pt==='week'){
@@ -4636,7 +4681,7 @@ function sdSetPT(t){
   if(active){active.style.background='var(--N)';active.style.color='#fff';active.style.borderColor='var(--N)';active.style.fontWeight='600';}
   if(t==='week') _sd.cw=1;
   const ng=document.getElementById('sd-nav-group');if(ng)ng.style.display=(t==='custom'?'none':'flex');
-  const cr=document.getElementById('sd-custom-range');if(cr)cr.style.display=(t==='custom'?'flex':'none');
+  const cr=document.getElementById('sd-custom-range');if(cr)cr.style.display=(t==='custom'?'block':'none');
   _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
   if(t==='year') sdLoadYear();
   else if(t==='custom'){if(_sd.dateFrom&&_sd.dateTo) sdLoadCustom(); else sdRender();}
