@@ -3533,6 +3533,8 @@ async function pgDash(){
   if(rFc?.length) fc=mergeForecasts(rFc, DB.get('forecasts')||[], {includeTgm:true});
   if(rSs&&Object.keys(rSs).length) ss=rSs;
   if(rHist&&Object.keys(rHist).length) hist=rHist;
+  // ให้ dashCharts() อ่านได้ผ่าน _dashData.hist
+  if(hist&&Object.keys(hist).length) window._dashSalesHistCache=hist;
   const yearSalesValue=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.amount)||0),0);
   const yearSalesQty=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
   const yearSales=yearSalesValue || yearSalesQty;
@@ -3540,7 +3542,7 @@ async function pgDash(){
   const tssSales=companySales.TSS||{qty:0,amount:0,count:0};
   const tssnvSales=companySales.TSSNV||{qty:0,amount:0,count:0};
   const tgmSales=companySales.TGM||{qty:0,amount:0,count:0};
-  window._dashData={po,stk,fc,ss,companySales};
+  window._dashData={po,stk,fc,ss,companySales,hist};
   const pending=po.filter(p=>p.status==='pending').length;
   const overdue=po.filter(p=>p.status==='overdue').length;
   const lowStk=Object.entries(stk).filter(([c,s])=>s.qty<(ss[c]?.min_stock||50)).length;
@@ -3588,8 +3590,11 @@ function dashCharts(){
   const allowed=allowedSKUs();
   const period=parseInt(document.getElementById('pf')?.value||'4');
   const custGroup=document.getElementById('cgf')?.value||'';
-  const hist=myHist();
   const dashData=window._dashData||{};
+  const hist = (dashData.hist && Object.keys(dashData.hist).length ? dashData.hist : null)
+             || (window._dashSalesHistCache && Object.keys(window._dashSalesHistCache).length ? window._dashSalesHistCache : null)
+             || (window._salesHistCache && Object.keys(window._salesHistCache).length ? window._salesHistCache : null)
+             || myHist();
   const fc=dashData.fc||DB.get('forecasts')||[];
   const po=dashData.po||DB.get('po_log')||[];
   const stk=dashData.stk||DB.get('stock')||{};
@@ -8455,8 +8460,9 @@ function saveSR(arr) { DB.set('sample_requests', arr); }
 // ── หน้าหลัก ─────────────────────────────────────────────────
 function pgSample() {
   document.getElementById('app').classList.remove('custreg-mode');
-  if (_sr.view === 'form')   { _srRenderForm();          return; }
-  if (_sr.view === 'detail') { _srRenderDetail(_sr.editId); return; }
+  if (_sr.view === 'form')       { _srRenderForm();             return; }
+  if (_sr.view === 'testresult') { _srRenderTestResult(_sr.editId); return; }
+  if (_sr.view === 'detail')     { _srRenderDetail(_sr.editId);   return; }
 
   const canCreate   = ['sales','manager','superadmin'].includes(ROLE);
   const canApprove  = ['manager','superadmin'].includes(ROLE);
@@ -8770,6 +8776,8 @@ function _srRenderDetail(id) {
     actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','dispatched')">🚚 จัดส่งแล้ว</button>`);
   if ((isMine || canApprove) && r.status === 'dispatched')
     actions.push(`<button class="btn btn-g" onclick="srSetStatus('${sid}','received')">✔️ ยืนยันรับแล้ว</button>`);
+  if ((isMine || canApprove) && r.status === 'received')
+    actions.push(`<button class="btn btn-t" onclick="_sr.view='testresult';_sr.editId='${sid}';pgSample()">🔬 ${r.testResult ? 'แก้ไขผลทดสอบ' : 'บันทึกผลทดสอบ'}</button>`);
   if ((isMine || canApprove) && ['draft','pending','rejected'].includes(r.status))
     actions.push(`<button class="btn btn-r" onclick="srDelete('${sid}')" style="opacity:.7">🗑 ลบ</button>`);
 
@@ -8782,6 +8790,7 @@ function _srRenderDetail(id) {
     { st: 'preparing',  lbl: 'เตรียมสินค้า',    who: uidToName(r.prep_by)    || r.prep_by,    at: r.prep_at?.slice(0,10) },
     { st: 'dispatched', lbl: 'จัดส่งแล้ว',      who: uidToName(r.disp_by)    || r.disp_by,    at: r.disp_at?.slice(0,10) },
     { st: 'received',   lbl: 'รับแล้ว',         who: uidToName(r.recv_by)    || r.recv_by,    at: r.recv_at?.slice(0,10) },
+    { st: 'tested',     lbl: 'บันทึกผลทดสอบ',  who: uidToName(r.testResult?.by) || r.testResult?.by, at: r.testResult?.date },
   ].filter(t => t.at || t.st === r.status);
 
   const statusOrder = ['draft','pending','approved','preparing','dispatched','received'];
@@ -8846,6 +8855,37 @@ function _srRenderDetail(id) {
         <td style="font-size:12px;color:var(--TX2)">${esc(it.note || '')}</td>
       </tr>`).join('')}</tbody>
     </table></div>
+
+    <!-- ผลทดสอบ -->
+    ${r.testResult ? (() => {
+      const tr = r.testResult;
+      const resultStyle = { pass:'color:var(--G);font-weight:700', fail:'color:var(--R);font-weight:700', in_progress:'color:var(--N);font-weight:700' };
+      const resultLbl   = { pass:'✅ ผ่าน', fail:'❌ ไม่ผ่าน', in_progress:'🔄 กำลังทดสอบ' };
+      const decisionLbl = { will_order:'🛒 ตัดสินใจสั่งซื้อ', wont_order:'🚫 ไม่สั่งซื้อ', need_more:'🔁 ต้องการตัวอย่างเพิ่ม', undecided:'⏳ ยังไม่ตัดสินใจ' };
+      const stars = tr.satisfaction ? '⭐'.repeat(tr.satisfaction) + '☆'.repeat(5 - tr.satisfaction) : '—';
+      return `<div style="background:var(--LG);border:1.5px solid var(--G);border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="font-weight:600;font-size:13px;color:var(--G);margin-bottom:10px">🔬 ผลการทดสอบ</div>
+        <div class="cgrid c2" style="gap:10px 20px">
+          <div><div style="font-size:11px;color:var(--TX3)">วันที่ทดสอบ</div><div style="font-size:13px">${fmtD(tr.date || '')}</div></div>
+          <div><div style="font-size:11px;color:var(--TX3)">ผลการทดสอบ</div><div style="font-size:13px;${resultStyle[tr.result] || ''}">${resultLbl[tr.result] || tr.result || '—'}</div></div>
+          <div><div style="font-size:11px;color:var(--TX3)">ความพึงพอใจ</div><div style="font-size:14px">${stars}</div></div>
+          <div><div style="font-size:11px;color:var(--TX3)">การตัดสินใจ</div><div style="font-size:13px;font-weight:600">${decisionLbl[tr.decision] || tr.decision || '—'}</div></div>
+          <div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">ความคิดเห็นลูกค้า</div><div style="font-size:13px">${esc(tr.feedback || '—')}</div></div>
+          ${tr.note ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">หมายเหตุ</div><div style="font-size:13px">${esc(tr.note)}</div></div>` : ''}
+          ${(tr.itemResults || []).some(x => x.result) ? `<div style="grid-column:1/-1">
+            <div style="font-size:11px;color:var(--TX3);margin-bottom:6px">ผลทดสอบรายสินค้า</div>
+            <div class="tw"><table><thead><tr><th>สินค้า</th><th>ผล</th><th>หมายเหตุ</th></tr></thead><tbody>
+              ${(tr.itemResults || []).map(ir => `<tr>
+                <td style="font-size:12px">${esc(ir.skuName || ir.sku || '')}</td>
+                <td>${ir.result === 'pass' ? '<span class="badge bbg">✅ ผ่าน</span>' : ir.result === 'fail' ? '<span class="badge bbr">❌ ไม่ผ่าน</span>' : '<span class="badge bbl">—</span>'}</td>
+                <td style="font-size:12px;color:var(--TX2)">${esc(ir.note || '')}</td>
+              </tr>`).join('')}
+            </tbody></table></div>
+          </div>` : ''}
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--TX3)">บันทึกโดย ${esc(uidToName(tr.by) || tr.by || '')} เมื่อ ${fmtD(tr.date || '')}</div>
+      </div>`;
+    })() : ''}
 
     <!-- Timeline -->
     <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:8px">ประวัติสถานะ</div>
@@ -8922,6 +8962,132 @@ function _srEditExisting(id) {
   };
   _sr.view = 'form';
   pgSample();
+}
+
+// ── ฟอร์มบันทึกผลทดสอบ ─────────────────────────────────────
+function _srRenderTestResult(id) {
+  const r = getSR().find(x => x.id === id);
+  if (!r) { _sr.view = 'home'; pgSample(); return; }
+  const tr = r.testResult || {};
+  const inpSt = 'padding:8px 10px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:var(--font);font-size:13px;box-sizing:border-box';
+
+  const starBtns = [1,2,3,4,5].map(n =>
+    `<button type="button" onclick="document.getElementById('sr-tr-sat').value=${n};document.querySelectorAll('.sr-star').forEach((b,i)=>{b.style.color=i<${n}?'var(--Y)':'var(--TX3)'})"
+      class="sr-star" style="font-size:22px;background:none;border:none;cursor:pointer;color:${(tr.satisfaction||0)>=n?'var(--Y)':'var(--TX3)'};padding:0 2px">⭐</button>`
+  ).join('');
+
+  document.getElementById('ct').innerHTML = `
+  <button onclick="_sr.view='detail';pgSample()" style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:var(--bg2);border:1px solid var(--BD);color:var(--TX2);font-weight:500;margin-bottom:16px">← กลับรายละเอียด</button>
+  <div class="card">
+    <div class="ch">
+      <div class="ct2">🔬 บันทึกผลการทดสอบ</div>
+      <div style="font-size:12px;color:var(--TX3)">${esc(r.custName || '')} — คำขอ ${esc(r.id || '')}</div>
+    </div>
+
+    <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:12px">📋 ภาพรวมผลทดสอบ</div>
+      <div class="cgrid c2" style="gap:12px">
+        <div class="field" style="margin:0">
+          <label>วันที่ทดสอบ *</label>
+          <input id="sr-tr-date" type="date" value="${esc(tr.date || today())}" style="${inpSt}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>ผลการทดสอบ *</label>
+          <select id="sr-tr-result" style="${inpSt}">
+            <option value="">— เลือกผล —</option>
+            <option value="pass"        ${tr.result==='pass'?'selected':''}>✅ ผ่าน</option>
+            <option value="fail"        ${tr.result==='fail'?'selected':''}>❌ ไม่ผ่าน</option>
+            <option value="in_progress" ${tr.result==='in_progress'?'selected':''}>🔄 กำลังทดสอบ</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0">
+          <label>ความพึงพอใจของลูกค้า</label>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:4px">
+            ${starBtns}
+            <input type="hidden" id="sr-tr-sat" value="${tr.satisfaction || 0}">
+            <span id="sr-tr-sat-lbl" style="font-size:12px;color:var(--TX3);margin-left:6px">${tr.satisfaction ? tr.satisfaction+'/5' : 'ยังไม่ให้คะแนน'}</span>
+          </div>
+        </div>
+        <div class="field" style="margin:0">
+          <label>การตัดสินใจของลูกค้า</label>
+          <select id="sr-tr-decision" style="${inpSt}">
+            <option value="">— ยังไม่ระบุ —</option>
+            <option value="will_order"  ${tr.decision==='will_order'?'selected':''}>🛒 ตัดสินใจสั่งซื้อ</option>
+            <option value="wont_order"  ${tr.decision==='wont_order'?'selected':''}>🚫 ไม่สั่งซื้อ</option>
+            <option value="need_more"   ${tr.decision==='need_more'?'selected':''}>🔁 ต้องการตัวอย่างเพิ่ม</option>
+            <option value="undecided"   ${tr.decision==='undecided'?'selected':''}>⏳ ยังไม่ตัดสินใจ</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0;grid-column:1/-1">
+          <label>ความคิดเห็น / Feedback ของลูกค้า</label>
+          <textarea id="sr-tr-feedback" placeholder="บันทึกความคิดเห็น ข้อเสนอแนะ หรือข้อมูลจากลูกค้าโดยตรง"
+            style="${inpSt};height:72px;resize:vertical">${esc(tr.feedback || '')}</textarea>
+        </div>
+        <div class="field" style="margin:0;grid-column:1/-1">
+          <label>หมายเหตุเพิ่มเติม</label>
+          <input id="sr-tr-note" type="text" value="${esc(tr.note || '')}" placeholder="หมายเหตุ / action ต่อไป" style="${inpSt}">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:12px">📦 ผลทดสอบรายสินค้า (ถ้ามี)</div>
+      ${(r.items || []).map((it, i) => {
+        const ir = (tr.itemResults || [])[i] || {};
+        return `<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;padding:10px;background:var(--W);border-radius:8px;border:1px solid var(--BD)">
+          <div style="flex:2;min-width:160px">
+            <div style="font-size:11px;color:var(--TX3);margin-bottom:2px">สินค้า</div>
+            <div style="font-size:13px;font-weight:600">${esc(it.skuName || it.sku || '')}</div>
+            <div style="font-size:11px;color:var(--TX3)">${it.qty} ${it.unit || 'กก.'}</div>
+          </div>
+          <div style="width:140px">
+            <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">ผลทดสอบ</div>
+            <select id="sr-ir-result-${i}" style="padding:6px 8px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:var(--font);font-size:12px">
+              <option value="">— ยังไม่ระบุ —</option>
+              <option value="pass" ${ir.result==='pass'?'selected':''}>✅ ผ่าน</option>
+              <option value="fail" ${ir.result==='fail'?'selected':''}>❌ ไม่ผ่าน</option>
+            </select>
+          </div>
+          <div style="flex:3;min-width:160px">
+            <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">หมายเหตุ / ข้อสังเกต</div>
+            <input id="sr-ir-note-${i}" type="text" value="${esc(ir.note || '')}"
+              placeholder="เช่น กลิ่น รสชาติ เนื้อสัมผัส ขนาด"
+              style="padding:6px 8px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:var(--font);font-size:12px;box-sizing:border-box">
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn" onclick="_sr.view='detail';pgSample()">ยกเลิก</button>
+      <button class="btn btn-g" onclick="srSaveTestResult('${String(id).replace(/'/g,"\\'")}')">💾 บันทึกผลทดสอบ</button>
+    </div>
+  </div>`;
+}
+
+function srSaveTestResult(id) {
+  const r = getSR().find(x => x.id === id); if (!r) return;
+  const date     = document.getElementById('sr-tr-date')?.value;
+  const result   = document.getElementById('sr-tr-result')?.value;
+  const sat      = parseInt(document.getElementById('sr-tr-sat')?.value) || 0;
+  const decision = document.getElementById('sr-tr-decision')?.value;
+  const feedback = document.getElementById('sr-tr-feedback')?.value?.trim() || '';
+  const note     = document.getElementById('sr-tr-note')?.value?.trim() || '';
+  if (!date)   { toast('กรุณาระบุวันที่ทดสอบ', 'warn'); return; }
+  if (!result) { toast('กรุณาเลือกผลการทดสอบ', 'warn'); return; }
+  const itemResults = (r.items || []).map((it, i) => ({
+    sku:     it.sku,
+    skuName: it.skuName || '',
+    result:  document.getElementById(`sr-ir-result-${i}`)?.value || '',
+    note:    document.getElementById(`sr-ir-note-${i}`)?.value?.trim() || '',
+  }));
+  const reqs = getSR();
+  const rec  = reqs.find(x => x.id === id); if (!rec) return;
+  rec.testResult = { date, result, satisfaction: sat, decision, feedback, note, itemResults, by: UID, updated_at: new Date().toISOString() };
+  saveSR(reqs);
+  audit('SAMPLE_TEST_RESULT', id, { result, decision, satisfaction: sat });
+  toast('บันทึกผลทดสอบแล้ว');
+  _sr.view = 'detail'; pgSample();
 }
 </script>
 </body>
