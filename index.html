@@ -560,6 +560,57 @@ const SB = {
     return rows;
   },
 
+  async getDataConfidence() {
+    const sb = getSupabaseClient();
+    const countRows = async (table, applyFilter = null) => {
+      let q = sb.from(table).select('id', { count: 'exact', head: true });
+      if (applyFilter) q = applyFilter(q);
+      const { count, error } = await q;
+      if (error) throw error;
+      return count || 0;
+    };
+    const [
+      soCount,
+      lineCount,
+      activeBookingCount,
+      latestBooking,
+      latestStock,
+    ] = await Promise.all([
+      countRows('outbound_orders'),
+      countRows('outbound_lines'),
+      countRows('bookings', q => q.neq('status', 'cancelled')),
+      sb.from('bookings').select('created_at').order('created_at', { ascending: false }).limit(1),
+      sb.from('stock').select('last_updated').order('last_updated', { ascending: false }).limit(1),
+    ]);
+    const orderScan = await sb.from('outbound_orders').select('id,order_no').order('created_at', { ascending: false }).limit(5000);
+    if (orderScan.error) throw orderScan.error;
+    const orderRows = orderScan.data || [];
+    const orderIds = orderRows.map(o => o.id).filter(Boolean);
+    const lineOrderIds = new Set();
+    for (let i = 0; i < orderIds.length; i += 200) {
+      const chunk = orderIds.slice(i, i + 200);
+      const { data, error } = await sb.from('outbound_lines').select('order_id').in('order_id', chunk);
+      if (error) throw error;
+      (data || []).forEach(r => { if (r.order_id) lineOrderIds.add(r.order_id); });
+    }
+    const ordersWithoutLine = orderRows.filter(o => !lineOrderIds.has(o.id));
+    const warnings = [];
+    if (ordersWithoutLine.length) {
+      const scope = soCount > orderRows.length ? `จากตัวอย่างล่าสุด ${orderRows.length.toLocaleString()} SO` : 'ทั้งหมด';
+      warnings.push(`พบ SO ไม่มี line ${ordersWithoutLine.length.toLocaleString()} รายการ (${scope})`);
+    } else if (soCount > lineCount) {
+      warnings.push('จำนวน SO มากกว่า line ตรวจสอบความครบถ้วนของ outbound_lines');
+    }
+    return {
+      syncedAt: latestBooking.data?.[0]?.created_at || latestStock.data?.[0]?.last_updated || null,
+      soCount,
+      lineCount,
+      activeBookingCount,
+      ordersWithoutLine: ordersWithoutLine.length,
+      warnings,
+    };
+  },
+
   async addForecast(fc) {
     return sbThrow(getSupabaseClient().from('forecasts').insert({
       id:          fc.id,
@@ -1159,6 +1210,7 @@ async function doLogin() {
       SB.subscribeBookings(() => {
         CACHE.clear('bookings');
         CACHE.clear('fc_booking_links');
+        CACHE.clear('data_confidence');
         if (sessionStorage.getItem('_pg') === 'planbook') pgPlanBooking();
         if (sessionStorage.getItem('_pg') === 'booksummary') pgBookingSummary();
       });
@@ -1169,7 +1221,8 @@ async function doLogin() {
         }
       });
       // แจ้งเตือน planner เมื่อมี forecast ใหม่
-      if (['planning','manager','superadmin'].includes(CURRENT_USER?.role)) {
+      const PLANNING_ROLES=['planning','planning_manager','planning_officer','planning_worker','manager','admin','superadmin'];
+      if (PLANNING_ROLES.includes(CURRENT_USER?.role)) {
         SB.subscribeForecasts(payload => {
           if (payload.eventType === 'INSERT') {
             const f = payload.new;
@@ -1194,6 +1247,7 @@ async function doLogin() {
         CACHE.clearPrefix('sales_hist_');
         CACHE.clear('products');
         CACHE.clear('stock');
+        CACHE.clear('data_confidence');
         DB.set('remote_customers_cache', []);
         window._salesRows2Y = null;
         window._salesHistCache = null;
@@ -1231,7 +1285,7 @@ function audit(action, target, detail) {
 // pgForecast() — ตารางแผนรายสัปดาห์ + รายการ + เอกสาร
 // ════════════════════════════════════════════════
 async function pgForecast() {
-  const isAll = ROLE !== 'sales';
+  const isAll = !isSales();
   const ct = document.getElementById('ct');
   const tab = window._fcTab || 'grid';
   const now = new Date();
@@ -1290,6 +1344,7 @@ async function pgForecast() {
       ${custSet.map(c=>`<option value="${esc(c.code)}" ${selCust===c.code?'selected':''}>${esc(c.name||c.code)}</option>`).join('')}
     </select>
     <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="btn btn-sm" onclick="fcCopyLastMonth()" title="คัดลอก Forecast จากเดือนที่แล้วมาเป็นค่าตั้งต้น">📋 Copy เดือนที่แล้ว</button>
       <button class="btn btn-sm btn-p" onclick="showFcModal()">+ เพิ่ม</button>
       <button class="btn btn-sm btn-g" onclick="expFC()">Export Excel</button>
     </div>
@@ -1300,6 +1355,55 @@ async function pgForecast() {
   else if(tab==='entry') _renderFcEntry(SKUS,skuMap,selMonth,selCust,custMap);
   else if(tab==='list') _renderFcList(fcAll,isAll,selMonth,selCust);
   else                  _renderFcDoc(fcAll,SKUS,skuMap,selMonth,selCust,custMap);
+}
+
+// ── Copy Forecast จากเดือนที่แล้ว ─────────────────────────────────────────
+async function fcCopyLastMonth(){
+  const curYm = window._fcMonth || new Date().toISOString().slice(0,7);
+  const [y,m] = curYm.split('-').map(Number);
+  const prevY = m===1?y-1:y;
+  const prevM = m===1?12:m-1;
+  const prevYm = `${prevY}-${String(prevM).padStart(2,'0')}`;
+
+  if(!confirm(`คัดลอก Forecast จากเดือน ${prevYm} มายัง ${curYm}?\n(จะข้ามรายการที่มีอยู่แล้วในเดือนนี้)`)) return;
+
+  const allFc = window._fcListCache || DB.get('forecasts') || [];
+  const prevFc = allFc.filter(f => (f.ym||f.delivDate||'').startsWith(prevYm));
+  const thisFc = allFc.filter(f => (f.ym||f.delivDate||'').startsWith(curYm));
+  const existKeys = new Set(thisFc.map(f => `${f.sku}|${f.custCode||''}`));
+
+  if(!prevFc.length){ toast('ไม่มีข้อมูล Forecast ในเดือน ' + prevYm); return; }
+
+  const copies = prevFc
+    .filter(f => !existKeys.has(`${f.sku}|${f.custCode||''}`))
+    .map(f => ({
+      ...f,
+      id: undefined, // ให้ระบบสร้าง ID ใหม่
+      ym: curYm,
+      delivDate: f.delivDate ? f.delivDate.replace(prevYm, curYm) : null,
+      approved: false,
+      by: UID,
+      ts: Date.now(),
+      note: `[Copy จาก ${prevYm}] ${f.note||''}`.trim(),
+    }));
+
+  if(!copies.length){ toast(`ทุก SKU มีข้อมูลเดือน ${curYm} แล้ว — ไม่มีอะไรต้อง copy`); return; }
+
+  // บันทึก local ก่อน แล้วลอง sync Supabase
+  const saved = [...(DB.get('forecasts')||[]), ...copies];
+  DB.set('forecasts', saved);
+  CACHE.clear('forecasts');
+
+  let synced = 0;
+  try {
+    for(const fc of copies){
+      await SB.saveForecast(fc);
+      synced++;
+    }
+  } catch(e){ console.warn('Copy forecast sync error:', e.message); }
+
+  toast(`📋 Copy สำเร็จ ${copies.length} รายการ${synced<copies.length?' (บางรายการบันทึก offline)':''}`);
+  pgForecast();
 }
 
 function _renderFcAI(){
@@ -2986,12 +3090,79 @@ function cleanupSampleData(){
 
 // ── AUTH ──────────────────────────────────────────────────────────
 ROLE='', UID='', UNAME='';
+// ═══════════════════════════════════════════════════════════════════════
+// RNAV — เมนูแยกตาม role × department
+// Role hierarchy: superadmin > admin > manager > officer > worker
+// Dept for Supply Chain: sales | planning  (warehouse ใช้ WMS แยก)
+// ═══════════════════════════════════════════════════════════════════════
 const RNAV={
-  superadmin:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ขอสินค้าตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['perms','🔐','สิทธิ์การใช้งาน'],['auditlog','🔍','Audit Log']],
-  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ขอสินค้าตัวอย่าง']],
-  planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','สรุปยอดขาย'],['sample','🧪','ขอสินค้าตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
-  warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า'],['sample','🧪','ขอสินค้าตัวอย่าง']],
-  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ขอสินค้าตัวอย่าง'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
+  // ── Super Admin / Admin ───────────────────────────────────────────────
+  superadmin:[
+    ['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],
+    ['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
+    ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
+    ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
+    ['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],
+    ['sample','🧪','ของตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],
+    ['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],
+    ['users','👥','จัดการผู้ใช้'],['perms','🔐','สิทธิ์การใช้งาน'],['auditlog','🔍','Audit Log']
+  ],
+  admin:[
+    ['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],
+    ['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
+    ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
+    ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
+    ['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],
+    ['sample','🧪','ของตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],
+    ['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],['auditlog','🔍','Audit Log']
+  ],
+  // ── Sales department ──────────────────────────────────────────────────
+  // manager: ดูยอดขายทีม + อนุมัติ + รายงาน
+  sales_manager:[
+    ['dash','📊','Dashboard'],['mysales','📈','ยอดขายทีม'],['consi','📦','ฝากขาย CONSI'],
+    ['forecast','📝','Sales Forecast'],['custmap','🗺️','สรุปยอดขาย'],
+    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['reports','📄','Reports']
+  ],
+  // officer: ทำงาน Sales ประจำวัน
+  sales_officer:[
+    ['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],
+    ['forecast','📝','Sales Forecast'],['custmap','🗺️','สรุปยอดขาย'],
+    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']
+  ],
+  // worker: Sales ระดับพื้นฐาน (เห็นเฉพาะงานตัวเอง)
+  sales_worker:[
+    ['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],
+    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']
+  ],
+  // ── Planning department ───────────────────────────────────────────────
+  // manager: ดูแล planning ทั้งหมด + approve + รายงาน
+  planning_manager:[
+    ['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],
+    ['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
+    ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
+    ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
+    ['custmap','🗺️','สรุปยอดขาย'],['sample','🧪','ของตัวอย่าง'],
+    ['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']
+  ],
+  // officer: Planner ทำงานประจำวัน
+  planning_officer:[
+    ['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],
+    ['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
+    ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
+    ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
+    ['custmap','🗺️','สรุปยอดขาย'],['sample','🧪','ของตัวอย่าง']
+  ],
+  // worker: ดูข้อมูลพื้นฐาน planning
+  planning_worker:[
+    ['dash','📊','Dashboard'],
+    ['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
+    ['sample','🧪','ของตัวอย่าง']
+  ],
+  // ── Backward-compat (roles เดิม) ─────────────────────────────────────
+  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','สรุปยอดขาย'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']],
+  planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','สรุปยอดขาย'],['sample','🧪','ของตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
+  warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['sample','🧪','ของตัวอย่าง']],
+  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
 const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custmap:'สรุปยอดขาย',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
@@ -3011,28 +3182,72 @@ function restoreSession(){
   }catch(e){console.warn('restoreSession failed',e);return false;}
 }
 window.addEventListener('DOMContentLoaded',()=>{setTimeout(()=>{restoreSession();},0);});
+// ── role label สำหรับแสดงใน sidebar ────────────────────────────────────
+function getRoleLabel(role, dept){
+  const deptLabel = dept==='sales'?'Sales':dept==='planning'?'Planning':'';
+  const map={
+    superadmin:'Super Admin', admin:'Administrator',
+    manager:`Manager${deptLabel?' ('+deptLabel+')':''}`,
+    officer:`Officer${deptLabel?' ('+deptLabel+')':''}`,
+    worker:`Worker${deptLabel?' ('+deptLabel+')':''}`,
+    // new dept-specific keys
+    sales_manager:'Sales Manager', sales_officer:'Sales Officer', sales_worker:'Sales Worker',
+    planning_manager:'Planning Manager', planning_officer:'Planning Officer', planning_worker:'Planning Worker',
+    // backward-compat
+    sales:'Sales', planning:'Planning', warehouse:'Warehouse',
+  };
+  return map[role]||role;
+}
+
+// ── helper: ตรวจ department ของ user ปัจจุบัน ────────────────────────────
+function userDept(){return(CURRENT_USER?.department||'').toLowerCase();}
+function isSales(){return userDept()==='sales'||ROLE==='sales'||ROLE==='sales_manager'||ROLE==='sales_officer'||ROLE==='sales_worker';}
+function isPlanning(){return userDept()==='planning'||ROLE==='planning'||ROLE==='planning_manager'||ROLE==='planning_officer'||ROLE==='planning_worker';}
+function isManager(){return['superadmin','admin','manager','sales_manager','planning_manager'].includes(ROLE)||ROLE==='manager';}
+
 function buildSB(){
-  // Merge RNAV defaults with stored role-permission overrides
   const customPerms=DB.get('nav_perms')||{};
   const deptPerms=DB.get('nav_perms_deptpos')||{};
-  const me=(DB.get('users')||[]).find(u=>u.uid===UID)||{};
+  const me=(DB.get('users')||[]).find(u=>u.uid===UID)||CURRENT_USER||{};
+  const dept=(me.department||CURRENT_USER?.department||'').toLowerCase();
   const dkey=`${me.department||''}|${me.position||''}`;
-  let navItems=RNAV[ROLE]||[];
+
+  // ── รวม lookup ไอคอนจากทุก RNAV ────────────────────────────────────────
+  const lookup={};
+  Object.values(RNAV).flat().forEach(([id,ico,lbl])=>{if(!lookup[id])lookup[id]=[id,ico,lbl];});
+
+  let navItems=[];
+
+  // 1. ถ้ามี dept+position override จาก IT → ใช้ก่อนเสมอ (ยกเว้น superadmin)
   if(ROLE!=='superadmin' && deptPerms[dkey]?.pages?.length){
-    const lookup={};
-    Object.values(RNAV).flat().forEach(([id,ico,lbl])=>{if(!lookup[id])lookup[id]=[id,ico,lbl];});
     navItems=deptPerms[dkey].pages.map(id=>lookup[id]).filter(Boolean);
-  } else if(ROLE!=='superadmin'){
-    // Direct role pages come from the same Role manager used by Users.
-    const lookup={};
-    Object.values(RNAV).flat().forEach(([id,ico,lbl])=>{if(!lookup[id])lookup[id]=[id,ico,lbl];});
-    const rolePages=(typeof _getRoles==='function'&&_getRoles()[ROLE]?.pages)||customPerms[ROLE]?.pages||[];
-    if(rolePages.length) navItems=rolePages.map(id=>lookup[id]).filter(Boolean);
   }
+  // 2. ถ้าไม่มี override → เลือก RNAV ตาม role × dept
+  else if(ROLE==='superadmin'){
+    navItems=RNAV.superadmin;
+  } else if(ROLE==='admin'){
+    navItems=RNAV.admin;
+  } else if(['manager','officer','worker'].includes(ROLE)){
+    // 5-level generic roles → combine กับ dept
+    const navKey = dept ? `${dept}_${ROLE}` : ROLE;
+    navItems=RNAV[navKey]||RNAV[ROLE]||[];
+  } else {
+    // dept-specific keys (sales_manager, planning_officer, ฯลฯ) หรือ roles เดิม
+    navItems=RNAV[ROLE]||[];
+  }
+
+  // 3. ถ้ายังว่างอยู่ → fallback จาก role manager
+  if(!navItems.length){
+    const lookup2={};
+    Object.values(RNAV).flat().forEach(([id,ico,lbl])=>{if(!lookup2[id])lookup2[id]=[id,ico,lbl];});
+    const rolePages=(typeof _getRoles==='function'&&_getRoles()[ROLE]?.pages)||customPerms[ROLE]?.pages||[];
+    if(rolePages.length) navItems=rolePages.map(id=>lookup2[id]).filter(Boolean);
+  }
+
   document.getElementById('sb-nav').innerHTML=navItems.map(([id,ico,lbl])=>`<div class="ni" id="ni-${id}" onclick="nav('${id}')"><span class="ni-ico">${ico}</span><span>${lbl}</span></div>`).join('');
-  document.getElementById('sb-av').textContent=UID.substring(0,2).toUpperCase();
+  document.getElementById('sb-av').textContent=(UID||'??').substring(0,2).toUpperCase();
   document.getElementById('sb-un').textContent=UNAME||UID;
-  document.getElementById('sb-ur').textContent=({superadmin:'Super Admin',sales:'Sales',planning:'Planning',warehouse:'Warehouse',manager:'Manager'})[ROLE]||ROLE;
+  document.getElementById('sb-ur').textContent=getRoleLabel(ROLE, dept);
 }
 
 const SALES_MAP = {"01-B1-0001": "แม็คโครสาขาราไวย์", "01-B1-0007": "แม็คโครสาขาถลาง", "01-B1-0008": "แม็คโครสาขาเชียงใหม่2", "01-B1-0009": "แม็คโครสาขาเกาะสมุย", "01-B1-0011": "แม็คโครสาขาจรัญสนิทวงศ์", "01-B1-0012": "แม็คโครสาขารามอินทรา", "01-B1-0013": "แม็คโครสาขากัลปพฤกษ์", "01-B1-0014": "แม็คโครสาขารังสิต", "01-B1-0015": "แม็คโครสาขานวมินทร์70", "01-B1-0016": "แม็คโครจัดชิม", "01-B1-0017": "แม็คโครเพชรเกษม", "01-B1-0018": "แม็คโครอ่อนนุช", "01-BA-0001": "อำนวยศาลางาม", "01-IH-0001": "อำนวยศาลางาม", "01-IH-0002": "คุณตาว(ผู้จัดการฝ่ายบัญชี)", "01-IH-0003": "จารุณรัศมี(เลขา)", "01-IH-0004": "จารุณี(เลขาฝ่ายขายร้านค้า)", "01-IH-0005": "ทัศนีย์(มด..มาร์เก็ตติ้ง)", "01-IH-0006": "คุณจันทนา เบิกสินค้าในออฟฟิต", "01-IH-0007": "ไทยซอสเซสพัทยาจำกัด", "01-IH-0008": "ภูเก็ตฟู้ดแอนด์ซอสเซสจำกัด", "01-IH-0010": "ปรัชญา(ฝ่ายขายร้านค้า)", "01-IH-0027": "ผศวัตประทีปทอง(ฝ่ายขายร้านค้า)", "01-IH-0032": "ซี.อินเตอร์", "01-IH-0038": "ธีระพล(ฝ่ายขายร้านค้า)", "01-IH-0039": "ธนวัฒน์ศรีสยาม(หน.จัดส่ง)", "01-IH-0044": "ขนิษฐา(ฝ่ายขาย)", "01-IH-0052": "ทรงวุฒิพัวพัฒนขจร(ผู้จัดการฝ่ายขาย)", "01-IH-0053": "รชต(ฝ่ายขายห้าง)", "01-IH-0056": "วีรวุฒิเอมโอช(ฝ่ายขายร้านค้า)", "01-IH-0058": "สุนทรี(ฝ่ายขายร้านค้า)", "01-IH-0060": "ลักษณาแวววรรณจิตร(ฝ่ายขายร้านค้า)", "01-IH-0062": "วัฒนาพัวพัฒนขจร", "01-IH-0063": "เอกพงศ์แซ่ตั้น(ฝ่ายขาย)", "01-IH-0066": "ณุวภา(เลขาฝ่ายขาย)", "01-IH-0069": "สุดจิตต์จ่างเจริญ(ฝ่ายขายแม็คโคร)", "01-IH-0074": "สุภาภรณ์(ฝ่ายแพ็คซอง)", "01-IH-0080": "สายสุนีย์(จัดซื้อ)"};
@@ -3046,13 +3261,32 @@ function mkChart(id,type,labels,datasets,opts={}){
   _charts.push(ch);return ch;
 }
 
+// ── Stock Sync Timestamp ─────────────────────────────────────────────────
+let _lastSyncTs = Date.now();
+function _updateSyncLabel(){
+  const btn = document.getElementById('btn-sync');
+  if(!btn) return;
+  const diff = Math.round((Date.now() - _lastSyncTs) / 60000);
+  const label = diff < 1 ? 'เพิ่งซิงค์' : diff === 1 ? '1 นาทีที่แล้ว' : `${diff} นาทีที่แล้ว`;
+  btn.title = `ซิงค์ล่าสุด: ${label}`;
+  const span = btn.querySelector('.sync-time');
+  if(span) span.textContent = label;
+}
+setInterval(_updateSyncLabel, 60000);
+
 function syncAndReload(){
   const btn=document.getElementById('btn-sync');
   const page=sessionStorage.getItem('_pg')||'dash';
-  if(btn){btn.textContent='⏳ รีเฟรช...';btn.disabled=true;}
+  if(btn){btn.innerHTML='⏳ รีเฟรช...';btn.disabled=true;}
   CACHE.clearPage(page);
   nav(page);
-  setTimeout(()=>{if(btn){btn.textContent='🔄 ซิงค์';btn.disabled=false;}},800);
+  _lastSyncTs = Date.now();
+  setTimeout(()=>{
+    if(btn){
+      btn.innerHTML='🔄 ซิงค์ <span class="sync-time" style="font-size:10px;opacity:.6">เพิ่งซิงค์</span>';
+      btn.disabled=false;
+    }
+  },800);
 }
 
 function nav(page){
@@ -3095,7 +3329,7 @@ const todayStr=()=>today().replace(/-/g,'');
 
 function myHist(){
   if(window._salesHistCache) return window._salesHistCache;
-  if(ROLE==='manager') return ALL_HIST;
+  if(isManager()) return ALL_HIST;
   const u=DB.get('users')||[];
   const me=u.find(x=>x.uid===UID);
   const slmId=me?.slm_id||UID;
@@ -3496,7 +3730,7 @@ function _histFromSalesRows(rows){
 async function loadDashboardSalesHist(includeTgm = false){
   const range=_twoYearWindow();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
-  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  const slmId=isSales()?(me?.slm_id||''):'';
   const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
   if(!includeTgm){
     window._salesRows2Y=rows;
@@ -3521,13 +3755,14 @@ async function pgDash(){
     CACHE.get('dash_fc_all',()=>SB.getForecasts(null,{includeTgm:true})),
     CACHE.get('dash_ss_all',()=>SB.getSkuSettings({includeTgm:true})),
     CACHE.get('dash_sales_hist_all',()=>loadDashboardSalesHist(true)),
+    CACHE.get('data_confidence',()=>SB.getDataConfidence()),
   ]);
   const value=(i,fallback=null)=>{
     if(remote[i]?.status==='fulfilled') return remote[i].value;
     console.warn('Dashboard data part failed', i, remote[i]?.reason?.message || remote[i]?.reason);
     return fallback;
   };
-  const rPo=value(0,[]), rStk=value(1,null), rFc=value(2,[]), rSs=value(3,null), rHist=value(4,null);
+  const rPo=value(0,[]), rStk=value(1,null), rFc=value(2,[]), rSs=value(3,null), rHist=value(4,null), confidence=value(5,null);
   if(rPo?.length) po=mergePOPlans(rPo, DB.get('po_log')||[], {includeTgm:true});
   if(rStk&&Object.keys(rStk).length) stk=rStk;
   if(rFc?.length) fc=mergeForecasts(rFc, DB.get('forecasts')||[], {includeTgm:true});
@@ -3549,7 +3784,16 @@ async function pgDash(){
   const expiring=Object.values(stk).reduce((a,s)=>{
     return a+(s.lots||[]).filter(l=>l.exp&&dUntil(l.exp)>=0&&dUntil(l.exp)<=30).length;
   },0);
+  const confWarnings=confidence?.warnings||[];
+  const confSync=confidence?.syncedAt?new Date(confidence.syncedAt).toLocaleString('th-TH'):'-';
+  const confidenceHtml=confidence?`<div class="krow">
+    <div class="kpi t"><div class="kl">Express Sync ล่าสุด</div><div class="kv" style="font-size:15px">${esc(confSync)}</div></div>
+    <div class="kpi b"><div class="kl">SO</div><div class="kv">${fmt(confidence.soCount)}</div></div>
+    <div class="kpi g"><div class="kl">SO Lines</div><div class="kv">${fmt(confidence.lineCount)}</div></div>
+    <div class="kpi ${confWarnings.length?'r':'a'}"><div class="kl">Booking Active</div><div class="kv">${fmt(confidence.activeBookingCount)}</div><div class="kh">${confWarnings.length?esc(confWarnings.join(' | ')):'ข้อมูลเชื่อมครบ'}</div></div>
+  </div>`:'';
   document.getElementById('ct').innerHTML=`
+  ${confidenceHtml}
   <div class="krow">
     <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">รวม TSS + TSSNV + TGM</div></div>
     <div class="kpi g"><div class="kl">ยอดขาย TSS</div><div class="kv">฿${fmt(tssSales.amount || tssSales.qty)}</div><div class="kh">${fmt(tssSales.qty)} กก.</div></div>
@@ -3773,7 +4017,9 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     if(!data||data.length<PAGE) break;
     from+=PAGE;
   }
-  if(opts.excludeAllRows) allData=allData.filter(r=>String(r.slm_id||'').trim().toUpperCase()!=='ALL');
+  const wantsAllOnly = opts.summaryOnly && !slmId;
+  const allowAllRows = wantsAllOnly || opts.includeAllRows === true;
+  if(opts.excludeAllRows || !allowAllRows) allData=allData.filter(r=>String(r.slm_id||'').trim().toUpperCase()!=='ALL');
   if(slmId && querySlmId && !allData.length){
     console.warn('sales_history slm filter returned no rows; retry unfiltered');
     return _sbSalesRows(startYm,endYm,slmId,{...opts,disableQuerySlm:true});
@@ -3959,7 +4205,7 @@ function _sdPeriodLabel(){return _sd.pt==='year'?`year_${_sd.cy_y}`:_sd.pt==='we
 async function sdLoad(){
   const month=_sdApiMonth();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
-  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  const slmId=isSales()?(me?.slm_id||''):'';
   const badge=document.createElement('div');
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
@@ -4006,7 +4252,7 @@ async function sdLoad(){
 async function sdLoadYear(){
   const gy=_sdApiYear();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
-  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  const slmId=isSales()?(me?.slm_id||''):'';
   const badge=document.createElement('div');
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='Loading yearly sales...';document.body.appendChild(badge);
@@ -4104,7 +4350,7 @@ function _sdBuildSlms(rows,slmList){
 }
 function _sdUpdateSlmDrop(){
   const sel=document.getElementById('sd-slm-f');if(!sel)return;
-  if(ROLE === 'sales') {
+  if(isSales()&&!isManager()) {
     // สำหรับเซลล์ แสดงเฉพาะชื่อตัวเอง ไม่มี dropdown เลือก
     sel.style.display = 'none';
     _sd.slmF = UID; // ตั้งค่าให้แสดงเฉพาะข้อมูลตัวเอง
@@ -4152,7 +4398,7 @@ function _sdYoYMaps(){
 }
 async function _sdLoadYoY(){
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
-  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  const slmId=isSales()?(me?.slm_id||''):'';
   let start,end;
   if(_sd.pt==='custom'){
     const fromYm=_dateToYm(_sd.dateFrom);const toYm=_dateToYm(_sd.dateTo);
@@ -4220,7 +4466,7 @@ async function sdLoadCustom(){
   const startYm=_dateToYm(_sd.dateFrom);const endYm=_dateToYm(_sd.dateTo);
   if(!startYm||!endYm){sdRender();return;}
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
-  const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+  const slmId=isSales()?(me?.slm_id||''):'';
   const badge=document.createElement('div');
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
@@ -4248,7 +4494,7 @@ async function sdLoadCustom(){
 }
 
 function pgMySales(){
-  const isAll=ROLE==='manager'||ROLE==='superadmin';
+  const isAll=isManager();
   document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-ai" onclick="aiSalesInsight()" style="margin-right:6px">🤖 AI วิเคราะห์</button><button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
   const now=new Date();
   const _pad=n=>String(n).padStart(2,'0');
@@ -4275,7 +4521,7 @@ function pgMySales(){
     ${isAll?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span style="font-size:12px;color:var(--TX2);align-self:center">มุมมอง:</span>
     <button class="btn btn-sm" id="sd-rv" onclick="sdTogView()">${_sd.mgrView?'Manager':'Sales'}</button>`
-    :ROLE==='sales'?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
+    :(isSales()&&!isManager())?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span class="badge bbl" style="font-size:11px;align-self:center">🔒 ข้อมูลของคุณเท่านั้น</span>`:''}
   </div>
   <div id="sd-custom-range" style="display:${isCustom?'block':'none'};margin-bottom:10px;background:var(--LBL);padding:12px 14px;border-radius:8px;border:1px solid rgba(21,83,160,.2)">
@@ -4403,7 +4649,7 @@ function _custsByItemGrouped(itCode,T,wi){
 }
 
 function sdCust(){
-  const isAll=(ROLE==='manager'||ROLE==='superadmin')&&_sd.mgrView;
+  const isAll=isManager()&&_sd.mgrView;
   const q=(_sd.q||'').toLowerCase();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=me?.slm_id||'';
@@ -4759,11 +5005,11 @@ function sdExport(){
       });
       return toXLSX([['รายลูกค้า', cols, rows]], `Sales_${period}_รายลูกค้า.xlsx`);
     }
-    const isAll=(ROLE==='manager'||ROLE==='superadmin')&&_sd.mgrView;
+    const isAll=isManager()&&_sd.mgrView;
     const q=(_sd.q||'').toLowerCase();
     const allCusts=salesCustomers();
     const me=(DB.get('users')||[]).find(x=>x.uid===UID);
-    const slmId=(ROLE==='sales')?(me?.slm_id||''):'';
+    const slmId=isSales()?(me?.slm_id||''):'';
     const base=isAll?allCusts:allCusts.filter(c=>c.slm===slmId);
     const filtered=q?base.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)):base;
     const custRows=filtered.map(c=>({...c,_cv:Math.round(T*(c.w[wi]||c.w[0]))}));
@@ -4989,7 +5235,7 @@ function expConsi(){
 
 function fcT(){
   const fc=_filterTgmSkuRows(window._fcListCache||DB.get('forecasts')||[]);
-  const isAll=ROLE!=='sales';
+  const isAll=!isSales();
   const slmF=document.getElementById('fc-sf')?.value||'';
   let rows=isAll?fc:fc.filter(f=>f.by===UID);
   if(slmF) rows=rows.filter(f=>f.by===slmF);
@@ -5096,7 +5342,7 @@ function expFCLocal(){
     'Forecast_'+todayStr()+'.xlsx');
 }
 function pgPO(){
-  const canEdit=ROLE==='planning'||ROLE==='manager';
+  const canEdit=isPlanning()||isManager();
   document.getElementById('ct').innerHTML=`
   ${canEdit?`<div class="card"><div class="ch"><div class="ct2">วาง PO จาก Excel</div></div>
     <div class="pz" onclick="document.getElementById('po-pi').focus()">
@@ -5138,7 +5384,7 @@ async function poT(){
 
   const f=document.getElementById('po-f')?.value||'';
   const rows=f?po.filter(p=>p.status===f):po;
-  const canEdit=ROLE==='planning'||ROLE==='manager';
+  const canEdit=isPlanning()||isManager();
   document.getElementById('po-tbl').innerHTML=`<div class="tw"><table>
   <thead><tr><th>PO Ref</th><th>สินค้า</th><th>จำนวน</th><th>วันส่ง</th><th>ลูกค้า</th><th>สาขา</th><th>สถานะ</th><th>SO</th><th>Ver.</th><th>แก้ไขโดย</th>${canEdit?'<th>Action</th>':''}</tr></thead>
   <tbody>${rows.map(p=>{
@@ -5921,8 +6167,8 @@ function crVisibleCustomerRows(){
   const rows=allCustomerRows();
   const me=(DB.get('users')||[]).find(u=>u.uid===UID)||{};
   const mySlm=String(me.slm_id||'').trim();
-  if(ROLE==='superadmin'||ROLE==='manager') return rows;
-  if(ROLE==='sales' && mySlm) return rows.filter(c=>String(c.slm||'')===mySlm);
+  if(isManager()) return rows;
+  if(isSales() && mySlm) return rows.filter(c=>String(c.slm||'')===mySlm);
   return rows.filter(c=>String(c.slm||'')==='' || String(c.slm||'')===String(UID));
 }
 function crRenderCustomerHome(){
@@ -5937,13 +6183,13 @@ function crRenderCustomerHome(){
     <div class="kpi b"><div class="kl">ลูกค้าในสิทธิ์</div><div class="kv">${fmt(scopeRows.length)}</div><div class="kh">บัญชี</div></div>
     <div class="kpi a"><div class="kl">คำขอรออนุมัติ</div><div class="kv">${pending}</div><div class="kh">รายการ</div></div>
     <div class="kpi g"><div class="kl">อนุมัติแล้ว</div><div class="kv">${approved}</div><div class="kh">รายการ</div></div>
-    <div class="kpi p"><div class="kl">Sales owner</div><div class="kv">${ROLE==='sales'?esc((DB.get('users')||[]).find(u=>u.uid===UID)?.slm_id||UID):'All'}</div><div class="kh">${esc(userRoleLabel?.(ROLE)||ROLE)}</div></div>
+    <div class="kpi p"><div class="kl">Sales owner</div><div class="kv">${(isSales()&&!isManager())?esc((DB.get('users')||[]).find(u=>u.uid===UID)?.slm_id||UID):'All'}</div><div class="kh">${esc(getRoleLabel(ROLE,userDept()))}</div></div>
   </div>
   <div class="frow" style="justify-content:space-between">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input id="cr-cust-q" value="${esc(q)}" oninput="crRenderCustomerHome()" placeholder="ค้นหารหัส/ชื่อลูกค้า/Sales..." style="width:280px">
       <button class="btn btn-sm" onclick="_cr.view='summary';pgCustReg()">สรุปคำขอ</button>
-      ${(ROLE==='manager'||ROLE==='superadmin')?'<button class="btn btn-sm" onclick="_cr.view=\'approve\';pgCustReg()">อนุมัติ</button>':''}
+      ${isManager()?'<button class="btn btn-sm" onclick="_cr.view=\'approve\';pgCustReg()">อนุมัติ</button>':''}
     </div>
     <button class="btn btn-sm btn-p" onclick="crNewForm()">+ เพิ่ม/ลงทะเบียนลูกค้า</button>
   </div>
@@ -5976,8 +6222,8 @@ function crStartCustomerChange(code){
 function pgCustReg(){
   _crInitIfNeeded();
   if(_cr.view==='customers'){crRenderCustomerHome();return;}
-  const isApprover=ROLE==='manager'||ROLE==='superadmin';
-  const isAdmin=ROLE==='superadmin';
+  const isApprover=isManager();
+  const isAdmin=ROLE==='superadmin'||ROLE==='admin';
   const tabViews=isAdmin?['form','approve','summary','settings']:isApprover?['form','approve','summary']:['form','summary'];
   const tabLabels={form:'📝 กรอกฟอร์ม',approve:'✅ อนุมัติ',summary:'📊 สรุป',settings:'⚙️ ตั้งค่า Workflow'};
   const steps=[['📋','ทั่วไป'],['🏪','ร้านค้า'],['🚚','ส่งสินค้า'],['💳','การเงิน'],['📁','เอกสาร'],['✅','สรุป']];
@@ -6075,7 +6321,7 @@ function crLoadExistingCustomer(code){
 }
 function crVisibleSubs(){
   const subs=DB.get('custreg_subs')||[];
-  if(ROLE==='superadmin'||ROLE==='manager')return subs;
+  if(isManager())return subs;
   return subs.filter(s=>s.salesUid===UID||s.ownerSalesUid===UID||s.createdByUid===UID);
 }
 function crSubMailBody(sub){
@@ -6100,8 +6346,8 @@ function crRenderSummary(){
   const stLbl={pending:'รออนุมัติ',approved:'อนุมัติแล้ว',rejected:'ไม่อนุมัติ'};
   el.innerHTML=`<div class="krow" style="margin-bottom:10px"><div class="kpi b"><div class="kl">ทั้งหมด</div><div class="kv">${counts.all}</div></div><div class="kpi g"><div class="kl">เปิดบัญชีใหม่</div><div class="kv">${counts.newOpen}</div></div><div class="kpi a"><div class="kl">แก้ไขเปลี่ยนแปลง</div><div class="kv">${counts.changes}</div></div><div class="kpi r"><div class="kl">รออนุมัติ</div><div class="kv">${counts.pending}</div></div></div>
   <div class="frow" style="gap:8px;margin-bottom:10px"><input id="cr-sum-q" placeholder="ค้นหาเอกสาร/ลูกค้า/Sales" value="${esc(q)}" oninput="crRenderSummary()" style="width:260px;padding:7px 10px;border:1px solid var(--BD);border-radius:7px"><select id="cr-sum-st" class="btn btn-sm" onchange="crRenderSummary()"><option value="">ทุกสถานะ</option><option value="pending" ${st==='pending'?'selected':''}>รออนุมัติ</option><option value="approved" ${st==='approved'?'selected':''}>อนุมัติแล้ว</option><option value="rejected" ${st==='rejected'?'selected':''}>ไม่อนุมัติ</option></select></div>
-  <div class="card"><div class="ch"><div class="ct2">สรุปตาม Sales</div><div style="font-size:11px;color:var(--TX3)">${ROLE==='sales'?'เฉพาะรายการของคุณ':'รวมทุก Sales ที่มีสิทธิ์เห็น'}</div></div><div class="tw"><table><thead><tr><th>Sales</th><th>เปิดบัญชีใหม่</th><th>แก้ไขเปลี่ยนแปลง</th><th>รวม</th></tr></thead><tbody>${bySales.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.newOpen}</td><td>${r.changes}</td><td>${r.total}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--TX3);padding:14px">ไม่มีข้อมูล</td></tr>'}</tbody></table></div></div>
-  <div class="card"><div class="ch"><div class="ct2">รายการลงทะเบียนลูกค้า</div><div style="font-size:11px;color:var(--TX3)">${ROLE==='sales'?'เฉพาะรายการของคุณ':'ดูได้ทุก Sales'}</div></div><div class="tw"><table><thead><tr><th>เลขที่</th><th>ลูกค้า</th><th>ประเภทคำขอ</th><th>Sales เจ้าของงาน</th><th>ผู้กรอก</th><th>สถานะ</th><th>เอกสาร</th><th>วันที่</th><th>Action</th></tr></thead><tbody>${rows.map(s=>`<tr><td class="mono">${esc(s.docNo)}</td><td>${esc(s.shop||'')}</td><td>${esc(s.requestType||'—')}</td><td>${esc(s.ownerSalesName||s.sales||'')}</td><td>${esc(s.sales||'')}</td><td>${stLbl[s.status]||s.status}</td><td>${(s.docs||[]).reduce((n,d)=>n+(d.files?.length||0),0)} ไฟล์</td><td style="font-size:11px;color:var(--TX3)">${esc(s.date||'')}</td><td><button class="btn btn-xs" onclick="crShowSummaryDetail('${s.id}')">ดู</button></td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--TX3);padding:18px">ไม่มีข้อมูล</td></tr>'}</tbody></table></div></div>`;
+  <div class="card"><div class="ch"><div class="ct2">สรุปตาม Sales</div><div style="font-size:11px;color:var(--TX3)">${(isSales()&&!isManager())?'เฉพาะรายการของคุณ':'รวมทุก Sales ที่มีสิทธิ์เห็น'}</div></div><div class="tw"><table><thead><tr><th>Sales</th><th>เปิดบัญชีใหม่</th><th>แก้ไขเปลี่ยนแปลง</th><th>รวม</th></tr></thead><tbody>${bySales.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.newOpen}</td><td>${r.changes}</td><td>${r.total}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--TX3);padding:14px">ไม่มีข้อมูล</td></tr>'}</tbody></table></div></div>
+  <div class="card"><div class="ch"><div class="ct2">รายการลงทะเบียนลูกค้า</div><div style="font-size:11px;color:var(--TX3)">${(isSales()&&!isManager())?'เฉพาะรายการของคุณ':'ดูได้ทุก Sales'}</div></div><div class="tw"><table><thead><tr><th>เลขที่</th><th>ลูกค้า</th><th>ประเภทคำขอ</th><th>Sales เจ้าของงาน</th><th>ผู้กรอก</th><th>สถานะ</th><th>เอกสาร</th><th>วันที่</th><th>Action</th></tr></thead><tbody>${rows.map(s=>`<tr><td class="mono">${esc(s.docNo)}</td><td>${esc(s.shop||'')}</td><td>${esc(s.requestType||'—')}</td><td>${esc(s.ownerSalesName||s.sales||'')}</td><td>${esc(s.sales||'')}</td><td>${stLbl[s.status]||s.status}</td><td>${(s.docs||[]).reduce((n,d)=>n+(d.files?.length||0),0)} ไฟล์</td><td style="font-size:11px;color:var(--TX3)">${esc(s.date||'')}</td><td><button class="btn btn-xs" onclick="crShowSummaryDetail('${s.id}')">ดู</button></td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--TX3);padding:18px">ไม่มีข้อมูล</td></tr>'}</tbody></table></div></div>`;
 }
 function crShowSummaryDetail(id){_cr.view='approve';_cr.viewSubId=id;pgCustReg();}
 function crSec0(){
@@ -6131,7 +6377,7 @@ function crSec0(){
 <div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">👥 ลูกค้าและ Sales เจ้าของงาน</div>
   <div class="cr-r2">
-    <div class="field"><label>Sales เจ้าของงาน</label>${ROLE==='sales'
+    <div class="field"><label>Sales เจ้าของงาน</label>${isSales()&&!isManager()
       ?`<div style="padding:8px 10px;border:1px solid var(--BD);border-radius:7px;background:var(--bg2);color:var(--TX);font-size:13px">${esc(UNAME)} <span class="badge bbl" style="font-size:10px">🔒 คุณ</span></div><input type="hidden" id="cr-sales-owner" value="${esc(UID)}">`
       :`<select id="cr-sales-owner">${crSalesUsers().map(u=>`<option value="${esc(u.uid)}" ${(_crV('cr-sales-owner')||UID)===u.uid?'selected':''}>${esc(u.name)} (${esc(u.role||'')})</option>`).join('')}</select>`
     }</div>
@@ -7454,8 +7700,16 @@ const ALL_NAV_PAGES=[
   {id:'wms',lbl:'🔗 WMS System'},
   {id:'auditlog',lbl:'🔍 Audit Log'},
 ];
-const ALL_ROLES_PERM=['manager','planning','warehouse','sales'];
-const ROLE_LBL_P={manager:'Manager',planning:'Planning',warehouse:'Warehouse',sales:'Sales'};
+// role keys สำหรับหน้า Permissions (5-level hierarchy)
+const ALL_ROLES_PERM=['superadmin','admin','manager','officer','worker','sales_manager','sales_officer','sales_worker','planning_manager','planning_officer','planning_worker'];
+const ROLE_LBL_P={
+  superadmin:'Super Admin', admin:'Admin',
+  manager:'Manager', officer:'Officer', worker:'Worker',
+  sales_manager:'Sales Manager', sales_officer:'Sales Officer', sales_worker:'Sales Worker',
+  planning_manager:'Planning Manager', planning_officer:'Planning Officer', planning_worker:'Planning Worker',
+  // backward-compat
+  planning:'Planning (เดิม)', warehouse:'Warehouse (เดิม)', sales:'Sales (เดิม)',
+};
 
 function _permGroups(){
   const users=DB.get('users')||[];
@@ -7470,11 +7724,25 @@ function _permGroups(){
   return Object.values(map).sort((a,b)=>(a.dept+a.pos).localeCompare(b.dept+b.pos,'th'));
 }
 let _permTab='pages';
+// DEFAULT_ROLES — ใช้สำหรับ Apply Role ในหน้า Permissions
+// คือ page list ที่แต่ละ role ควรได้รับ (IT กด apply แล้วปรับเพิ่มได้)
 const DEFAULT_ROLES={
-  planning:{label:'Planning',pages:['dash','forecast','planstock','po','prodplan','custmap','sample','skuadmin','groups']},
-  warehouse:{label:'Warehouse',pages:['dash','wms','po','reserve','sample']},
-  sales:{label:'Sales',pages:['dash','mysales','forecast','custmap','custreg','sample']},
-  manager:{label:'Manager',pages:['dash','mysales','planstock','po','custmap','custreg','sample','groups','reports']},
+  // ── 5-Level roles ใหม่ ──────────────────────────────────────────────
+  superadmin:{label:'Super Admin',pages:(ALL_NAV_PAGES||[]).map(p=>p.id)},
+  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custmap','custreg','sample','skuadmin','groups','reports','auditlog']},
+  // Sales department
+  sales_manager:{label:'Sales Manager',pages:['dash','mysales','consi','forecast','custmap','custreg','sample','reports']},
+  sales_officer:{label:'Sales Officer',pages:['dash','mysales','forecast','custmap','custreg','sample']},
+  sales_worker:{label:'Sales Worker',pages:['dash','mysales','custreg','sample']},
+  // Planning department
+  planning_manager:{label:'Planning Manager',pages:['dash','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custmap','sample','skuadmin','groups','reports']},
+  planning_officer:{label:'Planning Officer',pages:['dash','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custmap','sample']},
+  planning_worker:{label:'Planning Worker',pages:['dash','planstock','po','sample']},
+  // ── Backward-compat roles เดิม ───────────────────────────────────────
+  planning:{label:'Planning (เดิม)',pages:['dash','forecast','planstock','po','prodplan','custmap','sample','skuadmin','groups']},
+  warehouse:{label:'Warehouse (เดิม)',pages:['dash','wms','po','sample']},
+  sales:{label:'Sales (เดิม)',pages:['dash','mysales','forecast','custmap','custreg','sample']},
+  manager:{label:'Manager (เดิม)',pages:['dash','mysales','planstock','po','custmap','custreg','sample','groups','reports']},
 };
 function _getRoles(){
   const custom=DB.get('nav_roles')||{};
@@ -7856,6 +8124,12 @@ async function pgPlanBooking() {
     console.warn('pgPlanBooking: remote bookings load failed', e?.message || e);
   }
   bks = (bks || []).map(normalizeBookingRow);
+  let dataConfidence = null;
+  try {
+    dataConfidence = await CACHE.get('data_confidence', () => SB.getDataConfidence());
+  } catch (e) {
+    console.warn('pgPlanBooking: data confidence load failed', e?.message || e);
+  }
 
   // restore saved filters (Item 4)
   if(!_bkFilters) _bkFilters = DB.get('bk_filters') || {type:'',status:'',search:'',tab:'active',skuF:''};
@@ -7892,8 +8166,18 @@ async function pgPlanBooking() {
 
   const produceCount = activeBks.filter(b => b.stockStatus === 'produce').length;
   const tTab=(id,lbl)=>`<div class="tab ${bkTab===id?'act':''}" onclick="window._bkTab='${id}';pgPlanBooking()">${lbl}</div>`;
+  const syncText = dataConfidence?.syncedAt ? new Date(dataConfidence.syncedAt).toLocaleString('th-TH') : '-';
+  const confWarnings = dataConfidence?.warnings || [];
+  const confidenceHtml = dataConfidence ? `
+  <div class="krow">
+    <div class="kpi t"><div class="kl">Sync ล่าสุด</div><div class="kv" style="font-size:15px">${esc(syncText)}</div></div>
+    <div class="kpi b"><div class="kl">SO ในระบบ</div><div class="kv">${fmt(dataConfidence.soCount)}</div></div>
+    <div class="kpi g"><div class="kl">SO Lines</div><div class="kv">${fmt(dataConfidence.lineCount)}</div></div>
+    <div class="kpi ${confWarnings.length?'r':'a'}"><div class="kl">Booking Active</div><div class="kv">${fmt(dataConfidence.activeBookingCount)}</div><div class="kh">${confWarnings.length ? esc(confWarnings.join(' | ')) : 'ข้อมูลเชื่อมครบ'}</div></div>
+  </div>` : `<div class="al alw" style="margin-bottom:10px">ยังโหลด Data Confidence ไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อ Supabase</div>`;
 
   document.getElementById('ct').innerHTML = `
+  ${confidenceHtml}
   <div class="krow">
     <div class="kpi b"><div class="kl">จองทั้งหมด</div><div class="kv">${activeBks.length}</div></div>
     <div class="kpi g"><div class="kl">ยืนยันแล้ว</div><div class="kv">${activeBks.filter(b=>b.status==='confirmed').length}</div></div>
@@ -8469,7 +8753,7 @@ function pgSample() {
   const canDispatch = ['planning','warehouse','superadmin'].includes(ROLE);
 
   const all = getSR();
-  const myReqs = (ROLE === 'sales') ? all.filter(r => r.by === UID) : all;
+  const myReqs = (isSales()&&!isManager()) ? all.filter(r => r.by === UID) : all;
 
   const cntPending  = all.filter(r => r.status === 'pending').length;
   const cntApproved = all.filter(r => r.status === 'approved').length;
@@ -9092,11 +9376,6 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
-
-
-
 
 
 
