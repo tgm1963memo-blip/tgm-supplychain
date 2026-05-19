@@ -3777,7 +3777,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     prod_code:r.sku,
     prod_name:prod.name||r.sku,
     qty,
-    amount: amount || qty,
+    amount,
     company:(['TSS','TSSNV','TGM','CONSI'].includes(rowCompany)) ? rowCompany : (sp.prefixed ? _companyFromExpressBranch(sp.branch) : _skuCompanyFromProduct(prod,r.sku)),
     ym:r.ym,
       };
@@ -3794,7 +3794,12 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   const modeRows=_salesRowsForMode(mapped,opts);
   const scopedRows=modeRows.filter(r=>_isAllowedCompanyRecord(r, opts));
   const detailKeys=new Set(scopedRows.filter(r=>!r.is_all).map(r=>`${r.branch}|${r.ym}|${r.prod_code}`));
-  const filteredByMode=scopedRows.filter(r=>!r.is_all || !detailKeys.has(`${r.branch}|${r.ym}|${r.prod_code}`));
+  const hasDetailRows=scopedRows.some(r=>!r.is_all);
+  const filteredByMode=scopedRows.filter(r=>{
+    // __73_* rows: Express monthly summary — only show in summary-only mode (no per-SLM detail present)
+    if(String(r.prod_code||'').startsWith('__73_')) return !hasDetailRows;
+    return !r.is_all || !detailKeys.has(`${r.branch}|${r.ym}|${r.prod_code}`);
+  });
   if(!slmId) return filteredByMode;
   return filteredByMode.filter(r=>r.slm_id===slmId || r.slm_key===slmId || r.slm_key.endsWith(':'+slmId));
 }
@@ -5428,7 +5433,7 @@ function pgReports(){
     <div class="ct2" style="margin-bottom:10px">Import CSV จาก Express</div>
     <div class="pz" onclick="document.getElementById('csv-f').click()">
       <b>คลิกเลือกไฟล์ CSV หรือลากมาวาง</b>
-      <span style="font-size:12px">รองรับ: STCRD.csv, ARTRN.csv, 01_SO.csv, 04_Sales_Summary.csv</span>
+      <span style="font-size:12px">รองรับ: รายงาน 73 (ยอดขายประจำงวด), 04_Sales_Summary.csv</span>
       <input type="file" id="csv-f" accept=".csv,.xlsx" style="display:none" onchange="importCSV(event)">
     </div>
     <div id="csv-res"></div>
@@ -5436,14 +5441,124 @@ function pgReports(){
 }
 function importCSV(e){
   const file=e.target.files[0];if(!file)return;
+  const resultEl=document.getElementById('csv-res');
+  resultEl.innerHTML='<div class="al ali">กำลังอ่านไฟล์...</div>';
   const reader=new FileReader();
   reader.onload=ev=>{
-    const wb=XLSX.read(ev.target.result,{type:'binary'});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    const json=XLSX.utils.sheet_to_json(ws,{header:1});
-    document.getElementById('csv-res').innerHTML=`<div class="al als">อ่านไฟล์ ${file.name} สำเร็จ — พบ ${json.length-1} แถว (Header: ${json[0]?.join(', ')})</div>`;
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'binary'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const json=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+      if(!json||json.length<2){resultEl.innerHTML='<div class="al alw">ไฟล์ว่างเปล่า</div>';return;}
+      const fmt=_detectCsvFormat(json,file.name);
+      if(fmt==='express73') _renderExpress73Import(json,file.name,resultEl);
+      else resultEl.innerHTML=`<div class="al als">อ่านไฟล์สำเร็จ — พบ ${json.length-1} แถว<br>Header: ${(json[0]||[]).slice(0,8).join(' | ')}</div><div class="al alw" style="margin-top:8px">ยังไม่รองรับรูปแบบนี้ (รองรับ: รายงาน 73, 04_Sales_Summary)</div>`;
+    }catch(err){resultEl.innerHTML=`<div class="al alr">เกิดข้อผิดพลาด: ${esc(err.message)}</div>`;}
   };
   reader.readAsBinaryString(file);
+}
+
+function _detectCsvFormat(json,filename){
+  const header=(json[0]||[]).map(v=>String(v||'').trim());
+  const headerStr=header.join(' ').toLowerCase();
+  // Detect Express report 73 (ยอดขายประจำงวด): has ขายสด/ขายเชื่อ/ยอดสุทธิ in header
+  // OR: filename contains 73/04/sales_summary AND ≥7 columns with numeric data at cols 3-7
+  const hasKeywords=headerStr.includes('ขายสด')||headerStr.includes('ขายเชื่อ')||headerStr.includes('ยอดสุทธิ')||headerStr.includes('เพิ่มหนี้');
+  const hasCols=header.length>=7;
+  const numericDataOk=(json.slice(1,6)).filter(r=>{
+    const v3=parseFloat(String(r[3]||'').replace(/,/g,''));
+    return !isNaN(v3)&&v3!==0;
+  }).length>=1;
+  const nameMatch=/(73|04|sales.?summary)/i.test(filename);
+  if(hasCols&&(hasKeywords||(nameMatch&&numericDataOk))) return 'express73';
+  return 'unknown';
+}
+
+function _renderExpress73Import(json,filename,resultEl){
+  // Find header row
+  let hdrIdx=0;
+  for(let i=0;i<Math.min(5,json.length);i++){
+    const str=(json[i]||[]).join(' ').toLowerCase();
+    if(str.includes('ขายสด')||str.includes('ขายเชื่อ')||str.includes('ยอดสุทธิ')){hdrIdx=i;break;}
+  }
+  // Parse data rows: col0=name, col1=code, col2=blank, col3=cash, col4=credit, col5=debtInc, col6=returns, col7=net
+  const pf=s=>parseFloat(String(s||'0').replace(/,/g,''))||0;
+  let gCash=0,gCredit=0,gDebt=0,gRet=0,gNet=0,rowCount=0,totalRow=null;
+  for(let i=hdrIdx+1;i<json.length;i++){
+    const r=json[i];
+    const name=String(r[0]||'').trim();
+    const code=String(r[1]||'').trim();
+    const cash=pf(r[3]),credit=pf(r[4]),debtInc=pf(r[5]),returns=pf(r[6]),net=pf(r[7]);
+    if(!name&&!code&&!cash&&!credit&&!debtInc&&!returns&&!net) continue;
+    // Detect total row (no code, name contains รวม/ทั้งสิ้น, or first cell blank with big numbers)
+    const isTotal=!code&&(name.includes('รวม')||name.includes('ทั้งสิ้น')||name.includes('Grand')||(!name&&(cash>0||credit>0)));
+    if(isTotal){totalRow={cash,credit,debtInc,returns,net};continue;}
+    if(!name&&!code) continue;
+    gCash+=cash;gCredit+=credit;gDebt+=debtInc;gRet+=returns;gNet+=(net||(cash+credit+debtInc-returns));rowCount++;
+  }
+  if(totalRow){gCash=totalRow.cash;gCredit=totalRow.credit;gDebt=totalRow.debtInc;gRet=totalRow.returns;gNet=totalRow.net||((totalRow.cash+totalRow.credit+totalRow.debtInc)-totalRow.returns);}
+  const computed=(gCash+gCredit+gDebt)-gRet;
+  const formulaOk=Math.abs(computed-gNet)<1;
+  // Suggest ym from filename
+  const ymMatch=filename.match(/(\d{4})[-_]?(\d{2})/);
+  const suggestYm=ymMatch?`${ymMatch[1]}-${ymMatch[2]}`:((new Date()).toISOString().slice(0,7));
+  window._express73Data={gCash,gCredit,gDebt,gRet,gNet,rowCount};
+  resultEl.innerHTML=`
+  <div class="al als" style="margin-top:8px"><strong>รายงาน 73 (ยอดขายประจำงวด)</strong> — พบ ${rowCount} ลูกค้า</div>
+  <div class="tw" style="margin-top:10px"><table>
+    <thead><tr><th>รายการ</th><th class="r">จำนวน (บาท)</th></tr></thead>
+    <tbody>
+      <tr><td>ขายสด + มัดจำ</td><td class="r">${_sdF(gCash)}</td></tr>
+      <tr><td>ขายเชื่อ + มัดจำ</td><td class="r">${_sdF(gCredit)}</td></tr>
+      <tr><td>เพิ่มหนี้</td><td class="r">${_sdF(gDebt)}</td></tr>
+      <tr><td>ลดหนี้ / รับคืน</td><td class="r" style="color:var(--R)">(${_sdF(gRet)})</td></tr>
+      <tr style="font-weight:700;border-top:2px solid var(--BD)"><td>ยอดสุทธิ (Express)</td><td class="r" style="color:var(--N)">${_sdF(gNet)}</td></tr>
+      <tr style="font-size:12px;color:var(--TX3)"><td>ตรวจสอบสูตร (ขายสด+ขายเชื่อ+เพิ่มหนี้)−ลดหนี้</td><td class="r">${_sdF(computed)} ${formulaOk?'✓':'⚠ ไม่ตรง!'}</td></tr>
+    </tbody>
+  </table></div>
+  <div style="display:flex;align-items:flex-end;gap:10px;margin-top:12px;flex-wrap:wrap">
+    <div class="field" style="margin:0">
+      <label style="font-size:12px;font-weight:600;color:var(--TX2)">เดือน (YYYY-MM)</label>
+      <input type="month" id="imp-ym" value="${suggestYm}" style="padding:6px 10px;border:1px solid var(--BD);border-radius:6px;font-size:13px;font-family:var(--font)">
+    </div>
+    <div class="field" style="margin:0">
+      <label style="font-size:12px;font-weight:600;color:var(--TX2)">บริษัท</label>
+      <select id="imp-co" style="padding:6px 10px;border:1px solid var(--BD);border-radius:6px;font-size:13px;font-family:var(--font)">
+        <option value="TSS">TSS</option><option value="TSSNV">TSSNV</option><option value="TGM">TGM</option>
+      </select>
+    </div>
+    <button class="btn btn-p" onclick="_doImportExpress73()">📥 นำเข้า Supabase</button>
+  </div>
+  <div id="imp-status" style="margin-top:8px"></div>`;
+}
+
+async function _doImportExpress73(){
+  const ym=(document.getElementById('imp-ym')||{}).value||'';
+  const co=(document.getElementById('imp-co')||{}).value||'TSS';
+  const statusEl=document.getElementById('imp-status');
+  if(!ym){statusEl.innerHTML='<div class="al alw">กรุณาระบุเดือน (YYYY-MM)</div>';return;}
+  const data=window._express73Data;
+  if(!data){statusEl.innerHTML='<div class="al alw">ไม่มีข้อมูล กรุณาเลือกไฟล์ใหม่</div>';return;}
+  statusEl.innerHTML='<div class="al ali">กำลังนำเข้า Supabase...</div>';
+  try{
+    const sb=getSupabaseClient();
+    // Clear old __73_ rows for this month
+    await sb.from('sales_history').delete().eq('ym',ym).eq('slm_id','ALL').like('sku','__73_%');
+    // Insert 4 component rows so net = sum of amounts (returns stored as negative)
+    // slm_id='ALL' → company defaults to co via SKU lookup or product prefix
+    const rows=[
+      {slm_id:'ALL',sku:`__73_CASH__`,ym,qty:0,amount:data.gCash},
+      {slm_id:'ALL',sku:`__73_CREDIT__`,ym,qty:0,amount:data.gCredit},
+      {slm_id:'ALL',sku:`__73_DEBTINC__`,ym,qty:0,amount:data.gDebt},
+      {slm_id:'ALL',sku:`__73_RETURNS__`,ym,qty:0,amount:-data.gRet},
+    ].filter(r=>r.amount!==0);
+    const {error}=await sb.from('sales_history').insert(rows);
+    if(error) throw error;
+    const net=data.gCash+data.gCredit+data.gDebt-data.gRet;
+    statusEl.innerHTML=`<div class="al als">✓ นำเข้าสำเร็จ — ยอดสุทธิ ${co} ${ym}: ${_sdF(net)}<br><small style="color:var(--TX3)">กด 🔄 ซิงค์ เพื่ออัปเดต Dashboard</small></div>`;
+    CACHE.clearPrefix('dash_');CACHE.clearPrefix('sales_hist_');
+    window._dashSalesRows=null;window._salesRows2Y=null;window._dashSalesHistCache=null;
+  }catch(err){statusEl.innerHTML=`<div class="al alr">เกิดข้อผิดพลาด: ${esc(err.message)}</div>`;}
 }
 
 // ── USER MANAGEMENT ───────────────────────────────────────────────
