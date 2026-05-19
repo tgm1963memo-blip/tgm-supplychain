@@ -2987,13 +2987,13 @@ function cleanupSampleData(){
 // ── AUTH ──────────────────────────────────────────────────────────
 ROLE='', UID='', UNAME='';
 const RNAV={
-  superadmin:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['perms','🔐','สิทธิ์การใช้งาน'],['auditlog','🔍','Audit Log']],
-  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า'],['custreg','🏪','ข้อมูลลูกค้า']],
-  planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','สรุปยอดขาย'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
-  warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า']],
-  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
+  superadmin:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','PO Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ขอสินค้าตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],['users','👥','จัดการผู้ใช้'],['perms','🔐','สิทธิ์การใช้งาน'],['auditlog','🔍','Audit Log']],
+  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['forecast','📝','Sales Forecast'],['custmap','🗺️','ลูกค้า-สินค้า'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ขอสินค้าตัวอย่าง']],
+  planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','สรุปยอดขาย'],['sample','🧪','ขอสินค้าตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
+  warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['reserve','📦','การจองสินค้า'],['sample','🧪','ขอสินค้าตัวอย่าง']],
+  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custmap','🗺️','Customer Map'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ขอสินค้าตัวอย่าง'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
-const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custmap:'สรุปยอดขาย',custreg:'ข้อมูลลูกค้า',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
+const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custmap:'สรุปยอดขาย',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
 
 function doLogout(){audit('LOGOUT','system',{});localStorage.removeItem('tgm_session');document.getElementById('ls').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('l-err').textContent='';}
@@ -3065,7 +3065,7 @@ function nav(page){
   document.getElementById('tb-r').innerHTML='';
   document.getElementById('ct').innerHTML='';
   setTimeout(()=>{
-    ({dash:pgDash,mysales:pgMySales,consi:pgConsignment,forecast:pgForecast,planstock:pgPlanStock,po:pgPO,planbook:pgPlanBooking,booksummary:pgBookingSummary,prodplan:pgProdPlan,prodsummary:pgProdSummary,forecastdoc:pgForecastDoc,custmap:pgCustMap,custreg:pgCustReg,skuadmin:pgSKUAdmin,groups:pgGroupAdmin,stock:pgStock,expiry:pgExpiry,reports:pgReports,users:pgUsers,perms:pgPerms,wms:pgWMS,auditlog:pgAudit})[page]?.();
+    ({dash:pgDash,mysales:pgMySales,consi:pgConsignment,forecast:pgForecast,planstock:pgPlanStock,po:pgPO,planbook:pgPlanBooking,booksummary:pgBookingSummary,prodplan:pgProdPlan,prodsummary:pgProdSummary,forecastdoc:pgForecastDoc,custmap:pgCustMap,custreg:pgCustReg,sample:pgSample,skuadmin:pgSKUAdmin,groups:pgGroupAdmin,stock:pgStock,expiry:pgExpiry,reports:pgReports,users:pgUsers,perms:pgPerms,wms:pgWMS,auditlog:pgAudit})[page]?.();
     // ลบ notification dot เมื่อเข้าหน้า forecast
     if (page === 'forecast' || page === 'forecastdoc') {
       const ni = document.getElementById('ni-forecast') || document.getElementById('ni-forecastdoc');
@@ -3823,7 +3823,18 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
       });
     });
   const modeRows=_salesRowsForMode(mapped,opts);
-  const scopedRows=modeRows.filter(r=>_isAllowedCompanyRecord(r, opts));
+  // ตาราง year-archive branch → canonical branch (ตรงกับ CANONICAL_BRANCH ใน express_sync.py)
+  const _ARCHIVE={'TSS-67':'TSS','TSS-68':'TSS','TSSN-67':'TSS-NV','TSSN-68':'TSS-NV','CONSI-67':'CONSI'};
+  // สร้าง key ของ primary branches (non-archive) เพื่อใช้ deduplicate archive
+  const _primaryKeys=new Set(
+    modeRows.filter(r=>!r.is_all&&!_ARCHIVE[r.branch])
+            .map(r=>`${r.branch}|${r.slm_id}|${r.ym}|${r.prod_code}`));
+  // กรอง archive-branch rows ออก ถ้ามี primary-branch row สำหรับ canonical+slm+ym+sku เดียวกัน
+  const dedupedRows=modeRows.filter(r=>{
+    if(r.is_all||!_ARCHIVE[r.branch]) return true;
+    return !_primaryKeys.has(`${_ARCHIVE[r.branch]}|${r.slm_id}|${r.ym}|${r.prod_code}`);
+  });
+  const scopedRows=dedupedRows.filter(r=>_isAllowedCompanyRecord(r, opts));
   // ใช้ ym|prod_code เป็น key (ไม่รวม branch) เพราะ ALL rows มี branch='LEGACY'
   // ทำให้ ALL row ถูก exclude เมื่อมี detail row ของ ym+sku เดียวกัน ไม่ว่า branch จะเป็นอะไร
   const detailKeys=new Set(scopedRows.filter(r=>!r.is_all).map(r=>`${r.ym}|${r.prod_code}`));
@@ -5974,11 +5985,14 @@ function pgCustReg(){
       ${i<_cr.step?'<span style="margin-left:auto;font-size:11px">✓</span>':''}
     </div>`;
   }).join('');
-  const tabsHtml=tabViews.length>1?`<div style="display:flex;gap:6px;margin-bottom:14px">
-    ${tabViews.map(v=>`<div onclick="crTab('${v}')" style="padding:6px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:${_cr.view===v?'var(--LBL)':'var(--bg2)'};border:1px solid ${_cr.view===v?'var(--BL)':'var(--BD)'};color:${_cr.view===v?'var(--BL)':'var(--TX2)'}">${tabLabels[v]}</div>`).join('')}
-  </div>`:'';
+  const backBtn=`<button onclick="_cr.view='customers';pgCustReg()" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:7px;font-size:12px;cursor:pointer;background:var(--bg2);border:1px solid var(--BD);color:var(--TX2);font-weight:500;margin-right:4px" title="กลับหน้าลูกค้า">← กลับ</button>`;
+  const tabsHtml=`<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+    ${backBtn}
+    ${tabViews.length>1?tabViews.map(v=>`<div onclick="crTab('${v}')" style="padding:6px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:${_cr.view===v?'var(--LBL)':'var(--bg2)'};border:1px solid ${_cr.view===v?'var(--BL)':'var(--BD)'};color:${_cr.view===v?'var(--BL)':'var(--TX2)'}">${tabLabels[v]}</div>`).join(''):''}
+  </div>`;
   document.getElementById('ct').innerHTML=`<div class="cr-fullpage-body" style="min-height:calc(100vh - 120px)">
     <div class="cr-fullpage-sidebar" id="cr-sidebar">
+      <button onclick="_cr.view='customers';pgCustReg()" style="display:flex;align-items:center;gap:6px;width:100%;padding:8px 10px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:var(--W);border:1px solid var(--BD);color:var(--TX2);margin-bottom:10px;text-align:left" title="กลับหน้าลูกค้า">← กลับหน้าลูกค้า</button>
       <div style="font-size:11px;font-weight:700;color:var(--TX3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;padding:0 4px">ขั้นตอน</div>
       ${sidebarSteps}
       <div style="margin-top:12px;padding:0 4px">
@@ -7427,6 +7441,7 @@ const ALL_NAV_PAGES=[
   {id:'prodsummary',lbl:'📈 เปรียบเทียบผลิต'},
   {id:'custmap',lbl:'🗺️ Customer Map / สรุปยอดขาย'},
   {id:'custreg',lbl:'🏪 ข้อมูลลูกค้า'},
+  {id:'sample',lbl:'🧪 ขอสินค้าตัวอย่าง'},
   {id:'skuadmin',lbl:'⚙️ SKU Settings'},
   {id:'groups',lbl:'🏷️ จัดการกลุ่มสินค้า/ลูกค้า'},
   {id:'reports',lbl:'📄 Reports'},
@@ -7451,10 +7466,10 @@ function _permGroups(){
 }
 let _permTab='pages';
 const DEFAULT_ROLES={
-  planning:{label:'Planning',pages:['dash','forecast','planstock','po','prodplan','custmap','skuadmin','groups']},
-  warehouse:{label:'Warehouse',pages:['dash','wms','po','reserve']},
-  sales:{label:'Sales',pages:['dash','mysales','forecast','custmap','custreg']},
-  manager:{label:'Manager',pages:['dash','mysales','planstock','po','custmap','custreg','groups','reports']},
+  planning:{label:'Planning',pages:['dash','forecast','planstock','po','prodplan','custmap','sample','skuadmin','groups']},
+  warehouse:{label:'Warehouse',pages:['dash','wms','po','reserve','sample']},
+  sales:{label:'Sales',pages:['dash','mysales','forecast','custmap','custreg','sample']},
+  manager:{label:'Manager',pages:['dash','mysales','planstock','po','custmap','custreg','sample','groups','reports']},
 };
 function _getRoles(){
   const custom=DB.get('nav_roles')||{};
@@ -8412,6 +8427,501 @@ async function pgForecastDoc() {
 
 function expFcDoc(custCode, month) {
   expFcDocCust(custCode, month);
+}
+
+// ════════════════════════════════════════════════════════════════
+// pgSample() — ขอสินค้าตัวอย่าง
+// Process: Sales สร้าง → Manager อนุมัติ → Planning เตรียม → จัดส่ง → รับแล้ว
+// ════════════════════════════════════════════════════════════════
+let _sr = { view: 'home', editId: null, form: {}, filter: '', tab: 'all' };
+
+const SR_STATUS = {
+  draft:      { lbl: 'ร่าง',          cls: 'bbgr', icon: '📝' },
+  pending:    { lbl: 'รออนุมัติ',     cls: 'bbl',  icon: '⏳' },
+  approved:   { lbl: 'อนุมัติแล้ว',   cls: 'bbg',  icon: '✅' },
+  rejected:   { lbl: 'ปฏิเสธ',        cls: 'bbr',  icon: '❌' },
+  preparing:  { lbl: 'กำลังเตรียม',   cls: 'bba',  icon: '🔧' },
+  dispatched: { lbl: 'จัดส่งแล้ว',    cls: 'bbg',  icon: '🚚' },
+  received:   { lbl: 'รับแล้ว',       cls: 'bbg',  icon: '✔️' },
+};
+
+function srBadge(st) {
+  const s = SR_STATUS[st] || { lbl: st, cls: 'bbgr', icon: '❓' };
+  return `<span class="badge ${s.cls}">${s.icon} ${s.lbl}</span>`;
+}
+function getSR()  { return DB.get('sample_requests') || []; }
+function saveSR(arr) { DB.set('sample_requests', arr); }
+
+// ── หน้าหลัก ─────────────────────────────────────────────────
+function pgSample() {
+  document.getElementById('app').classList.remove('custreg-mode');
+  if (_sr.view === 'form')   { _srRenderForm();          return; }
+  if (_sr.view === 'detail') { _srRenderDetail(_sr.editId); return; }
+
+  const canCreate   = ['sales','manager','superadmin'].includes(ROLE);
+  const canApprove  = ['manager','superadmin'].includes(ROLE);
+  const canDispatch = ['planning','warehouse','superadmin'].includes(ROLE);
+
+  const all = getSR();
+  const myReqs = (ROLE === 'sales') ? all.filter(r => r.by === UID) : all;
+
+  const cntPending  = all.filter(r => r.status === 'pending').length;
+  const cntApproved = all.filter(r => r.status === 'approved').length;
+  const cntPrep     = all.filter(r => r.status === 'preparing').length;
+  const cntDisp     = all.filter(r => r.status === 'dispatched').length;
+
+  // tab filter
+  const tabSrc = _sr.tab === 'pending'  ? all.filter(r => r.status === 'pending')  :
+                 _sr.tab === 'dispatch' ? all.filter(r => ['approved','preparing'].includes(r.status)) :
+                 myReqs;
+  const q = (_sr.filter || '').toLowerCase();
+  const rows = tabSrc.filter(r =>
+    !q ||
+    (r.custName  || '').toLowerCase().includes(q) ||
+    (r.custCode  || '').toLowerCase().includes(q) ||
+    (r.id        || '').toLowerCase().includes(q) ||
+    (r.purpose   || '').toLowerCase().includes(q)
+  ).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  const tTab = (id, lbl, cnt) => {
+    const dot = cnt > 0 ? ` <span class="badge bbr" style="font-size:10px;padding:1px 5px">${cnt}</span>` : '';
+    return `<div class="tab ${_sr.tab===id?'act':''}" onclick="_sr.tab='${id}';pgSample()">${lbl}${dot}</div>`;
+  };
+
+  document.getElementById('ct').innerHTML = `
+  <div class="krow">
+    <div class="kpi b"><div class="kl">คำขอทั้งหมด</div><div class="kv">${myReqs.length}</div></div>
+    <div class="kpi a"><div class="kl">รออนุมัติ</div><div class="kv">${cntPending}</div></div>
+    <div class="kpi g"><div class="kl">อนุมัติแล้ว</div><div class="kv">${cntApproved}</div></div>
+    <div class="kpi t"><div class="kl">กำลังเตรียม/ส่ง</div><div class="kv">${cntPrep + cntDisp}</div></div>
+  </div>
+  <div class="tabs" style="margin-bottom:10px">
+    ${tTab('all', '📋 รายการของฉัน', 0)}
+    ${canApprove  ? tTab('pending',  '✅ รออนุมัติ',     cntPending) : ''}
+    ${canDispatch ? tTab('dispatch', '📦 รอเตรียม/จัดส่ง', cntPrep + cntApproved) : ''}
+  </div>
+  <div class="card">
+    <div class="ch">
+      <div class="ct2">รายการขอสินค้าตัวอย่าง</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="text" placeholder="ค้นหาลูกค้า / รหัส" value="${esc(_sr.filter || '')}"
+          oninput="_sr.filter=this.value;pgSample()"
+          style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:12px;width:170px;font-family:var(--font)">
+        ${canCreate ? `<button class="btn btn-sm btn-p" onclick="_srNewForm()">+ สร้างคำขอ</button>` : ''}
+      </div>
+    </div>
+    ${rows.length === 0 ? `<div style="padding:28px;text-align:center;color:var(--TX3)">
+      ยังไม่มีรายการ${canCreate ? ` — <button class="btn btn-sm btn-p" onclick="_srNewForm()">+ สร้างคำขอแรก</button>` : ''}
+    </div>` : `
+    <div class="tw"><table>
+      <thead><tr>
+        <th>รหัสคำขอ</th><th>วันที่ขอ</th><th>ลูกค้า</th><th>สินค้า (สรุป)</th>
+        <th>วัตถุประสงค์</th><th>วันที่ต้องการ</th><th>ผู้ขอ</th><th>สถานะ</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map(r => {
+        const itemSum = (r.items || []).slice(0, 2).map(i => esc((i.skuName || i.sku || '').substring(0, 16))).join(', ')
+                      + ((r.items || []).length > 2 ? ` +${r.items.length - 2}` : '');
+        const sid = String(r.id || '').replace(/'/g, "\\'");
+        return `<tr>
+          <td class="mono" style="font-size:11px">${esc(r.id || '')}</td>
+          <td style="font-size:12px">${fmtD(r.date || '')}</td>
+          <td style="font-size:12px">${esc((r.custName || '').substring(0, 22))}</td>
+          <td style="font-size:11px;color:var(--TX2)">${itemSum || '—'}</td>
+          <td style="font-size:11px;color:var(--TX2);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((r.purpose || '').substring(0, 30))}</td>
+          <td style="font-size:12px${r.deliveryDate && r.deliveryDate < today() && !['received','dispatched'].includes(r.status) ? ';color:var(--R);font-weight:700' : ''}">${fmtD(r.deliveryDate || '')}</td>
+          <td style="font-size:12px">${esc(uidToName(r.by) || r.by || '')}</td>
+          <td>${srBadge(r.status)}</td>
+          <td><button class="btn btn-xs" onclick="_sr.view='detail';_sr.editId='${sid}';pgSample()">ดู</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`}
+  </div>`;
+}
+
+function _srNewForm() {
+  _sr.view = 'form';
+  _sr.editId = null;
+  _sr.form = { items: [{ sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' }] };
+  pgSample();
+}
+
+// ── ฟอร์มสร้าง/แก้ไขคำขอ ─────────────────────────────────────
+function _srRenderForm() {
+  const f   = _sr.form || {};
+  const items = f.items && f.items.length ? f.items : [{ sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' }];
+  const custs = salesCustomers().slice(0, 300);
+  const skus  = getSkusMerged();
+  const isEdit = !!_sr.editId;
+
+  const inpSt = 'padding:8px 10px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:var(--font);font-size:13px;box-sizing:border-box';
+  const selSt = inpSt;
+
+  document.getElementById('ct').innerHTML = `
+  <button onclick="_sr.view='home';pgSample()" style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:var(--bg2);border:1px solid var(--BD);color:var(--TX2);font-weight:500;margin-bottom:16px">← กลับ</button>
+  <div class="card">
+    <div class="ch"><div class="ct2">🧪 ${isEdit ? 'แก้ไขคำขอ' : 'สร้างคำขอสินค้าตัวอย่าง'}</div></div>
+
+    <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:12px;color:var(--TX)">📋 ข้อมูลทั่วไป</div>
+      <div class="cgrid c2" style="gap:12px">
+        <div class="field" style="margin:0">
+          <label>ลูกค้า *</label>
+          <select id="sr-cust" style="${selSt}" onchange="_srOnCustChange(this)">
+            <option value="">— เลือกลูกค้า —</option>
+            ${custs.map(c => `<option value="${esc(c.c)}" data-name="${esc(c.n || '')}" ${f.custCode === c.c ? 'selected' : ''}>${esc(c.c)} — ${esc((c.n || '').substring(0, 32))}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" style="margin:0">
+          <label>ผู้ติดต่อ</label>
+          <input id="sr-contact" type="text" value="${esc(f.contact || '')}" placeholder="ชื่อผู้ติดต่อที่ลูกค้า" style="${inpSt}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>เบอร์โทร</label>
+          <input id="sr-phone" type="text" value="${esc(f.phone || '')}" placeholder="เบอร์โทรศัพท์" style="${inpSt}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>วันที่ต้องการรับ *</label>
+          <input id="sr-delivery" type="date" value="${esc(f.deliveryDate || '')}" style="${inpSt}">
+        </div>
+        <div class="field" style="margin:0;grid-column:1/-1">
+          <label>วัตถุประสงค์ / เหตุผล *</label>
+          <textarea id="sr-purpose" placeholder="เช่น ทดสอบสูตรใหม่, ทดลองตลาด, เปิดลูกค้าใหม่, งานแสดงสินค้า" style="${inpSt};height:64px;resize:vertical">${esc(f.purpose || '')}</textarea>
+        </div>
+        <div class="field" style="margin:0">
+          <label>ที่อยู่จัดส่ง</label>
+          <input id="sr-addr" type="text" value="${esc(f.address || '')}" placeholder="ที่อยู่จัดส่ง (ถ้าต่างจากปกติ)" style="${inpSt}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>หมายเหตุเพิ่มเติม</label>
+          <input id="sr-note" type="text" value="${esc(f.note || '')}" placeholder="หมายเหตุ" style="${inpSt}">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:12px;color:var(--TX)">📦 รายการสินค้าตัวอย่าง</div>
+      <div id="sr-items-wrap">
+        ${items.map((it, i) => _srItemRow(it, i, skus, items.length)).join('')}
+      </div>
+      <button onclick="srAddItem()" class="btn btn-sm" style="margin-top:6px">+ เพิ่มรายการสินค้า</button>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px">
+      <button class="btn" onclick="_sr.view='home';pgSample()">ยกเลิก</button>
+      <button class="btn btn-sm btn-g" onclick="srSaveDraft()">💾 บันทึกร่าง</button>
+      <button class="btn btn-p" onclick="srSubmit()" style="font-weight:600">📤 ส่งขออนุมัติ</button>
+    </div>
+  </div>`;
+}
+
+function _srItemRow(it, i, skus, total) {
+  const inpSt = 'padding:7px 8px;border:1px solid var(--BD);border-radius:7px;font-family:var(--font);font-size:13px;box-sizing:border-box;width:100%';
+  return `<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px;padding:10px 12px;background:var(--W);border-radius:8px;border:1px solid var(--BD)">
+    <div style="flex:3;min-width:180px">
+      <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">สินค้า *</div>
+      <select onchange="srItemSku(${i},this)" style="${inpSt}">
+        <option value="">— เลือกสินค้า —</option>
+        ${skus.map(s => `<option value="${esc(s.code)}" data-name="${esc(s.name || '')}" ${it.sku === s.code ? 'selected' : ''}>${esc(s.code)} — ${esc((s.name || '').substring(0, 30))}</option>`).join('')}
+      </select>
+    </div>
+    <div style="width:88px">
+      <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">จำนวน</div>
+      <input type="number" value="${it.qty || 1}" min="0.01" step="0.01"
+        onchange="srItemField(${i},'qty',parseFloat(this.value)||0)"
+        style="${inpSt}">
+    </div>
+    <div style="width:82px">
+      <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">หน่วย</div>
+      <select onchange="srItemField(${i},'unit',this.value)" style="${inpSt}">
+        <option value="กก."    ${it.unit === 'กก.'    || !it.unit ? 'selected' : ''}>กก.</option>
+        <option value="ถุง"    ${it.unit === 'ถุง'    ? 'selected' : ''}>ถุง</option>
+        <option value="กล่อง"  ${it.unit === 'กล่อง'  ? 'selected' : ''}>กล่อง</option>
+        <option value="ชิ้น"   ${it.unit === 'ชิ้น'   ? 'selected' : ''}>ชิ้น</option>
+        <option value="แพ็ค"   ${it.unit === 'แพ็ค'   ? 'selected' : ''}>แพ็ค</option>
+      </select>
+    </div>
+    <div style="flex:2;min-width:130px">
+      <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">หมายเหตุ/วัตถุประสงค์</div>
+      <input type="text" value="${esc(it.note || '')}" placeholder="เช่น ทดสอบสูตร A"
+        onchange="srItemField(${i},'note',this.value)"
+        style="${inpSt}">
+    </div>
+    ${total > 1 ? `<button onclick="srRemoveItem(${i})" style="padding:7px 10px;border:1px solid var(--BD);border-radius:7px;cursor:pointer;background:var(--W);color:var(--R);font-size:14px;line-height:1">✕</button>` : ''}
+  </div>`;
+}
+
+function _srOnCustChange(sel) {
+  _sr.form.custCode = sel.value;
+  _sr.form.custName = sel.options[sel.selectedIndex]?.getAttribute('data-name') || '';
+}
+function srItemSku(i, sel) {
+  _sr.form.items = _sr.form.items || [];
+  _sr.form.items[i] = _sr.form.items[i] || {};
+  _sr.form.items[i].sku     = sel.value;
+  _sr.form.items[i].skuName = sel.options[sel.selectedIndex]?.getAttribute('data-name') || '';
+}
+function srItemField(i, field, val) {
+  _sr.form.items = _sr.form.items || [];
+  _sr.form.items[i] = _sr.form.items[i] || {};
+  _sr.form.items[i][field] = val;
+}
+function srAddItem() {
+  _srCollect();
+  _sr.form.items = (_sr.form.items || []).concat([{ sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' }]);
+  _srRenderForm();
+}
+function srRemoveItem(i) {
+  _srCollect();
+  _sr.form.items = (_sr.form.items || []).filter((_, idx) => idx !== i);
+  if (!_sr.form.items.length) _sr.form.items = [{ sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' }];
+  _srRenderForm();
+}
+function _srCollect() {
+  const custSel = document.getElementById('sr-cust');
+  if (custSel) {
+    _sr.form.custCode = custSel.value;
+    _sr.form.custName = custSel.options[custSel.selectedIndex]?.getAttribute('data-name') || _sr.form.custName || '';
+  }
+  _sr.form.contact     = document.getElementById('sr-contact')?.value  || _sr.form.contact  || '';
+  _sr.form.phone       = document.getElementById('sr-phone')?.value    || _sr.form.phone    || '';
+  _sr.form.purpose     = document.getElementById('sr-purpose')?.value  || _sr.form.purpose  || '';
+  _sr.form.deliveryDate= document.getElementById('sr-delivery')?.value || _sr.form.deliveryDate || '';
+  _sr.form.address     = document.getElementById('sr-addr')?.value     || _sr.form.address  || '';
+  _sr.form.note        = document.getElementById('sr-note')?.value     || _sr.form.note     || '';
+}
+function _srValidate() {
+  _srCollect();
+  const f = _sr.form;
+  if (!f.custCode)     { toast('กรุณาเลือกลูกค้า', 'warn'); return false; }
+  if (!f.purpose?.trim()) { toast('กรุณาระบุวัตถุประสงค์', 'warn'); return false; }
+  if (!f.deliveryDate) { toast('กรุณาระบุวันที่ต้องการรับ', 'warn'); return false; }
+  const valid = (f.items || []).filter(it => it.sku && it.qty > 0);
+  if (!valid.length)   { toast('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ', 'warn'); return false; }
+  return true;
+}
+function _srBuild(status) {
+  const f   = _sr.form;
+  const now = new Date().toISOString();
+  const base= _sr.editId ? (getSR().find(r => r.id === _sr.editId) || {}) : {};
+  return {
+    ...base,
+    id:           base.id || genId('SR'),
+    custCode:     f.custCode,
+    custName:     f.custName || '',
+    contact:      f.contact  || '',
+    phone:        f.phone    || '',
+    purpose:      f.purpose  || '',
+    deliveryDate: f.deliveryDate || '',
+    address:      f.address  || '',
+    note:         f.note     || '',
+    items:        (f.items || []).filter(it => it.sku && it.qty > 0),
+    status,
+    by:           base.by     || UID,
+    byName:       base.byName || UNAME,
+    date:         base.date   || now.slice(0, 10),
+    ts:           base.ts     || Date.now(),
+    updated_at:   now,
+    updated_by:   UID,
+  };
+}
+function _srSave(rec) {
+  saveSR([rec, ...getSR().filter(r => r.id !== rec.id)]);
+}
+function srSaveDraft() {
+  if (!_sr.form.custCode && !document.getElementById('sr-cust')?.value) { toast('กรุณาเลือกลูกค้าก่อนบันทึก', 'warn'); return; }
+  _srCollect();
+  const rec = _srBuild('draft');
+  _srSave(rec);
+  toast('บันทึกร่างแล้ว');
+  _sr.view = 'home'; pgSample();
+}
+function srSubmit() {
+  if (!_srValidate()) return;
+  const rec = _srBuild('pending');
+  _srSave(rec);
+  audit('SAMPLE_REQUEST', rec.id, { custCode: rec.custCode, items: rec.items.length });
+  toast('ส่งคำขออนุมัติแล้ว');
+  _sr.view = 'home'; pgSample();
+}
+
+// ── หน้ารายละเอียด + ปุ่ม Action ────────────────────────────
+function _srRenderDetail(id) {
+  const r = getSR().find(x => x.id === id);
+  if (!r) { _sr.view = 'home'; pgSample(); return; }
+
+  const canApprove  = ['manager','superadmin'].includes(ROLE);
+  const canDispatch = ['planning','warehouse','superadmin'].includes(ROLE);
+  const isMine      = r.by === UID;
+  const isEditable  = (isMine || canApprove) && ['draft','pending'].includes(r.status);
+  const sid = String(id || '').replace(/'/g, "\\'");
+
+  const actions = [];
+  if (isMine && r.status === 'draft')
+    actions.push(`<button class="btn btn-p" onclick="srSubmitById('${sid}')">📤 ส่งขออนุมัติ</button>`);
+  if (isEditable)
+    actions.push(`<button class="btn" onclick="_srEditExisting('${sid}')">✏️ แก้ไข</button>`);
+  if (canApprove && r.status === 'pending') {
+    actions.push(`<button class="btn btn-g" onclick="srApprove('${sid}')">✅ อนุมัติ</button>`);
+    actions.push(`<button class="btn btn-r" onclick="srReject('${sid}')">❌ ปฏิเสธ</button>`);
+  }
+  if (canDispatch && r.status === 'approved')
+    actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','preparing')">🔧 เริ่มเตรียมสินค้า</button>`);
+  if (canDispatch && r.status === 'preparing')
+    actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','dispatched')">🚚 จัดส่งแล้ว</button>`);
+  if ((isMine || canApprove) && r.status === 'dispatched')
+    actions.push(`<button class="btn btn-g" onclick="srSetStatus('${sid}','received')">✔️ ยืนยันรับแล้ว</button>`);
+  if ((isMine || canApprove) && ['draft','pending','rejected'].includes(r.status))
+    actions.push(`<button class="btn btn-r" onclick="srDelete('${sid}')" style="opacity:.7">🗑 ลบ</button>`);
+
+  // Timeline
+  const timeline = [
+    { st: 'draft',      lbl: 'สร้างคำขอ',      who: r.byName || r.by,        at: r.date },
+    { st: 'pending',    lbl: 'ส่งขออนุมัติ',    who: r.byName || r.by,        at: r.submitted_at ? r.submitted_at.slice(0,10) : (r.status !== 'draft' ? r.date : null) },
+    { st: 'approved',   lbl: 'อนุมัติ',         who: uidToName(r.approved_by) || r.approved_by, at: r.approved_at?.slice(0,10) },
+    { st: 'rejected',   lbl: 'ปฏิเสธ',          who: uidToName(r.rejected_by) || r.rejected_by, at: r.rejected_at?.slice(0,10) },
+    { st: 'preparing',  lbl: 'เตรียมสินค้า',    who: uidToName(r.prep_by)    || r.prep_by,    at: r.prep_at?.slice(0,10) },
+    { st: 'dispatched', lbl: 'จัดส่งแล้ว',      who: uidToName(r.disp_by)    || r.disp_by,    at: r.disp_at?.slice(0,10) },
+    { st: 'received',   lbl: 'รับแล้ว',         who: uidToName(r.recv_by)    || r.recv_by,    at: r.recv_at?.slice(0,10) },
+  ].filter(t => t.at || t.st === r.status);
+
+  const statusOrder = ['draft','pending','approved','preparing','dispatched','received'];
+  const curIdx = statusOrder.indexOf(r.status);
+
+  document.getElementById('ct').innerHTML = `
+  <button onclick="_sr.view='home';pgSample()" style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:var(--bg2);border:1px solid var(--BD);color:var(--TX2);font-weight:500;margin-bottom:16px">← กลับ</button>
+  <div class="card">
+    <div class="ch" style="flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="ct2">คำขอ ${esc(r.id || '')} ${srBadge(r.status)}</div>
+        <div style="font-size:12px;color:var(--TX3);margin-top:4px">ขอโดย ${esc(uidToName(r.by) || r.by || '')} เมื่อ ${fmtD(r.date || '')}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${actions.join('')}</div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div style="display:flex;align-items:center;gap:0;margin:18px 0 14px;overflow-x:auto">
+      ${statusOrder.map((st, i) => {
+        if (st === 'rejected') return '';
+        const done = i < curIdx || r.status === st;
+        const cur  = r.status === st;
+        const s    = SR_STATUS[st] || {};
+        return `<div style="display:flex;align-items:center;flex:1;min-width:0">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:none">
+            <div style="width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;
+              background:${cur?'var(--N)':done?'var(--G)':'var(--bg2)'};
+              border:2px solid ${cur?'var(--N)':done?'var(--G)':'var(--BD)'};
+              color:${cur||done?'#fff':'var(--TX3)'}">${s.icon || (i+1)}</div>
+            <div style="font-size:10px;color:${cur?'var(--N)':done?'var(--G)':'var(--TX3)'};white-space:nowrap;font-weight:${cur?'700':'400'}">${s.lbl || st}</div>
+          </div>
+          ${i < statusOrder.filter(s=>s!=='rejected').length - 1 ? `<div style="flex:1;height:2px;background:${done&&!cur?'var(--G)':'var(--BD)'};margin:0 4px;margin-bottom:14px"></div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+    ${r.status === 'rejected' ? `<div class="al ald" style="margin-bottom:14px">❌ ปฏิเสธ${r.reject_reason ? ` — เหตุผล: ${esc(r.reject_reason)}` : ''}</div>` : ''}
+
+    <!-- ข้อมูลทั่วไป -->
+    <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:10px">ข้อมูลคำขอ</div>
+      <div class="cgrid c2" style="gap:10px 20px">
+        <div><div style="font-size:11px;color:var(--TX3)">ลูกค้า</div><div style="font-size:13px;font-weight:600">${esc(r.custName || '—')}<span class="mono" style="font-size:11px;color:var(--TX3);margin-left:6px">${esc(r.custCode || '')}</span></div></div>
+        <div><div style="font-size:11px;color:var(--TX3)">ผู้ติดต่อ</div><div style="font-size:13px">${esc(r.contact || '—')}</div></div>
+        <div><div style="font-size:11px;color:var(--TX3)">เบอร์โทร</div><div style="font-size:13px">${esc(r.phone || '—')}</div></div>
+        <div><div style="font-size:11px;color:var(--TX3)">วันที่ต้องการรับ</div><div style="font-size:13px;font-weight:600;color:${r.deliveryDate && r.deliveryDate < today() && !['received','dispatched'].includes(r.status) ? 'var(--R)' : 'inherit'}">${fmtD(r.deliveryDate || '')}</div></div>
+        <div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">วัตถุประสงค์</div><div style="font-size:13px">${esc(r.purpose || '—')}</div></div>
+        ${r.address ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">ที่อยู่จัดส่ง</div><div style="font-size:13px">${esc(r.address)}</div></div>` : ''}
+        ${r.note    ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">หมายเหตุ</div><div style="font-size:13px">${esc(r.note)}</div></div>` : ''}
+      </div>
+    </div>
+
+    <!-- รายการสินค้า -->
+    <div style="font-weight:600;font-size:13px;margin-bottom:8px">รายการสินค้าตัวอย่าง</div>
+    <div class="tw" style="margin-bottom:14px"><table>
+      <thead><tr><th>#</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r">จำนวน</th><th>หน่วย</th><th>หมายเหตุ</th></tr></thead>
+      <tbody>${(r.items || []).map((it, i) => `<tr>
+        <td style="color:var(--TX3)">${i + 1}</td>
+        <td class="mono">${esc(it.sku || '')}</td>
+        <td>${esc(it.skuName || '')}</td>
+        <td class="r" style="font-weight:700">${it.qty || 0}</td>
+        <td>${esc(it.unit || 'กก.')}</td>
+        <td style="font-size:12px;color:var(--TX2)">${esc(it.note || '')}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+
+    <!-- Timeline -->
+    <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:8px">ประวัติสถานะ</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${timeline.map(t => `<div style="display:flex;gap:10px;align-items:flex-start;font-size:12px">
+        <div style="min-width:80px;color:var(--TX3)">${t.at ? fmtD(t.at) : ''}</div>
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--G);margin-top:3px;flex-shrink:0"></div>
+        <div><span style="font-weight:600">${t.lbl}</span>${t.who ? ` — ${esc(t.who)}` : ''}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+// ── Actions ───────────────────────────────────────────────────
+function srApprove(id) {
+  const reqs = getSR();
+  const r = reqs.find(x => x.id === id); if (!r) return;
+  Object.assign(r, { status: 'approved', approved_by: UID, approved_at: new Date().toISOString() });
+  saveSR(reqs);
+  audit('SAMPLE_APPROVE', id, {});
+  toast('อนุมัติคำขอแล้ว');
+  _sr.view = 'detail'; pgSample();
+}
+function srReject(id) {
+  const reason = prompt('เหตุผลการปฏิเสธ (กด Cancel เพื่อยกเลิก):');
+  if (reason === null) return;
+  const reqs = getSR();
+  const r = reqs.find(x => x.id === id); if (!r) return;
+  Object.assign(r, { status: 'rejected', rejected_by: UID, rejected_at: new Date().toISOString(), reject_reason: reason });
+  saveSR(reqs);
+  audit('SAMPLE_REJECT', id, { reason });
+  toast('ปฏิเสธคำขอแล้ว');
+  _sr.view = 'detail'; pgSample();
+}
+function srSetStatus(id, status) {
+  const reqs = getSR();
+  const r = reqs.find(x => x.id === id); if (!r) return;
+  const now = new Date().toISOString();
+  r.status = status;
+  if (status === 'preparing')  { r.prep_by  = UID; r.prep_at  = now; }
+  if (status === 'dispatched') { r.disp_by  = UID; r.disp_at  = now; }
+  if (status === 'received')   { r.recv_by  = UID; r.recv_at  = now; }
+  r.updated_by = UID; r.updated_at = now;
+  saveSR(reqs);
+  audit('SAMPLE_STATUS', id, { status });
+  toast('อัปเดตสถานะแล้ว');
+  _sr.view = 'detail'; pgSample();
+}
+function srSubmitById(id) {
+  const reqs = getSR();
+  const r = reqs.find(x => x.id === id); if (!r) return;
+  Object.assign(r, { status: 'pending', submitted_at: new Date().toISOString(), updated_by: UID });
+  saveSR(reqs);
+  audit('SAMPLE_SUBMIT', id, {});
+  toast('ส่งคำขออนุมัติแล้ว');
+  _sr.view = 'detail'; pgSample();
+}
+function srDelete(id) {
+  if (!confirm('ลบคำขอนี้?')) return;
+  saveSR(getSR().filter(r => r.id !== id));
+  audit('SAMPLE_DELETE', id, {});
+  toast('ลบคำขอแล้ว');
+  _sr.view = 'home'; pgSample();
+}
+function _srEditExisting(id) {
+  const r = getSR().find(x => x.id === id); if (!r) return;
+  _sr.editId = id;
+  _sr.form = {
+    custCode: r.custCode, custName: r.custName,
+    contact: r.contact || '', phone: r.phone || '',
+    purpose: r.purpose || '', deliveryDate: r.deliveryDate || '',
+    address: r.address || '', note: r.note || '',
+    items: JSON.parse(JSON.stringify(r.items || [])),
+  };
+  _sr.view = 'form';
+  pgSample();
 }
 </script>
 </body>
