@@ -540,6 +540,26 @@ const SB = {
     return _filterTgmSkuRows(rows, opts);
   },
 
+  async getCustomers() {
+    const PAGE = 1000;
+    let from = 0;
+    let rows = [];
+    while (true) {
+      const { data, error } = await getSupabaseClient()
+        .from('customers')
+        .select('code,name,cust_group,slm_id,is_active')
+        .eq('is_active', true)
+        .order('code')
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      rows = rows.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    DB.set('remote_customers_cache', rows);
+    return rows;
+  },
+
   async addForecast(fc) {
     return sbThrow(getSupabaseClient().from('forecasts').insert({
       id:          fc.id,
@@ -1125,6 +1145,9 @@ async function doLogin() {
     SB.getSkuSettings().then(ss => {
       if (ss && Object.keys(ss).length > 0) DB.set('sku_settings', ss);
     }).catch(console.warn);
+    SB.getCustomers().then(rows => {
+      if (rows?.length) DB.set('remote_customers_cache', rows);
+    }).catch(console.warn);
     // Bookings are large; load them lazily only on booking pages.
     try {
       SB.subscribeStock(() => {
@@ -1171,6 +1194,7 @@ async function doLogin() {
         CACHE.clearPrefix('sales_hist_');
         CACHE.clear('products');
         CACHE.clear('stock');
+        DB.set('remote_customers_cache', []);
         window._salesRows2Y = null;
         window._salesHistCache = null;
         window._dashSalesRows = null;
@@ -3183,10 +3207,17 @@ function getCustomerProfile(c){
 function salesCustomers(){return SD_CUSTS.map(getCustomerProfile);}
 function allCustomerRows(){
   const rows=salesCustomers(),seen=new Set(rows.map(c=>c.c));
+  (DB.get('remote_customers_cache')||[]).forEach(r=>{
+    const code=String(r.code||'').trim();
+    if(!code||seen.has(code))return;
+    rows.push(getCustomerProfile({c:code,n:r.name||code,ty:r.cust_group||'ขายจริง',grp:r.cust_group||'อื่นๆ',slm:r.slm_id||'',w:[0,0,0,0],g:[]}));
+    seen.add(code);
+  });
   if(typeof CUST_NAMES==='object'){
     Object.entries(CUST_NAMES).forEach(([code,name])=>{
       if(!seen.has(code)){
         rows.push(getCustomerProfile({c:code,n:name,ty:'ไม่ระบุ',grp:'อื่นๆ',slm:'',w:[0,0,0,0],g:[]}));
+        seen.add(code);
       }
     });
   }
@@ -7217,8 +7248,23 @@ function disableSalesMaster(code){
   audit('DISABLE_SALES_MASTER',code,{});
   renderSalesMaster();
 }
-function applySalesToCustomers(code){
-  const list=SLM_CUSTS?.[code]||[];
+async function applySalesToCustomers(code){
+  code=String(code||'').trim();
+  if(!code){toast('No sales code');return;}
+  let list=SLM_CUSTS?.[code]||[];
+  if(!list.length){
+    const remote=DB.get('remote_customers_cache')||[];
+    list=remote.filter(c=>String(c.slm_id||'').trim()===code).map(c=>String(c.code||'').trim()).filter(Boolean);
+  }
+  if(!list.length && SB?.getCustomers){
+    try{
+      const remote=await SB.getCustomers();
+      list=(remote||[]).filter(c=>String(c.slm_id||'').trim()===code).map(c=>String(c.code||'').trim()).filter(Boolean);
+    }catch(e){console.warn('getCustomers for sales link:',e);}
+  }
+  if(!list.length){
+    list=allCustomerRows().filter(c=>String(c.slm||'').trim()===code).map(c=>c.c).filter(Boolean);
+  }
   if(!list.length){toast('No Express customer map for '+code);return;}
   const profs=customerProfiles();
   let count=0;
@@ -8325,10 +8371,6 @@ function expFcDoc(custCode, month) {
 </script>
 </body>
 </html>
-
-
-
-
 
 
 
