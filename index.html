@@ -3462,11 +3462,12 @@ function getCustomerProfile(c){
     n:prof.name||c.n
   };
 }
-function salesCustomers(){return SD_CUSTS.map(getCustomerProfile);}
+function salesCustomers(){return allCustomerRows();}
 function allCustomerRows(extraCodes=null){
   const remCache=DB.get('remote_customers_cache')||[];
   const remMap=Object.fromEntries(remCache.map(x=>[String(x.code||''),x]));
-  const rows=salesCustomers(),seen=new Set(rows.map(c=>c.c));
+  const rows=SD_CUSTS.map(getCustomerProfile);
+  const seen=new Set(rows.map(c=>c.c));
 
   // Layer 1: customers table จาก Express (remote_customers_cache)
   remCache.forEach(r=>{
@@ -4392,6 +4393,25 @@ function _sdBuildCusts(rows){
     if(!g.it[r.prod_code])g.it[r.prod_code]={n:r.prod_name,c:r.prod_code,_tot:0};
     g.it[r.prod_code]._tot+=r.amount;
   }
+
+  // Add all known customers even when they have no sales in the current result set
+  allCustomerRows().forEach(c=>{
+    if(!m[c.c]){
+      m[c.c] = {
+        n: c.n || c.c,
+        c: c.c,
+        ty: c.category || c.ty || 'ไม่ระบุ',
+        category: c.category || c.ty || 'ไม่ระบุ',
+        corp: c.corp || c.grp || 'อื่นๆ',
+        grp: c.corp || c.grp || 'อื่นๆ',
+        slm: c.slm || '',
+        _tot: 0,
+        _qty: 0,
+        g: {}
+      };
+    }
+  });
+
   return Object.values(m).map(c=>({...c,g:Object.values(c.g).map(g=>({...g,it:Object.values(g.it).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
 }
 function _sdBuildProds(rows){
