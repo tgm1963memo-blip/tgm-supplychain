@@ -1299,7 +1299,7 @@ async function pgForecast() {
   const fcLoads=await Promise.allSettled([
     SB.getForecasts(slmFilter),
     CACHE.get('products',()=>SB.getProducts()),
-    CACHE.get('sales_hist_2y',()=>loadDashboardSalesHist()),
+    CACHE.get('sales_hist_2y_v2',()=>loadDashboardSalesHist()),
     CACHE.get('fc_po_links',()=>SB.getPOPlans()),
     CACHE.get('fc_booking_links',()=>SB.getBookings()),
     CACHE.get('fc_prod_links',()=>SB.getProdOrders())
@@ -2231,7 +2231,7 @@ async function pgPlanStock() {
   </div>`;
 
   // โหลดจาก Supabase view
-  await CACHE.get('sales_hist_2y',()=>loadDashboardSalesHist()).catch(e=>console.warn('sales_hist_2y:',e));
+  await CACHE.get('sales_hist_2y_v2',()=>loadDashboardSalesHist()).catch(e=>console.warn('sales_hist_2y:',e));
   const [rows, fcSB, poSB, prodSB] = await Promise.all([
     CACHE.get('stock_planning', () => SB.getStockPlanning()),
     CACHE.get('fc_forecasts', () => SB.getForecasts()),
@@ -2998,7 +2998,9 @@ function _rowCompany(row={}){
   return _skuCompanyFromProduct(row, _rowSku(row));
 }
 function _allowedCompanies(opts={}){
-  return opts?.includeTgm ? new Set(['TSS','TSSNV','TGM']) : new Set(['TSS','TSSNV']);
+  const companies = opts?.includeTgm ? ['TSS','TSSNV','TGM'] : ['TSS','TSSNV'];
+  if(opts?.includeConsi) companies.push('CONSI');
+  return new Set(companies);
 }
 function _isAllowedCompanyRecord(row={}, opts={}){
   return _allowedCompanies(opts).has(_rowCompany(row));
@@ -3754,7 +3756,7 @@ async function pgDash(){
     CACHE.get('dash_stock_all',()=>SB.getStock({includeTgm:true})),
     CACHE.get('dash_fc_all',()=>SB.getForecasts(null,{includeTgm:true})),
     CACHE.get('dash_ss_all',()=>SB.getSkuSettings({includeTgm:true})),
-    CACHE.get('dash_sales_hist_all',()=>loadDashboardSalesHist(true)),
+    CACHE.get('dash_sales_hist_all_v2',()=>loadDashboardSalesHist(true)),
     CACHE.get('data_confidence',()=>SB.getDataConfidence()),
   ]);
   const value=(i,fallback=null)=>{
@@ -3967,7 +3969,8 @@ function _isConsignmentRow(r){
 }
 function _salesRowsForMode(rows,{includeConsi=false}={}){
   const hasPrefixed=(rows||[]).some(r=>r.prefixed);
-  const scoped=hasPrefixed ? (rows||[]).filter(r=>r.prefixed||r.is_all) : (rows||[]);
+  // hasPrefixed dedup only applies to TSS rows; TSSNV/TGM/CONSI rows don't have legacy duplicates
+  const scoped=hasPrefixed ? (rows||[]).filter(r=>r.prefixed||r.is_all||(r.company&&r.company!=='TSS')) : (rows||[]);
   return scoped.filter(r=>{
     if(includeConsi) return _isConsignmentRow(r);
     return !_isConsignmentRow(r);
@@ -4029,9 +4032,9 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   if(opts.fastProducts){
     const codes=[...new Set(allData.map(r=>r.sku).filter(Boolean))];
     const key='products_subset_'+codes.length+'_'+codes.slice(0,20).join('_');
-    products=await CACHE.get(key+(opts.includeTgm?'_all':'_scope'),()=>SB.getProductsByCodes(codes,{includeTgm:opts.includeTgm===true}));
+    products=await CACHE.get(key+(opts.includeTgm?'_all':'_scope')+(opts.includeConsi?'_consi':''),()=>SB.getProductsByCodes(codes,{includeTgm:opts.includeTgm===true,includeConsi:opts.includeConsi===true}));
   }else{
-    products=await CACHE.get(opts.includeTgm?'products_all':'products',()=>SB.getProducts({includeTgm:opts.includeTgm===true}));
+    products=await CACHE.get((opts.includeTgm?'products_all':'products')+(opts.includeConsi?'_consi':''),()=>SB.getProducts({includeTgm:opts.includeTgm===true,includeConsi:opts.includeConsi===true}));
   }
   const prodMap=Object.fromEntries((products||[]).map(p=>[String(p.code||p.sku||''),p]));
   const names=_salesNameMap();
@@ -4130,7 +4133,7 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
   _sdUpdateSlmDrop();
 }
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}){
-  const key=`sales_rows_${startYm}_${endYm}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}`;
+  const key=`sales_rows_v2_${startYm}_${endYm}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}`;
   const rows=await CACHE.get(key,()=>_sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,summaryOnly:!!opts.summaryOnly}));
   window._salesRows2Y=rows;
   try{DB.set('sales_rows_cache',rows);}catch(_){}
@@ -4601,11 +4604,13 @@ function sdKPI(){
     const ms=_sdApi.monthly;
     const maxT=Math.max(...ms.map(m=>m.total),1);
     const curM=_sd.pt==='year'?String(_sdApiYear()):_sdApiMonth();
+    const customFrom=_sd.pt==='custom'?_dateToYm(_sd.dateFrom):'';
+    const customTo=_sd.pt==='custom'?_dateToYm(_sd.dateTo):'';
     sparks=ms.slice(-12).map(m=>{
-      const active=_sd.pt==='year'?m.ym.startsWith(String(_sdApiYear())):m.ym===curM;
+      const active=_sd.pt==='year'?m.ym.startsWith(String(_sdApiYear())):_sd.pt==='custom'?(m.ym>=customFrom&&m.ym<=customTo):m.ym===curM;
       return `<div style="flex:1;border-radius:2px 2px 0 0;min-height:2px;height:${Math.round(m.total/maxT*24)}px;background:var(--BL);opacity:${active?1:.35}"></div>`;
     }).join('');
-    lbl2=_sd.pt==='year'?'vs ปีก่อน':_sd.pt==='week'?'สัปดาห์ที่ '+_sd.cw:SD_MTH[_sd.cm];
+    lbl2=_sd.pt==='year'?'vs ปีก่อน':_sd.pt==='week'?'สัปดาห์ที่ '+_sd.cw:_sd.pt==='custom'?(_sd.dateFrom&&_sd.dateTo?`${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}`:'ช่วงที่เลือก'):SD_MTH[_sd.cm];
   }else{
     const d=_sdD();total=d.t;qty=d.q;inv=d.i;ar=d.ar;vs=d.vs;
     const maxT=Math.max(...(SD_MD.length?SD_MD:[{t:1}]).map(m=>m.t));
@@ -4616,11 +4621,13 @@ function sdKPI(){
   const vsC=vs>=0?'var(--G)':'var(--R)';
   const avg=inv?_sdF(Math.round(total/inv)):'—';
   const yoy=_sdApi.yoy;
+  const isCustom=_sd.pt==='custom';
+  const customRangeLbl=isCustom&&_sd.dateFrom&&_sd.dateTo?`${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}`:'';
   const _yoyLine=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${_sdFmtTotal(prev)} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳ กำลังโหลดข้อมูลปีที่แล้ว…':'')}</div>`:'';
   const _yoyLineNum=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${Math.round(prev).toLocaleString()} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳':'')}</div>`:'';
   kr.innerHTML=`
     <div class="kpi b"><div class="kl">ยอดขายรวม (มูลค่า)</div><div class="kv">${_sdFmtTotal(total)}</div>
-      <div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>
+      ${isCustom?`<div class="kh" style="color:var(--TX2)">${customRangeLbl||'ช่วงที่เลือก'}</div>`:`<div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>`}
       <div style="display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:8px">${sparks}</div>
       ${_yoyLine(total,yoy?.total||0,'ปีที่แล้ว')}</div>
     <div class="kpi g"><div class="kl">ปริมาณขาย (กก./ถุง)</div><div class="kv">${Math.round(qty).toLocaleString()}</div>
@@ -5073,7 +5080,8 @@ function sdExport(){
   toXLSX([[sheet, cols, rows]], `Sales_${period}_${sheet}.xlsx`);
 }
 
-let _consiRows=[], _consiCustF='', _consiProdF='', _consiBranchF='', _consiStartF='', _consiEndF='', _consiLoaded=false, _consiErr='';
+let _consiRows=[], _consiCustF='', _consiProdF='', _consiBranchF='', _consiStartF='', _consiEndF='', _consiLoaded=false, _consiErr='', _consiOp={};
+function consiTogOp(k){_consiOp[k]=!_consiOp[k];consiRender();}
 async function pgConsignment(){
   document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button><button class="btn btn-sm" onclick="pgConsignment()" style="margin-left:6px">🔄 โหลดใหม่</button>`;
   document.getElementById('ct').innerHTML='<div class="al ali">กำลังโหลดข้อมูลฝากขาย CONSI...</div>';
@@ -5094,39 +5102,44 @@ async function pgConsignment(){
   consiRender();
 }
 async function _sbConsiRows(startYm,endYm){
-  // โหลด CONSI rows โดยตรง — filter slm_id ที่เป็น CONSI:* prefix
-  const PAGE=1000;let allData=[];let from=0;
-  while(true){
-    const {data,error}=await getSupabaseClient()
-      .from('sales_history')
-      .select('slm_id,sku,ym,qty,amount')
-      .gte('ym',startYm).lte('ym',endYm)
-      .ilike('slm_id','CONSI:%')
-      .order('ym')
-      .range(from,from+PAGE-1);
-    if(error) throw error;
-    allData=allData.concat(data||[]);
-    if(!data||data.length<PAGE) break;
-    from+=PAGE;
+  try{
+    const rows=await _sbSalesRows(startYm,endYm,'',{
+      includeConsi:true,
+      fastProducts:true,
+      includeAllRows:false,
+      excludeAllRows:true
+    });
+    if(rows.length) return rows;
+  }catch(e){
+    console.warn('CONSI shared sales loader failed; trying direct fallback', e.message || e);
   }
-  // ถ้าไม่มี CONSI: prefix ให้ลอง load ทั้งหมดแล้วกรองตาม cust_group/name
-  if(!allData.length){
-    let from2=0;let raw=[];
+  const PAGE=1000;
+  async function _pg(table,select,filter){
+    let data=[],from=0;
     while(true){
-      const {data,error}=await getSupabaseClient()
-        .from('sales_history')
-        .select('slm_id,sku,ym,qty,amount')
-        .gte('ym',startYm).lte('ym',endYm)
-        .order('ym')
-        .range(from2,from2+PAGE-1);
+      let q=getSupabaseClient().from(table).select(select).gte('ym',startYm).lte('ym',endYm);
+      if(filter) q=filter(q);
+      q=q.order('ym').range(from,from+PAGE-1);
+      const {data:d,error}=await q;
       if(error) throw error;
-      raw=raw.concat(data||[]);
-      if(!data||data.length<PAGE) break;
-      from2+=PAGE;
+      data=data.concat(d||[]);
+      if(!d||d.length<PAGE) break;
+      from+=PAGE;
     }
-    allData=raw;
+    return data;
   }
-  const products=await CACHE.get('products',()=>SB.getProducts());
+  let allData=[];
+  // 1. sales_history with CONSI: prefix
+  try{allData=await _pg('sales_history','slm_id,sku,ym,qty,amount',q=>q.ilike('slm_id','CONSI:%'));}catch(_){}
+  // 2. v_sales_history_company with company=CONSI
+  if(!allData.length){
+    try{allData=await _pg('v_sales_history_company','slm_id,sku,ym,qty,amount,company',q=>q.eq('company','CONSI'));}catch(_){}
+  }
+  // 3. broader CONSI pattern
+  if(!allData.length){
+    try{allData=await _pg('sales_history','slm_id,sku,ym,qty,amount',q=>q.ilike('slm_id','%CONSI%'));}catch(_){}
+  }
+  const products=await CACHE.get('products_consi',()=>SB.getProducts({includeConsi:true}));
   const prodMap=Object.fromEntries((products||[]).map(p=>[String(p.code||p.sku||''),p]));
   const names=_salesNameMap();
   const mapped=allData.filter(r=>r.slm_id).flatMap(r=>{
@@ -5135,90 +5148,95 @@ async function _sbConsiRows(startYm,endYm){
     const qty=Number(r.qty||0)||0;
     const amount=Number(r.amount||r.value||0)||0;
     const prod=prodMap[r.sku]||{};
-    return [{branch:sp.branch,prefixed:sp.prefixed,is_all:String(sp.slm).toUpperCase().startsWith('ALL'),slm_id:sp.slm,slm_key:sp.raw,slm_name:name,cust_code:`SLM-${sp.raw}`,cust_name:name,cust_group:_isConsiBranch(sp.branch)?'ฝากขาย':'ขายจริง',prod_group:productGroupForSku(r.sku,prod.group_name||'อื่นๆ'),prod_code:r.sku,prod_name:prod.name||r.sku,qty,amount:amount||qty,ym:r.ym}];
+    const rowCo=String(r.company||'').trim().toUpperCase();
+    // detect CONSI from branch, company field, or raw slm_id pattern
+    const isConsi=_isConsiBranch(sp.branch)||rowCo==='CONSI'||String(sp.raw||'').toUpperCase().includes('CONSI');
+    return [{
+      branch:sp.branch==='LEGACY'&&isConsi?'CONSI':sp.branch,
+      prefixed:sp.prefixed,is_all:String(sp.slm).toUpperCase().startsWith('ALL'),
+      slm_id:sp.slm,slm_key:sp.raw,slm_name:name,
+      cust_code:`SLM-${sp.raw}`,cust_name:name,
+      cust_group:isConsi?'ฝากขาย':'ขายจริง',
+      prod_group:productGroupForSku(r.sku,prod.group_name||'อื่นๆ'),
+      prod_code:r.sku,prod_name:prod.name||r.sku,
+      qty,amount:amount||qty,ym:r.ym
+    }];
   });
   return mapped.filter(r=>_isConsignmentRow(r));
 }
 function consiRender(){
-  let rows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
-  const custs=[...new Map(rows.map(r=>[r.cust_code,r.cust_name||r.cust_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'th'));
-  const prods=[...new Map(rows.map(r=>[r.prod_code,r.prod_name||r.prod_code])).entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
-  const branches=[...new Set(rows.map(r=>r.branch||'').filter(Boolean))].sort();
+  const rangeRows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
+  const allBranches=[...new Set(_consiRows.map(r=>r.branch||'').filter(Boolean))].sort();
+  let rows=[...rangeRows];
   if(_consiCustF) rows=rows.filter(r=>r.cust_code===_consiCustF);
   if(_consiProdF) rows=rows.filter(r=>r.prod_code===_consiProdF);
   if(_consiBranchF) rows=rows.filter(r=>(r.branch||'')===_consiBranchF);
-  const monthly=_sdKpiFromRows(rows);
-  const total=rows.reduce((a,r)=>a+(r.qty||0),0);
-  const byProd=_sdBuildProds(rows).slice(0,30);
+  const totalQty=rows.reduce((a,r)=>a+(r.qty||0),0);
+  const totalAmt=rows.reduce((a,r)=>a+(r.amount||0),0);
+  // filter options from range rows (before cust/prod/branch filter)
+  const custF2={};rangeRows.forEach(r=>{if(!custF2[r.cust_code])custF2[r.cust_code]=r.cust_name||r.cust_code;});
+  const custs=Object.entries(custF2).sort((a,b)=>a[1].localeCompare(b[1],'th'));
+  const prodF2={};rangeRows.forEach(r=>{if(!prodF2[r.prod_code])prodF2[r.prod_code]=r.prod_name||r.prod_code;});
+  const prods=Object.entries(prodF2).sort((a,b)=>a[0].localeCompare(b[0]));
+  // build grouped: cust → prod_group → prod
+  const grouped={};
+  rows.forEach(r=>{
+    const cc=r.cust_code||'—';
+    if(!grouped[cc])grouped[cc]={name:r.cust_name||cc,branch:r.branch||'',qty:0,amount:0,groups:{}};
+    grouped[cc].qty+=(r.qty||0);grouped[cc].amount+=(r.amount||0);
+    const gn=r.prod_group||'อื่นๆ';
+    if(!grouped[cc].groups[gn])grouped[cc].groups[gn]={qty:0,amount:0,prods:{}};
+    grouped[cc].groups[gn].qty+=(r.qty||0);grouped[cc].groups[gn].amount+=(r.amount||0);
+    const pc=r.prod_code||'?';
+    if(!grouped[cc].groups[gn].prods[pc])grouped[cc].groups[gn].prods[pc]={name:r.prod_name||pc,qty:0,amount:0};
+    grouped[cc].groups[gn].prods[pc].qty+=(r.qty||0);grouped[cc].groups[gn].prods[pc].amount+=(r.amount||0);
+  });
+  const custEntries=Object.entries(grouped).sort((a,b)=>b[1].qty-a[1].qty);
+  let tbl='';
+  if(custEntries.length){
+    tbl='<div class="card" style="margin-bottom:0"><div class="ch"><div class="ct2">รายฝากขาย CONSI ('+rows.length+' รายการ)</div><button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button></div><div class="tw"><table><thead><tr><th>กลุ่มลูกค้า / กลุ่มสินค้า / สินค้า</th><th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th></tr></thead><tbody>';
+    custEntries.forEach(([cc,cust],ci)=>{
+      const oc=_consiOp['c'+ci];
+      tbl+=`<tr onclick="consiTogOp('c${ci}')" style="cursor:pointer;background:var(--LN)"><td>${_xa(oc)}<strong>${esc(cust.name)}</strong>${cust.branch&&cust.branch!=='CONSI'?` <span class="badge bbp" style="font-size:10px">${esc(cust.branch)}</span>`:''}</td><td class="r"><strong>${fmt(cust.qty)}</strong></td><td class="r"><strong>${cust.amount?fmt(cust.amount):'—'}</strong></td></tr>`;
+      if(oc) Object.entries(cust.groups).sort((a,b)=>b[1].qty-a[1].qty).forEach(([gn,grp],gi)=>{
+        const gk='g'+ci+'_'+gi;const og=_consiOp[gk];
+        tbl+=`<tr onclick="consiTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)"><td style="padding-left:20px">${_xa(og)}<span style="font-size:12px">${esc(gn)}</span></td><td class="r" style="font-size:12px">${fmt(grp.qty)}</td><td class="r" style="font-size:12px">${grp.amount?fmt(grp.amount):'—'}</td></tr>`;
+        if(og) Object.entries(grp.prods).sort((a,b)=>b[1].qty-a[1].qty).forEach(([pc,p])=>{
+          tbl+=`<tr style="background:var(--bg);font-size:12px"><td style="padding-left:40px"><span class="mono">${esc(pc)}</span> — ${esc(p.name)}</td><td class="r">${fmt(p.qty)}</td><td class="r">${p.amount?fmt(p.amount):'—'}</td></tr>`;
+        });
+      });
+    });
+    tbl+='</tbody></table></div></div>';
+  }
   document.getElementById('ct').innerHTML=`
   <div class="card" style="padding:12px 16px;margin-bottom:12px">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-      <div class="field" style="margin:0;min-width:150px">
-        <label style="font-size:11px;color:var(--TX2)">จากเดือน</label>
-        <input type="month" class="inp" value="${esc(_consiStartF)}" onchange="_consiStartF=this.value;consiRender()" style="height:34px;padding:4px 8px">
-      </div>
-      <div class="field" style="margin:0;min-width:150px">
-        <label style="font-size:11px;color:var(--TX2)">ถึงเดือน</label>
-        <input type="month" class="inp" value="${esc(_consiEndF)}" onchange="_consiEndF=this.value;consiRender()" style="height:34px;padding:4px 8px">
-      </div>
-      <div class="field" style="margin:0;min-width:200px">
-        <label style="font-size:11px;color:var(--TX2)">ลูกค้า</label>
-        <select class="inp" onchange="_consiCustF=this.value;consiRender()" style="height:34px;padding:4px 8px">
+      <div class="field" style="margin:0;min-width:150px"><label style="font-size:11px;color:var(--TX2)">จากเดือน</label>
+        <input type="month" class="inp" value="${esc(_consiStartF)}" onchange="_consiStartF=this.value;consiRender()" style="height:34px;padding:4px 8px"></div>
+      <div class="field" style="margin:0;min-width:150px"><label style="font-size:11px;color:var(--TX2)">ถึงเดือน</label>
+        <input type="month" class="inp" value="${esc(_consiEndF)}" onchange="_consiEndF=this.value;consiRender()" style="height:34px;padding:4px 8px"></div>
+      <div class="field" style="margin:0;min-width:200px"><label style="font-size:11px;color:var(--TX2)">ลูกค้า</label>
+        <select class="inp" onchange="_consiCustF=this.value;_consiOp={};consiRender()" style="height:34px;padding:4px 8px">
           <option value="">ทุกลูกค้า</option>
-          ${custs.map(([code,name])=>`<option value="${code}" ${_consiCustF===code?'selected':''}>${esc(code)} — ${esc(name)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field" style="margin:0;min-width:220px">
-        <label style="font-size:11px;color:var(--TX2)">สินค้า</label>
-        <select class="inp" onchange="_consiProdF=this.value;consiRender()" style="height:34px;padding:4px 8px">
+          ${custs.map(([code,name])=>`<option value="${esc(code)}" ${_consiCustF===code?'selected':''}>${esc(name)}</option>`).join('')}</select></div>
+      <div class="field" style="margin:0;min-width:220px"><label style="font-size:11px;color:var(--TX2)">สินค้า</label>
+        <select class="inp" onchange="_consiProdF=this.value;_consiOp={};consiRender()" style="height:34px;padding:4px 8px">
           <option value="">ทุกสินค้า</option>
-          ${prods.map(([code,name])=>`<option value="${code}" ${_consiProdF===code?'selected':''}>${esc(code)} — ${esc(name)}</option>`).join('')}
-        </select>
-      </div>
-      ${branches.length>1?`<div class="field" style="margin:0;min-width:160px">
-        <label style="font-size:11px;color:var(--TX2)">สาขา</label>
-        <select class="inp" onchange="_consiBranchF=this.value;consiRender()" style="height:34px;padding:4px 8px">
+          ${prods.map(([code,name])=>`<option value="${esc(code)}" ${_consiProdF===code?'selected':''}>${esc(code)} — ${esc(name)}</option>`).join('')}</select></div>
+      ${allBranches.length>1?`<div class="field" style="margin:0;min-width:160px"><label style="font-size:11px;color:var(--TX2)">สาขา</label>
+        <select class="inp" onchange="_consiBranchF=this.value;_consiOp={};consiRender()" style="height:34px;padding:4px 8px">
           <option value="">ทุกสาขา</option>
-          ${branches.map(b=>`<option value="${esc(b)}" ${_consiBranchF===b?'selected':''}>${esc(b)}</option>`).join('')}
-        </select>
-      </div>`:''}
-      ${!_consiLoaded?`<span style="color:var(--R);font-size:12px">⚠ โหลด Supabase ไม่สำเร็จ${_consiErr?' — '+_consiErr:' — ตรวจสอบ internet/permissions'} <button class="btn btn-xs" onclick="pgConsignment()">ลองอีกครั้ง</button></span>`:''}
+          ${allBranches.map(b=>`<option value="${esc(b)}" ${_consiBranchF===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>`:''}
+      ${!_consiLoaded?`<span style="color:var(--R);font-size:12px">⚠ โหลดไม่สำเร็จ${_consiErr?' — '+_consiErr:''} <button class="btn btn-xs" onclick="pgConsignment()">ลองอีกครั้ง</button></span>`:''}
     </div>
   </div>
-  <div class="krow">
-    <div class="kpi p"><div class="kl">ยอดฝากขาย CONSI</div><div class="kv">${fmt(total)}</div><div class="kh">กก. แยกจากยอดขายจริง</div></div>
-    <div class="kpi b"><div class="kl">จำนวนเดือน</div><div class="kv">${monthly.length}</div><div class="kh">2 ปีย้อนหลัง</div></div>
+  <div class="krow" style="margin-bottom:12px">
+    <div class="kpi p"><div class="kl">ยอดฝากขาย CONSI</div><div class="kv">${fmt(totalQty)}</div><div class="kh">กก.</div></div>
+    <div class="kpi b"><div class="kl">มูลค่ารวม</div><div class="kv">${totalAmt?'฿'+fmt(totalAmt):'—'}</div><div class="kh">บาท</div></div>
     <div class="kpi g"><div class="kl">จำนวนสินค้า</div><div class="kv">${prods.length}</div><div class="kh">รายการ</div></div>
     <div class="kpi o"><div class="kl">จำนวนลูกค้า</div><div class="kv">${custs.length}</div><div class="kh">บัญชี</div></div>
   </div>
-  ${!rows.length?`<div class="al alw">ไม่มีข้อมูล CONSI ในช่วงนี้</div>`:`
-  <div class="cgrid c2" style="margin-bottom:12px">
-    <div class="card"><div class="ch"><div class="ct2">CONSI รายเดือน</div></div><div class="tw"><table><thead><tr><th>เดือน</th><th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th></tr></thead><tbody>
-      ${monthly.map(m=>`<tr><td>${mL(m.ym)}</td><td class="r">${fmt(m.qty||m.total)}</td><td class="r">${fmt(m.amount||0)}</td></tr>`).join('')||'<tr><td colspan="3" style="color:var(--TX3)">ไม่มีข้อมูล</td></tr>'}
-    </tbody></table></div></div>
-    <div class="card"><div class="ch"><div class="ct2">CONSI ตามกลุ่มสินค้า</div></div><div class="tw"><table><thead><tr><th>กลุ่ม/สินค้า</th><th class="r">จำนวน</th><th class="r">มูลค่า</th></tr></thead><tbody>
-      ${byProd.map(g=>`<tr><td><strong>${esc(g.n)}</strong></td><td class="r"><strong>${fmt(g._tot)}</strong></td><td class="r">${fmt(g._totAmt||0)}</td></tr>${g.it.slice(0,8).map(i=>`<tr><td style="padding-left:20px"><span class="mono">${esc(i.c)}</span> ${esc(i.n)}</td><td class="r">${fmt(i._tot)}</td><td class="r">${fmt(i._totAmt||0)}</td></tr>`).join('')}`).join('')||'<tr><td colspan="3" style="color:var(--TX3)">ไม่มีข้อมูล</td></tr>'}
-    </tbody></table></div></div>
-  </div>
-  <div class="card" style="margin-bottom:0">
-    <div class="ch"><div class="ct2">รายละเอียดธุรกรรม CONSI (${rows.length} รายการ)</div>
-      <button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button>
-    </div>
-    <div class="tw tw-scroll"><table><thead><tr>
-      <th>เดือน</th><th>สาขา</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
-      <th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th>
-    </tr></thead><tbody>
-      ${rows.slice(0,500).map(r=>`<tr>
-        <td>${r.ym||'—'}</td>
-        <td><span class="badge bbp" style="font-size:10px">${esc(r.branch||'—')}</span></td>
-        <td class="mono" style="font-size:11px">${esc(r.prod_code||'—')}</td>
-        <td style="font-size:12px">${esc((r.prod_name||'').substring(0,30))}</td>
-        <td class="r" style="font-weight:600">${fmt(r.qty||0)}</td>
-        <td class="r" style="color:var(--G)">${r.amount?fmt(r.amount):'—'}</td>
-      </tr>`).join('')}
-      ${rows.length>500?`<tr><td colspan="6" style="text-align:center;color:var(--TX3);padding:10px">แสดง 500 จาก ${rows.length} รายการ — Export Excel เพื่อดูทั้งหมด</td></tr>`:''}
-    </tbody></table></div>
-  </div>`}`;
+  ${!rows.length?`<div class="al alw">ไม่มีข้อมูล CONSI ในช่วงนี้${_consiLoaded?' — ตรวจสอบ filter ด้านบน':''}</div>`:tbl}`;
 }
 function expConsi(){
   if(!_consiRows.length){toast('ไม่มีข้อมูล CONSI');return;}
@@ -9376,10 +9394,6 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
-
-
 
 
 
