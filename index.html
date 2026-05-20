@@ -1338,7 +1338,8 @@ async function pgForecast() {
   if(fcLoads[2].status==='rejected') console.warn('forecast sales history:',fcLoads[2].reason?.message||fcLoads[2].reason);
   const SKUS = typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER;
   const skuMap = Object.fromEntries([...SKUS.map(s=>[s.code,{name:s.name,lead_time:s.lt||7}]),...products.map(p=>[p.code,p])]);
-  const custRows = allCustomerRows();
+  const extraCodes = await ensureExtraCustCodes();
+  const custRows = allCustomerRows(extraCodes);
   const custMap  = Object.fromEntries(custRows.map(c=>[c.c,c.n]));
   fcAll.forEach(f=>{f.skuName=skuMap[f.sku]?.name||f.sku;f.leadTime=skuMap[f.sku]?.lead_time||7;f.custName=custMap[f.custCode]||f.custCode||'';});
   window._fcListCache = fcAll;
@@ -3885,6 +3886,14 @@ async function pgDash(){
     <div class="card"><div class="ch"><div class="ct2">สรุปมูลค่าการขาย (฿)</div><span style="font-size:11px;color:var(--TX3);font-weight:400">Sales value รายเดือน</span></div><div id="dash-val-tbl"></div></div>
   </div>`;
   setTimeout(dashCharts,50);
+  ensureExtraCustCodes().then(extraCodes=>{
+    const cgf=document.getElementById('cgf');
+    if(!cgf||!(extraCodes?.size>0))return;
+    const allCusts=allCustomerRows(extraCodes);
+    const groups=[...new Set(allCusts.map(c=>c.corp||'อื่นๆ'))].sort();
+    const curVal=cgf.value;
+    cgf.innerHTML='<option value="">ทั้งหมด</option>'+groups.map(g=>`<option value="${esc(g)}"${curVal===g?' selected':''}>${esc(g)}</option>`).join('');
+  });
 }
 function dashCharts(){
   const allowed=allowedSKUs();
@@ -7606,19 +7615,25 @@ function expProductGroups(){
   const rows=[];Object.entries(productGroups()).forEach(([g,items])=>items.forEach(code=>rows.push([g,code,skuI(code).name])));
   toXLSX([['Product Groups',['กลุ่มสินค้า','รหัสสินค้า','ชื่อสินค้า'],rows]],'Product_Groups_'+todayStr()+'.xlsx');
 }
-let _cgExtraCodes=null; // cache distinct cust_code จาก sales_transactions
+let _cgExtraCodes=null; // null=not started, 'loading'=in-progress, Set=done
+let _cgExtraCodesPromise=null;
+async function ensureExtraCustCodes(){
+  if(_cgExtraCodes instanceof Set) return _cgExtraCodes;
+  if(!_cgExtraCodesPromise){
+    _cgExtraCodes='loading';
+    _cgExtraCodesPromise=SB.getSalesCustCodes()
+      .then(codes=>{_cgExtraCodes=codes;return codes;})
+      .catch(e=>{console.warn('ensureExtraCustCodes:',e);_cgExtraCodes=new Set();return new Set();});
+  }
+  return _cgExtraCodesPromise;
+}
 async function renderCustGroups(){
   const profs=customerProfiles();
-  // render ทันทีด้วยข้อมูลที่มีอยู่ (Layer 1-3)
-  _renderCustGroupsTable(allCustomerRows(_cgExtraCodes),profs,_cgExtraCodes===null);
-  // load Layer 4 จาก sales_transactions ครั้งแรก (หรือถ้ายังไม่ได้โหลด)
-  if(_cgExtraCodes===null){
-    _cgExtraCodes=new Set(); // mark as loading (ไม่ re-trigger)
-    try{
-      const codes=await SB.getSalesCustCodes();
-      _cgExtraCodes=codes;
-      if(codes.size>0) _renderCustGroupsTable(allCustomerRows(codes),profs,false);
-    }catch(e){console.warn('renderCustGroups sales load:',e);}
+  const isLoaded=_cgExtraCodes instanceof Set;
+  _renderCustGroupsTable(allCustomerRows(isLoaded?_cgExtraCodes:null),profs,!isLoaded);
+  if(!isLoaded){
+    const codes=await ensureExtraCustCodes();
+    if(codes?.size>0) _renderCustGroupsTable(allCustomerRows(codes),profs,false);
   }
 }
 function _cgFilter(){
@@ -7654,7 +7669,7 @@ function _renderCustGroupsTable(rows,profs,loading){
     <button class="btn btn-sm btn-p" onclick="document.getElementById('cg-file').click()">📁 Import Excel</button>
     <button class="btn btn-sm btn-g" onclick="expGroupTemplate('cust')">Template</button>
     <button class="btn btn-sm btn-g" onclick="expCustomerGroups()">Export</button>
-    <button class="btn btn-sm" onclick="_cgExtraCodes=null;renderCustGroups()">🔄 Reload</button>
+    <button class="btn btn-sm" onclick="_cgExtraCodes=null;_cgExtraCodesPromise=null;renderCustGroups()">🔄 Reload</button>
     <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / Category แล้วระบบจะบันทึกทันที</span>
   </div>
   <div class="frow" style="margin-bottom:8px">
