@@ -1001,6 +1001,28 @@ const SB = {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, cb)
       .subscribe();
   },
+
+  // ดึง distinct cust_code จาก sales_transactions (ลูกค้าที่เคยซื้อจริง)
+  async getSalesCustCodes() {
+    const codes = new Set();
+    const PAGE = 2000;
+    let from = 0;
+    try {
+      while (true) {
+        const { data, error } = await getSupabaseClient()
+          .from('sales_transactions')
+          .select('cust_code')
+          .not('cust_code', 'is', null)
+          .neq('cust_code', '')
+          .range(from, from + PAGE - 1);
+        if (error) break;
+        (data || []).forEach(r => { if (r.cust_code) codes.add(String(r.cust_code).trim()); });
+        if (!data || data.length < PAGE) break;
+        from += PAGE;
+      }
+    } catch (e) { console.warn('getSalesCustCodes:', e); }
+    return codes;
+  },
 };
 
 // ════════════════════════════════════════════════
@@ -3441,14 +3463,20 @@ function getCustomerProfile(c){
   };
 }
 function salesCustomers(){return SD_CUSTS.map(getCustomerProfile);}
-function allCustomerRows(){
+function allCustomerRows(extraCodes=null){
+  const remCache=DB.get('remote_customers_cache')||[];
+  const remMap=Object.fromEntries(remCache.map(x=>[String(x.code||''),x]));
   const rows=salesCustomers(),seen=new Set(rows.map(c=>c.c));
-  (DB.get('remote_customers_cache')||[]).forEach(r=>{
+
+  // Layer 1: customers table จาก Express (remote_customers_cache)
+  remCache.forEach(r=>{
     const code=String(r.code||'').trim();
     if(!code||seen.has(code))return;
     rows.push(getCustomerProfile({c:code,n:r.name||code,ty:r.cust_group||'ขายจริง',grp:r.cust_group||'อื่นๆ',slm:r.slm_id||'',w:[0,0,0,0],g:[]}));
     seen.add(code);
   });
+
+  // Layer 2: CUST_NAMES static
   if(typeof CUST_NAMES==='object'){
     Object.entries(CUST_NAMES).forEach(([code,name])=>{
       if(!seen.has(code)){
@@ -3457,6 +3485,31 @@ function allCustomerRows(){
       }
     });
   }
+
+  // Layer 3: PROD_CUST — customer codes ที่เคยมียอดขาย (historical weights)
+  if(typeof PROD_CUST==='object'){
+    Object.values(PROD_CUST).forEach(slmObj=>
+      Object.values(slmObj||{}).forEach(custObj=>
+        Object.keys(custObj||{}).forEach(code=>{
+          if(!code||seen.has(code))return;
+          const r=remMap[code];
+          rows.push(getCustomerProfile({c:code,n:CUST_NAMES?.[code]||r?.name||code,ty:r?.cust_group||'ขายจริง',grp:r?.cust_group||'อื่นๆ',slm:r?.slm_id||'',w:[0,0,0,0],g:[]}));
+          seen.add(code);
+        })
+      )
+    );
+  }
+
+  // Layer 4: extraCodes จาก sales_transactions (async, passed in by caller)
+  if(extraCodes instanceof Set){
+    extraCodes.forEach(code=>{
+      if(!code||seen.has(code))return;
+      const r=remMap[code];
+      rows.push(getCustomerProfile({c:code,n:CUST_NAMES?.[code]||r?.name||code,ty:r?.cust_group||'ขายจริง',grp:r?.cust_group||'อื่นๆ',slm:r?.slm_id||'',w:[0,0,0,0],g:[]}));
+      seen.add(code);
+    });
+  }
+
   return rows.sort((a,b)=>String(a.c).localeCompare(String(b.c),'th'));
 }
 
@@ -4159,7 +4212,7 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
 }
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}){
   const key=`sales_rows_v2_${startYm}_${endYm}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}`;
-  const rows=await CACHE.get(key,()=>_sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,summaryOnly:!!opts.summaryOnly}));
+  const rows=await CACHE.get(key,()=>_sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,summaryOnly:!!opts.summaryOnly,dateFrom:`${startYm}-01`,dateTo:`${endYm}-31`}));
   window._salesRows2Y=rows;
   try{DB.set('sales_rows_cache',rows);}catch(_){}
   _applySalesRowsToSd(rows,activeMonth,slmId);
@@ -7533,34 +7586,98 @@ function expProductGroups(){
   const rows=[];Object.entries(productGroups()).forEach(([g,items])=>items.forEach(code=>rows.push([g,code,skuI(code).name])));
   toXLSX([['Product Groups',['กลุ่มสินค้า','รหัสสินค้า','ชื่อสินค้า'],rows]],'Product_Groups_'+todayStr()+'.xlsx');
 }
-function renderCustGroups(){
+let _cgExtraCodes=null; // cache distinct cust_code จาก sales_transactions
+async function renderCustGroups(){
   const profs=customerProfiles();
-  const rows=allCustomerRows();
+  // render ทันทีด้วยข้อมูลที่มีอยู่ (Layer 1-3)
+  _renderCustGroupsTable(allCustomerRows(_cgExtraCodes),profs,_cgExtraCodes===null);
+  // load Layer 4 จาก sales_transactions ครั้งแรก (หรือถ้ายังไม่ได้โหลด)
+  if(_cgExtraCodes===null){
+    _cgExtraCodes=new Set(); // mark as loading (ไม่ re-trigger)
+    try{
+      const codes=await SB.getSalesCustCodes();
+      _cgExtraCodes=codes;
+      if(codes.size>0) _renderCustGroupsTable(allCustomerRows(codes),profs,false);
+    }catch(e){console.warn('renderCustGroups sales load:',e);}
+  }
+}
+function _cgFilter(){
+  const q=(document.getElementById('cg-q')?.value||'').toLowerCase().trim();
+  const corpF=document.getElementById('cg-corp')?.value||'';
+  const catF=document.getElementById('cg-cat')?.value||'';
+  const slmF=document.getElementById('cg-slm')?.value||'';
+  const rows=[...document.querySelectorAll('#cg-tbody tr')];
+  rows.forEach(tr=>{
+    const d=tr.dataset;
+    const code=d['0']||'', name=d['1']||'', corp=d['2']||'', cat=d['3']||'', slm=d['4']||'';
+    let show=true;
+    if(q&&!`${code} ${name}`.toLowerCase().includes(q))show=false;
+    if(corpF&&corp!==corpF)show=false;
+    if(catF&&cat!==catF)show=false;
+    if(slmF&&slm!==slmF)show=false;
+    tr.style.display=show?'':'none';
+  });
+  const vis=rows.filter(r=>r.style.display!=='none').length;
+  const el=document.getElementById('cg-count');if(el)el.textContent=vis+' ลูกค้า';
+}
+function _renderCustGroupsTable(rows,profs,loading){
   const corps=[...new Set(rows.map(c=>c.corp||'อื่นๆ'))].sort((a,b)=>a.localeCompare(b,'th'));
   const cats=[...new Set(rows.map(c=>c.category||'ไม่ระบุ'))].sort((a,b)=>a.localeCompare(b,'th'));
+  const slms=salesMaster().filter(s=>s.active!==false);
+  const prevQ=document.getElementById('cg-q')?.value||'';
+  const prevCorp=document.getElementById('cg-corp')?.value||'';
+  const prevCat=document.getElementById('cg-cat')?.value||'';
+  const prevSlm=document.getElementById('cg-slm')?.value||'';
   document.getElementById('grp-body').innerHTML=`
-  <div class="frow">
+  <div class="frow" style="flex-wrap:wrap;gap:8px">
     <input type="file" id="cg-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importCustomerGroupsFile()">
     <button class="btn btn-sm btn-p" onclick="document.getElementById('cg-file').click()">📁 Import Excel</button>
     <button class="btn btn-sm btn-g" onclick="expGroupTemplate('cust')">Template</button>
     <button class="btn btn-sm btn-g" onclick="expCustomerGroups()">Export</button>
+    <button class="btn btn-sm" onclick="_cgExtraCodes=null;renderCustGroups()">🔄 Reload</button>
     <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / Category แล้วระบบจะบันทึกทันที</span>
   </div>
-  <div class="card"><div class="ch"><div class="ct2">Customer Group Mapping</div><div style="font-size:11px;color:var(--TX3)">${rows.length} ลูกค้า</div></div>
-    <div class="tw tw-scroll"><table><thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th>Corporate group</th><th>Category</th><th>Sales</th><th>แก้ไขโดย</th></tr></thead>
-    <tbody>${rows.map(c=>{const p=profs[c.c]||{};return `<tr>
-      <td class="mono">${esc(c.c)}</td>
-      <td><input class="inp-cell" value="${esc(c.n)}" onchange="saveCustomerGroup('${esc(c.c)}','name',this.value)"></td>
-      <td><input class="inp-cell" list="corp-list" value="${esc(c.corp||'')}" onchange="saveCustomerGroup('${esc(c.c)}','corporate',this.value)"></td>
-      <td><input class="inp-cell" list="cat-list" value="${esc(c.category||'')}" onchange="saveCustomerGroup('${esc(c.c)}','category',this.value)"></td>
-      <td><select onchange="saveCustomerGroup('${esc(c.c)}','slm',this.value)" style="width:100%;padding:5px;border:1px solid var(--BD);border-radius:6px;font-family:var(--font);font-size:12.5px">
-        ${salesOptionsHtml(c.slm)}
-      </select></td>
-      <td><span class="edby">${esc(p.edited_by||'—')}</span></td>
-    </tr>`;}).join('')}</tbody></table></div>
+  <div class="frow" style="margin-bottom:8px">
+    <input id="cg-q" type="text" value="${esc(prevQ)}" placeholder="ค้นหารหัส / ชื่อลูกค้า..." style="width:220px" oninput="_cgFilter()">
+    <label style="font-size:12px;font-weight:600;color:var(--TX2)">Corporate:</label>
+    <select id="cg-corp" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
+      <option value="">ทั้งหมด</option>${corps.map(g=>`<option value="${esc(g)}" ${prevCorp===g?'selected':''}>${esc(g)}</option>`).join('')}
+    </select>
+    <label style="font-size:12px;font-weight:600;color:var(--TX2)">Category:</label>
+    <select id="cg-cat" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
+      <option value="">ทั้งหมด</option>${cats.map(g=>`<option value="${esc(g)}" ${prevCat===g?'selected':''}>${esc(g)}</option>`).join('')}
+    </select>
+    <label style="font-size:12px;font-weight:600;color:var(--TX2)">Sales:</label>
+    <select id="cg-slm" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
+      <option value="">ทั้งหมด</option>${slms.map(s=>`<option value="${esc(s.code)}" ${prevSlm===s.code?'selected':''}>${esc(s.code+(s.name?' - '+s.name:''))}</option>`).join('')}
+    </select>
+  </div>
+  <div class="card">
+    <div class="ch">
+      <div class="ct2">Customer Group Mapping</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="cg-count" style="font-size:11px;color:var(--TX3)">${rows.length} ลูกค้า</span>
+        ${loading?`<span style="font-size:11px;color:var(--BL)">⏳ กำลังโหลดลูกค้าจาก Sales History...</span>`:''}
+      </div>
+    </div>
+    <div class="tw tw-scroll"><table>
+      <thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th style="min-width:200px">Corporate group</th><th style="min-width:160px">Category</th><th style="min-width:200px">Sales</th><th>แก้ไขโดย</th></tr></thead>
+      <tbody id="cg-tbody">${rows.map(c=>{const p=profs[c.c]||{};return `<tr data-0="${esc(c.c)}" data-1="${esc(c.n)}" data-2="${esc(c.corp||'อื่นๆ')}" data-3="${esc(c.category||'ไม่ระบุ')}" data-4="${esc(c.slm||'')}">
+        <td class="mono">${esc(c.c)}</td>
+        <td><input class="inp-cell" value="${esc(c.n)}" onchange="saveCustomerGroup('${esc(c.c)}','name',this.value)"></td>
+        <td><input class="inp-cell" list="corp-list" value="${esc(c.corp||'')}" onchange="saveCustomerGroup('${esc(c.c)}','corporate',this.value);this.closest('tr').dataset['2']=this.value;_cgFilter()"></td>
+        <td><input class="inp-cell" list="cat-list" value="${esc(c.category||'')}" onchange="saveCustomerGroup('${esc(c.c)}','category',this.value);this.closest('tr').dataset['3']=this.value;_cgFilter()"></td>
+        <td><select onchange="saveCustomerGroup('${esc(c.c)}','slm',this.value);this.closest('tr').dataset['4']=this.value;_cgFilter()" style="width:100%;padding:5px;border:1px solid var(--BD);border-radius:6px;font-family:var(--font);font-size:12.5px">
+          ${salesOptionsHtml(c.slm)}
+        </select></td>
+        <td><span class="edby">${esc(p.edited_by||'—')}</span></td>
+      </tr>`;}).join('')}</tbody>
+    </table></div>
     <datalist id="corp-list">${corps.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
     <datalist id="cat-list">${cats.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
   </div>`;
+  // re-apply filter ถ้ามี
+  if(prevQ||prevCorp||prevCat||prevSlm) _cgFilter();
 }
 function renderSalesMaster(){
   const q=(document.getElementById('sm-q')?.value||'').toLowerCase();
