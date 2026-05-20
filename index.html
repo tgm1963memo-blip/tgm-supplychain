@@ -3982,20 +3982,30 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   const querySlmId=slmId && !opts.disableQuerySlm ? String(slmId).trim() : '';
   let allData=[];
   let from=0;
-  const salesSource=opts.forceBaseSales ? 'sales_history' : 'v_sales_history_company';
-  const salesSelect=salesSource==='v_sales_history_company'
-    ? 'slm_id,sku,ym,qty,amount,company,product_name,group_name,plant'
-    : 'slm_id,sku,ym,qty,amount';
+  const useDaily=!!(opts.dateFrom&&opts.dateTo&&!opts.forceMonthly);
+  const salesSource=useDaily ? 'sales_transactions' : (opts.forceBaseSales ? 'sales_history' : 'v_sales_history_company');
+  const salesSelect=useDaily
+    ? 'slm_id,sku,doc_date,ym,qty,amount,company'
+    : (salesSource==='v_sales_history_company'
+      ? 'slm_id,sku,ym,qty,amount,company,product_name,group_name,plant'
+      : 'slm_id,sku,ym,qty,amount');
+  const rangeCol=useDaily?'doc_date':'ym';
+  const rangeStart=useDaily?opts.dateFrom:startYm;
+  const rangeEnd=useDaily?opts.dateTo:endYm;
   while(true){
     let q=getSupabaseClient()
       .from(salesSource)
       .select(salesSelect)
-      .gte('ym',startYm).lte('ym',endYm)
-      .order('ym')
+      .gte(rangeCol,rangeStart).lte(rangeCol,rangeEnd)
+      .order(rangeCol)
       .range(from,from+PAGE-1);
     if(opts.summaryOnly && !slmId) q=q.eq('slm_id','ALL');
     else if(querySlmId) q=q.or('slm_id.eq.'+querySlmId+',slm_id.like.*:'+querySlmId);
     let {data,error}=await q;
+    if(error && useDaily && /(sales_transactions|relation|schema cache|does not exist|not found)/i.test(error.message||'')){
+      console.warn('sales_transactions unavailable; fallback to monthly sales_history', error.message || error);
+      return _sbSalesRows(startYm,endYm,slmId,{...opts,forceMonthly:true});
+    }
     if(error && !opts.forceBaseSales && /(v_sales_history_company|relation|schema cache|does not exist|not found)/i.test(error.message||'')){
       console.warn('v_sales_history_company unavailable; retry sales_history', error.message || error);
       return _sbSalesRows(startYm,endYm,slmId,{...opts,forceBaseSales:true});
@@ -4003,9 +4013,9 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     if(error && /amount/i.test(error.message||'')){
       let q2=getSupabaseClient()
         .from(salesSource)
-        .select(salesSource==='v_sales_history_company' ? 'slm_id,sku,ym,qty,company,product_name,group_name,plant' : 'slm_id,sku,ym,qty')
-        .gte('ym',startYm).lte('ym',endYm)
-        .order('ym')
+        .select(useDaily ? 'slm_id,sku,doc_date,ym,qty,company' : (salesSource==='v_sales_history_company' ? 'slm_id,sku,ym,qty,company,product_name,group_name,plant' : 'slm_id,sku,ym,qty'))
+        .gte(rangeCol,rangeStart).lte(rangeCol,rangeEnd)
+        .order(rangeCol)
         .range(from,from+PAGE-1);
       if(opts.summaryOnly && !slmId) q2=q2.eq('slm_id','ALL');
       else if(querySlmId) q2=q2.or('slm_id.eq.'+querySlmId+',slm_id.like.*:'+querySlmId);
@@ -4064,7 +4074,8 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     qty,
     amount,
     company:(['TSS','TSSNV','TGM','CONSI'].includes(rowCompany)) ? rowCompany : (sp.prefixed ? _companyFromExpressBranch(sp.branch) : _skuCompanyFromProduct(prod,r.sku)),
-    ym:r.ym,
+    ym:r.ym||String(r.doc_date||'').slice(0,7),
+    doc_date:r.doc_date||null,
       };
       const custWeights=(PROD_CUST?.[r.sku]?.[sp.slm])||null;
       if(isAll || !custWeights || !Object.keys(custWeights).length) return [base];
@@ -4386,6 +4397,7 @@ function sdTogOp(k){_sd.op[k]=!_sd.op[k];sdRender();}
 
 // ── YoY helpers ────────────────────────────────────────────────
 function _ymAddYear(ym,delta){const y=parseInt(ym.substring(0,4))+delta;return`${y}${ym.substring(4)}`;}
+function _dateAddYear(d,delta){if(!d||d.length<10)return d||'';const y=parseInt(d.substring(0,4))+delta;return`${y}${d.substring(4)}`;}
 function _yoyPct(cur,prev){
   if(!prev||prev===0)return cur>0?'<span style="color:var(--G);font-size:11px">↑ ใหม่</span>':'<span style="color:var(--TX3);font-size:11px">—</span>';
   const p=Math.round((cur/prev-1)*100);const c=p>=0?'var(--G)':'var(--R)';
@@ -4413,7 +4425,12 @@ async function _sdLoadYoY(){
     const gy=_sd.cy-543;const mm=String(_sd.cm+1).padStart(2,'0');
     start=`${gy-1}-${mm}`;end=`${gy-1}-${mm}`;
   }
-  const rows=await _sbSalesRows(start,end,slmId,{includeConsi:false,fastProducts:true});
+  const rows=await _sbSalesRows(start,end,slmId,{
+    includeConsi:false,
+    fastProducts:true,
+    dateFrom:_sd.pt==='custom'?_dateAddYear(_sd.dateFrom,-1):null,
+    dateTo:_sd.pt==='custom'?_dateAddYear(_sd.dateTo,-1):null
+  });
   _sdApi.yoy={
     total:rows.reduce((a,r)=>a+(Number(r.amount)||0),0),
     qty:rows.reduce((a,r)=>a+(Number(r.qty)||0),0),
@@ -4476,9 +4493,10 @@ async function sdLoadCustom(){
   const el=document.getElementById('sd-ta');
   if(el) el.innerHTML=`<div class="al ali" style="margin:12px">⏳ กำลังโหลดข้อมูล ${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}…</div>`;
   try{
-    const rows=await _sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true});
+    const rows=await _sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,dateFrom:_sd.dateFrom,dateTo:_sd.dateTo});
     const monthly=_sdKpiFromRows(rows);
     _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;
+    _sdApi.rangeMode=rows.some(r=>r.doc_date)?'daily':'monthly';
     _sdApi.monthly=monthly;
     _sdApi.total=rows.reduce((a,r)=>a+(Number(r.amount)||0),0);
     _sdApi.qty=rows.reduce((a,r)=>a+(Number(r.qty)||0),0);
@@ -4623,11 +4641,15 @@ function sdKPI(){
   const yoy=_sdApi.yoy;
   const isCustom=_sd.pt==='custom';
   const customRangeLbl=isCustom&&_sd.dateFrom&&_sd.dateTo?`${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}`:'';
+  const customGranularityNote=isCustom&&_sdApi.loaded&&_sdApi.rangeMode==='monthly'
+    ? '<div class="kh" style="color:var(--A)">ยังไม่มีข้อมูลรายวันใน Supabase — แสดงยอดรวมรายเดือน</div>'
+    : '';
   const _yoyLine=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${_sdFmtTotal(prev)} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳ กำลังโหลดข้อมูลปีที่แล้ว…':'')}</div>`:'';
   const _yoyLineNum=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${Math.round(prev).toLocaleString()} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳':'')}</div>`:'';
   kr.innerHTML=`
     <div class="kpi b"><div class="kl">ยอดขายรวม (มูลค่า)</div><div class="kv">${_sdFmtTotal(total)}</div>
       ${isCustom?`<div class="kh" style="color:var(--TX2)">${customRangeLbl||'ช่วงที่เลือก'}</div>`:`<div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>`}
+      ${customGranularityNote}
       <div style="display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:8px">${sparks}</div>
       ${_yoyLine(total,yoy?.total||0,'ปีที่แล้ว')}</div>
     <div class="kpi g"><div class="kl">ปริมาณขาย (กก./ถุง)</div><div class="kv">${Math.round(qty).toLocaleString()}</div>
@@ -9394,10 +9416,6 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
-
-
 
 
 
