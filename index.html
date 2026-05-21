@@ -4,12 +4,13 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"></noscript>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 <title>TGM Supply Chain</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
   --N:#1E3A5F;--N2:#D4AF37;--T:#0D5068;--G:#0A5940;--O:#C44B0A;--R:#A32D2D;
@@ -312,6 +313,26 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 const SUPABASE_URL      = 'https://wjhqvjlcshwnrukbdlgr.supabase.co';   // ← Project URL
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqaHF2amxjc2h3bnJ1a2JkbGdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTg4MDcsImV4cCI6MjA5MzQ5NDgwN30.5Px3wsyf4DtZL6TfMqaF5uyTBNo8axrmdbOrZsuYIMY'; // ← anon key
 const VISION_API_KEY    = 'AIzaSyBRhT3jP7rgAwk_L3Qy5br0AnAOInZFoUY';   // ← Google Vision (OCR)
+const CDN = {
+  xlsx: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+  chart: 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js',
+};
+const _assetLoads = {};
+function loadAsset(name, url, ready) {
+  if (ready()) return Promise.resolve();
+  if (_assetLoads[name]) return _assetLoads[name];
+  _assetLoads[name] = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.async = true;
+    s.onload = () => ready() ? resolve() : reject(new Error(`โหลด ${name} ไม่สำเร็จ`));
+    s.onerror = () => reject(new Error(`โหลด ${name} ไม่สำเร็จ`));
+    document.head.appendChild(s);
+  });
+  return _assetLoads[name];
+}
+const ensureXLSX = () => loadAsset('XLSX', CDN.xlsx, () => !!window.XLSX);
+const ensureChart = () => loadAsset('Chart.js', CDN.chart, () => !!window.Chart);
 
 // ── INIT ──────────────────────────────────────────────────────────
 // ต้องมี <script src="supabase-js@2"><\/script> วางใน <head> ก่อน script block นี้
@@ -1987,8 +2008,9 @@ function fcEntryTemplate(){
 function fcImportExcel(input){
   const file=input.files[0];if(!file)return;
   const rd=new FileReader();
-  rd.onload=e=>{
+  rd.onload=async e=>{
     try{
+      await ensureXLSX();
       const wb=XLSX.read(e.target.result,{type:'binary'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
@@ -3279,8 +3301,10 @@ const SALES_MAP = {"01-B1-0001": "แม็คโครสาขาราไว�
 
 let _charts=[];
 function destroyCharts(){_charts.forEach(c=>{try{c.destroy()}catch(e){}});_charts=[];}
-function mkChart(id,type,labels,datasets,opts={}){
-  const canvas=document.getElementById(id);if(!canvas)return;
+async function mkChart(id,type,labels,datasets,opts={}){
+  let canvas=document.getElementById(id);if(!canvas)return;
+  await ensureChart();
+  canvas=document.getElementById(id);if(!canvas)return;
   const ex=Chart.getChart(canvas);if(ex)ex.destroy();
   const ch=new Chart(canvas,{type,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{font:{family:"'IBM Plex Sans Thai',sans-serif",size:11},boxWidth:12}}},...opts}});
   _charts.push(ch);return ch;
@@ -3516,7 +3540,8 @@ function allCustomerRows(extraCodes=null){
 }
 
 // ── EXPORT ────────────────────────────────────────────────────────
-function toXLSX(sheets,fname){
+async function toXLSX(sheets,fname){
+  await ensureXLSX();
   const wb=XLSX.utils.book_new();
   sheets.forEach(([name,cols,rows])=>{
     const ws=XLSX.utils.aoa_to_sheet([cols,...rows]);
@@ -5804,7 +5829,8 @@ function importSKUSettings(e){
   const file=e.target.files[0];if(!file)return;
   const mode=document.getElementById('sku-imp-mode')?.value||'skip';
   const reader=new FileReader();
-  reader.onload=ev=>{
+  reader.onload=async ev=>{
+    await ensureXLSX();
     const wb=XLSX.read(ev.target.result,{type:'binary'});
     const ws=wb.Sheets[wb.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
@@ -6052,8 +6078,9 @@ function importCSV(e){
   const resultEl=document.getElementById('csv-res');
   resultEl.innerHTML='<div class="al ali">กำลังอ่านไฟล์...</div>';
   const reader=new FileReader();
-  reader.onload=ev=>{
+  reader.onload=async ev=>{
     try{
+      await ensureXLSX();
       const wb=XLSX.read(ev.target.result,{type:'binary'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const json=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
@@ -7540,8 +7567,9 @@ function deleteProductGroup(g){
 function importProductGroupsFile(){
   const file=document.getElementById('pg-file').files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     try{
+      await ensureXLSX();
       const data=new Uint8Array(e.target.result);
       const workbook=XLSX.read(data,{type:'array'});
       const sheet=workbook.Sheets[workbook.SheetNames[0]];
@@ -7570,8 +7598,9 @@ function importProductGroupsFile(){
 function importCustomerGroupsFile(){
   const file=document.getElementById('cg-file').files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     try{
+      await ensureXLSX();
       const data=new Uint8Array(e.target.result);
       const workbook=XLSX.read(data,{type:'array'});
       const sheet=workbook.Sheets[workbook.SheetNames[0]];
@@ -7816,8 +7845,9 @@ function expSalesMaster(){
 function importSalesMasterFile(){
   const file=document.getElementById('sm-file').files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     try{
+      await ensureXLSX();
       const data=new Uint8Array(e.target.result);
       const workbook=XLSX.read(data,{type:'array'});
       const sheet=workbook.Sheets[workbook.SheetNames[0]];
@@ -8793,8 +8823,9 @@ function psvDownloadTemplate(){
 function psvImportFile(e){
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=ev=>{
+  reader.onload=async ev=>{
     try{
+      await ensureXLSX();
       const wb=XLSX.read(ev.target.result,{type:'binary'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const json=XLSX.utils.sheet_to_json(ws,{header:1});
@@ -8871,21 +8902,10 @@ function psvRender() {
     <div class="kpi a"><div class="kl">ส่วนต่าง</div><div class="kv" style="font-size:18px">${totalDone-totalPlan>=0?'+':''}${fmt(totalDone-totalPlan)}</div><div class="kh">กก.</div></div>`;
   const cv = document.getElementById('psv-chart');
   if (cv) {
-    const ex = Chart.getChart(cv); if (ex) ex.destroy();
-    new Chart(cv, {
-      type: 'bar',
-      data: {
-        labels: cols.map(c=>c.lbl),
-        datasets: [
-          { label: 'แผนผลิต (กก.)', data: planData, backgroundColor: 'rgba(21,83,160,0.6)', borderColor: 'rgba(21,83,160,1)', borderWidth: 1 },
-          { label: 'ผลิตจริง (กก.)', data: doneData, backgroundColor: 'rgba(10,89,64,0.7)', borderColor: 'rgba(10,89,64,1)', borderWidth: 1 }
-        ]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { labels: { font: { family: "'IBM Plex Sans Thai',sans-serif", size: 11 }, boxWidth: 12 } } }
-      }
-    });
+    mkChart('psv-chart','bar',cols.map(c=>c.lbl),[
+      { label: 'แผนผลิต (กก.)', data: planData, backgroundColor: 'rgba(21,83,160,0.6)', borderColor: 'rgba(21,83,160,1)', borderWidth: 1 },
+      { label: 'ผลิตจริง (กก.)', data: doneData, backgroundColor: 'rgba(10,89,64,0.7)', borderColor: 'rgba(10,89,64,1)', borderWidth: 1 }
+    ]);
   }
   const tbl = document.getElementById('psv-tbl');
   if (tbl) tbl.innerHTML = `<div class="tw"><table>
@@ -9602,13 +9622,6 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
 
 
 
