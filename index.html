@@ -4030,6 +4030,11 @@ function _ymAdd(ym,delta){
   const d=new Date(y,m-1+delta,1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
+function _ymLastDate(ym){
+  const [y,m]=String(ym||'').split('-').map(Number);
+  if(!y||!m)return `${ym}-31`;
+  return `${ym}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
+}
 function _twoYearWindow(refDate=new Date()){
   const y=refDate.getFullYear();
   return {prevYear:y-1,currentYear:y,start:`${y-1}-01`,end:`${y}-12`,currentStart:`${y}-01`,currentEnd:`${y}-12`};
@@ -4122,6 +4127,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     from+=PAGE;
   }
   if(useDaily && allData.length===0 && !opts.forceMonthly){
+    if(opts.noMonthlyFallback) return [];
     console.warn('sales_transactions has no rows for selected date range; fallback to monthly sales_history');
     return _sbSalesRows(startYm,endYm,slmId,{...opts,forceMonthly:true});
   }
@@ -4142,6 +4148,14 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     products=await CACHE.get((opts.includeTgm?'products_all':'products')+(opts.includeConsi?'_consi':''),()=>SB.getProducts({includeTgm:opts.includeTgm===true,includeConsi:opts.includeConsi===true}));
   }
   const prodMap=Object.fromEntries((products||[]).map(p=>[String(p.code||p.sku||''),p]));
+  if(useDaily){
+    const codes=[...new Set(allData.map(r=>String(r.cust_code||'').trim()).filter(Boolean))];
+    const cached=DB.get('remote_customers_cache')||[];
+    const cachedCodes=new Set(cached.map(x=>String(x.code||'')));
+    if(codes.some(code=>!cachedCodes.has(code))){
+      try{await CACHE.get('remote_customers_cache_live',()=>SB.getCustomers(),10*60*1000);}catch(e){console.warn('customers cache:',e.message||e);}
+    }
+  }
   const names=_salesNameMap();
   const custCache=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),x]));
   const mapped=(allData)
@@ -4239,23 +4253,23 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
   const prevYm=activeMonth?_ymAdd(activeMonth,-1):'';
   const prev=prevYm?monthly.find(m=>m.ym===prevYm):null;
   _sdApi.vs=prev&&prev.total?Math.round((_sdApi.total/prev.total-1)*100):0;
-  const slmMap={};
-  sourceRows.forEach(r=>{if(r.slm_id) slmMap[r.slm_id]=r.slm_name||r.slm_id;});
-  Object.entries(_salesNameMap()).forEach(([code,name])=>{if(!slmMap[code])slmMap[code]=name;});
-  _sdApi.slmList=Object.entries(slmMap).map(([code,name])=>({code,name})).sort((a,b)=>a.code.localeCompare(b.code,'th'));
   _sdApi.custs=_sdBuildCusts(monthRows);
   _sdApi.prods=_sdBuildProds(monthRows);
-  _sdApi.slms=_sdBuildSlms(monthRows,_sdApi.slmList);
+  _sdApi.slms=_sdBuildSlms(monthRows);
+  _sdApi.slmList=_sdApi.slms.map(s=>({code:s.code,name:s.name}));
   _sdUpdateSlmDrop();
 }
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}){
-  const key=`sales_rows_v4_${startYm}_${endYm}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}_${opts.daily?'daily':'monthly'}`;
-  let rows=await CACHE.get(key,()=>_sbSalesRows(startYm,endYm,slmId,{
+  const fetchStart=(opts.daily&&opts.activeMonthOnly&&activeMonth)?_ymAdd(activeMonth,-1):startYm;
+  const fetchEnd=(opts.daily&&opts.activeMonthOnly&&activeMonth)?activeMonth:endYm;
+  const key=`sales_rows_v5_${fetchStart}_${fetchEnd}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}_${opts.daily?'daily':'monthly'}`;
+  let rows=await CACHE.get(key,()=>_sbSalesRows(fetchStart,fetchEnd,slmId,{
     includeConsi:false,
     fastProducts:true,
     summaryOnly:!!opts.summaryOnly,
-    dateFrom:opts.daily?`${startYm}-01`:null,
-    dateTo:opts.daily?`${endYm}-31`:null
+    noMonthlyFallback:!!opts.daily,
+    dateFrom:opts.daily?`${fetchStart}-01`:null,
+    dateTo:opts.daily?_ymLastDate(fetchEnd):null
   }));
   if(!rows.length && !slmId && !opts.summaryOnly){
     rows=await CACHE.get(`sales_rows_v4_${startYm}_${endYm}_ALL_summary_monthly`,()=>_sbSalesRows(startYm,endYm,'',{includeConsi:false,fastProducts:true,summaryOnly:true}));
@@ -4264,6 +4278,7 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
   window._salesRows2Y=rows;
   try{DB.set('sales_rows_cache',rows);}catch(_){}
   _applySalesRowsToSd(rows,activeMonth,slmId);
+  _sdApi.rangeMode=opts.daily?'daily':'monthly';
 }
 
 async function _loadSalesSummaryFromSupabase(startYm,endYm,activeMonth){
@@ -4340,7 +4355,11 @@ async function sdLoad(){
   badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
   try{
     const range=_sdMonthRange(24);
-    await _loadSalesFromSupabase(range.start,range.end,month,slmId);
+    const useCustomerDetail=_sd.at==='cust'||_sd.at==='slm';
+    await _loadSalesFromSupabase(range.start,range.end,month,slmId,{
+      daily:useCustomerDetail,
+      activeMonthOnly:useCustomerDetail
+    });
   }catch(e0){
     console.warn('Supabase sales_history detail unavailable, trying summary rows',e0.message);
     const range=_sdMonthRange(24);
@@ -4480,21 +4499,22 @@ function _sdBuildProds(rows){
 }
 function _sdBuildSlms(rows,slmList){
   const m={};
-  for(const s of slmList)m[s.code]={code:s.code,name:s.name,_tot:0,custs:{}};
   for(const r of rows){
-    if(!m[r.slm_id])m[r.slm_id]={code:r.slm_id,name:r.slm_name,_tot:0,custs:{}};
-    m[r.slm_id]._tot+=r.amount;
-    const sid=r.slm_id;
     const prof=getCustomerProfile({c:r.cust_code,n:r.cust_name,ty:r.cust_group||'ขายจริง',grp:r.cust_group||'อื่นๆ',slm:r.slm_id});
-    if(!m[sid].custs[r.cust_code])m[sid].custs[r.cust_code]={n:prof.n||r.cust_name,c:r.cust_code,grp:prof.corp||r.cust_group||'อื่นๆ',_tot:0,g:{}};
-    const c=m[sid].custs[r.cust_code];c._tot+=r.amount;
+    const sid=String(prof.slm||r.slm_id||'').trim();
+    if(!sid || String(sid).toUpperCase()==='ALL') continue;
+    if(!m[sid])m[sid]={code:sid,name:salesNameFor(sid)||r.slm_name||sid,_tot:0,custs:{}};
+    m[sid]._tot+=r.amount;
+    const custCode=r.cust_code||`SLM-${sid}`;
+    if(!m[sid].custs[custCode])m[sid].custs[custCode]={n:prof.n||r.cust_name||custCode,c:custCode,ty:prof.category||r.category||r.cust_group||'ขายจริง',category:prof.category||r.category||r.cust_group||'ขายจริง',grp:prof.corp||r.cust_group||'อื่นๆ',_tot:0,g:{}};
+    const c=m[sid].custs[custCode];c._tot+=r.amount;
     const pg=productGroupForSku(r.prod_code,r.prod_group);
     if(!c.g[pg])c.g[pg]={n:pg||'อื่นๆ',_tot:0,it:{}};
     c.g[pg]._tot+=r.amount;
     if(!c.g[pg].it[r.prod_code])c.g[pg].it[r.prod_code]={n:r.prod_name,c:r.prod_code,_tot:0};
     c.g[pg].it[r.prod_code]._tot+=r.amount;
   }
-  return Object.values(m).map(s=>({...s,custs:Object.values(s.custs).map(c=>({...c,g:Object.values(c.g).map(g=>({...g,it:Object.values(g.it).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
+  return Object.values(m).map(s=>({...s,custs:Object.values(s.custs).map(c=>({...c,g:Object.values(c.g).map(g=>({...g,it:Object.values(g.it).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).filter(s=>s._tot>0).sort((a,b)=>b._tot-a._tot);
 }
 function _sdUpdateSlmDrop(){
   const sel=document.getElementById('sd-slm-f');if(!sel)return;
@@ -5010,21 +5030,21 @@ function sdSlm(){
         <td class="r"><strong>${_sdFmtTotal(_sdV(s._tot))}</strong></td>
         <td class="r" style="color:var(--TX3)">—</td><td class="r">${_sdBar(s._tot,T)}</td>${_sdYoYCell(yoyM.slm[s.code]||0)}<td class="r">${_vc(s._tot,yoyM.slm[s.code]||0)}</td></tr>`;
       if(os){
-        const grpMap={};
-        s.custs.forEach(c=>{const g=c.grp||'อื่นๆ';if(!grpMap[g])grpMap[g]=[];grpMap[g].push(c);});
-        Object.entries(grpMap).forEach(([gn,custs])=>{
-          const gv=custs.reduce((a,c)=>a+c._tot,0);
-          const gk='sg'+s.code+'_'+gn;const og=_sd.op[gk];
-          h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
-            <td style="padding-left:22px;font-size:12px">${_xa(og)}<span class="badge bbl" style="font-size:10px">${gn}</span></td>
-            <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(gv))}</td>
-            <td class="r"></td><td class="r">${_sdBar(gv,s._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
-          if(og) custs.forEach(c=>{
+        const catMap={};
+        s.custs.forEach(c=>{const cat=c.category||c.ty||'ไม่ระบุ';if(!catMap[cat])catMap[cat]=[];catMap[cat].push(c);});
+        Object.entries(catMap).sort((a,b)=>b[1].reduce((x,c)=>x+c._tot,0)-a[1].reduce((x,c)=>x+c._tot,0)).forEach(([cat,custs])=>{
+          const catTot=custs.reduce((a,c)=>a+c._tot,0);
+          const catKey='sgcat'+s.code+'_'+cat;const ocat=_sd.op[catKey];
+          h+=`<tr onclick="sdTogOp('${catKey}')" style="cursor:pointer;background:var(--bg2)">
+            <td style="padding-left:22px;font-size:12px">${_xa(ocat)}<span class="badge bbl" style="font-size:10px">${cat}</span></td>
+            <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(catTot))}</td>
+            <td class="r"></td><td class="r">${_sdBar(catTot,s._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
+          if(ocat) custs.sort((a,b)=>b._tot-a._tot).forEach(c=>{
             const ck='sc'+s.code+'_'+c.c;const oc=_sd.op[ck];
             h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--bg)">
               <td style="padding-left:42px;font-size:12px">${_xa(oc)}<span class="badge bbgr" style="font-size:10px">${c.c}</span> ${c.n}</td>
               <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(c._tot))}</td>
-              <td class="r"></td><td class="r">${_sdBar(c._tot,gv)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
+              <td class="r"></td><td class="r">${_sdBar(c._tot,catTot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
             if(oc) c.g.forEach((g,gi)=>{
               const pgk='spg'+s.code+'_'+c.c+'_'+gi;const opg=_sd.op[pgk];
               h+=`<tr onclick="sdTogOp('${pgk}')" style="cursor:pointer;background:var(--bg2);font-size:12px">
@@ -5144,6 +5164,10 @@ function sdTab(el,t){
   el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.slmF='';_sd.sort={col:'val',dir:1};
   const qi=document.getElementById('sd-q');if(qi)qi.value='';
   const si=document.getElementById('sd-slm-f');if(si)si.value='';
+  const needsDaily=t==='cust'||t==='slm';
+  if(_sd.pt!=='year' && _sdApi.loaded && (needsDaily !== (_sdApi.rangeMode==='daily'))){
+    _sdApi.loaded=false;sdLoad();return;
+  }
   sdRender();
 }
 function sdTogView(){
@@ -9635,15 +9659,6 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
 
 
 
