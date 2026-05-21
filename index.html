@@ -3903,7 +3903,7 @@ async function pgDash(){
   </div>
   <div class="cgrid c2">
     <div class="card"><div class="ch"><div class="ct2">📊 ปริมาณการขาย: ยอดจริง vs Forecast vs PO Plan</div><span style="font-size:11px;color:var(--TX3);font-weight:400">หน่วย: กก.</span></div><div class="cbox"><canvas id="c-main"></canvas></div></div>
-    <div class="card"><div class="ch"><div class="ct2">Top 8 สินค้ายอดสูงสุด</div></div><div class="cbox"><canvas id="c-top"></canvas></div></div>
+    <div class="card"><div class="ch"><div class="ct2">Top 8 กลุ่มสินค้ายอดสูงสุด</div></div><div class="cbox"><canvas id="c-top"></canvas></div></div>
   </div>
   <div class="cgrid c2">
     <div class="card"><div class="ch"><div class="ct2">Stock vs ขั้นต่ำ</div></div><div class="cbox2"><canvas id="c-stk"></canvas></div></div>
@@ -3964,8 +3964,13 @@ function dashCharts(){
     {label:'Forecast (Sales)',data:fcData,backgroundColor:'rgba(10,89,64,.65)',borderRadius:4},
     {label:'PO Plan',data:poData,backgroundColor:'rgba(196,75,10,.65)',borderRadius:4},
   ],{scales:{y:{beginAtZero:true,title:{display:true,text:'กก.'}}}});
-  const topSKU=Object.entries(hist).filter(([k])=>skuAllowed(k)).map(([k,h])=>{const sk=skuI(k);const name=(h.name&&h.name!==k?h.name:sk.name)||k;return {k,n:name.substring(0,28),v:h.avg3};}).sort((a,b)=>b.v-a.v).slice(0,8);
-  mkChart('c-top','bar',topSKU.map(s=>s.n),[{label:'เฉลี่ย/เดือน',data:topSKU.map(s=>s.v),backgroundColor:'rgba(65,43,138,.72)',borderRadius:4}],{indexAxis:'y',scales:{x:{beginAtZero:true}}});
+  const topGroups=Object.entries(hist).filter(([k])=>skuAllowed(k)).reduce((acc,[k,h])=>{
+    const gn=productGroupForSku(k,'อื่นๆ');
+    acc[gn]=(acc[gn]||0)+(Number(h.avg3)||0);
+    return acc;
+  },{});
+  const topSKU=Object.entries(topGroups).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8);
+  mkChart('c-top','bar',topSKU.map(s=>s.n.substring(0,28)),[{label:'เฉลี่ย/เดือน',data:topSKU.map(s=>s.v),backgroundColor:'rgba(65,43,138,.72)',borderRadius:4}],{indexAxis:'y',scales:{x:{beginAtZero:true}}});
   const stkE=Object.entries(stk).filter(([k])=>skuAllowed(k)).map(([k,s])=>({k,qty:s.qty,min:(ss[k]?.min_stock||50),name:(skuI(k).name||k).substring(0,16)})).sort((a,b)=>a.qty/a.min-b.qty/b.min).slice(0,8);
   mkChart('c-stk','bar',stkE.map(s=>s.name),[
     {label:'Stock ปัจจุบัน',data:stkE.map(s=>s.qty),backgroundColor:stkE.map(s=>s.qty<s.min?'rgba(163,45,45,.75)':'rgba(10,89,64,.72)'),borderRadius:3},
@@ -4261,7 +4266,7 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
   _sdUpdateSlmDrop();
 }
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}){
-  const fetchStart=(opts.daily&&opts.activeMonthOnly&&activeMonth)?_ymAdd(activeMonth,-1):startYm;
+  const fetchStart=(opts.daily&&opts.activeMonthOnly&&activeMonth)?activeMonth:startYm;
   const fetchEnd=(opts.daily&&opts.activeMonthOnly&&activeMonth)?activeMonth:endYm;
   const key=`sales_rows_v6_${fetchStart}_${fetchEnd}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}_${opts.daily?'daily':'monthly'}`;
   let rows=await CACHE.get(key,()=>_sbSalesRows(fetchStart,fetchEnd,slmId,{
@@ -4460,24 +4465,6 @@ function _sdBuildCusts(rows){
     if(!g.it[r.prod_code])g.it[r.prod_code]={n:r.prod_name,c:r.prod_code,_tot:0};
     g.it[r.prod_code]._tot+=r.amount;
   }
-
-  // Add all known customers even when they have no sales in the current result set
-  allCustomerRows().forEach(c=>{
-    if(!m[c.c]){
-      m[c.c] = {
-        n: c.n || c.c,
-        c: c.c,
-        ty: c.category || c.ty || 'ไม่ระบุ',
-        category: c.category || c.ty || 'ไม่ระบุ',
-        corp: c.corp || c.grp || 'อื่นๆ',
-        grp: c.corp || c.grp || 'อื่นๆ',
-        slm: c.slm || '',
-        _tot: 0,
-        _qty: 0,
-        g: {}
-      };
-    }
-  });
 
   return Object.values(m).map(c=>({...c,g:Object.values(c.g).map(g=>({...g,it:Object.values(g.it).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
 }
@@ -5176,7 +5163,11 @@ function sdTogView(){
   const b=document.getElementById('sd-rv');if(b) b.textContent=_sd.mgrView?'Manager':'Sales';
   _sd.op={};sdRender();
 }
-function sdSort(col){if(_sd.sort.col===col)_sd.sort.dir*=-1;else{_sd.sort.col=col;_sd.sort.dir=-1;}sdRender();}
+function sdSort(col){
+  if(_sd.sort.col===col && _sd.sort.touched)_sd.sort.dir*=-1;
+  else{_sd.sort.col=col;_sd.sort.dir=1;_sd.sort.touched=true;}
+  sdRender();
+}
 function sdSetYear(year){_sd.cy=parseInt(year)||_sd.cy;sdRender();}
 function sdSetQ(v){_sd.q=v;sdRender();}
 function sdClear(){
@@ -5289,6 +5280,22 @@ async function pgConsignment(){
   consiRender();
 }
 async function _sbConsiRows(startYm,endYm){
+  const startDate=`${startYm}-01`;
+  const endDate=_ymLastDate(endYm);
+  try{
+    const rows=await _sbSalesRows(startYm,endYm,'',{
+      includeConsi:true,
+      fastProducts:true,
+      includeAllRows:false,
+      excludeAllRows:true,
+      noMonthlyFallback:true,
+      dateFrom:startDate,
+      dateTo:endDate
+    });
+    if(rows.length) return rows;
+  }catch(e){
+    console.warn('CONSI daily sales loader failed; trying monthly fallback', e.message || e);
+  }
   try{
     const rows=await _sbSalesRows(startYm,endYm,'',{
       includeConsi:true,
@@ -5298,7 +5305,7 @@ async function _sbConsiRows(startYm,endYm){
     });
     if(rows.length) return rows;
   }catch(e){
-    console.warn('CONSI shared sales loader failed; trying direct fallback', e.message || e);
+    console.warn('CONSI monthly shared loader failed; trying direct fallback', e.message || e);
   }
   const PAGE=1000;
   async function _pg(table,select,filter){
@@ -9687,5 +9694,3 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
