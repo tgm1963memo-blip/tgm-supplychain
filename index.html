@@ -4099,6 +4099,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     else if(querySlmId) q=q.or('slm_id.eq.'+querySlmId+',slm_id.like.*:'+querySlmId);
     let {data,error}=await q;
     if(error && useDaily && /(sales_transactions|relation|schema cache|does not exist|not found)/i.test(error.message||'')){
+      if(opts.noMonthlyFallback) return [];
       console.warn('sales_transactions unavailable; fallback to monthly sales_history', error.message || error);
       return _sbSalesRows(startYm,endYm,slmId,{...opts,forceMonthly:true});
     }
@@ -4262,7 +4263,7 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}){
   const fetchStart=(opts.daily&&opts.activeMonthOnly&&activeMonth)?_ymAdd(activeMonth,-1):startYm;
   const fetchEnd=(opts.daily&&opts.activeMonthOnly&&activeMonth)?activeMonth:endYm;
-  const key=`sales_rows_v5_${fetchStart}_${fetchEnd}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}_${opts.daily?'daily':'monthly'}`;
+  const key=`sales_rows_v6_${fetchStart}_${fetchEnd}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}_${opts.daily?'daily':'monthly'}`;
   let rows=await CACHE.get(key,()=>_sbSalesRows(fetchStart,fetchEnd,slmId,{
     includeConsi:false,
     fastProducts:true,
@@ -4271,8 +4272,8 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
     dateFrom:opts.daily?`${fetchStart}-01`:null,
     dateTo:opts.daily?_ymLastDate(fetchEnd):null
   }));
-  if(!rows.length && !slmId && !opts.summaryOnly){
-    rows=await CACHE.get(`sales_rows_v4_${startYm}_${endYm}_ALL_summary_monthly`,()=>_sbSalesRows(startYm,endYm,'',{includeConsi:false,fastProducts:true,summaryOnly:true}));
+  if(!rows.length && !slmId && !opts.summaryOnly && !opts.daily){
+    rows=await CACHE.get(`sales_rows_v6_${startYm}_${endYm}_ALL_summary_monthly`,()=>_sbSalesRows(startYm,endYm,'',{includeConsi:false,fastProducts:true,summaryOnly:true}));
     if(!_sd.at || _sd.at==='cust') _sd.at='prod';
   }
   window._salesRows2Y=rows;
@@ -9659,8 +9660,6 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
 
 
 
