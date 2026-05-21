@@ -7678,9 +7678,13 @@ function importCustomerGroupsFile(){
   };
   reader.readAsArrayBuffer(file);
 }
-function expProductGroups(){
-  const rows=[];Object.entries(productGroups()).forEach(([g,items])=>items.forEach(code=>rows.push([g,code,skuI(code).name])));
-  toXLSX([['Product Groups',['กลุ่มสินค้า','รหัสสินค้า','ชื่อสินค้า'],rows]],'Product_Groups_'+todayStr()+'.xlsx');
+async function expProductGroups(){
+  await ensureGroupProductsLoaded();
+  const groups=productGroups();
+  const skuGrpMap={};
+  Object.entries(groups).forEach(([g,items])=>(items||[]).forEach(code=>{if(!skuGrpMap[code])skuGrpMap[code]=g;}));
+  const rows=getSkusMerged().map(s=>[skuGrpMap[s.code]||'',s.code,s.name||'',s.plant||'']);
+  toXLSX([['Product Groups',['กลุ่มสินค้า','รหัสสินค้า','ชื่อสินค้า','โรง'],rows]],'Product_Groups_'+todayStr()+'.xlsx');
 }
 let _cgExtraCodes=null; // null=not started, 'loading'=in-progress, Set=done
 let _cgExtraCodesPromise=null;
@@ -7693,6 +7697,14 @@ async function ensureExtraCustCodes(){
       .catch(e=>{console.warn('ensureExtraCustCodes:',e);_cgExtraCodes=new Set();return new Set();});
   }
   return _cgExtraCodesPromise;
+}
+async function allCustomerRowsComplete(){
+  let codes=null;
+  try{codes=await ensureExtraCustCodes();}catch(_){codes=new Set();}
+  if(SB?.getCustomers){
+    try{await SB.getCustomers();}catch(e){console.warn('load customers for export:',e.message||e);}
+  }
+  return allCustomerRows(codes instanceof Set?codes:null);
 }
 async function renderCustGroups(){
   const profs=customerProfiles();
@@ -7905,10 +7917,17 @@ function importSalesMasterFile(){
   reader.readAsArrayBuffer(file);
 }
 
-function expGroupTemplate(mode){
-  if(mode==='prod') toXLSX([['Product Group Template',['Product Group','SKU'],[['Sample product group','10001']]]],'Product_Group_Template.xlsx');
+async function expGroupTemplate(mode){
+  if(mode==='prod'){
+    await ensureGroupProductsLoaded();
+    const groups=productGroups();
+    const skuGrpMap={};
+    Object.entries(groups).forEach(([g,items])=>(items||[]).forEach(code=>{if(!skuGrpMap[code])skuGrpMap[code]=g;}));
+    const rows=getSkusMerged().map(s=>[skuGrpMap[s.code]||'',s.code,s.name||'',s.plant||'']);
+    toXLSX([['Product Group Template',['Product Group','SKU','Name','Plant'],rows]],'Product_Group_Template.xlsx');
+  }
   else{
-    const custRows=allCustomerRows().map(c=>[c.c,c.n,c.corp||'',c.category||'',c.slm||'']);
+    const custRows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.category||'',c.slm||'']);
     const data=custRows.length?custRows:[['01-LF-0001','ตัวอย่างลูกค้า','Sample Corporate','ขายจริง','']];
     toXLSX([['Customer Group Template',['รหัสลูกค้า','ชื่อลูกค้า','Corporate group','Category','Sales'],data]],'Customer_Group_Template.xlsx');
   }
@@ -7967,8 +7986,8 @@ function saveCustomerGroup(code,field,val){
   profs[code][field]=val;profs[code].edited_by=UID;profs[code].edited_at=new Date().toISOString();
   DB.set('customer_profiles',profs);audit('EDIT_CUSTOMER_GROUP',code,{field,val});toast('บันทึกกลุ่มลูกค้าแล้ว');
 }
-function expCustomerGroups(){
-  const rows=allCustomerRows().map(c=>[c.c,c.n,c.corp||'',c.category||'',c.slm||'']);
+async function expCustomerGroups(){
+  const rows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.category||'',c.slm||'']);
   toXLSX([['Customer Groups',['รหัสลูกค้า','ลูกค้า','Corporate group','Category','Sales'],rows]],'Customer_Groups_'+todayStr()+'.xlsx');
 }
 
@@ -8271,22 +8290,27 @@ function saveNewSku(){
   pgSKUAdmin();
 }
 let _groupProductsLoading=false;
+let _groupProductsPromise=null;
 function normalizeSkuRow(s){
   return {code:String(s.code||s.sku||s.sku_code||'').trim(),name:String(s.name||s.name_th||s.sku_name||s.code||'').trim(),plant:s.plant||s.group_name||'',lt:s.lt||s.lead_time||7,moq:s.moq||0,custom:!!s.custom};
 }
 async function ensureGroupProductsLoaded(){
-  if(_groupProductsLoading||DB.get('remote_products_loaded'))return;
+  if(DB.get('remote_products_loaded'))return;
+  if(_groupProductsPromise)return _groupProductsPromise;
   _groupProductsLoading=true;
-  try{
-    const products=await CACHE.get('group_products',()=>SB.getProducts());
-    const rows=(products||[]).map(normalizeSkuRow).filter(s=>s.code);
-    if(rows.length){
-      DB.set('remote_products_cache',rows);
-      DB.set('remote_products_loaded',true);
-      if(page==='groups'&&_grpTab==='prod')renderProdGroups();
-    }
-  }catch(e){console.warn('load products for groups failed',e.message);}
-  finally{_groupProductsLoading=false;}
+  _groupProductsPromise=(async()=>{
+    try{
+      const products=await CACHE.get('group_products',()=>SB.getProducts());
+      const rows=(products||[]).map(normalizeSkuRow).filter(s=>s.code);
+      if(rows.length){
+        DB.set('remote_products_cache',rows);
+        DB.set('remote_products_loaded',true);
+        if(page==='groups'&&_grpTab==='prod')renderProdGroups();
+      }
+    }catch(e){console.warn('load products for groups failed',e.message);}
+    finally{_groupProductsLoading=false;_groupProductsPromise=null;}
+  })();
+  return _groupProductsPromise;
 }
 function getSkusMerged(opts={}){
   const custom=DB.get('custom_skus')||[];
@@ -9660,9 +9684,6 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
-
 
 
 
