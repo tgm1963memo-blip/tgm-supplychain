@@ -7649,18 +7649,21 @@ function importCustomerGroupsFile(){
       const hdr=(rows[0]||[]).map(h=>String(h||'').toLowerCase());
       const isNewFmt=hdr.length>=3&&(hdr[0].includes('รหัส')||hdr[0].includes('code'));
       rows.slice(1).forEach(row=>{
-        let code,corp,category,slm;
+        let code,name,corp,category,slm;
         if(isNewFmt){
           code=row[0]?.toString().trim();
+          name=row[1]?.toString().trim();
           corp=row[2]?.toString().trim();
           category=row[3]?.toString().trim();
           slm=row[4]?.toString().trim();
         }else{
           corp=row[0]?.toString().trim();
           code=row[1]?.toString().trim();
+          name=row[2]?.toString().trim();
         }
         if(!code)return;
         if(!profs[code])profs[code]={};
+        if(name)profs[code].name=name;
         if(corp)profs[code].corporate=corp;
         if(category)profs[code].category=category;
         if(slm)profs[code].slm=slm;
@@ -9684,6 +9687,5 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
 
 
