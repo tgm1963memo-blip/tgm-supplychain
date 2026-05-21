@@ -496,6 +496,34 @@ const SB = {
     const cutoff = new Date();
     cutoff.setMonth(cutoff.getMonth() - 4);
     const startYm = cutoff.toISOString().slice(0, 7);
+    try {
+      const { data, error } = await getSupabaseClient()
+        .from('v_sc_dashboard_sales_monthly')
+        .select('prod_code,prod_name,ym,qty,amount')
+        .gte('ym', startYm)
+        .order('prod_code').order('ym');
+      if (error) throw error;
+      const result = {};
+      for (const row of (data || [])) {
+        const sku = row.prod_code;
+        if (!result[sku]) result[sku] = { name: row.prod_name || sku, monthly: {}, amountMonthly: {}, avg3: 0 };
+        result[sku].monthly[row.ym] = (result[sku].monthly[row.ym] || 0) + (Number(row.qty) || 0);
+        result[sku].amountMonthly[row.ym] = (result[sku].amountMonthly[row.ym] || 0) + (Number(row.amount) || 0);
+      }
+      for (const sku in result) {
+        const months3 = [];
+        for (let i = 1; i <= 3; i++) {
+          const d = new Date();
+          d.setMonth(d.getMonth() - i);
+          months3.push(d.toISOString().slice(0, 7));
+        }
+        const vals = months3.map(m => result[sku].monthly[m] || 0).filter(v => v > 0);
+        result[sku].avg3 = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      }
+      if (Object.keys(result).length) return result;
+    } catch (e) {
+      console.warn('v_sc_dashboard_sales_monthly unavailable; fallback sales_history:', e.message || e);
+    }
     const PAGE = 1000;
     let from = 0;
     let rows = [];
@@ -581,8 +609,81 @@ const SB = {
     return rows;
   },
 
+  async upsertCustomerProfile(code, profile = {}) {
+    if (!code) return false;
+    const payload = {
+      code,
+      name: profile.name || null,
+      corporate: profile.corporate || profile.corp || null,
+      category: profile.category || null,
+      slm: profile.slm || null,
+      edited_by: UID || null,
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      const { error } = await getSupabaseClient()
+        .from('customer_profiles')
+        .upsert(payload, { onConflict: 'code' });
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.warn('upsertCustomerProfile:', e.message || e);
+      return false;
+    }
+  },
+
+  async upsertCustomerProfiles(profiles = {}) {
+    const rows = Object.entries(profiles).map(([code, p]) => ({
+      code,
+      name: p.name || null,
+      corporate: p.corporate || p.corp || null,
+      category: p.category || null,
+      slm: p.slm || null,
+      edited_by: UID || null,
+      updated_at: new Date().toISOString(),
+    })).filter(r => r.code);
+    if (!rows.length) return false;
+    try {
+      for (let i = 0; i < rows.length; i += 500) {
+        const { error } = await getSupabaseClient()
+          .from('customer_profiles')
+          .upsert(rows.slice(i, i + 500), { onConflict: 'code' });
+        if (error) throw error;
+      }
+      return true;
+    } catch (e) {
+      console.warn('upsertCustomerProfiles:', e.message || e);
+      return false;
+    }
+  },
+
   async getDataConfidence() {
     const sb = getSupabaseClient();
+    try {
+      const { data, error } = await sb
+        .from('v_sc_data_confidence')
+        .select('so_count,line_count,active_booking_count,orders_without_line,synced_at')
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        const warnings = [];
+        const ordersWithoutLine = Number(data.orders_without_line || 0);
+        const soCount = Number(data.so_count || 0);
+        const lineCount = Number(data.line_count || 0);
+        if (ordersWithoutLine) warnings.push(`พบ SO ไม่มี line ${ordersWithoutLine.toLocaleString()} รายการ`);
+        else if (soCount > lineCount) warnings.push('จำนวน SO มากกว่า line ตรวจสอบความครบถ้วนของ outbound_lines');
+        return {
+          syncedAt: data.synced_at || null,
+          soCount,
+          lineCount,
+          activeBookingCount: Number(data.active_booking_count || 0),
+          ordersWithoutLine,
+          warnings,
+        };
+      }
+    } catch (e) {
+      console.warn('v_sc_data_confidence unavailable; using scan fallback:', e.message || e);
+    }
     const countRows = async (table, applyFilter = null) => {
       let q = sb.from(table).select('id', { count: 'exact', head: true });
       if (applyFilter) q = applyFilter(q);
@@ -772,6 +873,30 @@ const SB = {
     if (status) q = q.eq('status', status);
     const { data } = await q;
     return _filterTgmSkuRows(data || [], opts);
+  },
+
+  async getBookingSummary(opts = {}) {
+    try {
+      const { data, error } = await getSupabaseClient()
+        .from('v_sc_booking_summary_by_sku')
+        .select('sku,sku_name,booking_count,total_qty,po_qty,so_qty,produce_qty,latest_receive_date,stock_qty,latest_created_at')
+        .order('sku');
+      if (error) throw error;
+      return _filterTgmSkuRows((data || []).map(r => ({
+        sku: r.sku,
+        skuName: r.sku_name || r.sku,
+        bookingCount: Number(r.booking_count || 0),
+        totalQty: Number(r.total_qty || 0),
+        poQty: Number(r.po_qty || 0),
+        soQty: Number(r.so_qty || 0),
+        produceQty: Number(r.produce_qty || 0),
+        latestDate: r.latest_receive_date || '',
+        stockQty: Number(r.stock_qty || 0),
+      })), opts);
+    } catch (e) {
+      console.warn('getBookingSummary aggregate unavailable:', e.message || e);
+      return null;
+    }
   },
 
   async addReservation(res) {
@@ -1026,6 +1151,22 @@ const SB = {
   // ดึง distinct cust_code จาก sales_transactions (ลูกค้าที่เคยซื้อจริง)
   async getSalesCustCodes() {
     const codes = new Set();
+    try {
+      const PAGE = 2000;
+      let from = 0;
+      while (true) {
+        const { data, error } = await getSupabaseClient()
+          .from('v_sc_sales_customer_codes')
+          .select('cust_code')
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        (data || []).forEach(r => { if (r.cust_code) codes.add(String(r.cust_code).trim()); });
+        if (!data || data.length < PAGE) return codes;
+        from += PAGE;
+      }
+    } catch (e) {
+      console.warn('v_sc_sales_customer_codes unavailable; fallback sales_transactions:', e.message || e);
+    }
     const PAGE = 2000;
     let from = 0;
     try {
@@ -3809,11 +3950,51 @@ function _histFromSalesRows(rows){
   });
   return bySku;
 }
+async function _sbDashboardSalesAggRows(startYm,endYm,includeTgm=false){
+  const PAGE=1000;
+  let rows=[],from=0;
+  while(true){
+    let q=getSupabaseClient()
+      .from('v_sc_dashboard_sales_monthly')
+      .select('ym,company,prod_code,prod_name,prod_group,qty,amount,invoice_count')
+      .gte('ym',startYm).lte('ym',endYm)
+      .order('ym')
+      .range(from,from+PAGE-1);
+    const {data,error}=await q;
+    if(error) throw error;
+    rows=rows.concat(data||[]);
+    if(!data||data.length<PAGE)break;
+    from+=PAGE;
+  }
+  return rows.filter(r=>includeTgm || _isAllowedCompanyRecord({company:r.company,prod_code:r.prod_code},{})).map(r=>({
+    branch:r.company||'',
+    prefixed:true,
+    is_all:false,
+    slm_id:'',
+    slm_key:'',
+    slm_name:'',
+    cust_code:'',
+    cust_name:'',
+    cust_group:'',
+    prod_group:r.prod_group||'อื่นๆ',
+    prod_code:r.prod_code,
+    prod_name:r.prod_name||r.prod_code,
+    qty:Number(r.qty)||0,
+    amount:Number(r.amount)||0,
+    invoices:Number(r.invoice_count)||0,
+    ym:r.ym,
+    company:r.company||''
+  }));
+}
 async function loadDashboardSalesHist(includeTgm = false){
   const range=_twoYearWindow();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=isSales()?(me?.slm_id||''):'';
-  let rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
+  let rows=[];
+  if(!slmId){
+    try{rows=await _sbDashboardSalesAggRows(range.start,range.end,includeTgm===true);}catch(e){console.warn('dashboard aggregate unavailable; using sales rows',e.message||e);}
+  }
+  if(!rows.length) rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
   if(includeTgm===true && !slmId && !rows.length){
     rows=await _sbSalesRows(range.start,range.end,'',{includeConsi:false,summaryOnly:true,fastProducts:true,includeTgm:true,includeAllRows:true});
   }
@@ -3878,7 +4059,6 @@ async function pgDash(){
     <div class="kpi ${confWarnings.length?'r':'a'}"><div class="kl">Booking Active</div><div class="kv">${fmt(confidence.activeBookingCount)}</div><div class="kh">${confWarnings.length?esc(confWarnings.join(' | ')):'ข้อมูลเชื่อมครบ'}</div></div>
   </div>`:'';
   document.getElementById('ct').innerHTML=`
-  ${confidenceHtml}
   <div class="krow">
     <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">รวม TSS + TSSNV + TGM</div></div>
     <div class="kpi g"><div class="kl">ยอดขาย TSS</div><div class="kv">฿${fmt(tssSales.amount || tssSales.qty)}</div><div class="kh">${fmt(tssSales.qty)} กก.</div></div>
@@ -3890,6 +4070,7 @@ async function pgDash(){
     <div class="kpi a"><div class="kl">ใกล้หมดอายุ ≤30 วัน</div><div class="kv">${expiring}</div><div class="kh">Lot</div></div>
     <div class="kpi p"><div class="kl">Forecast ที่กรอก</div><div class="kv">${fc.length}</div><div class="kh">รายการ</div></div>
   </div>
+  ${confidenceHtml}
   ${overdue?`<div class="al ald">⚠️ มี ${overdue} PO เลยกำหนดส่ง</div>`:''}
   ${expiring?`<div class="al alw">⚠️ มี ${expiring} Lot ใกล้หมดอายุ ≤30 วัน</div>`:''}
   ${_aiCard('ai-dash-box','AI Executive Summary','สรุปภาพรวมธุรกิจและแนะนำแนวทางบริหาร','aiDashInsight')}
@@ -4016,7 +4197,7 @@ const SD_CUSTS=[];
 const SD_PRODS=[];
 const SD_SALES=[];
 const SD_VS=[];
-let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'cust',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false};
+let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'prod',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false};
 let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[],yoy:null,yoyLoading:false};
 
 function _apiBase(){
@@ -4237,6 +4418,44 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   if(!slmId) return filteredByMode;
   return filteredByMode.filter(r=>r.slm_id===slmId || r.slm_key===slmId || r.slm_key.endsWith(':'+slmId));
 }
+async function _sbSalesOverviewAggRows(startYm,endYm,slmId=''){
+  const PAGE=1000;
+  let rows=[],from=0;
+  while(true){
+    let q=getSupabaseClient()
+      .from('v_sales_overview_sales_monthly')
+      .select('ym,company,slm_owner,category,corporate,cust_code,cust_name,prod_group,prod_code,prod_name,qty,amount,invoice_count')
+      .gte('ym',startYm).lte('ym',endYm)
+      .order('ym')
+      .range(from,from+PAGE-1);
+    if(slmId) q=q.eq('slm_owner',slmId);
+    const {data,error}=await q;
+    if(error) throw error;
+    rows=rows.concat(data||[]);
+    if(!data||data.length<PAGE)break;
+    from+=PAGE;
+  }
+  return rows.map(r=>({
+    branch:r.company||'',
+    prefixed:true,
+    is_all:false,
+    slm_id:r.slm_owner||'',
+    slm_key:r.slm_owner||'',
+    slm_name:salesNameFor(r.slm_owner)||r.slm_owner||'ไม่ระบุ',
+    cust_code:r.cust_code,
+    cust_name:r.cust_name||r.cust_code,
+    cust_group:r.corporate||r.category||'อื่นๆ',
+    category:r.category||'ขายจริง',
+    prod_group:r.prod_group||'อื่นๆ',
+    prod_code:r.prod_code,
+    prod_name:r.prod_name||r.prod_code,
+    qty:Number(r.qty)||0,
+    amount:Number(r.amount)||0,
+    invoices:Number(r.invoice_count)||0,
+    ym:r.ym,
+    company:r.company||''
+  }));
+}
 function _sdKpiFromRows(rows){
   const byMonth={};
   rows.forEach(r=>{if(!byMonth[r.ym])byMonth[r.ym]={ym:r.ym,total:0,qty:0,invoices:0};byMonth[r.ym].total+=r.amount;byMonth[r.ym].qty+=r.qty;byMonth[r.ym].invoices+=1;});
@@ -4268,23 +4487,35 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}){
   const fetchStart=(opts.daily&&opts.activeMonthOnly&&activeMonth)?activeMonth:startYm;
   const fetchEnd=(opts.daily&&opts.activeMonthOnly&&activeMonth)?activeMonth:endYm;
-  const key=`sales_rows_v6_${fetchStart}_${fetchEnd}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}_${opts.daily?'daily':'monthly'}`;
-  let rows=await CACHE.get(key,()=>_sbSalesRows(fetchStart,fetchEnd,slmId,{
-    includeConsi:false,
-    fastProducts:true,
-    summaryOnly:!!opts.summaryOnly,
-    noMonthlyFallback:!!opts.daily,
-    dateFrom:opts.daily?`${fetchStart}-01`:null,
-    dateTo:opts.daily?_ymLastDate(fetchEnd):null
-  }));
+  const key=`sales_rows_v7_${fetchStart}_${fetchEnd}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}_${opts.daily?'agg':'monthly'}`;
+  let rows=await CACHE.get(key,async()=>{
+    if(opts.daily){
+      try{
+        const agg=await _sbSalesOverviewAggRows(fetchStart,fetchEnd,slmId);
+        if(agg.length)return agg;
+      }catch(e){console.warn('sales overview aggregate unavailable; using transactions',e.message||e);}
+    }
+    return _sbSalesRows(fetchStart,fetchEnd,slmId,{
+      includeConsi:false,
+      fastProducts:true,
+      summaryOnly:!!opts.summaryOnly,
+      noMonthlyFallback:!!opts.daily,
+      dateFrom:opts.daily?`${fetchStart}-01`:null,
+      dateTo:opts.daily?_ymLastDate(fetchEnd):null
+    });
+  });
   if(!rows.length && !slmId && !opts.summaryOnly && !opts.daily){
     rows=await CACHE.get(`sales_rows_v6_${startYm}_${endYm}_ALL_summary_monthly`,()=>_sbSalesRows(startYm,endYm,'',{includeConsi:false,fastProducts:true,summaryOnly:true}));
     if(!_sd.at || _sd.at==='cust') _sd.at='prod';
   }
   window._salesRows2Y=rows;
-  try{DB.set('sales_rows_cache',rows);}catch(_){}
+  if(!opts.daily){
+    try{DB.set('sales_rows_cache',rows);}catch(_){}
+  }else{
+    try{localStorage.removeItem('tgm3_sales_rows_cache');}catch(_){}
+  }
   _applySalesRowsToSd(rows,activeMonth,slmId);
-  _sdApi.rangeMode=opts.daily?'daily':'monthly';
+  _sdApi.rangeMode=opts.daily?'aggregate':'monthly';
 }
 
 async function _loadSalesSummaryFromSupabase(startYm,endYm,activeMonth){
@@ -5153,7 +5384,8 @@ function sdTab(el,t){
   const qi=document.getElementById('sd-q');if(qi)qi.value='';
   const si=document.getElementById('sd-slm-f');if(si)si.value='';
   const needsDaily=t==='cust'||t==='slm';
-  if(_sd.pt!=='year' && _sdApi.loaded && (needsDaily !== (_sdApi.rangeMode==='daily'))){
+  const hasDetailMode=_sdApi.rangeMode==='daily'||_sdApi.rangeMode==='aggregate';
+  if(_sd.pt!=='year' && _sdApi.loaded && (needsDaily !== hasDetailMode)){
     _sdApi.loaded=false;sdLoad();return;
   }
   sdRender();
@@ -5174,6 +5406,13 @@ function sdClear(){
   _sd.q='';_sd.slmF='';
   const qi=document.getElementById('sd-q');if(qi)qi.value='';
   const si=document.getElementById('sd-slm-f');if(si)si.value='';
+  sdRender();
+}
+function refreshSalesOverviewGrouping(){
+  if(page!=='mysales'||!_sdApi.loaded)return;
+  const rows=window._salesRows2Y||DB.get('sales_rows_cache')||[];
+  if(!rows.length){sdRender();return;}
+  _applySalesRowsToSd(_salesRowsForMode(rows,{includeConsi:false}),_sdApi.month||_sdApiMonth(),'');
   sdRender();
 }
 function sdExport(){
@@ -5280,6 +5519,44 @@ async function pgConsignment(){
   consiRender();
 }
 async function _sbConsiRows(startYm,endYm){
+  try{
+    const PAGE=1000;
+    let rows=[],from=0;
+    while(true){
+      const {data,error}=await getSupabaseClient()
+        .from('v_sc_consi_monthly')
+        .select('ym,company,slm_owner,cust_code,cust_name,corporate,category,prod_group,prod_code,prod_name,qty,amount,invoice_count')
+        .gte('ym',startYm).lte('ym',endYm)
+        .order('ym')
+        .range(from,from+PAGE-1);
+      if(error) throw error;
+      rows=rows.concat(data||[]);
+      if(!data||data.length<PAGE)break;
+      from+=PAGE;
+    }
+    if(rows.length) return rows.map(r=>({
+      branch:r.company||'CONSI',
+      prefixed:true,
+      is_all:false,
+      slm_id:r.slm_owner||'',
+      slm_key:r.slm_owner||'',
+      slm_name:salesNameFor(r.slm_owner)||r.slm_owner||'CONSI',
+      cust_code:r.cust_code,
+      cust_name:r.cust_name||r.cust_code,
+      cust_group:r.corporate||r.category||'ฝากขาย',
+      category:r.category||'ฝากขาย',
+      prod_group:r.prod_group||'อื่นๆ',
+      prod_code:r.prod_code,
+      prod_name:r.prod_name||r.prod_code,
+      qty:Number(r.qty)||0,
+      amount:Number(r.amount)||0,
+      invoices:Number(r.invoice_count)||0,
+      ym:r.ym,
+      company:r.company||'CONSI'
+    })).filter(r=>_isConsignmentRow(r));
+  }catch(e){
+    console.warn('CONSI aggregate unavailable; using legacy loader', e.message || e);
+  }
   const startDate=`${startYm}-01`;
   const endDate=_ymLastDate(endYm);
   try{
@@ -7680,6 +7957,10 @@ function importCustomerGroupsFile(){
       });
       DB.set('customer_profiles',profs);
       audit('IMPORT_CUSTOMER_GROUPS_FILE','customer_profiles',{count,fmt:isNewFmt?'new':'legacy'});
+      SB?.upsertCustomerProfiles?.(profs);
+      CACHE.clearPrefix('sales_rows_v');
+      window._dashSalesHistCache=null;
+      refreshSalesOverviewGrouping();
       toast('นำเข้ากลุ่มลูกค้าจากไฟล์สำเร็จ '+count+' รายการ');
       pgGroupAdmin();
     }catch(err){
@@ -7892,6 +8173,9 @@ async function applySalesToCustomers(code){
   list.forEach(c=>{if(!profs[c])profs[c]={};profs[c].slm=code;profs[c].edited_by=UID;profs[c].edited_at=new Date().toISOString();count++;});
   DB.set('customer_profiles',profs);
   audit('LINK_SALES_CUSTOMERS',code,{count});
+  SB?.upsertCustomerProfiles?.(profs);
+  CACHE.clearPrefix('sales_rows_v');
+  refreshSalesOverviewGrouping();
   toast('Linked '+count+' customers to '+code);
   renderSalesMaster();
 }
@@ -7987,6 +8271,10 @@ function cfmGroupImport(mode){
     const knownCodes=new Set(rows.map(c=>c.c));
     data.forEach(({group,code})=>{if(!knownCodes.has(code)) return; if(!profs[code])profs[code]={}; profs[code].corporate=group; profs[code].edited_by=UID; profs[code].edited_at=new Date().toISOString();});
     DB.set('customer_profiles',profs);audit('IMPORT_CUSTOMER_GROUPS','customer_profiles',{count:data.length});
+    SB?.upsertCustomerProfiles?.(profs);
+    CACHE.clearPrefix('sales_rows_v');
+    window._dashSalesHistCache=null;
+    refreshSalesOverviewGrouping();
     toast('นำเข้ากลุ่มลูกค้าสำเร็จ '+data.length+' รายการ');
     closeM(); pgGroupAdmin();
   }
@@ -7995,6 +8283,10 @@ function saveCustomerGroup(code,field,val){
   const profs=customerProfiles();if(!profs[code])profs[code]={};
   profs[code][field]=val;profs[code].edited_by=UID;profs[code].edited_at=new Date().toISOString();
   DB.set('customer_profiles',profs);audit('EDIT_CUSTOMER_GROUP',code,{field,val});toast('บันทึกกลุ่มลูกค้าแล้ว');
+  SB?.upsertCustomerProfile?.(code,profs[code]);
+  CACHE.clearPrefix('sales_rows_v');
+  window._dashSalesHistCache=null;
+  refreshSalesOverviewGrouping();
 }
 async function expCustomerGroups(){
   const rows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.category||'',c.slm||'']);
@@ -8770,6 +9062,55 @@ function expBookings() {
 // ════════════════════════════════════════════════
 async function pgBookingSummary() {
   document.getElementById('ct').innerHTML='<div class="al ali">กำลังโหลดข้อมูลการจอง...</div>';
+  const aggRows = await CACHE.get('booking_summary_agg',()=>SB.getBookingSummary()).catch(()=>null);
+  if (aggRows && aggRows.length) {
+    window._bookingSummaryRows = aggRows;
+    const activeCount = aggRows.reduce((s,r)=>s+(Number(r.bookingCount)||0),0);
+    const totalProduce = aggRows.reduce((s,r)=>s+(Number(r.produceQty)||0),0);
+    document.getElementById('ct').innerHTML = `
+  <div class="krow">
+    <div class="kpi b"><div class="kl">SKU ที่มีการจอง</div><div class="kv">${aggRows.length}</div></div>
+    <div class="kpi g"><div class="kl">รายการทั้งหมด</div><div class="kv">${activeCount}</div></div>
+    <div class="kpi a"><div class="kl">จองรวม</div><div class="kv">${fmt(aggRows.reduce((s,r)=>s+(r.totalQty||0),0))}</div><div class="kh">กก.</div></div>
+    <div class="kpi r"><div class="kl">ต้องสั่งผลิต</div><div class="kv">${fmt(totalProduce)}</div><div class="kh">กก.</div></div>
+  </div>
+  <div class="card">
+    <div class="ch">
+      <div class="ct2">สรุปสถานะการจองสินค้า</div>
+      <button class="btn btn-sm btn-g" onclick="expBkSummary()">Export Excel</button>
+    </div>
+    <div class="tw"><table>
+      <thead><tr>
+        <th>รหัสสินค้า</th><th>ชื่อสินค้า</th>
+        <th class="r">จองรวม (กก.)</th>
+        <th class="r">Stock ปัจจุบัน</th>
+        <th class="r">PO รวม</th>
+        <th class="r">SO รวม</th>
+        <th>วันรับช้าสุด</th>
+        <th>ต้องผลิต (กก.)</th>
+        <th>สถานะ</th>
+      </tr></thead>
+      <tbody>${aggRows.map(row => {
+        const total = row.totalQty || 0;
+        const stock = row.stockQty || 0;
+        const complete = stock >= total && (row.produceQty||0) === 0;
+        const stBadge = complete ? '<span class="badge bbg">✓ ครบ</span>' : stock < total ? '<span class="badge bbr">Stock ไม่พอ</span>' : '<span class="badge bba">รอผลิต</span>';
+        return `<tr>
+          <td class="mono">${row.sku}</td>
+          <td>${esc(String(row.skuName||row.sku).substring(0,30))}</td>
+          <td class="r" style="font-weight:700">${fmt(total)}</td>
+          <td class="r" style="color:${stock<total?'var(--R)':'var(--G)'};font-weight:700">${fmt(stock)}</td>
+          <td class="r" style="color:var(--BL)">${row.poQty>0?fmt(row.poQty):'—'}</td>
+          <td class="r" style="color:var(--G)">${row.soQty>0?fmt(row.soQty):'—'}</td>
+          <td style="${row.latestDate&&new Date(row.latestDate)<new Date()?'color:var(--R);font-weight:700':''}">${fmtD(row.latestDate)}</td>
+          <td class="r">${row.produceQty>0?`<span class="badge bba">${fmt(row.produceQty)}</span>`:'<span class="badge bbg">ไม่ต้อง</span>'}</td>
+          <td>${stBadge}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  </div>`;
+    return;
+  }
   try{
     const remote=await CACHE.get('bookings',()=>SB.getBookings());
     if(remote?.length){
@@ -8838,6 +9179,14 @@ async function pgBookingSummary() {
 }
 
 function expBkSummary() {
+  if (window._bookingSummaryRows?.length) {
+    const rows = window._bookingSummaryRows.map(r => [
+      r.sku, r.skuName || '', r.totalQty || 0, r.stockQty || 0,
+      r.poQty || 0, r.soQty || 0, r.latestDate || '',
+      r.produceQty > 0 ? `ผลิต ${fmt(r.produceQty)}กก.` : 'ไม่ต้องผลิต'
+    ]);
+    return toXLSX([['BookingSummary',['รหัสสินค้า','ชื่อสินค้า','จองรวม(กก.)','Stockปัจจุบัน','PO รวม','SO รวม','วันรับช้าสุด','หมายเหตุ'],rows]],'BookingSummary_'+todayStr()+'.xlsx');
+  }
   const bks = DB.get('bookings') || [];
   const planRows = window._planRows || [];
   const bysku = {};
