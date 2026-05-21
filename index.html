@@ -3813,7 +3813,10 @@ async function loadDashboardSalesHist(includeTgm = false){
   const range=_twoYearWindow();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=isSales()?(me?.slm_id||''):'';
-  const rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
+  let rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
+  if(includeTgm===true && !slmId && !rows.length){
+    rows=await _sbSalesRows(range.start,range.end,'',{includeConsi:false,summaryOnly:true,fastProducts:true,includeTgm:true,includeAllRows:true});
+  }
   if(!includeTgm){
     window._salesRows2Y=rows;
     window._salesHistCache=_histFromSalesRows(rows);
@@ -3836,7 +3839,7 @@ async function pgDash(){
     CACHE.get('dash_stock_all',()=>SB.getStock({includeTgm:true})),
     CACHE.get('dash_fc_all',()=>SB.getForecasts(null,{includeTgm:true})),
     CACHE.get('dash_ss_all',()=>SB.getSkuSettings({includeTgm:true})),
-    CACHE.get('dash_sales_hist_all_v2',()=>loadDashboardSalesHist(true)),
+    loadDashboardSalesHist(true),
     CACHE.get('data_confidence',()=>SB.getDataConfidence()),
   ]);
   const value=(i,fallback=null)=>{
@@ -4246,8 +4249,18 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
   _sdUpdateSlmDrop();
 }
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}){
-  const key=`sales_rows_v2_${startYm}_${endYm}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}`;
-  const rows=await CACHE.get(key,()=>_sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,summaryOnly:!!opts.summaryOnly,dateFrom:`${startYm}-01`,dateTo:`${endYm}-31`}));
+  const key=`sales_rows_v4_${startYm}_${endYm}_${slmId||'ALL'}_${opts.summaryOnly?'summary':'detail'}_${opts.daily?'daily':'monthly'}`;
+  let rows=await CACHE.get(key,()=>_sbSalesRows(startYm,endYm,slmId,{
+    includeConsi:false,
+    fastProducts:true,
+    summaryOnly:!!opts.summaryOnly,
+    dateFrom:opts.daily?`${startYm}-01`:null,
+    dateTo:opts.daily?`${endYm}-31`:null
+  }));
+  if(!rows.length && !slmId && !opts.summaryOnly){
+    rows=await CACHE.get(`sales_rows_v4_${startYm}_${endYm}_ALL_summary_monthly`,()=>_sbSalesRows(startYm,endYm,'',{includeConsi:false,fastProducts:true,summaryOnly:true}));
+    if(!_sd.at || _sd.at==='cust') _sd.at='prod';
+  }
   window._salesRows2Y=rows;
   try{DB.set('sales_rows_cache',rows);}catch(_){}
   _applySalesRowsToSd(rows,activeMonth,slmId);
@@ -9622,9 +9635,6 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
-
-
-
 
 
 
