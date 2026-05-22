@@ -4198,7 +4198,7 @@ const SD_PRODS=[];
 const SD_SALES=[];
 const SD_VS=[];
 let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'prod',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false};
-let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[],yoy:null,yoyLoading:false};
+let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[],yoy:null,yoyLoading:false,_rows:[],_buildCache:{},_buildCacheKey:''};
 
 function _apiBase(){
   const saved=DB.get('api_base');
@@ -4461,6 +4461,37 @@ function _sdKpiFromRows(rows){
   rows.forEach(r=>{if(!byMonth[r.ym])byMonth[r.ym]={ym:r.ym,total:0,qty:0,invoices:0};byMonth[r.ym].total+=r.amount;byMonth[r.ym].qty+=r.qty;byMonth[r.ym].invoices+=1;});
   return Object.values(byMonth).sort((a,b)=>a.ym.localeCompare(b.ym));
 }
+function _sdSalesListFromRows(rows){
+  const m=new Map();
+  (rows||[]).forEach(r=>{
+    const code=String(r.slm_id||r.slm_key||'').trim();
+    if(!code || code.toUpperCase()==='ALL' || m.has(code)) return;
+    m.set(code,salesNameFor(code)||r.slm_name||code);
+  });
+  return [...m.entries()].map(([code,name])=>({code,name}));
+}
+function _sdBuildKey(rows,month,slmId){
+  return [month||'',slmId||'',rows?.length||0,rows?.[0]?.ym||'',rows?.at?.(-1)?.ym||''].join('|');
+}
+function _sdEnsureBuilt(kind){
+  if(!_sdApi.loaded || !_sdApi._rows) return;
+  const rows=_sdApi._rows||[];
+  const key=_sdBuildKey(rows,_sdApi.month,_sdApi._slmId||'');
+  if(_sdApi._buildCacheKey!==key){
+    _sdApi._buildCacheKey=key;
+    _sdApi._buildCache={};
+  }
+  if(kind==='cust'){
+    if(!_sdApi._buildCache.custs) _sdApi._buildCache.custs=_sdBuildCusts(rows);
+    _sdApi.custs=_sdApi._buildCache.custs;
+  }else if(kind==='prod'){
+    if(!_sdApi._buildCache.prods) _sdApi._buildCache.prods=_sdBuildProds(rows);
+    _sdApi.prods=_sdApi._buildCache.prods;
+  }else if(kind==='slm'){
+    if(!_sdApi._buildCache.slms) _sdApi._buildCache.slms=_sdBuildSlms(rows,_sdApi.slmList);
+    _sdApi.slms=_sdApi._buildCache.slms;
+  }
+}
 function _applySalesRowsToSd(rows,activeMonth,slmId=''){
   const sourceRows=slmId ? (rows||[]).filter(r=>r.slm_id===slmId || r.slm_key===slmId || r.slm_key?.endsWith(':'+slmId)) : (rows||[]);
   const monthly=_sdKpiFromRows(sourceRows);
@@ -4478,10 +4509,15 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
   const prevYm=activeMonth?_ymAdd(activeMonth,-1):'';
   const prev=prevYm?monthly.find(m=>m.ym===prevYm):null;
   _sdApi.vs=prev&&prev.total?Math.round((_sdApi.total/prev.total-1)*100):0;
-  _sdApi.custs=_sdBuildCusts(monthRows);
-  _sdApi.prods=_sdBuildProds(monthRows);
-  _sdApi.slms=_sdBuildSlms(monthRows);
-  _sdApi.slmList=_sdApi.slms.map(s=>({code:s.code,name:s.name}));
+  _sdApi._rows=monthRows;
+  _sdApi._slmId=slmId||'';
+  _sdApi._buildCache={};
+  _sdApi._buildCacheKey='';
+  _sdApi.custs=[];
+  _sdApi.prods=[];
+  _sdApi.slms=[];
+  _sdApi.slmList=_sdSalesListFromRows(monthRows);
+  _sdEnsureBuilt(_sd.at==='prod'?'prod':(_sd.at==='slm'?'slm':'cust'));
   _sdUpdateSlmDrop();
 }
 async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}){
@@ -4654,10 +4690,13 @@ async function sdLoadYear(){
     _sdApi.invoices=rows.length;
     const prevTotal=prevRows.reduce((sum,r)=>sum+(Number(r.amount)||0),0);
     _sdApi.vs=prevTotal?Math.round((_sdApi.total/prevTotal-1)*100):0;
-    _sdApi.custs=_sdBuildCusts(rows);
-    _sdApi.prods=_sdBuildProds(rows);
-    _sdApi.slms=_sdBuildSlms(rows,_sdApi.slmList);
+    _sdApi._rows=rows;
+    _sdApi._slmId=slmId||'';
+    _sdApi._buildCache={};
+    _sdApi._buildCacheKey='';
+    _sdApi.custs=[];_sdApi.prods=[];_sdApi.slms=[];
     _sdApi.loaded=true;
+    _sdEnsureBuilt(_sd.at==='prod'?'prod':(_sd.at==='slm'?'slm':'cust'));
     _sdUpdateSlmDrop();
   }catch(e0){
     console.warn('Supabase yearly detail unavailable, trying summary rows',e0.message);
@@ -4880,9 +4919,14 @@ async function sdLoadCustom(){
     _sdApi.total=rows.reduce((a,r)=>a+(Number(r.amount)||0),0);
     _sdApi.qty=rows.reduce((a,r)=>a+(Number(r.qty)||0),0);
     _sdApi.invoices=rows.length;_sdApi.ar=0;_sdApi.vs=0;
-    _sdApi.slmList=[...new Map(rows.map(r=>[r.slm_id,r.slm_name||r.slm_id]).filter(([c])=>c)).entries()].map(([code,name])=>({code,name}));
-    _sdApi.custs=_sdBuildCusts(rows);_sdApi.prods=_sdBuildProds(rows);
-    _sdApi.slms=_sdBuildSlms(rows,_sdApi.slmList);_sdApi.error=null;
+    _sdApi._rows=rows;
+    _sdApi._slmId=slmId||'';
+    _sdApi._buildCache={};
+    _sdApi._buildCacheKey='';
+    _sdApi.custs=[];_sdApi.prods=[];_sdApi.slms=[];
+    _sdApi.slmList=_sdSalesListFromRows(rows);
+    _sdEnsureBuilt(_sd.at==='prod'?'prod':(_sd.at==='slm'?'slm':'cust'));
+    _sdApi.error=null;
     _sdUpdateSlmDrop();
     if(_sd.showYoY){
       _sdApi.yoyLoading=true;
@@ -5076,6 +5120,7 @@ function sdCust(){
     return;
   }
   if(_sdApi.loaded){
+    _sdEnsureBuilt('cust');
     // ─── API data: Category(ty) → Customer → ProdGroup → Product ───
     const T=_sdApi.total||1;
     const yoyM=_sdYoYMaps();
@@ -5158,6 +5203,7 @@ function sdProd(){
   const q=(_sd.q||'').toLowerCase();
 
   if(_sdApi.loaded){
+    _sdEnsureBuilt('prod');
     const T=_sdApi.total||1;
     const yoyM=_sdYoYMaps();
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
@@ -5235,6 +5281,7 @@ function sdSlm(){
     </tr></thead><tbody>`;
 
   if(_sdApi.loaded){
+    _sdEnsureBuilt('slm');
     const yoyM=_sdYoYMaps();
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
     let slms=[..._sdApi.slms];
@@ -5385,9 +5432,10 @@ function sdTab(el,t){
   const si=document.getElementById('sd-slm-f');if(si)si.value='';
   const needsDaily=t==='cust'||t==='slm';
   const hasDetailMode=_sdApi.rangeMode==='daily'||_sdApi.rangeMode==='aggregate';
-  if(_sd.pt!=='year' && _sdApi.loaded && (needsDaily !== hasDetailMode)){
+  if(_sd.pt!=='year' && _sdApi.loaded && needsDaily && !hasDetailMode){
     _sdApi.loaded=false;sdLoad();return;
   }
+  if(_sdApi.loaded) _sdEnsureBuilt(t==='prod'?'prod':(t==='slm'?'slm':'cust'));
   sdRender();
 }
 function sdTogView(){
@@ -5421,6 +5469,7 @@ function sdExport(){
   let cols,rows=[],sheet;
   if(_sd.at==='cust'){
     if(_sdApi.loaded){
+      _sdEnsureBuilt('cust');
       cols=['ลูกค้า','รหัส','กลุ่มลูกค้า','Category','ยอดขาย/จำนวน','สัดส่วน%'];
       const T2=_sdApi.total||1;
       (_sdApi.custs||[]).forEach(c=>{
@@ -5451,6 +5500,7 @@ function sdExport(){
   } else if(_sd.at==='prod'){
     const q=(_sd.q||'').toLowerCase();
     if(_sdApi.loaded){
+      _sdEnsureBuilt('prod');
       cols=['กลุ่มสินค้า / สินค้า','ยอดขาย/จำนวน','สัด่วน%','ลูกค้าที่ซื้อ'];
       const T2=_sdApi.total||1;
       let prods=[...(_sdApi.prods||[])];
@@ -5476,6 +5526,7 @@ function sdExport(){
     const q=(_sd.q||'').toLowerCase();
     const sf=_sd.slmF||'';
     if(_sdApi.loaded){
+      _sdEnsureBuilt('slm');
       cols=['เซลส์','รหัส','ยอดขาย/จำนวน','ลูกค้า'];
       let slms=[...(_sdApi.slms||[])];
       if(q) slms = slms.filter(s=>s.name.toLowerCase().includes(q)||s.code.toLowerCase().includes(q));
