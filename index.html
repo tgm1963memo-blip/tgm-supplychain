@@ -494,7 +494,7 @@ const SB = {
   // ──────────────────────────────
   async getSalesHistory(slmId = 'ALL') {
     const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - 4);
+    cutoff.setFullYear(cutoff.getFullYear() - 2);
     const startYm = cutoff.toISOString().slice(0, 7);
     try {
       const { data, error } = await getSupabaseClient()
@@ -3994,7 +3994,13 @@ async function loadDashboardSalesHist(includeTgm = false){
   if(!slmId){
     try{rows=await _sbDashboardSalesAggRows(range.start,range.end,includeTgm===true);}catch(e){console.warn('dashboard aggregate unavailable; using sales rows',e.message||e);}
   }
-  if(!rows.length) rows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
+  const monthsNeeded=_monthsBetweenYm(range.start,range.end);
+  const monthsHave=new Set(rows.map(r=>r.ym).filter(Boolean));
+  const needsFallback=!rows.length || monthsNeeded.some(ym=>!monthsHave.has(ym));
+  if(needsFallback){
+    const fallbackRows=await _sbSalesRows(range.start,range.end,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
+    rows=rows.length ? _mergeSalesRows(rows,fallbackRows,range.start,range.end) : fallbackRows;
+  }
   if(includeTgm===true && !slmId && !rows.length){
     rows=await _sbSalesRows(range.start,range.end,'',{includeConsi:false,summaryOnly:true,fastProducts:true,includeTgm:true,includeAllRows:true});
   }
@@ -4224,6 +4230,25 @@ function _ymLastDate(ym){
 function _twoYearWindow(refDate=new Date()){
   const y=refDate.getFullYear();
   return {prevYear:y-1,currentYear:y,start:`${y-1}-01`,end:`${y}-12`,currentStart:`${y}-01`,currentEnd:`${y}-12`};
+}
+function _monthsBetweenYm(startYm,endYm){
+  const [sy,sm]=String(startYm||'').split('-').map(Number);
+  const [ey,em]=String(endYm||'').split('-').map(Number);
+  if(!sy||!sm||!ey||!em)return[];
+  const out=[];
+  let y=sy,m=sm;
+  while(y<ey||(y===ey&&m<=em)){
+    out.push(`${y}-${String(m).padStart(2,'0')}`);
+    m++;
+    if(m>12){m=1;y++;}
+  }
+  return out;
+}
+function _mergeSalesRows(primaryRows,fallbackRows,startYm,endYm){
+  const have=new Set((primaryRows||[]).map(r=>r.ym).filter(Boolean));
+  const missing=new Set(_monthsBetweenYm(startYm,endYm).filter(ym=>!have.has(ym)));
+  if(!missing.size)return primaryRows||[];
+  return [...(fallbackRows||[]).filter(r=>missing.has(r.ym)), ...(primaryRows||[])];
 }
 function _sdMonthRange(){
   return _twoYearWindow();
