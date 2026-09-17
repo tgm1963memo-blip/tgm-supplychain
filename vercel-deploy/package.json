@@ -1,0 +1,8 @@
+{
+  "name": "tgm-supplychain-vercel-deploy",
+  "private": true,
+  "description": "Build tooling only (terser minification for the Vercel-deployed copy of ../index.html) — see build.js. Not the deployed app itself; vercel-deploy/public/index.html is what actually ships.",
+  "devDependencies": {
+    "terser": "^5.51.0"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "tgm-supplychain-deploy-shared",
+  "private": true,
+  "description": "AST-based extraction tool (app-manifest.js + extract.js) shared by vercel-deploy/build.js and planning-deploy/build.js to produce department-specific builds of ../index.html from one canonical source.",
+  "dependencies": {
+    "acorn": "^8.11.3"
+  }
+}

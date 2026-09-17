@@ -1,0 +1,213 @@
+// Adds columns to already-live tables on machines that were provisioned before this column existed.
+// schema.sql's CREATE TABLE IF NOT EXISTS can't do this (it no-ops once the table exists at all), and
+// SQLite has no ADD COLUMN IF NOT EXISTS, so each addition is guarded by its own PRAGMA table_info check.
+function columnExists(db, table, col) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
+}
+
+function addColumnIfMissing(db, table, col, ddl) {
+  if (!columnExists(db, table, col)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    console.log(`[migrations] added ${table}.${col}`);
+  }
+}
+
+function runMigrations(db) {
+  // customer_profiles: 'name' was referenced by app.js/index.html since the table's introduction but
+  // was never actually in schema.sql, so every insert failed silently — see server/app.js's
+  // /api/customer_profiles mount for the fields list this restores parity with.
+  addColumnIfMissing(db, 'customer_profiles', 'name', 'name TEXT');
+  // AI-assisted corporate grouping confirm workflow (see server/routes/aiGrouping.js).
+  addColumnIfMissing(db, 'customer_profiles', 'corp_source', "corp_source TEXT NOT NULL DEFAULT 'manual'");
+  addColumnIfMissing(db, 'customer_profiles', 'corp_confidence', 'corp_confidence REAL');
+  addColumnIfMissing(db, 'customer_profiles', 'corp_confirmed', 'corp_confirmed INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing(db, 'customer_profiles', 'corp_confirmed_by', 'corp_confirmed_by TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'corp_confirmed_at', 'corp_confirmed_at TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'branch', 'branch TEXT');
+  // invoice_sales_monthly predates the slm_code dimension (see db/schema.sql). Wrong the first time:
+  // added the column and assumed the stale 3-column PK (company,ym,cust_code) wouldn't matter since
+  // syncInvoiceSales() DELETEs+re-INSERTs per company — missed that it now inserts one row per
+  // *distinct slm_code* for the same customer/month, which the old PK rejects outright. Confirmed
+  // live: every sync since that change failed with "UNIQUE constraint failed" (service-stderr.log),
+  // silently leaving every row's slm_code at its default '' — the salesperson breakdown had nothing
+  // to build from. SQLite can't ALTER a PRIMARY KEY, so recreate the table; it's fully disposable
+  // (rebuilt whole from ARTRN every 5-minute sync), so dropping it costs nothing but one cycle's wait.
+  addColumnIfMissing(db, 'invoice_sales_monthly', 'slm_code', "slm_code TEXT NOT NULL DEFAULT ''");
+  const invPk = db.prepare('PRAGMA table_info(invoice_sales_monthly)').all().filter((c) => c.pk > 0).map((c) => c.name);
+  if (!invPk.includes('slm_code')) {
+    db.exec(`
+      DROP TABLE invoice_sales_monthly;
+      CREATE TABLE invoice_sales_monthly (
+        company TEXT NOT NULL, ym TEXT NOT NULL, cust_code TEXT NOT NULL, slm_code TEXT NOT NULL DEFAULT '',
+        amount REAL NOT NULL DEFAULT 0, invoice_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (company, ym, cust_code, slm_code)
+      );
+      CREATE INDEX IF NOT EXISTS idx_invoice_sales_ym ON invoice_sales_monthly(ym);
+      CREATE INDEX IF NOT EXISTS idx_invoice_sales_company ON invoice_sales_monthly(company);
+    `);
+    console.log('[migrations] recreated invoice_sales_monthly with PK (company,ym,cust_code,slm_code)');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_sales_slm ON invoice_sales_monthly(slm_code)');
+
+  // products.unit: STMAS.QUCOD (stock unit) was never synced before — every row silently fell back
+  // to the column default 'กก.' regardless of the item's real unit (e.g. sold by "แพ" — pack — not
+  // weight). See syncProducts()'s upsert in importFromExpress.js for the sync side.
+  addColumnIfMissing(db, 'products', 'unit', "unit TEXT NOT NULL DEFAULT 'กก.'");
+
+  // stock_movements_wms_daily.return_qty/writeoff_qty: added 2026-08-17 — PM (customer returns) and
+  // XX (waste/spoilage write-offs) used to fall through every WMS_*_PREFIXES bucket uncategorized and
+  // were silently dropped from this table entirely. See importFromExpress.js's WMS_RETURN_PREFIXES/
+  // WMS_WRITEOFF_PREFIXES for the sync side.
+  addColumnIfMissing(db, 'stock_movements_wms_daily', 'return_qty', 'return_qty REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'stock_movements_wms_daily', 'writeoff_qty', 'writeoff_qty REAL NOT NULL DEFAULT 0');
+
+  // stock_movements_wms_daily.received_value: added 2026-08-18 — TRNVAL summed from RH/RS receiving
+  // rows, purchase-cost basis for tgm-wms's conversion-BOM average-cost feature. See
+  // importFromExpress.js's RH_RS_PREFIXES for the sync side.
+  addColumnIfMissing(db, 'stock_movements_wms_daily', 'received_value', 'received_value REAL NOT NULL DEFAULT 0');
+
+  // stock_movements_wms_daily.dispatched_qty: added 2026-08-19 — VL/LT/TP prefixes (destination side,
+  // any non-01 warehouse), separate from consi_qty/transfer_qty because these span many real branch
+  // destinations, not just the 03/04/05 consignment pool. Used only by tgm-wms's StockCountSummaryPage.
+  // See importFromExpress.js's WMS_DISPATCHED_PREFIXES for the sync side.
+  addColumnIfMissing(db, 'stock_movements_wms_daily', 'dispatched_qty', 'dispatched_qty REAL NOT NULL DEFAULT 0');
+
+  // promo_docs.create_date/doc_ref: added 2026-08-26 — document creation date and Express's YOUREF
+  // reference number, requested as extra columns on the promo history page. See syncPromoDocs()'s
+  // comment in importFromExpress.js for the DBF-field mapping.
+  addColumnIfMissing(db, 'promo_docs', 'create_date', 'create_date TEXT');
+  addColumnIfMissing(db, 'promo_docs', 'doc_ref', 'doc_ref TEXT');
+  // Index lives here, not in schema.sql, because this runs AFTER the column is guaranteed to exist —
+  // see schema.sql's comment on this same index for the crash this avoids.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_promo_docs_create_date ON promo_docs(create_date)');
+
+  // outbound_orders.dlv_date: added 2026-08-27 — tgm-wms's "SO ล่วงหน้า" was filtering/bucketing by
+  // order_date (when the order was placed) instead of the customer's actual expected delivery date,
+  // so an order created outside the viewed date range never showed even when its delivery date fell
+  // inside it. See schema.sql's comment on this column and importFromExpress.js's syncSales() for the
+  // DBF-field mapping (OESO.DBF's DLVDAT).
+  addColumnIfMissing(db, 'outbound_orders', 'dlv_date', 'dlv_date TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_outbound_orders_dlv_date ON outbound_orders(dlv_date)');
+
+  // promo_drafts: gp_pct/cost_price/cost_start_date/cost_end_date/discount_scope/equipment/updated_by
+  // were added here 2026-09 for the "สร้างใบโปรใหม่" redesign — SUPERSEDED 2026-09-11 by the
+  // header/lines split below (cost_start_date/cost_end_date/discount_scope/equipment/updated_by moved
+  // to the new promo_draft_headers table; gp_pct/cost_price are still line-level and live inline on
+  // the new slim promo_drafts shape's CREATE TABLE instead of via addColumnIfMissing). Removed the old
+  // addColumnIfMissing calls entirely — they used to re-add these columns to promo_drafts on every
+  // startup regardless of shape, which on a FRESH install meant they'd get re-added right back onto
+  // the new slim table seconds after schema.sql created it without them (confirmed live in a fresh-DB
+  // test before this fix). The shape-detection block below handles both cases correctly without them.
+
+  // audit_log.target: index added now that the promo-draft redesign actually filters by it (a
+  // per-document "ประวัติการแก้ไข" trail) — the column existed from the start but nothing queried by
+  // it before, so no index existed.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log(target)');
+
+  // promo_drafts header/lines split (2026-09-11, "ใบเคาะราคา" v2) — promo_drafts used to carry BOTH
+  // document-level fields (promo_name, condition_type, ...) AND line-level fields (cust_code, sku, ...)
+  // in one row per branch×SKU, which duplicated the header across every fanned-out row. That became a
+  // real problem once v2 needed document-only data (approval routing state, NPD/off-contract/marketing
+  // checkboxes, file attachments, a free-form other-costs table) — see server/db/schema.sql's comment
+  // on promo_draft_headers for the full reasoning. schema.sql now defines the FINAL slim shape for
+  // promo_drafts (CREATE TABLE IF NOT EXISTS, so it only takes effect on a brand-new DB); an
+  // already-provisioned DB still has the OLD wide table under that name (schema.sql's IF NOT EXISTS
+  // already no-op'd against it by the time this runs), so it must be dropped and recreated here —
+  // same pattern as the invoice_sales_monthly PK recreate above. Confirmed directly against the real
+  // production DB on 2026-09-11 that promo_drafts had 0 rows (the feature shipped 2026-09-08, nobody
+  // had used it yet) — safe to drop outright. Still guard defensively in case some OTHER environment
+  // reaches this with real rows already in the old shape: abort loudly rather than silently discard.
+  const promoDraftsCols = db.prepare('PRAGMA table_info(promo_drafts)').all().map((c) => c.name);
+  const promoDraftsIsOldShape = promoDraftsCols.includes('promo_name'); // only the pre-split shape had this
+  if (promoDraftsIsOldShape) {
+    const { n: promoDraftsRowCount } = db.prepare('SELECT COUNT(*) AS n FROM promo_drafts').get();
+    if (promoDraftsRowCount > 0) {
+      throw new Error(
+        `promo_drafts has ${promoDraftsRowCount} existing row(s) in the old (pre-header-split) shape — ` +
+        'refusing to auto-migrate and silently drop real data. Back up promo_drafts and migrate its rows ' +
+        'into promo_draft_headers/promo_drafts (new slim shape) by hand before rerunning.'
+      );
+    }
+    // FIXED (2026-09-13, /code-review): DROP+CREATE used to be two separate, unwrapped statements —
+    // if the process died in the gap (service restart mid-boot, OOM, power loss), promo_drafts would
+    // be left missing entirely, and the promoDraftsIsOldShape guard above (PRAGMA table_info on a
+    // now-nonexistent table returns no columns) would never re-trigger this block on the next boot,
+    // so every /api/promo_drafts route would 400 forever until someone noticed. Wrapping in a
+    // transaction (this codebase's established convention for atomic writes) makes the whole
+    // drop+recreate all-or-nothing.
+    try {
+      db.exec('BEGIN');
+      db.exec('DROP TABLE promo_drafts');
+      db.exec(`
+        CREATE TABLE promo_drafts (
+          id             TEXT PRIMARY KEY,
+          draft_no       TEXT NOT NULL,
+          corporate      TEXT,
+          cust_code      TEXT NOT NULL,
+          cust_name      TEXT,
+          sku            TEXT NOT NULL,
+          sku_name       TEXT,
+          normal_price   REAL,
+          unit_price     REAL NOT NULL DEFAULT 0,
+          discount_pct   REAL,
+          gp_pct         REAL,
+          cost_price     REAL,
+          start_date     TEXT,
+          due_date       TEXT,
+          created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_promo_drafts_draft_no ON promo_drafts(draft_no);
+        CREATE INDEX IF NOT EXISTS idx_promo_drafts_cust_sku ON promo_drafts(cust_code, sku);
+      `);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    console.log('[migrations] dropped old-shape promo_drafts (confirmed empty) — recreated slim lines-only shape');
+  }
+
+  // promo_drafts.weight (2026-09-16, code-review batch): per-line pack weight (กก.), user-entered,
+  // shown alongside the price breakdown — no auto-fill source exists yet, purely a new input field.
+  addColumnIfMissing(db, 'promo_drafts', 'weight', 'weight REAL');
+  // promo_drafts.gp_pct/cost_price (already existed) now specifically mean the "ราคาปกติ" side of the
+  // 3-column breakdown (ราคาขาย/GP%/ราคาทุนสุทธิ); these two new columns are the same breakdown for the
+  // "ราคาโปรโมชั่น" side (unit_price), since the two sides can have the SKU cost calculated from
+  // different selling prices even off the same GP% — see index.html's draftLineCost()/2026-09-16 note.
+  addColumnIfMissing(db, 'promo_drafts', 'gp_pct_promo', 'gp_pct_promo REAL');
+  addColumnIfMissing(db, 'promo_drafts', 'cost_price_promo', 'cost_price_promo REAL');
+
+  // promo_drafts.is_sub_item (2026-09-16, ข้อ 4.4; ขยายรองรับ 1.1.1 เพิ่มเติมวันเดียวกัน): รหัสสินค้าที่
+  // ขึ้นต้นด้วย "9" คือรหัสราคาพิเศษที่จับสินค้าจริงหลายรายการรวมกัน — ผู้ใช้กด "+ เพิ่มรายการย่อย" ใต้บรรทัด
+  // รหัส 9 แล้วบรรทัดย่อยที่ตามมาจะถูก flag ไว้ตรงนี้ เก็บเป็น "ความลึก" ไม่ใช่ boolean อีกต่อไป: 0=บรรทัด
+  // หลัก, 1=รายการย่อย (1.1), 2=รายการย่อยของย่อย (1.1.1 — เมื่อ SKU ของรายการย่อยชั้น 1 เองก็ขึ้นต้นด้วย 9)
+  // — จำกัดไว้ที่ 2 ชั้นกันการซ้อนไม่รู้จบ (client แสดงผลเป็นเลขลำดับ 1.1/1.1.1/1.2 ใต้บรรทัดหลัก 1 — ดู
+  // index.html's draftRenderLines()/_draftLineNumbers()) แต่ละบรรทัดย่อยยังเป็นสินค้าจริงที่มี SKU/ราคา/
+  // ปริมาณของตัวเองครบ ไม่ต่างจากบรรทัดทั่วไป แค่เลขลำดับที่แสดงผลต่างกันเท่านั้น — ไม่ต้องมี "group id" เพิ่ม
+  // เพราะบรรทัดย่อยจะถูกเก็บเรียงถัดจากบรรทัดแม่ของมันเสมอ (ลำดับแถวอาศัย created_at เดียวกับที่ระบบนี้
+  // พึ่งพาอยู่แล้วสำหรับการจับคู่ branch×SKU ตอนโหลดกลับ)
+  addColumnIfMissing(db, 'promo_drafts', 'is_sub_item', 'is_sub_item INTEGER DEFAULT 0');
+
+  // customer_profiles.gp_pct (2026-09-16): ใบเคาะราคา's per-line GP% now defaults from this customer
+  // master value instead of being typed from scratch every time — see index.html's draftLineField()/
+  // draftMsToggle() for where this gets read as the default.
+  addColumnIfMissing(db, 'customer_profiles', 'gp_pct', 'gp_pct REAL');
+
+  // promo_draft_headers.promo_no (2026-09-16): a SECOND, separate running number issued atomically
+  // only once a document clears final approval — the document is then renamed "ใบโปรโมชั่น" in the UI
+  // and keeps its original doc_no (PC-series) as a back-reference. Nullable (most rows never reach
+  // approval), so a plain UNIQUE column constraint isn't addable via ALTER TABLE in SQLite — use a
+  // partial unique index instead (allows unlimited NULLs, still rejects a real duplicate promo_no).
+  addColumnIfMissing(db, 'promo_draft_headers', 'promo_no', 'promo_no TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_pdh_promo_no ON promo_draft_headers(promo_no) WHERE promo_no IS NOT NULL');
+
+  // invoices.route_code/route_name (2026-09-16, สายรถ feature — see ROUTE_TABTYP in
+  // importFromExpress.js): ARTRN.AREACOD resolved via ISTAB TABTYP='41' at sync time.
+  addColumnIfMissing(db, 'invoices', 'route_code', 'route_code TEXT');
+  addColumnIfMissing(db, 'invoices', 'route_name', 'route_name TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_route_code ON invoices(route_code)');
+  require('./customerProfileRollups').migrateCustomerProfileRollups(db);
+}
+
+module.exports = { runMigrations, columnExists, addColumnIfMissing };
