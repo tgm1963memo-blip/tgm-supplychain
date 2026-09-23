@@ -144,6 +144,13 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 #draft-lines-table tbody td:nth-child(2){width:1%}
 #draft-lines-table tbody td:nth-child(7){white-space:nowrap;min-width:170px}
 #draft-lines-table tfoot td{text-align:left;border-right:none}
+/* ช่องวันที่แบบ พ.ศ. (draftRefreshBeDates) — ข้อความจริงของ input โปร่งใส, ข้อความ พ.ศ. วางทับ ไม่รับคลิก */
+.be-date{position:relative;display:block}
+.be-date input[type=date]{width:100%}
+.be-date input[type=date]::-webkit-datetime-edit{color:transparent}
+.be-date-text{position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--TX);font-size:13px}
+.be-date-text.empty{color:var(--TX3)}
+.be-date-text.disabled{color:var(--TX2)}
 .esc-item{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--TX);cursor:pointer;user-select:none}
 .esc-item input{width:auto;margin:0;accent-color:var(--A)}
 .esc-warn{display:flex;align-items:flex-start;gap:8px;background:var(--LY);color:var(--A);border:1px solid rgba(122,69,0,.25);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px}
@@ -1071,6 +1078,23 @@ const SB = {
 
   // ปริมาณขายจริงต่อคู่ (cust_code, sku) ในช่วงวันที่ระบุ — ใช้แสดง "ปริมาณขายในช่วงเวลาเดียวกัน" ในตาราง
   // สินค้าของหน้าสร้างใบโปร (query แบบ batched ครั้งเดียวทั้งตาราง ไม่ query ทีละแถว) sum ต่อคู่ทำ client-side
+  // ยอดขายรวมทุกลูกค้าของ SKU ในช่วงวันที่ (ใบเคาะราคา: fallback ขั้นสุดท้ายของ "ยอดขายช่วงโปรก่อนหน้า")
+  async getSalesQtyForSkus(skus = [], dateFrom = '', dateTo = '') {
+    if (!skus.length || !dateFrom || !dateTo) return [];
+    const pageSize = 20000;
+    let from = 0, data = [];
+    while (true) {
+      const { data: page, error } = await getSupabaseClient()
+        .from('sales_transactions').select('sku,qty')
+        .in('sku', skus).gte('tx_date', dateFrom).lte('tx_date', dateTo)
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      data = data.concat(page || []);
+      if (!page || page.length < pageSize) break;
+      from += pageSize;
+    }
+    return data;
+  },
   async getSalesQtyForPairs(custCodes = [], skus = [], dateFrom = '', dateTo = '') {
     if (!custCodes.length || !skus.length || !dateFrom || !dateTo) return [];
     // FIXED (code review 2026-09-15): same silent-truncation risk as getPromoDocsForOverlap above —
@@ -12836,10 +12860,11 @@ function promoRenderBody() {
 // Scoped to this page only (not the shared fmtD(), which many other pages use without a year) —
 // promo docs span multiple years (found real data going back to 2024 during testing), so "25 ก.ค."
 // alone is ambiguous here in a way it usually isn't on single-month pages elsewhere in the app.
+// (2026-09-23) ปี พ.ศ. 2 หลักตามที่ผู้ใช้ขอ เช่น "28 ก.พ. 70" (เดิม "28 ก.พ. 2570")
 function promoFmtD(d) {
   if (!d) return '—';
   const dt = new Date(d);
-  return dt.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
+  return dt.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' });
 }
 function promoStatusBadge(docstat) {
   if (docstat === 'M') return '<span class="badge bbg">ยืนยันแล้ว</span>';
@@ -13011,6 +13036,34 @@ function draftUpdateDayCounts() {
   const costDays = _draftDaysCount(document.getElementById('draft-cost-start')?.value, document.getElementById('draft-cost-end')?.value);
   const pEl = document.getElementById('draft-promo-days'); if (pEl) pEl.textContent = promoDays ? `${promoDays.toLocaleString()} วัน` : '—';
   const cEl = document.getElementById('draft-cost-days'); if (cEl) cEl.textContent = costDays ? `${costDays.toLocaleString()} วัน` : '—';
+  draftRefreshBeDates(); // ทุกจุดที่เปลี่ยนวันที่ (พิมพ์/เลือก/sync วันทุน/คัดลอก) ผ่านฟังก์ชันนี้เสมอ
+}
+// ช่องวันที่แสดงเป็น พ.ศ. 2 หลัก (2026-09-23): <input type=date> ของเบราว์เซอร์แสดงปี ค.ศ. ตาม locale เสมอ
+// แก้ไม่ได้ — ซ่อนตัวอักษรของช่องจริง (ยังคลิกเปิดปฏิทิน/พิมพ์ได้ ค่าที่เก็บยังเป็น YYYY-MM-DD เหมือนเดิม)
+// แล้ววางข้อความ วว/ดด/ปป (พ.ศ.) ทับไว้ด้านบน
+function _beDateText(v) {
+  const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${String((Number(m[1]) + 543) % 100).padStart(2, '0')}` : '';
+}
+function draftRefreshBeDates() {
+  document.querySelectorAll('#draft-fp input[type=date]').forEach(inp => {
+    let wrap = inp.parentElement;
+    if (!wrap.classList.contains('be-date')) {
+      wrap = document.createElement('span');
+      wrap.className = 'be-date';
+      inp.parentNode.insertBefore(wrap, inp);
+      wrap.appendChild(inp);
+      const label = document.createElement('span');
+      label.className = 'be-date-text';
+      wrap.appendChild(label);
+      inp.addEventListener('input', draftRefreshBeDates);
+      inp.addEventListener('click', () => { try { if (!inp.disabled) inp.showPicker?.(); } catch (e) { /* ignore */ } });
+    }
+    const label = wrap.querySelector('.be-date-text');
+    label.textContent = _beDateText(inp.value) || 'วว/ดด/ปป';
+    label.classList.toggle('empty', !inp.value);
+    label.classList.toggle('disabled', inp.disabled);
+  });
 }
 function _draftSelectedItemTypes() {
   return [...document.querySelectorAll('.draft-item-type-chk:checked')].map(el => el.value);
@@ -13267,7 +13320,7 @@ async function showPromoDraftModal(draftNo = '') {
         <tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2">Set อุปกรณ์</th>
           <th colspan="3" class="dl-prev dl-start">โปรก่อนหน้า</th>
           <th colspan="4" class="dl-norm dl-start">ราคาปกติ</th><th colspan="5" class="dl-promo dl-start">ราคาโปรโมชั่น</th>
-          <th rowspan="2" class="dl-start">ส่วนลด %</th><th rowspan="2">ยอดขายช่วงโปรก่อนหน้า<br><span style="font-weight:400;color:var(--TX3)">สาขาที่เลือก (ไม่มีใช้ CONSI)</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
+          <th rowspan="2" class="dl-start">ส่วนลด %</th><th rowspan="2">ยอดขายช่วงโปรก่อนหน้า<br><span style="font-weight:400;color:var(--TX3)">แหล่งข้อมูลดูใต้ตัวเลข</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
         <tr><th class="dl-prev dl-start">เลขที่</th><th class="dl-prev">ราคา</th><th class="dl-prev">ช่วงวันที่</th>
           <th class="dl-norm dl-start">ราคาขาย</th><th class="dl-norm">GP %</th><th class="dl-norm">ท้ายบิล %</th><th class="dl-norm">ราคาทุนสุทธิ</th>
           <th class="dl-promo dl-start" id="draft-compensate-th">Compensate<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span></th><th class="dl-promo">ราคาขาย</th><th class="dl-promo">GP %</th><th class="dl-promo">ท้ายบิล %</th><th class="dl-promo">ราคาทุนสุทธิ</th></tr>
@@ -13840,11 +13893,17 @@ async function draftRefreshLineRefData() {
       SB.getLatestSalesPricesBySku(skus),
       SB.getLatestPromoDocsBySku(skus),
     ]);
+    // "โปรก่อนหน้า" (2026-09-23): ใบล่าสุดที่เริ่มไปแล้ว (start_date ≤ วันนี้) ก่อนเสมอ — เดิมเลือก due_date
+    // ล่าสุดซึ่งมักเป็นโปรในอนาคตที่ยังไม่มียอดขายให้อ้างอิง ถ้าไม่มีใบที่เริ่มแล้วเลยจึงใช้ใบอนาคต (due ล่าสุด)
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const promoRank = r => (r.start_date || '') && (r.start_date || '') <= todayIso
+      ? `1|${r.start_date || ''}|${r.due_date || ''}|${r.sonum || ''}`
+      : `0|${r.due_date || ''}|${r.start_date || ''}|${r.sonum || ''}`;
     const priceMap = new Map();
     docs.forEach(d => {
       const key = `${d.cust_code}|${d.sku}`;
       const existing = priceMap.get(key);
-      if (!existing || (d.due_date || '') > (existing.due_date || '')) priceMap.set(key, d);
+      if (!existing || promoRank(d) > promoRank(existing)) priceMap.set(key, d);
     });
     const qtyMap = new Map();
     const latestSalesPriceMap = new Map();
@@ -13874,7 +13933,7 @@ async function draftRefreshLineRefData() {
       const price = Number(r.unit_price) || 0;
       if (price > 0) {
         const cur = latestPromoBySku.get(sku);
-        const dateKey = `${r.due_date || ''}|${r.start_date || ''}|${r.sonum || ''}`;
+        const dateKey = promoRank(r);
         if (!cur || dateKey > cur.dateKey) latestPromoBySku.set(sku, { price, dateKey, docNo: r.sonum || '', refNo: (r.doc_ref || '').trim(), startDate: r.start_date || '', dueDate: r.due_date || '', company: r.company || '' });
       }
     });
@@ -13884,7 +13943,7 @@ async function draftRefreshLineRefData() {
       custCodes.forEach(cc => {
         const key = `${cc}|${sku}`;
         const p = priceMap.get(key);
-        if (p && prevInfo === null) prevInfo = { price: p.unit_price, docNo: p.sonum || '', refNo: (p.doc_ref || '').trim(), startDate: p.start_date || '', dueDate: p.due_date || '', company: p.company || '' };
+        if (p && (prevInfo === null || promoRank(p) > prevInfo.rank)) prevInfo = { price: p.unit_price, docNo: p.sonum || '', refNo: (p.doc_ref || '').trim(), startDate: p.start_date || '', dueDate: p.due_date || '', company: p.company || '', rank: promoRank(p) };
         const sp = latestSalesPriceMap.get(key);
         if (sp && latestSales === null) latestSales = sp;
         lastMonthQty += qtyMap.get(key) || 0;
@@ -13893,7 +13952,9 @@ async function draftRefreshLineRefData() {
       const masterPrice = _draftMasterPrice(skuMeta);
       const salesRef = latestSales || latestBySku.get(sku) || null;
       const globalPromo = latestPromoBySku.get(sku) || null;
-      const prev = prevInfo || globalPromo;
+      // โปรของสาขาที่เลือกมาก่อน เว้นแต่ใบนั้นยังไม่เริ่มแต่มีใบของลูกค้าอื่นที่เริ่มไปแล้ว
+      const started = r => String(r?.rank || r?.dateKey || '').startsWith('1|');
+      const prev = prevInfo && (started(prevInfo) || !started(globalPromo)) ? prevInfo : (globalPromo || prevInfo);
       const refNo = String(prev?.refNo || '').trim();
       const docNo = String(prev?.docNo || '').trim();
       // *IsTssCost: ราคาอ้างอิงจากบริษัท TSS เป็น "ทุนสุทธิ" — ต้องแปลงย้อนเป็นราคาขายก่อนใช้ (ดู _draftCostToSell)
@@ -13924,24 +13985,42 @@ async function draftRefreshLineRefData() {
     const cachedQty = (codes, skuList, from, to) => {
       const key = `${from}|${to}|${skuList.join(',')}|${codes.join(',')}`;
       if (!_draftPrevSalesCache.has(key)) {
-        _draftPrevSalesCache.set(key, SB.getSalesQtyForPairs(codes, skuList, from, to).then(sumBySku)
+        const fetchRows = codes[0] === '*' ? SB.getSalesQtyForSkus(skuList, from, to) : SB.getSalesQtyForPairs(codes, skuList, from, to);
+        _draftPrevSalesCache.set(key, fetchRows.then(sumBySku)
           .catch(e => { _draftPrevSalesCache.delete(key); throw e; }));
       }
       return _draftPrevSalesCache.get(key);
     };
-    if (custCodes.length) await Promise.all([...byPeriod.entries()].map(async ([k, skuList]) => {
+    // ไล่หาแหล่งยอดขายในช่วงโปรก่อนหน้าทีละขั้น (2026-09-23 "ดึงมาให้ได้") — แสดงแหล่งที่ใช้กำกับเสมอ:
+    // 1) TSS สาขาที่เลือก → 2) CONSI สาขาคู่ BB- → 3) ลูกค้าในใบโปรก่อนหน้า (+ สาขาคู่ CONSI ของลูกค้านั้น)
+    // → 4) ยอดรวมทุกลูกค้าของสินค้านี้ในช่วงนั้น
+    const prevPromoCusts = (sku, ref) => [...new Set(latestPromoRows.concat(docs).filter(r => String(r.sku || '') === sku
+      && (r.start_date || '') === ref.prevStartDate && (r.due_date || '') === ref.prevDueDate
+      && (ref.prevRefNo ? (r.doc_ref || '').trim() === ref.prevRefNo : (r.sonum || '') === ref.prevDocNo))
+      .map(r => r.cust_code).filter(Boolean))];
+    await Promise.all([...byPeriod.entries()].map(async ([k, skuList]) => {
       const [from, to] = k.split('|');
+      const period = `ช่วงโปรก่อนหน้า ${promoFmtD(from)} – ${promoFmtD(to)}`;
+      const found = new Map(); // sku -> {qty, source, note}
+      const take = (map, source, note) => skuList.forEach(sku => { if (!found.has(sku) && map.get(sku) > 0) found.set(sku, { qty: map.get(sku), source, note }); });
+      const pending = () => skuList.filter(s => !found.has(s));
       try {
-        const tss = await cachedQty(custCodes, skuList, from, to);
-        const missing = skuList.filter(s => !(tss.get(s) > 0));
-        const consi = missing.length && consiCodes.length ? await cachedQty(consiCodes, missing, from, to) : new Map();
-        skuList.forEach(sku => {
-          const ref = next.get(sku), period = `ช่วงโปรก่อนหน้า ${promoFmtD(from)} – ${promoFmtD(to)}`;
-          if (tss.get(sku) > 0) { ref.prevPeriodQty = tss.get(sku); ref.prevPeriodNote = `ยอดขาย TSS สาขาที่เลือก ${period}`; }
-          else if (consi.get(sku) > 0) { ref.prevPeriodQty = consi.get(sku); ref.prevPeriodSource = 'CONSI'; ref.prevPeriodNote = `ไม่มียอดขาย TSS — ใช้ยอดฝากขาย CONSI (สาขาคู่ BB-) ${period}`; }
-          else { ref.prevPeriodQty = 0; ref.prevPeriodNote = `ไม่มียอดขายทั้ง TSS และ CONSI ${period}`; }
-        });
+        if (custCodes.length) take(await cachedQty(custCodes, skuList, from, to), '', `ยอดขาย TSS สาขาที่เลือก ${period}`);
+        if (pending().length && consiCodes.length) take(await cachedQty(consiCodes, pending(), from, to), 'CONSI', `ไม่มียอดขาย TSS — ใช้ยอดฝากขาย CONSI (สาขาคู่ BB-) ${period}`);
+        await Promise.all(pending().map(async sku => {
+          const custs = prevPromoCusts(sku, next.get(sku));
+          const codes = [...new Set([...custs, ...custs.map(_draftConsiPairCode).filter(Boolean)])];
+          if (!codes.length) return;
+          const m = await cachedQty(codes, [sku], from, to);
+          if (m.get(sku) > 0) found.set(sku, { qty: m.get(sku), source: 'ลูกค้าโปร', note: `สาขาที่เลือกไม่มียอด — ใช้ยอดของลูกค้าในใบโปรก่อนหน้า ${custs.length} ราย ${period}` });
+        }));
+        if (pending().length) take(await cachedQty(['*'], pending(), from, to), 'ทุกลูกค้า', `ไม่มียอดของสาขาที่เลือกและลูกค้าในโปร — ใช้ยอดรวมทุกลูกค้า ${period}`);
       } catch (e) { console.warn('prev period sales:', e.message || e); }
+      skuList.forEach(sku => {
+        const ref = next.get(sku), f = found.get(sku);
+        if (f) { ref.prevPeriodQty = f.qty; ref.prevPeriodSource = f.source; ref.prevPeriodNote = f.note; }
+        else { ref.prevPeriodQty = 0; ref.prevPeriodNote = `ไม่มียอดขายสินค้านี้เลยใน${period}`; }
+      });
     }));
     _draftRefData = next;
   } catch (e) { console.warn('draftRefreshLineRefData:', e.message || e); }
