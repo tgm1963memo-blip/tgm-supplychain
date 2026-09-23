@@ -253,6 +253,18 @@ function runMigrations(db) {
   addColumnIfMissing(db, 'promo_draft_headers', 'has_compensate', 'has_compensate INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'promo_draft_headers', 'special_distribution', 'special_distribution TEXT');
 
+  // ลายเซ็น (2026-09-23, แบบเดียวกับ e-memo): รูปลายเซ็นประจำตัวผู้ใช้ (PNG data URL) แยกตารางจาก sc_users
+  // เพื่อไม่ให้รายชื่อผู้ใช้ที่ทุกหน้าโหลดพ่วงรูปไปด้วย — ตอนอนุมัติ server snapshot รูปนี้ลง approver entry
+  // ใน levels_json (เปลี่ยนลายเซ็นทีหลังไม่กระทบเอกสารที่อนุมัติไปแล้ว)
+  db.exec(`CREATE TABLE IF NOT EXISTS user_signatures (
+    uid        TEXT PRIMARY KEY,
+    image      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  )`);
+  // promo_draft_headers.approval_history_json: ขั้นอนุมัติที่ผ่านไปแล้วก่อนถูกส่งต่อผู้บริหาร — เดิม levels_json
+  // ถูกแทนที่ด้วยขั้นผู้บริหารทั้งก้อน ทำให้ชื่อ/เวลา/ลายเซ็นผู้อนุมัติขั้นปกติหายไปจากเอกสาร
+  addColumnIfMissing(db, 'promo_draft_headers', 'approval_history_json', "approval_history_json TEXT NOT NULL DEFAULT '[]'");
+
   // invoice_lines (2026-09-17): STCRD invoice-level item lines for route-billing fallback
   // when an ARTRN invoice has no linked SO number.
   db.exec(`

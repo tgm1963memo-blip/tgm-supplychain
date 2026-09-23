@@ -76,6 +76,12 @@ test('isolated API approval and both attachment contracts', async t => {
     const response=await fetch(base+route,{method,headers:{Authorization:`Bearer ${tokens[uid]}`,...(body ? {'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});
     return {status:response.status,data:response.status===204?null:await response.json()};
   };
+  // ลายเซ็นประจำตัว: เขียนได้เฉพาะของตัวเอง, รับเฉพาะรูป PNG/JPEG data URL
+  const sigB='data:image/png;base64,iVBORw0KGgoB', sigA='data:image/png;base64,iVBORw0KGgoA';
+  assert.equal((await call('/user_signatures/me','PUT',{image:'<svg onload=x>'},'B')).status,400);
+  assert.equal((await call('/user_signatures/me','PUT',{image:sigB},'B')).status,200);
+  assert.equal((await call('/user_signatures/me','PUT',{image:sigA},'A')).status,200);
+  assert.deepEqual((await call('/user_signatures?uids=A,B','GET',undefined,'S')).data.map(r=>r.uid).sort(),['A','B']);
   const levels=[{id:'l1',mode:'any',approvers:[{uid:'B'}]}];
   db.prepare('INSERT INTO approval_workflow_templates(entity_type,levels_json) VALUES(?,?)').run('promo_draft',JSON.stringify(levels));
   const made=await call('/promo_draft_headers','POST',{is_npd:1}); assert.equal(made.status,201);
@@ -89,9 +95,16 @@ test('isolated API approval and both attachment contracts', async t => {
   assert.equal((await call(route,'PATCH',{status:'pending_exec_approval'},'B')).status,400);
   assert.equal((await call(route)).data[0].status,'pending_approval');
   db.prepare('INSERT INTO approval_workflow_templates(entity_type,levels_json) VALUES(?,?)').run('promo_draft_exec',JSON.stringify([{mode:'all',approvers:[{uid:'A'}]}]));
-  assert.equal((await call(route,'PATCH',{status:'pending_exec_approval'},'B')).data[0].status,'pending_exec_approval');
+  const escalated=(await call(route,'PATCH',{status:'pending_exec_approval'},'B')).data[0];
+  assert.equal(escalated.status,'pending_exec_approval');
+  // ขั้นปกติที่ผ่านแล้วถูกเก็บไว้ใน approval_history_json พร้อมเวลาและลายเซ็น snapshot ไม่หายไปตอน escalate
+  const bEntry=escalated.approval_history_json[0].approvers.find(a=>a.uid==='B');
+  assert.equal(bEntry.status,'approved'); assert.ok(bEntry.ts); assert.equal(bEntry.signature,sigB);
+  assert.equal((await call(route,'PATCH',{approval_history_json:[]},'A')).status,400);
   assert.equal((await call(route,'PATCH',{status:'approved'},'B')).status,400);
   const approved=await call(route,'PATCH',{status:'approved'}); assert.equal(approved.data[0].status,'approved'); assert.ok(approved.data[0].promo_no);
+  assert.equal(approved.data[0].levels_json[0].approvers[0].signature,sigA);
+  assert.equal(approved.data[0].approval_history_json.length,1);
   assert.equal((await call(route,'PATCH',{status:'approved'})).data[0].promo_no,approved.data[0].promo_no);
   for (const [api,parent,param] of [['custreg_attachments','sub_id','CR1'],['promo_draft_attachments','draft_no',made.data.draft_no]]) {
     const upload=async(bytes,type,uid='A')=>{

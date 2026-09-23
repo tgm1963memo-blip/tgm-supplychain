@@ -16,6 +16,8 @@ const FIELDS = [
   'cost_start_date', 'cost_end_date', 'start_date', 'due_date',
   'is_npd', 'has_off_contract_cost', 'has_marketing_cost', 'other_costs_json',
   'has_compensate', 'special_distribution',
+  // approval_history_json ถูกเขียนโดย validateChange เท่านั้น (client ส่งมาก็ถูก reject — ดู promoApproval.js)
+  'approval_history_json',
   'levels_json', 'current_level', 'approvers_json', 'status', 'keyed_by', 'keyed_at',
   // updated_by ยังรับจาก client ได้ (client ส่ง UID ของตัวเองมาบอกว่า "ฉันเป็นคนแก้ไขล่าสุด") ต่างจาก
   // created_by/doc_no ที่ห้ามเชื่อ เพราะ updated_by ไม่ใช่ช่องทางปลอมตัวเป็นคนอื่น (แค่บันทึกว่าใครกดล่าสุด
@@ -26,7 +28,7 @@ const FIELDS = [
 // per user request — client now sends/reads an array here even though the column itself is a plain
 // TEXT (no schema change needed, node:sqlite doesn't care), same JSON-in-a-TEXT-column convention
 // already used for other_costs_json/levels_json/approvers_json below.
-const JSON_FIELDS = ['other_costs_json', 'levels_json', 'approvers_json', 'item_type'];
+const JSON_FIELDS = ['other_costs_json', 'levels_json', 'approvers_json', 'item_type', 'approval_history_json'];
 
 // FIXED (2026-09-13, /code-review): used to redefine its own copy of lib/crud.js's genId here —
 // same algorithm, byte-for-byte, kept in sync by hand across 3 files. Import it instead.

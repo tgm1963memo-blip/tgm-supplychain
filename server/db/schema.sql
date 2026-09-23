@@ -813,6 +813,7 @@ CREATE TABLE IF NOT EXISTS promo_draft_headers (
   other_costs_json      TEXT NOT NULL DEFAULT '[]', -- [{item,amount,note}] แบบอิสระ ไม่แยกตาราง
   has_compensate        INTEGER NOT NULL DEFAULT 0,
   special_distribution  TEXT,
+  approval_history_json TEXT NOT NULL DEFAULT '[]', -- ขั้นอนุมัติที่ผ่านแล้วก่อน escalate ไปผู้บริหาร
   levels_json           TEXT NOT NULL DEFAULT '[]', -- clone จาก approval_workflow_templates ตอนส่งอนุมัติ
   current_level         INTEGER NOT NULL DEFAULT 0,
   approvers_json        TEXT NOT NULL DEFAULT '[]', -- flat mirror เหมือน custreg_subs.approvers_json

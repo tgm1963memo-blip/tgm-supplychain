@@ -8,7 +8,21 @@ function template(db, entity, allowEmpty = false) {
   if (error) throw new Error(error + ' กรุณาให้แอดมินตั้งค่าที่เมนูตั้งค่าเส้นทางอนุมัติ');
   return levels.map(lv => ({ ...lv, approvers: lv.approvers.map(a => ({ ...a, status: 'pending', comment: '', ts: null })) }));
 }
+// ลายเซ็นประจำตัว (user_signatures) ของผู้อนุมัติ ณ ตอนกด — snapshot ลง approver entry ไม่ผูกกับรูปปัจจุบัน
+function signatureOf(db, uid) {
+  try { return db.prepare('SELECT image FROM user_signatures WHERE uid=?').get(uid)?.image || null; }
+  catch { return null; }
+}
+function stampSignature(db, levels, current, uid) {
+  const actor = levels[current]?.approvers?.find(a => a.uid === uid);
+  if (actor && actor.status === 'approved') actor.signature = signatureOf(db, uid);
+}
+function history(old) {
+  try { return parse(old.approval_history_json || '[]') || []; } catch { return []; }
+}
 function validateChange(db, old, change, user) {
+  // ประวัติขั้นอนุมัติเขียนโดย server เท่านั้น
+  if (change.approval_history_json !== undefined) throw new Error('ไม่สามารถแก้ข้อมูลขั้นอนุมัติโดยตรง');
   const next = { ...old, ...change };
   const assign = (levels, current = 0) => Object.assign(change, { levels_json: JSON.stringify(levels), current_level: current, approvers_json: JSON.stringify(levels.flatMap(l => l.approvers)) });
   if (!old) {
@@ -22,6 +36,7 @@ function validateChange(db, old, change, user) {
   if (status === 'pending_approval' && ['draft', 'rejected'].includes(old.status)) {
     if (needsExec(next)) template(db, 'promo_draft_exec');
     assign(template(db, 'promo_draft', true));
+    change.approval_history_json = '[]'; // ส่งอนุมัติรอบใหม่ เริ่มประวัติใหม่
     return;
   }
   if (active && (status || change.levels_json !== undefined || change.current_level !== undefined || change.approvers_json !== undefined)) {
@@ -30,15 +45,24 @@ function validateChange(db, old, change, user) {
     if (!levels.length && old.status === 'pending_approval') {
       if (!['manager', 'sales_manager', 'admin', 'superadmin'].includes(user.role)) throw new Error('คุณไม่มีสิทธิ์อนุมัติ');
       result = { levels: [], current: 0, complete: true, rejected: status === 'rejected' };
+      // ไม่มี route: บันทึกผู้กดอนุมัติไว้ในประวัติ ให้เอกสารยังแสดงชื่อ/เวลา/ลายเซ็นได้
+      if (!result.rejected) {
+        const name = db.prepare('SELECT name FROM sc_users WHERE uid=?').get(user.uid)?.name || user.name || user.uid;
+        change.approval_history_json = JSON.stringify([...history(old), { label: 'ผู้อนุมัติ', mode: 'any',
+          approvers: [{ uid: user.uid, name, status: 'approved', comment: '', ts: new Date().toISOString(), signature: signatureOf(db, user.uid) }] }]);
+      }
     } else {
       const error = workflow.validate(levels, db.prepare('SELECT uid,is_active FROM sc_users').all());
       if (error) throw new Error(error);
       result = workflow.advance(levels, old.current_level, user.uid, status !== 'rejected');
+      stampSignature(db, result.levels, old.current_level, user.uid);
     }
     assign(result.levels, result.current);
     if (result.rejected) change.status = 'rejected';
     else if (!result.complete) change.status = old.status;
     else if (old.status === 'pending_approval' && needsExec(old)) {
+      // เก็บขั้นปกติที่ผ่านแล้ว (ชื่อ/เวลา/ลายเซ็น) ไว้ก่อนแทนที่ levels_json ด้วยขั้นผู้บริหาร
+      change.approval_history_json = JSON.stringify([...(change.approval_history_json ? parse(change.approval_history_json) : history(old)), ...result.levels]);
       assign(template(db, 'promo_draft_exec'));
       change.status = 'pending_exec_approval';
     } else change.status = 'approved';

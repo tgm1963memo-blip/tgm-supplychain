@@ -491,6 +491,30 @@ function buildApp(db, opts = {}) {
   });
   app.use('/api/promo_draft_line_comments', authed, promoDraftLineCommentsRouter);
 
+  // ลายเซ็นประจำตัว (2026-09-23, แบบ e-memo) — อ่านได้ทุกคนที่ login (ใช้แสดงในเอกสาร), เขียน/ลบได้เฉพาะ
+  // ของตัวเอง (uid มาจาก session เสมอ ไม่เชื่อค่าจาก client) รับเฉพาะ PNG/JPEG data URL ไม่เกิน 300KB
+  const SIGNATURE_MAX_CHARS = 300 * 1024;
+  const signaturesRouter = express.Router();
+  signaturesRouter.get('/', (req, res) => {
+    const uids = String(req.query.uids || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 200);
+    if (!uids.length) return res.json([]);
+    const rows = db.prepare(`SELECT uid, image, updated_at FROM user_signatures WHERE uid IN (${uids.map(() => '?').join(',')})`).all(...uids);
+    res.json(rows);
+  });
+  signaturesRouter.put('/me', (req, res) => {
+    const image = String(req.body?.image || '');
+    if (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(image)) return res.status(400).json({ error: 'ลายเซ็นต้องเป็นรูป PNG/JPEG' });
+    if (image.length > SIGNATURE_MAX_CHARS) return res.status(400).json({ error: 'รูปลายเซ็นใหญ่เกินไป' });
+    db.prepare(`INSERT INTO user_signatures (uid, image, updated_at) VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ON CONFLICT(uid) DO UPDATE SET image = excluded.image, updated_at = excluded.updated_at`).run(req.user.uid, image);
+    res.json(db.prepare('SELECT uid, image, updated_at FROM user_signatures WHERE uid = ?').get(req.user.uid));
+  });
+  signaturesRouter.delete('/me', (req, res) => {
+    db.prepare('DELETE FROM user_signatures WHERE uid = ?').run(req.user.uid);
+    res.status(204).end();
+  });
+  app.use('/api/user_signatures', authed, signaturesRouter);
+
   app.use('/api/promo_drafts', authed, makeCrudRouter(db, 'promo_drafts', {
     pk: 'id',
     idPrefix: 'PMD',
