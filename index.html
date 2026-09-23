@@ -4755,6 +4755,9 @@ function usersRenderBody(users) {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="_permTab='roles';nav('perms')">จัดการ Role</button>
+      <button class="btn btn-sm" onclick="usersDownloadTemplate()">⬇️ Template</button>
+      <button class="btn btn-sm" onclick="document.getElementById('users-import-file').click()">⬆️ นำเข้า Excel</button>
+      <input type="file" id="users-import-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="usersImportFile(event)">
       <button class="btn btn-sm btn-p" onclick="showAddUser()">+ เพิ่มผู้ใช้</button>
     </div>
   </div>
@@ -9320,6 +9323,136 @@ async function saveUser(idx){
     console.error('saveUser:',e);
     toast('บันทึกผู้ใช้ไม่สำเร็จ: '+(e.message||e),'warn');
   }
+}
+// ── นำเข้าผู้ใช้จาก Excel + Template (2026-09-23) ─────────────────────
+// คอลัมน์ตาม template: UID*, ชื่อ-นามสกุล*, แผนก, ตำแหน่ง, Role*, SLM ID, อีเมล, รหัสผ่าน, สถานะ
+// ผู้ใช้เดิม (UID ซ้ำ) = อัปเดตเฉพาะช่องที่กรอก ช่องว่าง = คงค่าเดิม, รหัสผ่านว่าง = ไม่เปลี่ยน
+// ผู้ใช้ใหม่ = ต้องมีชื่อและ Role, รหัสผ่านว่างใช้ค่าเริ่มต้นเดียวกับฟอร์มเพิ่มผู้ใช้ (1234)
+// บันทึกทีละคนผ่าน SB.upsertUser() เดิม (server hash รหัสผ่าน + audit ADD_USER/EDIT_USER เอง) แล้วสรุปผลรายแถว
+const USER_IMPORT_HEADERS = ['UID', 'ชื่อ-นามสกุล', 'แผนก', 'ตำแหน่ง', 'Role', 'SLM ID', 'อีเมล', 'รหัสผ่าน', 'สถานะ'];
+const USER_IMPORT_DEFAULT_PWD = '1234';
+let _usersImportPlan = [];
+function usersDownloadTemplate(){
+  const users = CACHE.peek('users') || DB.get('users') || [];
+  const rows = users.length
+    ? users.map(u => [u.uid, u.name || '', u.department || '', u.position || '', u.role || '', u.slm_id || '', u.email || '', '', (u.active || u.is_active) ? 'Active' : 'Inactive'])
+    : [['210', 'ตัวอย่าง ผู้ใช้', 'Sales', 'Staff', 'sales', '210', 'user@tgm.co.th', '1234', 'Active']];
+  const roles = Object.entries(userRoleDefs()).map(([k, r]) => [k, r.label || k]);
+  const notes = [
+    ['UID', 'จำเป็น — รหัสพนักงาน ถ้าตรงกับผู้ใช้เดิมจะเป็นการอัปเดต'],
+    ['ชื่อ-นามสกุล', 'จำเป็นสำหรับผู้ใช้ใหม่'],
+    ['Role', 'จำเป็นสำหรับผู้ใช้ใหม่ — ใส่รหัส Role หรือชื่อ Role ตามชีต "Role"'],
+    ['รหัสผ่าน', `ผู้ใช้ใหม่เว้นว่างได้ (ใช้ ${USER_IMPORT_DEFAULT_PWD}) · ผู้ใช้เดิมเว้นว่าง = ไม่เปลี่ยนรหัสผ่าน`],
+    ['สถานะ', 'Active / Inactive (เว้นว่าง = ผู้ใช้ใหม่ Active, ผู้ใช้เดิมคงเดิม)'],
+    ['ช่องอื่น', 'ผู้ใช้เดิม: เว้นว่าง = คงค่าเดิม'],
+  ];
+  toXLSX([['ผู้ใช้', USER_IMPORT_HEADERS, rows], ['Role', ['รหัส Role', 'ชื่อ Role'], roles], ['วิธีกรอก', ['คอลัมน์', 'คำอธิบาย'], notes]], 'Users_Template_' + todayStr() + '.xlsx');
+}
+function _userRoleFromCell(v){
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  const defs = userRoleDefs();
+  if (defs[s]) return s;
+  const hit = Object.entries(defs).find(([k, r]) => k.toLowerCase() === s.toLowerCase() || String(r.label || '').trim().toLowerCase() === s.toLowerCase());
+  return hit ? hit[0] : null; // null = ไม่รู้จัก
+}
+function _usersBuildImportPlan(rows){
+  const header = (rows[0] || []).map(h => String(h ?? '').trim());
+  const col = name => header.findIndex(h => h.replace(/\*/g, '').trim().toLowerCase() === name.toLowerCase());
+  const idx = Object.fromEntries(USER_IMPORT_HEADERS.map(h => [h, col(h)]));
+  if (idx['UID'] < 0) throw new Error('ไม่พบคอลัมน์ "UID" — กรุณาใช้ไฟล์จากปุ่ม ⬇️ Template');
+  const existing = new Map((CACHE.peek('users') || DB.get('users') || []).map(u => [String(u.uid), u]));
+  const seen = new Set();
+  const cell = (r, h) => idx[h] >= 0 ? String(r[idx[h]] ?? '').trim() : '';
+  return rows.slice(1).map((r, i) => ({ r, line: i + 2 })).filter(({ r }) => (r || []).some(v => String(v ?? '').trim())).map(({ r, line }) => {
+    const uid = cell(r, 'UID');
+    const cur = existing.get(uid);
+    const item = { line, uid, isNew: !cur, name: cell(r, 'ชื่อ-นามสกุล'), errors: [] };
+    const role = _userRoleFromCell(cell(r, 'Role'));
+    const statusCell = cell(r, 'สถานะ').toLowerCase();
+    const pwd = cell(r, 'รหัสผ่าน');
+    if (!uid) item.errors.push('ไม่มี UID');
+    else if (seen.has(uid)) item.errors.push('UID ซ้ำในไฟล์');
+    seen.add(uid);
+    if (role === null) item.errors.push(`ไม่รู้จัก Role "${cell(r, 'Role')}"`);
+    if (item.isNew && !item.name) item.errors.push('ผู้ใช้ใหม่ต้องมีชื่อ');
+    if (item.isNew && !role) item.errors.push('ผู้ใช้ใหม่ต้องมี Role');
+    if (statusCell && !['active', 'inactive'].includes(statusCell)) item.errors.push('สถานะต้องเป็น Active หรือ Inactive');
+    const email = cell(r, 'อีเมล');
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) item.errors.push('อีเมลไม่ถูกต้อง');
+    // payload: ผู้ใช้เดิมส่งเฉพาะช่องที่กรอก (upsertUser/server ข้ามช่องที่ไม่ได้ส่ง)
+    const p = { uid, name: item.name || cur?.name, role: role || cur?.role };
+    [['แผนก', 'department'], ['ตำแหน่ง', 'position'], ['SLM ID', 'slm_id'], ['อีเมล', 'email']].forEach(([h, k]) => {
+      const v = cell(r, h);
+      if (v) p[k] = v; else if (item.isNew) p[k] = null;
+    });
+    if (pwd) p.pwd = pwd; else if (item.isNew) p.pwd = USER_IMPORT_DEFAULT_PWD;
+    if (statusCell) p.is_active = statusCell === 'active' ? 1 : 0;
+    item.payload = p;
+    item.roleLabel = userRoleLabel(p.role);
+    item.pwdNote = pwd ? 'ตั้งใหม่' : item.isNew ? `ค่าเริ่มต้น ${USER_IMPORT_DEFAULT_PWD}` : 'ไม่เปลี่ยน';
+    return item;
+  });
+}
+function usersImportFile(e){
+  const file = e.target.files?.[0]; e.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      await ensureXLSX();
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+      _usersImportPlan = _usersBuildImportPlan(rows);
+      if (!_usersImportPlan.length) { toast('ไม่พบข้อมูลผู้ใช้ในไฟล์', 'warn'); return; }
+      usersShowImportPreview();
+    } catch (err) { toast('อ่านไฟล์ไม่สำเร็จ: ' + (err.message || err), 'warn'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function usersShowImportPreview(){
+  const plan = _usersImportPlan;
+  const ok = plan.filter(p => !p.errors.length);
+  const nNew = ok.filter(p => p.isNew).length, nUpd = ok.length - nNew, nErr = plan.length - ok.length;
+  openMod(`<div class="mh"><div class="mt2">นำเข้าผู้ใช้ — ตรวจสอบก่อนบันทึก</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+      <span class="badge bbg">เพิ่มใหม่ ${nNew}</span><span class="badge bbl">อัปเดต ${nUpd}</span>${nErr ? `<span class="badge bbr">ผิดพลาด ${nErr} (จะข้าม)</span>` : ''}
+    </div>
+    <div class="tw" style="max-height:55vh;overflow:auto"><table>
+      <thead><tr><th>แถว</th><th>UID</th><th>ชื่อ</th><th>Role</th><th>รหัสผ่าน</th><th>ผล</th></tr></thead>
+      <tbody>${plan.map(p => `<tr${p.errors.length ? ' style="background:rgba(163,45,45,.06)"' : ''}>
+        <td>${p.line}</td><td class="mono">${esc(p.uid || '—')}</td><td>${esc(p.payload.name || '—')}</td><td>${esc(p.roleLabel || '—')}</td>
+        <td style="font-size:12px">${esc(p.pwdNote)}</td>
+        <td>${p.errors.length ? `<span style="color:var(--R);font-size:12px">${esc(p.errors.join(', '))}</span>` : p.isNew ? '<span class="badge bbg">เพิ่มใหม่</span>' : '<span class="badge bbl">อัปเดต</span>'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <div id="users-import-status" style="margin-top:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+      <button class="btn" onclick="closeM()">ยกเลิก</button>
+      <button class="btn btn-p" id="users-import-go" onclick="usersRunImport()" ${ok.length ? '' : 'disabled'}>บันทึก ${ok.length} รายการ</button>
+    </div>`);
+}
+async function usersRunImport(){
+  const todo = _usersImportPlan.filter(p => !p.errors.length);
+  const btn = document.getElementById('users-import-go'); if (btn) btn.disabled = true;
+  const status = document.getElementById('users-import-status');
+  const failed = [];
+  let done = 0;
+  for (const p of todo) {
+    if (status) status.innerHTML = `<div class="al ali">กำลังบันทึก ${done + 1}/${todo.length} — ${esc(p.uid)}</div>`;
+    try { await SB.upsertUser(p.payload); } catch (e) { failed.push(`${p.uid}: ${e.message || e}`); }
+    done++;
+  }
+  CACHE.clear('users');
+  await pgUsers();
+  const okCount = todo.length - failed.length;
+  if (failed.length) {
+    openMod(`<div class="mh"><div class="mt2">ผลการนำเข้าผู้ใช้</div><span class="mx" onclick="closeM()">✕</span></div>
+      <div class="al alw">บันทึกสำเร็จ ${okCount} รายการ · ไม่สำเร็จ ${failed.length} รายการ</div>
+      <div style="font-size:12px;margin-top:8px">${failed.map(esc).join('<br>')}</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" onclick="closeM()">ปิด</button></div>`);
+  } else { closeM(); toast(`นำเข้าผู้ใช้สำเร็จ ${okCount} รายการ`); }
+  audit('IMPORT_USERS', 'users', { ok: okCount, failed: failed.length });
 }
 // ── AUDIT LOG ─────────────────────────────────────────────────────
 
