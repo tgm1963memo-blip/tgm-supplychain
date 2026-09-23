@@ -14936,43 +14936,58 @@ async function draftPreviewPDF() {
   const docNo = isApproved && _draftHeader?.promo_no ? _draftHeader.promo_no : (_draftHeader?.doc_no || _draftEditNo || '');
   const refLine = isApproved && _draftHeader?.promo_no && _draftHeader?.doc_no
     ? `<div style="font-size:11px;color:#cfe0f5;margin-top:4px">อ้างอิงจากใบเคาะราคาเลขที่ <b style="color:#fff;font-family:monospace">${esc(_draftHeader.doc_no)}</b></div>` : '';
-  // ช่องลงนาม (2026-09-23): ผู้จัดทำ + ทุกขั้นอนุมัติ (รวมขั้นปกติที่ผ่านแล้วก่อน escalate — approval_history_json)
-  // แสดงรูปลายเซ็น (snapshot ตอนอนุมัติ → ลายเซ็นปัจจุบัน → ชื่อแบบลายมือ) + วันเวลาที่อนุมัติ
-  const fmtTs = ts => ts ? new Date(ts).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' น.' : '';
+  // ตารางลำดับการลงนาม (2026-09-23): ผู้จัดทำ + ทุกขั้นอนุมัติ — ขั้นที่ผ่านแล้ว (approval_history_json,
+  // ก่อน escalate), ขั้นปัจจุบัน (levels_json) และขั้นที่ยังไม่ถึง (ดึงจากเส้นทางอนุมัติที่ตั้งค่าไว้) พร้อมชื่อ
+  // ผู้อนุมัติ สถานะ วันเวลา และรูปลายเซ็น (snapshot ตอนอนุมัติ → ลายเซ็นปัจจุบัน → ชื่อแบบลายมือ)
+  const fmtTs = ts => ts ? new Date(ts).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' น.' : '';
+  const docStatus = _draftHeader?.status || 'draft';
   const history = Array.isArray(_draftHeader?.approval_history_json) ? _draftHeader.approval_history_json : [];
-  const levels = [...history, ...(Array.isArray(_draftHeader?.levels_json) ? _draftHeader.levels_json : [])];
+  const current = docStatus === 'draft' ? [] : (Array.isArray(_draftHeader?.levels_json) ? _draftHeader.levels_json : []);
   const creatorUid = _draftHeader?.created_by || _draftEditCreatedBy || UID;
-  const isSubmitted = _draftHeader && _draftHeader.status && _draftHeader.status !== 'draft';
-  const signCols = [
-    { role: 'ผู้จัดทำ', uid: creatorUid, name: uidToName(creatorUid) || '—', state: isSubmitted ? 'signed' : 'pending',
-      ts: isSubmitted ? fmtTs(_draftHeader?.created_at) : '', tsLabel: 'จัดทำเมื่อ' },
-    ...levels.flatMap(lv => {
-      const acted = (lv.approvers || []).filter(a => a.status === 'approved' || a.status === 'rejected');
-      if (!acted.length) return [{ role: lv.label || 'ผู้อนุมัติ', name: (lv.approvers || []).map(a => a.name || uidToName(a.uid)).join(' / '), state: 'pending', ts: '' }];
-      return acted.map(a => ({ role: lv.label || 'ผู้อนุมัติ', uid: a.uid, name: a.name || uidToName(a.uid), signature: a.signature || null,
-        state: a.status === 'approved' ? 'signed' : 'rejected', ts: fmtTs(a.ts), tsLabel: a.status === 'approved' ? 'อนุมัติเมื่อ' : 'ไม่อนุมัติเมื่อ' }));
-    }),
-  ];
+  const isSubmitted = docStatus !== 'draft';
   const logoSrc = document.querySelector('#ls img')?.src || '';
 
   const w = window.open('', '_blank');
   if (!w) { toast('เบราว์เซอร์บล็อกป็อปอัป กรุณาอนุญาตแล้วลองใหม่', 'warn'); return; }
   try { w.document.body && (w.document.body.textContent = 'กำลังสร้างเอกสาร...'); } catch (e) { /* ignore */ }
-  // เปิดหน้าต่างก่อน (ต้องอยู่ใน click เดียวกัน ไม่งั้นโดนบล็อกป็อปอัป) แล้วค่อยโหลดลายเซ็นที่ยังไม่มี snapshot
-  const needSig = signCols.filter(s => s.state === 'signed' && !s.signature && s.uid).map(s => s.uid);
+  // เปิดหน้าต่างก่อน (ต้องอยู่ใน click เดียวกัน ไม่งั้นโดนบล็อกป็อปอัป) แล้วค่อยโหลดเส้นทางอนุมัติ/ลายเซ็น
+  const loadTpl = entity => SB.getApprovalWorkflowTemplate(entity).then(l => Array.isArray(l) ? l : []).catch(() => []);
+  const noRouteLevel = { label: 'ผู้อนุมัติ', noRoute: true, approvers: [] };
+  let upcoming = [];
+  if (docStatus === 'draft' || docStatus === 'pending_approval') {
+    if (docStatus === 'draft') { const normal = await loadTpl(PROMO_DRAFT_WF_ENTITY); upcoming.push(...(normal.length ? normal : [noRouteLevel])); }
+    else if (!current.length) upcoming.push(noRouteLevel); // ส่งแล้วแต่ไม่มีเส้นทางปกติ — ผู้จัดการอนุมัติได้
+    if (escFlags.length) upcoming.push(...(await loadTpl(PROMO_DRAFT_EXEC_WF_ENTITY)).map((lv, i) => ({ ...lv, label: lv.label || `ผู้บริหาร ${i + 1}`, exec: true })));
+  }
+  const signRows = [{ step: 'ผู้จัดทำ', uid: creatorUid, name: uidToName(creatorUid) || '—', state: isSubmitted ? 'signed' : 'pending',
+    ts: isSubmitted ? fmtTs(_draftHeader?.created_at) : '', status: isSubmitted ? 'จัดทำ/ส่งอนุมัติ' : 'ยังไม่ส่งอนุมัติ' }];
+  [...history, ...current, ...upcoming].forEach((lv, i) => {
+    const step = `ขั้นที่ ${i + 1} · ${lv.label || 'ผู้อนุมัติ'}`;
+    const all = (lv.approvers || []).map(a => ({ ...a, name: a.name || uidToName(a.uid) }));
+    const acted = all.filter(a => a.status === 'approved' || a.status === 'rejected');
+    if (!acted.length) {
+      const names = lv.noRoute ? 'ผู้จัดการ (ยังไม่ได้ตั้งเส้นทางอนุมัติ)' : all.map(a => a.name).join(' / ') || '—';
+      signRows.push({ step, name: names, mode: all.length > 1 ? (lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง') : '', state: 'pending', ts: '', status: 'รออนุมัติ' });
+      return;
+    }
+    acted.forEach(a => signRows.push({ step, uid: a.uid, name: a.name, signature: a.signature || null, comment: a.comment || '',
+      state: a.status === 'approved' ? 'signed' : 'rejected', ts: fmtTs(a.ts), status: a.status === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ' }));
+  });
+  const needSig = signRows.filter(s => s.state === 'signed' && !s.signature && s.uid).map(s => s.uid);
   if (needSig.length) {
     const sigMap = await _sigLoadMap(needSig);
-    signCols.forEach(s => { if (s.state === 'signed' && !s.signature) s.signature = sigMap.get(s.uid) || null; });
+    signRows.forEach(s => { if (s.state === 'signed' && !s.signature) s.signature = sigMap.get(s.uid) || null; });
   }
-  const signBoxHtml = s => `<div class="signbox ${s.state}">
-        <div class="sig">${s.state === 'signed'
-          ? (s.signature ? `<img src="${esc(s.signature)}" alt="ลายเซ็น">` : `<span class="sigtext">${esc(s.name)}</span>`)
-          : s.state === 'rejected' ? '<span class="rej">ไม่อนุมัติ</span>' : ''}</div>
-        <div class="line"></div>
-        <div class="nm">${s.name ? `( ${esc(s.name)} )` : '(................................)'}</div>
-        <div class="role">${esc(s.role)}</div>
-        <div class="ts">${s.ts ? `${esc(s.tsLabel)} ${esc(s.ts)}` : s.state === 'pending' ? 'รอลงนาม' : ''}</div>
-      </div>`;
+  const signTableHtml = `<table class="signs">
+        <colgroup><col style="width:28px"><col style="width:22%"><col><col style="width:13%"><col style="width:17%"><col style="width:22%"></colgroup>
+        <thead><tr class="cols"><th>ลำดับ</th><th>ขั้นการลงนาม</th><th>ชื่อผู้ลงนาม / ผู้อนุมัติ</th><th>สถานะ</th><th>วันเวลา</th><th>ลายเซ็น</th></tr></thead>
+        <tbody>${signRows.map((s, i) => `<tr class="${s.state}">
+          <td>${i + 1}</td><td class="l"><b>${esc(s.step)}</b></td>
+          <td class="l">${esc(s.name)}${s.mode ? `<div class="sub">(${esc(s.mode)})</div>` : ''}${s.comment ? `<div class="sub">ความเห็น: ${esc(s.comment)}</div>` : ''}</td>
+          <td><span class="st ${s.state}">${esc(s.status)}</span></td>
+          <td>${esc(s.ts || '—')}</td>
+          <td class="sig">${s.state === 'signed' ? (s.signature ? `<img src="${esc(s.signature)}" alt="ลายเซ็น">` : `<span class="sigtext">${esc(s.name)}</span>`) : ''}</td>
+        </tr>`).join('')}</tbody></table>`;
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle)} ${esc(name || _draftEditNo || '')}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Charmonman:wght@700&display=swap">
   <style>
@@ -15015,17 +15030,18 @@ async function draftPreviewPDF() {
     table.costs td{border-bottom:1px solid #E3E8EF;padding:4px 6px}
     .branches{font-size:10px;margin:6px 0 8px;line-height:1.25;background:#FBFCFE;border:1px solid #E3E8EF;border-radius:6px;padding:6px 8px}
     .branch-codes{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9.6px;color:#1E3A5F}
-    .signrow{display:grid;grid-template-columns:repeat(${Math.min(signCols.length, 5)},1fr);gap:14px 18px;margin-top:26px;padding-top:14px;border-top:1px dashed #CDD5E0;break-inside:avoid}
-    .signbox{text-align:center;font-size:10.5px;color:#4A5568;break-inside:avoid}
-    .signbox .sig{height:46px;display:flex;align-items:flex-end;justify-content:center}
-    .signbox .sig img{max-height:46px;max-width:100%;object-fit:contain;mix-blend-mode:multiply}
-    .signbox .sigtext{font-family:'Charmonman',cursive;font-weight:700;font-size:20px;color:#1a2b4c;line-height:1}
-    .signbox .rej{font-weight:700;color:#A32D2D;border:1.5px solid #A32D2D;border-radius:4px;padding:1px 8px;font-size:11px}
-    .signbox .line{border-bottom:1px solid #8896A5;margin:2px 10px 4px}
-    .signbox .nm{color:#1E3A5F;font-weight:600}
-    .signbox .role{font-weight:700;color:#111;margin-top:1px}
-    .signbox .ts{font-size:9.5px;color:#4A5568;margin-top:2px}
-    .signbox.pending .ts{color:#8896A5;font-style:italic}
+    .signhead{margin-top:18px;padding-top:12px;border-top:1px dashed #CDD5E0;font-size:12px;font-weight:700;color:#1E3A5F}
+    table.signs{border:1px solid #CDD5E0;font-size:9.5px;margin-top:6px;break-inside:avoid}
+    table.signs td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:4px 6px;text-align:center;vertical-align:middle;height:40px}
+    table.signs td.l{text-align:left}
+    table.signs td .sub{font-size:8.5px;color:#8896A5;white-space:normal}
+    table.signs tr.pending td{color:#8896A5}
+    table.signs td.sig img{max-height:36px;max-width:100%;object-fit:contain;mix-blend-mode:multiply;display:block;margin:0 auto}
+    table.signs .sigtext{font-family:'Charmonman',cursive;font-weight:700;font-size:17px;color:#1a2b4c;line-height:1}
+    .st{display:inline-block;padding:1px 8px;border-radius:10px;font-weight:700;font-size:8.8px;border:1px solid}
+    .st.signed{color:#0A5940;background:#E5F3EE;border-color:#bfe3d3}
+    .st.rejected{color:#A32D2D;background:#FBEAEA;border-color:#EFC4C4}
+    .st.pending{color:#8896A5;background:#F4F6F8;border-color:#E3E8EF}
     @media print{ body{padding:0;background:#fff} .sheet{box-shadow:none} .letterhead{break-inside:avoid} table{break-inside:auto} tr{break-inside:avoid} }
   </style></head><body>
   <div class="sheet">
@@ -15068,7 +15084,8 @@ async function draftPreviewPDF() {
       </table>
       ${otherCostsRows ? `<table class="costs"><thead><tr class="cols"><th>ค่าใช้จ่ายอื่นๆ</th><th class="r">จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
       <tbody>${otherCostsRows}<tr><td><b>รวม</b></td><td class="r"><b>${otherCostsTotal.toLocaleString('th-TH')}</b></td><td></td></tr></tbody></table>` : ''}
-      <div class="signrow">${signCols.map(signBoxHtml).join('')}</div>
+      <div class="signhead">ลำดับการลงนามและอนุมัติ</div>
+      ${signTableHtml}
     </div>
   </div>
   <script>window.onload=()=>{const go=()=>setTimeout(()=>window.print(),200);document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go();}<` + `/script>
