@@ -7,6 +7,39 @@ const { makeCrudRouter } = require('./lib/crud');
 const { requireAuth, requireRole } = require('./middleware/auth');
 const usersRoutes = require('./routes/users');
 
+const ARCHIVE_COMPANY = {
+  'TSS-67': 'TSS',
+  'TSS-68': 'TSS',
+  'TSSN-67': 'TSS-NV',
+  'TSSN-68': 'TSS-NV',
+  'CONSI-67': 'CONSI',
+};
+
+function normalizeCompanyScope(value) {
+  const s = String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (s.startsWith('TGM')) return 'TGM';
+  if (s.startsWith('CONSI')) return 'CONSI';
+  if (s === 'TSSNV' || s.startsWith('TSSN') || s.includes('NV')) return 'TSSNV';
+  if (s.startsWith('TSS')) return 'TSS';
+  return s || 'TSS';
+}
+
+function dedupeArchiveRows(rows, keyFields) {
+  const keyOf = (row, company) => [normalizeCompanyScope(company || row.company), ...keyFields.map((k) => String(row[k] ?? '').trim())].join('|');
+  const primaryKeys = new Set();
+  for (const row of rows || []) {
+    const raw = String(row.company || '').trim().toUpperCase();
+    if (ARCHIVE_COMPANY[raw]) continue;
+    primaryKeys.add(keyOf(row, raw));
+  }
+  return (rows || []).filter((row) => {
+    const raw = String(row.company || '').trim().toUpperCase();
+    const canonical = ARCHIVE_COMPANY[raw];
+    if (!canonical) return true;
+    return !primaryKeys.has(keyOf(row, canonical));
+  });
+}
+
 // NOTE on route naming: paths below intentionally match the exact Supabase table/view names used
 // throughout index.html's `.from('table_name')` calls (snake_case, not REST-ish kebab-case) —
 // the client's makeLocalClient() shim builds URLs as `${API_BASE}/${table}`, so the two must agree.
@@ -103,7 +136,7 @@ function buildApp(db, opts = {}) {
   //    so these mounts no longer expose write verbs at all. ──
   app.use('/api/products', authed, makeCrudRouter(db, 'products', {
     pk: 'code',
-    fields: ['code', 'name', 'group_name', 'unit', 'lead_time', 'moq', 'min_stock', 'shelf_life', 'plant', 'is_active', 'note'],
+    fields: ['code', 'name', 'group_name', 'unit', 'lead_time', 'moq', 'min_stock', 'shelf_life', 'plant', 'is_active', 'note', 'standard_price', 'price_company'],
     readOnly: true,
   }));
 
@@ -145,7 +178,14 @@ function buildApp(db, opts = {}) {
 
   app.use('/api/outbound_lines', authed, makeCrudRouter(db, 'outbound_lines', {
     pk: 'id',
-    fields: ['order_id', 'sku', 'qty', 'unit_price', 'line_value'],
+    fields: ['order_id', 'seq_num', 'sku', 'qty', 'unit_price', 'line_value'],
+    touch: [],
+    readOnly: true,
+  }));
+
+  app.use('/api/sales_line_components', authed, makeCrudRouter(db, 'sales_line_components', {
+    pk: 'id',
+    fields: ['company', 'order_id', 'order_no', 'seq_num', 'parent_sku', 'child_code', 'child_name', 'child_qty', 'note', 'updated_at'],
     touch: [],
     readOnly: true,
   }));
@@ -181,6 +221,22 @@ function buildApp(db, opts = {}) {
   app.use('/api/wms_stock_movements_daily', authed, makeCrudRouter(db, 'stock_movements_wms_daily', {
     pk: 'sku',
     fields: ['sku', 'day', 'received_qty', 'general_sale_qty', 'consi_qty', 'transfer_qty', 'converted_qty', 'reserved_qty', 'return_qty', 'writeoff_qty', 'received_value', 'dispatched_qty'],
+    readOnly: true,
+  }));
+
+
+  // Invoice-level STCRD lines for tax-invoice fallback in tgm-wms route billing.
+  app.use('/api/invoice_lines', authed, makeCrudRouter(db, 'invoice_lines', {
+    pk: 'doc_num',
+    fields: ['company', 'doc_num', 'seq_num', 'doc_date', 'sku', 'sku_name', 'warehouse', 'qty', 'unit_code', 'unit_factor', 'line_value', 'ref_num', 'updated_at'],
+    readOnly: true,
+  }));
+
+  // Child SKU rows parsed from ARTRNRM for invoice 90022 parent lines.
+  app.use('/api/invoice_line_components', authed, makeCrudRouter(db, 'invoice_line_components', {
+    pk: 'id',
+    fields: ['company', 'doc_num', 'seq_num', 'parent_sku', 'source_doc_num', 'source_seq_num', 'child_code', 'child_name', 'child_qty', 'note', 'updated_at'],
+    touch: [],
     readOnly: true,
   }));
 
@@ -389,7 +445,7 @@ function buildApp(db, opts = {}) {
     pk: 'doc_num',
     // route_code/route_name added 2026-09-16 for tgm-wms's "สายรถ" delivery-route billing feature —
     // see importFromExpress.js's ROUTE_TABTYP comment for where these come from.
-    fields: ['doc_num', 'doc_date', 'cust_code', 'slm_code', 'so_num', 'total', 'rectyp', 'route_code', 'route_name', 'updated_at'],
+    fields: ['doc_num', 'doc_date', 'cust_code', 'slm_code', 'so_num', 'total', 'rectyp', 'route_code', 'route_name', 'ship_to_code', 'ship_to_address', 'updated_at'],
     orderBy: 'doc_date',
     readOnly: true,
   }));
@@ -442,9 +498,9 @@ function buildApp(db, opts = {}) {
     // each got their own 3-part breakdown (ราคาขาย/GP%/ราคาทุนสุทธิ); gp_pct/cost_price now specifically
     // mean the ราคาปกติ side, these two new columns are the same breakdown for ราคาโปร (unit_price).
     // is_sub_item added 2026-09-16 (ข้อ 4.4) — flag ว่าบรรทัดนี้เป็นรายการย่อย (1.1/1.2) ใต้บรรทัดรหัส 9 ก่อนหน้า
-    fields: ['id', 'draft_no', 'corporate', 'cust_code', 'cust_name', 'sku', 'sku_name', 'weight',
+    fields: ['id', 'draft_no', 'corporate', 'cust_code', 'cust_name', 'sku', 'sku_name', 'equipment_set', 'weight',
       'normal_price', 'unit_price', 'discount_pct', 'gp_pct', 'cost_price', 'gp_pct_promo', 'cost_price_promo',
-      'start_date', 'due_date', 'is_sub_item'],
+      'estimated_qty', 'start_date', 'due_date', 'is_sub_item', 'bill_disc_pct', 'bill_disc_pct_promo', 'compensate'],
     orderBy: 'created_at',
     writeRoles: PROMO_DRAFT_ROLES,
   }));
@@ -468,6 +524,120 @@ function buildApp(db, opts = {}) {
     fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count'],
     readOnly: true,
   }));
+
+  app.get('/api/dashboard_sales_summary', authed, (req, res) => {
+    const startYm = String(req.query.startYm || '').slice(0, 7);
+    const endYm = String(req.query.endYm || '').slice(0, 7);
+    const slmId = String(req.query.slmId || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(startYm) || !/^\d{4}-\d{2}$/.test(endYm)) {
+      return res.status(400).json({ error: 'startYm and endYm are required in YYYY-MM format' });
+    }
+
+    // Keep this endpoint cheap enough for the Dashboard's first screen. The previous implementation
+    // selected every monthly customer/product row into Node and then reduced it in JavaScript. On the
+    // live DB that meant hundreds of thousands of rows per page-open and could block the single SQLite
+    // connection long enough for the browser to show "page unresponsive". Aggregate in SQLite instead;
+    // only the final company totals and Top 10 lists cross the process boundary. Archive branch tables
+    // are intentionally excluded here; this Dashboard endpoint is for the current operating year.
+    const where = ['ym >= ?', 'ym <= ?'];
+    const params = [startYm, endYm];
+    if (slmId) {
+      where.push('slm_owner = ?');
+      params.push(slmId);
+    }
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+    const archiveListSql = `'TSS-67','TSS-68','TSSN-67','TSSN-68','CONSI-67'`;
+    const canonicalCompanySql = `
+      CASE
+        WHEN UPPER(TRIM(company)) IN ('TSS-67','TSS-68') THEN 'TSS'
+        WHEN UPPER(TRIM(company)) IN ('TSSN-67','TSSN-68') THEN 'TSSNV'
+        WHEN UPPER(TRIM(company)) = 'CONSI-67' THEN 'CONSI'
+        WHEN UPPER(REPLACE(REPLACE(TRIM(company),'-',''),'_','')) LIKE 'TGM%' THEN 'TGM'
+        WHEN UPPER(REPLACE(REPLACE(TRIM(company),'-',''),'_','')) LIKE 'CONSI%' THEN 'CONSI'
+        WHEN UPPER(REPLACE(REPLACE(TRIM(company),'-',''),'_','')) IN ('TSSNV')
+          OR UPPER(REPLACE(REPLACE(TRIM(company),'-',''),'_','')) LIKE 'TSSN%'
+          OR UPPER(REPLACE(REPLACE(TRIM(company),'-',''),'_','')) LIKE '%NV%' THEN 'TSSNV'
+        WHEN UPPER(REPLACE(REPLACE(TRIM(company),'-',''),'_','')) LIKE 'TSS%' THEN 'TSS'
+        ELSE COALESCE(NULLIF(UPPER(TRIM(company)),''),'TSS')
+      END
+    `;
+    const baseCte = `
+      WITH src AS (
+        SELECT *, UPPER(TRIM(company)) AS raw_company, ${canonicalCompanySql} AS company_key
+        FROM v_sales_overview_sales_monthly
+        ${whereSql}
+      ), filtered AS (
+        SELECT *
+        FROM src
+        WHERE raw_company NOT IN (${archiveListSql})
+      )
+    `;
+    const companyRows = db.prepare(`
+      ${baseCte}
+      SELECT company_key AS company,
+             SUM(COALESCE(qty,0)) AS qty,
+             SUM(COALESCE(amount,0)) AS amount,
+             SUM(COALESCE(invoice_count,0)) AS invoice_count,
+             COUNT(*) AS count
+      FROM filtered
+      GROUP BY company_key
+    `).all(...params);
+    const topProducts = db.prepare(`
+      ${baseCte}
+      SELECT prod_code,
+             COALESCE(MAX(NULLIF(prod_name,'')), prod_code) AS prod_name,
+             SUM(COALESCE(qty,0)) AS qty,
+             SUM(COALESCE(amount,0)) AS amount
+      FROM filtered
+      WHERE COALESCE(prod_code,'') <> ''
+      GROUP BY prod_code
+      HAVING amount <> 0 OR qty <> 0
+      ORDER BY amount DESC, qty DESC
+      LIMIT 10
+    `).all(...params);
+    const topCustomers = db.prepare(`
+      ${baseCte}
+      SELECT COALESCE(NULLIF(corporate,''), NULLIF(cust_name,''), NULLIF(cust_code,''), 'ไม่ระบุ') AS name,
+             COUNT(DISTINCT NULLIF(cust_code,'')) AS branches,
+             SUM(COALESCE(qty,0)) AS qty,
+             SUM(COALESCE(amount,0)) AS amount
+      FROM filtered
+      GROUP BY name
+      HAVING amount <> 0 OR qty <> 0
+      ORDER BY amount DESC, qty DESC
+      LIMIT 10
+    `).all(...params);
+    const companySales = {};
+    for (const r of companyRows) {
+      const company = normalizeCompanyScope(r.company);
+      companySales[company] = {
+        qty: Number(r.qty) || 0,
+        amount: Number(r.amount) || 0,
+        invoices: Number(r.invoice_count) || 0,
+        count: Number(r.count) || 0,
+      };
+    }
+    res.json({
+      startYm,
+      endYm,
+      deduped: true,
+      companySales,
+      totalAmount: companyRows.reduce((a, r) => a + (Number(r.amount) || 0), 0),
+      totalQty: companyRows.reduce((a, r) => a + (Number(r.qty) || 0), 0),
+      topProducts: topProducts.map((r) => ({
+        code: r.prod_code,
+        name: r.prod_name || r.prod_code,
+        qty: Number(r.qty) || 0,
+        amount: Number(r.amount) || 0,
+      })),
+      topCustomers: topCustomers.map((r) => ({
+        name: r.name || 'ไม่ระบุ',
+        branches: Number(r.branches) || 0,
+        qty: Number(r.qty) || 0,
+        amount: Number(r.amount) || 0,
+      })),
+    });
+  });
 
   app.use('/api/v_sales_overview_sales_monthly', authed, makeCrudRouter(db, 'v_sales_overview_sales_monthly', {
     pk: 'prod_code',

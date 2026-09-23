@@ -1,13 +1,7 @@
 {
 	"folders": [
 		{
-			"path": "../../../tgm-wms"
-		},
-		{
 			"path": "../ememo-firebase"
-		},
-		{
-			"path": "."
 		}
 	],
 	"settings": {

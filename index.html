@@ -58,6 +58,7 @@ td.r{text-align:right;font-variant-numeric:tabular-nums}
 .btn-o{background:var(--O);color:#fff;border-color:var(--O)}
 .btn-t{background:var(--T);color:#fff;border-color:var(--T)}
 .card{background:var(--W);border:1px solid var(--BD);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+.card:has(#dash-qty-tbl){display:none!important}
 .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
 .ct2{font-size:14px;font-weight:700;color:var(--N)}
 .krow{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
@@ -781,12 +782,13 @@ const SB = {
     let from = 0;
     let rows = [];
     while (true) {
-      const { data, error } = await getSupabaseClient()
+      let q = getSupabaseClient()
         .from('products')
         .select('*')
-        .eq('is_active', true)
         .order('code')
         .range(from, from + pageSize - 1);
+      if (!opts.includeInactive) q = q.eq('is_active', true);
+      const { data, error } = await q;
       if (error) throw error;
       rows = rows.concat(data || []);
       if (!data || data.length < pageSize) break;
@@ -888,6 +890,29 @@ const SB = {
     return data;
   },
 
+  async getLatestPromoDocsBySku(skus = []) {
+    const unique = [...new Set((skus || []).map(s => String(s || '').trim()).filter(Boolean))];
+    if (!unique.length) return [];
+    const pageSize = 20000;
+    const out = [];
+    for (let i = 0; i < unique.length; i += 100) {
+      const chunk = unique.slice(i, i + 100);
+      let from = 0;
+      while (true) {
+        const { data: page, error } = await getSupabaseClient()
+          .from('promo_docs').select('*')
+          .in('sku', chunk)
+          .order('due_date', { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        out.push(...(page || []));
+        if (!page || page.length < pageSize) break;
+        from += pageSize;
+      }
+    }
+    return out;
+  },
+
   async getPromoDraftsForOverlap(custCodes = [], skus = [], excludeDraftNo = '') {
     if (!custCodes.length || !skus.length) return [];
     // FIXED (code review 2026-09-15): same silent-truncation risk as getPromoDocsForOverlap above.
@@ -984,6 +1009,31 @@ const SB = {
     } catch (e) { toast('เปิดไฟล์ไม่สำเร็จ: ' + (e.message || e), 'warn'); }
   },
 
+
+  async getLatestSalesPricesBySku(skus = []) {
+    const unique = [...new Set((skus || []).map(s => String(s || '').trim()).filter(Boolean))];
+    if (!unique.length) return [];
+    const pageSize = 20000;
+    const chunks = [];
+    for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
+    const out = [];
+    for (const chunk of chunks) {
+      let from = 0;
+      while (true) {
+        const { data: page, error } = await getSupabaseClient()
+          .from('sales_transactions').select('sku,qty,amount,tx_date,company')
+          .in('sku', chunk).gt('qty', 0).gt('amount', 0)
+          .order('tx_date', { ascending:false })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        out.push(...(page || []));
+        if (!page || page.length < pageSize) break;
+        from += pageSize;
+      }
+    }
+    return out;
+  },
+
   // ปริมาณขายจริงต่อคู่ (cust_code, sku) ในช่วงวันที่ระบุ — ใช้แสดง "ปริมาณขายในช่วงเวลาเดียวกัน" ในตาราง
   // สินค้าของหน้าสร้างใบโปร (query แบบ batched ครั้งเดียวทั้งตาราง ไม่ query ทีละแถว) sum ต่อคู่ทำ client-side
   async getSalesQtyForPairs(custCodes = [], skus = [], dateFrom = '', dateTo = '') {
@@ -994,7 +1044,7 @@ const SB = {
     let from = 0, data = [];
     while (true) {
       const { data: page, error } = await getSupabaseClient()
-        .from('sales_transactions').select('cust_code,sku,qty,tx_date')
+        .from('sales_transactions').select('cust_code,sku,qty,amount,tx_date,company')
         .in('cust_code', custCodes).in('sku', skus)
         .gte('tx_date', dateFrom).lte('tx_date', dateTo)
         .range(from, from + pageSize - 1);
@@ -1014,7 +1064,7 @@ const SB = {
     const chunks = [];
     for (let i = 0; i < unique.length; i += 200) chunks.push(unique.slice(i, i + 200));
     const results = await Promise.all(chunks.map(chunk =>
-      getSupabaseClient().from('products').select('code,name,group_name,plant,company').in('code', chunk)
+      getSupabaseClient().from('products').select('code,name,group_name,plant,unit,is_active,standard_price,price_company').in('code', chunk)
     ));
     const rows = [];
     for (const { data, error } of results) {
@@ -1133,23 +1183,25 @@ const SB = {
     return _filterTgmSkuRows(rows, opts);
   },
 
-  async getCustomers() {
+  async getCustomers(opts = {}) {
     const PAGE = 20000; // server caps at 20000/request — fetch all customers in 1 round trip
     let from = 0;
     let rows = [];
     while (true) {
-      const { data, error } = await getSupabaseClient()
+      let q = getSupabaseClient()
         .from('customers')
         .select('code,name,cust_group,slm_id,is_active')
-        .eq('is_active', true)
         .order('code')
         .range(from, from + PAGE - 1);
+      if (!opts.includeInactive) q = q.eq('is_active', true);
+      const { data, error } = await q;
       if (error) throw error;
       rows = rows.concat(data || []);
       if (!data || data.length < PAGE) break;
       from += PAGE;
     }
     DB.set('remote_customers_cache', rows);
+    DB.set('remote_customers_cache_ts', Date.now());
     return rows;
   },
 
@@ -1248,6 +1300,7 @@ const SB = {
     const profs = {};
     for (const r of rows) profs[r.code] = r;
     DB.set('customer_profiles', profs);
+    DB.set('customer_profiles_ts', Date.now());
     return profs;
   },
 
@@ -2253,6 +2306,65 @@ const SB = {
     } catch (e) { console.warn('getSalesCustCodes:', e); }
     return codes;
   },
+
+  async getConsiCustomerRows() {
+    const byCode = new Map();
+    const add = (code, name) => {
+      code = String(code || '').trim();
+      if (!code) return;
+      const prev = byCode.get(code) || {};
+      byCode.set(code, {
+        code,
+        name: String(name || prev.name || code).trim() || code,
+        cust_group: 'ฝากขาย',
+        slm_id: prev.slm_id || '',
+        is_active: 1,
+        source_company: 'CONSI',
+      });
+    };
+    const PAGE = 20000;
+    try {
+      let from = 0;
+      while (true) {
+        const { data, error } = await getSupabaseClient()
+          .from('v_sc_consi_monthly')
+          .select('cust_code,cust_name,slm_owner')
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        (data || []).forEach(r => {
+          const code = String(r.cust_code || '').trim();
+          if (!code || code === '(none)') return;
+          const existing = byCode.get(code);
+          add(code, r.cust_name || existing?.name || code);
+          if (r.slm_owner && byCode.has(code)) byCode.get(code).slm_id = String(r.slm_owner).trim();
+        });
+        if (!data || data.length < PAGE) break;
+        from += PAGE;
+      }
+    } catch (e) {
+      console.warn('v_sc_consi_monthly customers unavailable:', e.message || e);
+    }
+    try {
+      let from = 0;
+      while (true) {
+        const { data, error } = await getSupabaseClient()
+          .from('promo_docs')
+          .select('cust_code,cust_name,company')
+          .eq('company', 'CONSI')
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        (data || []).forEach(r => add(r.cust_code, r.cust_name));
+        if (!data || data.length < PAGE) break;
+        from += PAGE;
+      }
+    } catch (e) {
+      console.warn('CONSI promo customers unavailable:', e.message || e);
+    }
+    const rows = [...byCode.values()].sort((a, b) => String(a.code).localeCompare(String(b.code), 'th'));
+    DB.set('remote_consi_customers_cache', rows);
+    DB.set('remote_consi_customers_cache_ts', Date.now());
+    return rows;
+  },
 };
 
 // ════════════════════════════════════════════════
@@ -2282,7 +2394,7 @@ const CACHE = {
   // 3-minute window already allows — it only saves the round-trip within that window, same as the
   // in-memory cache already does for SPA navigation.
   PERSIST_KEYS: new Set(['products', 'stock', 'stock_lots', 'bookings', 'po_plans', 'group_products',
-    'sales_hist_2y_v2', 'dash_po_all', 'dash_stock_all', 'dash_fc_all', 'dash_ss_all', 'data_confidence']),
+    'sales_hist_2y_v2']),
 
   _now() { return Date.now(); },
   _lsKey(key) { return this.PREFIX + key; },
@@ -2384,6 +2496,14 @@ function usePORows() { return mergePOPlans(window._poMerged||[], DB.get('po_log'
 function useProdOrders() { return mergeProdOrders(window._prodOrders||[], DB.get('prod_orders')||[]); }
 function useBookings() { return mergeBookings(window._sbBookings||[], DB.get('bookings')||[]).map(normalizeBookingRow); }
 function uidToName(uid){ const u=(DB.get('users')||[]).find(x=>x.uid===uid||x.id===uid); return u?.name||uid||''; }
+function refreshSharedMasterData(opts={}){
+  const profileDelay = Number(opts.profileDelay || 0);
+  SB.getCustomers({includeInactive:true}).then(rows => {
+    if (rows?.length) { DB.set('remote_customers_cache', rows); DB.set('remote_customers_cache_ts', Date.now()); }
+  }).catch(console.warn);
+  SB.getConsiCustomerRows().catch(console.warn);
+  setTimeout(()=>SB.getCustomerProfiles().then(()=>refreshCustomerProfilesMemo()).catch(console.warn), profileDelay);
+}
 
 // ════════════════════════════════════════════════
 // MIGRATION — ย้าย localStorage → Supabase ครั้งแรก
@@ -2480,15 +2600,13 @@ async function doLogin() {
 
     // Supabase background tasks (ไม่บล็อก login)
     migrateFromLocalStorage().catch(console.warn);
-    CACHE.warmCommon().catch(console.warn);
+    warmCommonWhenSafe();
     SB.audit('LOGIN', 'system', { role: ROLE }).catch(console.warn);
     // โหลด sku_settings จาก Supabase แล้ว sync ลง localStorage
     SB.getSkuSettings().then(ss => {
       if (ss && Object.keys(ss).length > 0) DB.set('sku_settings', ss);
     }).catch(console.warn);
-    SB.getCustomers().then(rows => {
-      if (rows?.length) DB.set('remote_customers_cache', rows);
-    }).catch(console.warn);
+    refreshSharedMasterData({profileDelay:sessionStorage.getItem('_pg')==='dash'?12000:0});
     // FIXED (2026-09-16): customer_profiles (corporate/category/branch — set in "จัดการกลุ่ม") used to
     // only ever get loaded into the local cache as a side effect of visiting the "จัดการกลุ่ม" page
     // itself (renderCustGroups() -> SB.getCustomerProfiles()). Every OTHER page that groups sales by
@@ -2498,7 +2616,7 @@ async function doLogin() {
     // page, so customerGroupForCode() fell back to UNASSIGNED_CORP_LABEL for literally everyone and
     // every view showed one "ยังไม่ถูกระบุ" bucket with 100% of revenue. Load it at login like the other
     // shared master-data caches above, so it's populated before Dashboard/Sales Overview ever render.
-    SB.getCustomerProfiles().catch(console.warn);
+    
     // Bookings are large; load them lazily only on booking pages.
     try {
       SB.subscribeStock(() => {
@@ -2554,6 +2672,8 @@ async function doLogin() {
         CACHE.clear('stock');
         CACHE.clear('data_confidence');
         DB.set('remote_customers_cache', []);
+        DB.set('remote_consi_customers_cache', []);
+        DB.set('customer_profiles_ts', 0);
         window._salesRows2Y = null;
         window._salesHistCache = null;
         window._dashSalesRows = null;
@@ -4721,6 +4841,31 @@ function _companyTotals(rows=[]){
     return acc;
   },{});
 }
+const _ARCHIVE_BRANCH_COMPANY={'TSS-67':'TSS','TSS-68':'TSS','TSSN-67':'TSS-NV','TSSN-68':'TSS-NV','CONSI-67':'CONSI'};
+function _archiveCanonicalBranch(v){
+  return _ARCHIVE_BRANCH_COMPANY[String(v||'').trim().toUpperCase()] || '';
+}
+function _dedupeArchiveSalesRows(rows=[], keyParts=['ym','prod_code']){
+  const list=Array.isArray(rows)?rows:[];
+  const rawCompanyOf=r=>String(r.source_company||r.raw_company||r.company||r.branch||'').trim().toUpperCase();
+  const keyOf=(r,company)=>{
+    const parts=[company || _normalizeCompanyScope(rawCompanyOf(r))];
+    keyParts.forEach(k=>parts.push(String(r[k] ?? '').trim()));
+    return parts.join('|');
+  };
+  const primaryKeys=new Set();
+  list.forEach(r=>{
+    const raw=rawCompanyOf(r);
+    if(_archiveCanonicalBranch(raw)) return;
+    primaryKeys.add(keyOf(r,_normalizeCompanyScope(raw)));
+  });
+  return list.filter(r=>{
+    const raw=rawCompanyOf(r);
+    const canonical=_archiveCanonicalBranch(raw);
+    if(!canonical) return true;
+    return !primaryKeys.has(keyOf(r,_normalizeCompanyScope(canonical)));
+  });
+}
 // ── DB ────────────────────────────────────────────────────────────
 // FIXED (2026-09-15): customerProfiles() below memoizes DB.get('customer_profiles') in memory — this
 // key alone can hold 15,000+ customers' worth of JSON (per the comment below), and several hot loops
@@ -4741,6 +4886,17 @@ const DB={
     if(k==='customer_profiles') _customerProfilesMemo=null;
   },
 };
+const CLIENT_MASTER_CACHE_VERSION='2026-09-22-master-cache-v2';
+function ensureClientMasterCacheVersion(){
+  try{
+    if(localStorage.getItem('tgm_client_master_cache_version')===CLIENT_MASTER_CACHE_VERSION)return;
+    ['remote_customers_cache','remote_customers_cache_ts','remote_consi_customers_cache','remote_consi_customers_cache_ts','customer_profiles','customer_profiles_ts','remote_salesmen_cache'].forEach(k=>localStorage.removeItem('tgm3_'+k));
+    Object.keys(localStorage).filter(k=>k.startsWith(CACHE.PREFIX)).forEach(k=>localStorage.removeItem(k));
+    localStorage.setItem('tgm_client_master_cache_version',CLIENT_MASTER_CACHE_VERSION);
+    _customerProfilesMemo=null;
+  }catch(e){console.warn('ensureClientMasterCacheVersion:',e.message||e)}
+}
+ensureClientMasterCacheVersion();
 
 // ── SEED DEFAULTS ─────────────────────────────────────────────────
 function initDB(){
@@ -4924,12 +5080,12 @@ async function restoreSession(){
     buildSB();
     nav(sessionStorage.getItem('_pg')||'dash');
     syncPermsFromServer().then(buildSB).catch(console.warn);
-    CACHE.warmCommon().catch(console.warn);
+    warmCommonWhenSafe();
     // FIXED (2026-09-16) — same reasoning as doLogin(): a reload with an existing session (the common
     // case — most visits aren't a fresh login) never refreshed customer_profiles at all, so a long-open
     // tab could show corp-group/category data that's minutes/hours/days stale, or empty for a tab whose
     // very first load happened before customer_profiles existed in the local cache at all.
-    SB.getCustomerProfiles().catch(console.warn);
+    refreshSharedMasterData({profileDelay:sessionStorage.getItem('_pg')==='dash'?12000:0});
     return true;
   }catch(e){console.warn('restoreSession failed',e);return false;}
 }
@@ -5213,6 +5369,10 @@ function customerProfiles(){
   if(_customerProfilesMemo===null) _customerProfilesMemo=DB.get('customer_profiles')||{};
   return _customerProfilesMemo;
 }
+function refreshCustomerProfilesMemo(){
+  _customerProfilesMemo=null;
+  return customerProfiles();
+}
 function salesMasterOverrides(){
   const raw=DB.get('sales_master')||{};
   if(Array.isArray(raw)){
@@ -5282,8 +5442,17 @@ function getCustomerProfile(c){
   };
 }
 function salesCustomers(){return allCustomerRows();}
+const CRITICAL_CONSI_CUSTOMERS=[
+  {code:'BB-TT-0001',name:'เซ็นทรัล ฟู้ด รีเทล จำกัด สาขาแจ้งวัฒนะ',cust_group:'ฝากขาย',slm_id:'153',is_active:1,source_company:'CONSI'}
+];
 function allCustomerRows(extraCodes=null){
   const remCache=DB.get('remote_customers_cache')||[];
+  const consiCache=[...(DB.get('remote_consi_customers_cache')||[])];
+  CRITICAL_CONSI_CUSTOMERS.forEach(seed=>{
+    if(!consiCache.some(r=>String(r.code||'').trim()===seed.code)) consiCache.push(seed);
+  });
+  const consiCodeSet=new Set(consiCache.map(x=>String(x.code||'').trim()).filter(Boolean));
+  const consiMap=Object.fromEntries(consiCache.map(x=>[String(x.code||'').trim(),x]));
   const remMap=Object.fromEntries(remCache.map(x=>[String(x.code||''),x]));
   const rows=SD_CUSTS.map(getCustomerProfile);
   const seen=new Set(rows.map(c=>c.c));
@@ -5292,7 +5461,38 @@ function allCustomerRows(extraCodes=null){
   remCache.forEach(r=>{
     const code=String(r.code||'').trim();
     if(!code||seen.has(code))return;
-    rows.push(getCustomerProfile({c:code,n:r.name||code,ty:r.cust_group||'ขายจริง',grp:r.cust_group||'อื่นๆ',slm:r.slm_id||'',w:[0,0,0,0],g:[]}));
+    const isConsi=consiCodeSet.has(code)||String(r.source_company||'').toUpperCase()==='CONSI';
+    const consi=consiMap[code]||{};
+    rows.push(getCustomerProfile({
+      c:code,
+      n:consi.name||r.name||code,
+      ty:isConsi?'ฝากขาย':(r.cust_group||'ขายจริง'),
+      grp:isConsi?'ฝากขาย CONSI':(r.cust_group||'อื่นๆ'),
+      slm:isConsi?(consi.slm_id||r.slm_id||''):(r.slm_id||''),
+      w:[0,0,0,0],
+      g:[]
+    }));
+    seen.add(code);
+  });
+
+  // Layer 1.25: ลูกค้า CONSI จากยอดขาย/เอกสารฝากขายกลาง บางรหัสไม่อยู่ใน customer master ของเครื่อง
+  // ที่เพิ่งเปิดใหม่ หรือถูก merge ทับด้วยบริษัทอื่นเพราะ customers เป็น master รวมทุกบริษัท
+  consiCache.forEach(r=>{
+    const code=String(r.code||'').trim();
+    if(!code||seen.has(code))return;
+    rows.push(getCustomerProfile({c:code,n:r.name||code,ty:'ฝากขาย',grp:'ฝากขาย CONSI',slm:r.slm_id||'',w:[0,0,0,0],g:[]}));
+    seen.add(code);
+  });
+
+  // Layer 1.5: customer_profiles ที่ตั้งค่าจากหน้า "จัดการกลุ่ม" อาจมีสาขาที่เครื่องใหม่ยังไม่ได้
+  // cache จาก customers table ทันที ให้ดัน code เหล่านี้เข้าตัวเลือกสาขาด้วย เพื่อไม่ให้ dropdown แหว่ง
+  // ต่างกันตามเครื่อง/browser cache.
+  Object.entries(customerProfiles()||{}).forEach(([code,prof])=>{
+    code=String(code||'').trim();
+    if(!code||seen.has(code))return;
+    const r=remMap[code];
+    const name=prof.name||r?.name||prof.branch||code;
+    rows.push(getCustomerProfile({c:code,n:name,ty:prof.category||r?.cust_group||'ขายจริง',grp:prof.corporate||r?.cust_group||'อื่นๆ',slm:prof.slm||r?.slm_id||'',w:[0,0,0,0],g:[]}));
     seen.add(code);
   });
 
@@ -5619,7 +5819,7 @@ async function _sbDashboardSalesAggRows(startYm,endYm,includeTgm=false){
     if(!data||data.length<PAGE)break;
     from+=PAGE;
   }
-  return rows.filter(r=>includeTgm || _isAllowedCompanyRecord({company:r.company,prod_code:r.prod_code},{})).map(r=>({
+  const mapped=rows.filter(r=>_isAllowedCompanyRecord({company:r.company,prod_code:r.prod_code},{includeTgm:includeTgm===true})).map(r=>({
     branch:r.company||'',
     prefixed:true,
     is_all:false,
@@ -5638,6 +5838,11 @@ async function _sbDashboardSalesAggRows(startYm,endYm,includeTgm=false){
     ym:r.ym,
     company:r.company||''
   }));
+  return _dedupeArchiveSalesRows(mapped,['ym','prod_code']);
+}
+async function _sbDashboardOverviewRows(startYm,endYm,slmId='',includeTgm=false){
+  const rows=await _sbSalesOverviewAggRows(startYm,endYm,slmId);
+  return rows.filter(r=>_isAllowedCompanyRecord({company:r.company,prod_code:r.prod_code},{includeTgm:includeTgm===true}));
 }
 async function loadDashboardSalesHist(includeTgm = false){
   const range=_twoYearWindow();
@@ -5662,6 +5867,14 @@ async function loadDashboardSalesHist(includeTgm = false){
     const fetchEnd=rows.length && missingMonths.length ? missingMonths[missingMonths.length-1] : range.end;
     const fallbackRows=await _sbSalesRows(fetchStart,fetchEnd,slmId,{includeConsi:false,summaryOnly:!slmId && includeTgm!==true,fastProducts:true,includeTgm:includeTgm===true,excludeAllRows:includeTgm===true});
     rows=rows.length ? _mergeSalesRows(rows,fallbackRows,range.start,range.end) : fallbackRows;
+  }
+  if(includeTgm===true && (!rows.length || !rows.some(r=>(Number(r.amount)||0) || (Number(r.qty)||0)))){
+    try{
+      const overviewRows=await _sbDashboardOverviewRows(range.start,range.end,slmId,true);
+      if(overviewRows.length) rows=overviewRows;
+    }catch(e){
+      console.warn('dashboard sales overview fallback unavailable',e.message||e);
+    }
   }
   if(includeTgm===true && !slmId && !rows.length){
     rows=await _sbSalesRows(range.start,range.end,'',{includeConsi:false,summaryOnly:true,fastProducts:true,includeTgm:true,includeAllRows:true});
@@ -5704,6 +5917,50 @@ async function loadDashboardCustRows(){
   }
   return window._dashCustRows;
 }
+async function loadDashboardSummary(){
+  const range=_twoYearWindow();
+  const me=(DB.get('users')||[]).find(x=>x.uid===UID);
+  const slmId=window._dashSlmF||(isSales()?(me?.slm_id||''):'');
+  const qs=new URLSearchParams({startYm:range.currentStart,endYm:range.currentEnd});
+  if(slmId) qs.set('slmId',slmId);
+  const res=await apiFetch('/api/dashboard_sales_summary?'+qs.toString());
+  if(res.error) throw new Error(res.error.message||'dashboard_sales_summary failed');
+  window._dashSummary=res.data||null;
+  return window._dashSummary;
+}
+async function loadDashboardInvoiceSummary(){
+  const range=_twoYearWindow();
+  const me=(DB.get('users')||[]).find(x=>x.uid===UID);
+  const slmId=window._dashSlmF||(isSales()?(me?.slm_id||''):'');
+  if(slmId){
+    window._dashInvoiceSummary=null;
+    return null;
+  }
+  const defs=[['TSS','TSS'],['CONSI','CONSI'],['TSS-NV','TSSNV'],['TGM','TGM']];
+  const chunks=await Promise.all(defs.map(([company])=>_sbInvoiceSalesMonthlyRowsRange(range.currentStart,range.currentEnd,company)));
+  const companySales={},amountMonthly={},invoiceMonthly={},amountMonthlyByCompany={},invoiceMonthlyByCompany={};
+  let totalAmount=0,totalInvoices=0;
+  defs.forEach(([,key],i)=>{
+    let amount=0,count=0;
+    for(const r of chunks[i]||[]){
+      const ym=String(r.ym||'');
+      const a=Number(r.amount)||0;
+      const c=Number(r.invoice_count)||0;
+      amount+=a;count+=c;totalAmount+=a;totalInvoices+=c;
+      if(ym){
+        amountMonthly[ym]=(amountMonthly[ym]||0)+a;
+        invoiceMonthly[ym]=(invoiceMonthly[ym]||0)+c;
+        if(!amountMonthlyByCompany[ym]) amountMonthlyByCompany[ym]={};
+        if(!invoiceMonthlyByCompany[ym]) invoiceMonthlyByCompany[ym]={};
+        amountMonthlyByCompany[ym][key]=(amountMonthlyByCompany[ym][key]||0)+a;
+        invoiceMonthlyByCompany[ym][key]=(invoiceMonthlyByCompany[ym][key]||0)+c;
+      }
+    }
+    companySales[key]={amount,count,qty:0};
+  });
+  window._dashInvoiceSummary={companySales,amountMonthly,invoiceMonthly,amountMonthlyByCompany,invoiceMonthlyByCompany,totalAmount,totalInvoices};
+  return window._dashInvoiceSummary;
+}
 // Builds everything the dashboard shows from whatever 6 data parts are handed to it — cached/peeked
 // (Phase 1, synchronous, called from pgDash() below with no network wait) or freshly fetched
 // (Phase 2) — same merge-with-local-fallback logic either way, so a missing/null part just falls
@@ -5712,22 +5969,31 @@ async function loadDashboardCustRows(){
 // _isActivePage() above) is the only structural change; the compute/render logic itself, from here
 // through the end of the function, is byte-for-byte what pgDash() always did.
 function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
-  let po=DB.get('po_log')||[];
-  let stk=DB.get('stock')||{};
-  let fc=DB.get('forecasts')||[];
-  let hist=window._dashSalesHistCache || myHist();
-  let ss=DB.get('sku_settings')||{};
-  if(rPo?.length) po=mergePOPlans(rPo, DB.get('po_log')||[], {includeTgm:true});
-  if(rStk&&Object.keys(rStk).length) stk=rStk;
-  if(rFc?.length) fc=mergeForecasts(rFc, DB.get('forecasts')||[], {includeTgm:true});
-  if(rSs&&Object.keys(rSs).length) ss=rSs;
-  if(rHist&&Object.keys(rHist).length) hist=rHist;
+  // Dashboard must never parse large localStorage blobs during first paint. Use only data already
+  // handed in by async loaders; otherwise render a lightweight shell and let pgDash() hydrate it.
+  let po=Array.isArray(rPo)?rPo:[];
+  let stk=(rStk&&typeof rStk==='object')?rStk:{};
+  let fc=Array.isArray(rFc)?rFc:[];
+  let hist=(rHist&&Object.keys(rHist).length)?rHist:(window._dashSalesHistCache||{});
+  let ss=(rSs&&typeof rSs==='object')?rSs:{};
   // ให้ dashCharts() อ่านได้ผ่าน _dashData.hist
   if(hist&&Object.keys(hist).length) window._dashSalesHistCache=hist;
-  const yearSalesValue=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.amount)||0),0);
-  const yearSalesQty=(window._dashSalesRows||[]).reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
+  const summary=window._dashSummary||null;
+  const dashboardRows=window._dashSalesRows||[];
+  const slmF=window._dashSlmF||'';
+  const slmName=slmF?(salesNameFor(slmF)||slmF):'';
+  const rowCompanySales=_companyTotals(dashboardRows);
+  const invoiceSummary=(!slmF && window._dashInvoiceSummary) ? window._dashInvoiceSummary : null;
+  const orderCompanySales=Object.keys(rowCompanySales).length?rowCompanySales:(summary?.companySales||{});
+  const companySales=invoiceSummary?['TSS','CONSI','TSSNV','TGM'].reduce((acc,k)=>{
+    const order=orderCompanySales[k]||{qty:0,amount:0,count:0};
+    const inv=invoiceSummary.companySales?.[k]||{};
+    acc[k]={...order,amount:Number(inv.amount)||0,count:Number(inv.count)||order.count||0,invoiceBased:true};
+    return acc;
+  },{}):orderCompanySales;
+  const yearSalesValue=invoiceSummary?Number(invoiceSummary.totalAmount)||0:dashboardRows.reduce((a,r)=>a+(Number(r.amount)||0),0);
+  const yearSalesQty=dashboardRows.reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
   const yearSales=yearSalesValue || yearSalesQty;
-  const companySales=_companyTotals(window._dashSalesRows||[]);
   const tssSales=companySales.TSS||{qty:0,amount:0,count:0};
   const tssnvSales=companySales.TSSNV||{qty:0,amount:0,count:0};
   const tgmSales=companySales.TGM||{qty:0,amount:0,count:0};
@@ -5744,8 +6010,6 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
     <div class="kpi g"><div class="kl">SO Lines</div><div class="kv">${fmt(confidence.lineCount)}</div></div>
     <div class="kpi ${confWarnings.length?'r':'a'}"><div class="kl">Booking Active</div><div class="kv">${fmt(confidence.activeBookingCount)}</div><div class="kh">${confWarnings.length?esc(confWarnings.join(' | ')):'ข้อมูลเชื่อมครบ'}</div></div>
   </div>`:'';
-  const slmF=window._dashSlmF||'';
-  const slmName=slmF?(salesNameFor(slmF)||slmF):'';
   // แยกแอป Sales/Planning (2026-09-16, พบตอน build planning-deploy): ตัวกรองพนักงานขาย + Top 10 สินค้า/
   // ลูกค้า พึ่งพา _sd* cluster ของหน้า Sales Overview ตรงๆ (_sdSalesListFromRows/_sdBuildProds/
   // _sdBuildCusts/_sdFmtTotal/_sdBar) ซึ่งถูกตัดออกจากแอป Planning (SALES_ONLY ใน app-manifest.js) —
@@ -5759,10 +6023,10 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
   document.getElementById('ct').innerHTML=`
   ${slmDropHtml}
   <div class="krow">
-    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">${slmF?`ยอดขายของ ${esc(slmName)}`:'รวม TSS + TSSNV + TGM'}</div></div>
-    <div class="kpi g"><div class="kl">ยอดขาย TSS</div><div class="kv">฿${fmt(tssSales.amount || tssSales.qty)}</div><div class="kh">${fmt(tssSales.qty)} กก.</div></div>
-    <div class="kpi p"><div class="kl">ยอดขาย TSSNV</div><div class="kv">฿${fmt(tssnvSales.amount || tssnvSales.qty)}</div><div class="kh">${fmt(tssnvSales.qty)} กก.</div></div>
-    <div class="kpi a"><div class="kl">ยอดขาย TGM</div><div class="kv">฿${fmt(tgmSales.amount || tgmSales.qty)}</div><div class="kh">${fmt(tgmSales.qty)} กก.</div></div>
+    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">${slmF?`ยอดขายของ ${esc(slmName)}`:'รวม TSS + CONSI + TSSNV + TGM'}</div></div>
+    <div class="kpi g"><div class="kl">ยอดขาย TSS${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(tssSales.amount || tssSales.qty)}</div><div class="kh">${invoiceSummary?`${fmt(tssSales.count||tssSales.invoices||0)} ใบกำกับ`:`${fmt(tssSales.qty)} กก.`}</div></div>
+    <div class="kpi p"><div class="kl">ยอดขาย TSSNV${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(tssnvSales.amount || tssnvSales.qty)}</div><div class="kh">${invoiceSummary?`${fmt(tssnvSales.count||tssnvSales.invoices||0)} ใบกำกับ`:`${fmt(tssnvSales.qty)} กก.`}</div></div>
+    <div class="kpi a"><div class="kl">ยอดขาย TGM${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(tgmSales.amount || tgmSales.qty)}</div><div class="kh">${invoiceSummary?`${fmt(tgmSales.count||tgmSales.invoices||0)} ใบกำกับ`:`${fmt(tgmSales.qty)} กก.`}</div></div>
   </div>
   ${confidenceHtml}
   ${overdue?`<div class="al ald">⚠️ มี ${overdue} PO เลยกำหนดส่ง</div>`:''}
@@ -5772,27 +6036,11 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
     <div class="card"><div class="ch"><div class="ct2">🏆 Top 10 สินค้า</div><span style="font-size:11px;color:var(--TX3);font-weight:400">${slmF?`ยอดขายทั้งปีของ ${esc(slmName)}`:'ยอดขายทั้งปี'} — ไม่กรองตามตัวกรองด้านล่าง</span></div><div class="tw" id="dash-top-prod"></div></div>
     <div class="card"><div class="ch"><div class="ct2">👥 Top 10 ลูกค้า</div><span style="font-size:11px;color:var(--TX3);font-weight:400">${slmF?`ยอดขายทั้งปีของ ${esc(slmName)}`:'ยอดขายทั้งปี'} — ไม่กรองตามตัวกรองด้านล่าง</span></div><div class="tw" id="dash-top-cust"></div></div>
   </div>`:''}
-  <div class="frow">
-    <label>กลุ่มสินค้า:</label>
-    <select id="gf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${skuGroupNames().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
-    <label>ช่วงเวลา:</label>
-    <select id="pf" onchange="dashCharts()"><option value="12" selected>ปีปัจจุบัน</option><option value="4">4 เดือนล่าสุด</option><option value="3">3 เดือนล่าสุด</option><option value="1">เดือนนี้</option><option value="24">2 ปีล่าสุด</option></select>
-    <label>กลุ่มลูกค้า:</label>
-    <select id="cgf" onchange="dashCharts()"><option value="">ทั้งหมด</option>${[...new Set(salesCustomers().map(c=>c.corp||'อื่นๆ'))].sort().map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select>
-  </div>
-  <div class="cgrid c2">
-    <div class="card"><div class="ch"><div class="ct2">📊 ปริมาณการขาย: ยอดจริง vs Forecast vs PO Plan</div><span style="font-size:11px;color:var(--TX3);font-weight:400">หน่วย: กก.</span></div><div class="cbox"><canvas id="c-main"></canvas></div></div>
-    <div class="card"><div class="ch"><div class="ct2">Top 8 กลุ่มสินค้ายอดสูงสุด</div></div><div class="cbox"><canvas id="c-top"></canvas></div></div>
-  </div>
-  <div class="cgrid c2">
-    <div class="card"><div class="ch"><div class="ct2">Stock vs ขั้นต่ำ</div></div><div class="cbox2"><canvas id="c-stk"></canvas></div></div>
-    <div class="card"><div class="ch"><div class="ct2">สถานะ PO</div></div><div class="cbox2"><canvas id="c-po"></canvas></div></div>
-  </div>
-  <div class="cgrid c2">
-    <div class="card"><div class="ch"><div class="ct2">สรุปปริมาณการขาย (กก.)</div><span style="font-size:11px;color:var(--TX3);font-weight:400">Actual qty vs Forecast vs PO Plan</span></div><div id="dash-qty-tbl"></div></div>
+  <div class="cgrid">
     <div class="card"><div class="ch"><div class="ct2">สรุปมูลค่าการขาย (฿)</div><span style="font-size:11px;color:var(--TX3);font-weight:400">Sales value รายเดือน</span></div><div id="dash-val-tbl"></div></div>
   </div>`;
-  setTimeout(dashCharts,50);
+  dashRemoveQtySummaryCard();
+  dashUpdateSummaryTables();
   // extract.js's safety net (deploy-shared/extract.js) only recognizes a guard when the `if` TEST
   // itself is a literal `typeof <name> === 'function'` chain (walked via && on both sides) — an
   // indirection variable like `if(_dashHasSalesCluster)` does NOT satisfy it, even though it's
@@ -5802,18 +6050,10 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
     dashTopTables();
     const slmSel=document.getElementById('dash-slm-f');
     if(slmSel){
-      const slmList=_sdSalesListFromRows(window._dashSalesRows||[]);
+      const slmList=dashVisibleSalesList();
       slmSel.innerHTML='<option value="">ทั้งหมด (ภาพรวมบริษัท)</option>'+slmList.map(s=>`<option value="${esc(s.code)}"${s.code===slmF?' selected':''}>${esc(s.name)}</option>`).join('');
     }
   }
-  ensureExtraCustCodes().then(extraCodes=>{
-    const cgf=document.getElementById('cgf');
-    if(!cgf||!(extraCodes?.size>0))return;
-    const allCusts=allCustomerRows(extraCodes);
-    const groups=[...new Set(allCusts.map(c=>c.corp||'อื่นๆ'))].sort();
-    const curVal=cgf.value;
-    cgf.innerHTML='<option value="">ทั้งหมด</option>'+groups.map(g=>`<option value="${esc(g)}"${curVal===g?' selected':''}>${esc(g)}</option>`).join('');
-  });
 }
 // เรียก pgDash() ใหม่ทั้งฟังก์ชัน (ไม่ใช่แค่ dashRenderBody) เพราะ window._dashSalesRows/hist ต้อง
 // คำนวณใหม่ผ่าน loadDashboardSalesHist()/myHist() ที่อ่านค่า window._dashSlmF — ส่วน PO/Stock/
@@ -5822,17 +6062,32 @@ function dashSetSlmFilter(v){
   window._dashSlmF=v||'';
   pgDash();
 }
+function dashRemoveQtySummaryCard(){
+  const root=document.getElementById('ct');
+  if(!root)return;
+  root.querySelectorAll('.card').forEach(card=>{
+    if((card.querySelector('.ct2')?.textContent||'').includes('สรุปปริมาณการขาย'))card.remove();
+  });
+  document.getElementById('dash-qty-tbl')?.closest('.card')?.remove();
+}
+const _dashQtyCardObserver=new MutationObserver(()=>dashRemoveQtySummaryCard());
+document.addEventListener('DOMContentLoaded',()=>{
+  const root=document.getElementById('ct');
+  if(root)_dashQtyCardObserver.observe(root,{childList:true,subtree:true});
+});
 // Top 10 สินค้า/ลูกค้า — ใช้ _sdBuildProds()/_sdBuildCusts() ตัวเดียวกับหน้า Sales Overview (เรียงตาม
 // ยอดขายมาให้แล้ว) สินค้าใช้ window._dashSalesRows ที่ Dashboard ดึงมาอยู่แล้วไม่ต้องดึงซ้ำ ส่วนลูกค้าใช้
 // window._dashCustRows (loadDashboardCustRows()) แยกต่างหาก — ต้องเป็นคนละแหล่งข้อมูลกัน (ดูคอมเมนต์ที่
 // loadDashboardCustRows())
 function dashTopTables(){
   const rows=window._dashSalesRows||[];
+  const summary=window._dashSummary||null;
   const prodBox=document.getElementById('dash-top-prod');
   const custBox=document.getElementById('dash-top-cust');
   if(!prodBox||!custBox)return;
-  const prodGroups=_sdBuildProds(rows);
-  const allProds=prodGroups.flatMap(g=>g.it).sort((a,b)=>b._tot-a._tot).slice(0,10);
+  const allProds=(summary?.topProducts?.length && summary.deduped===true
+    ? summary.topProducts.map(p=>({c:p.code,n:p.name,_tot:Number(p.amount)||Number(p.qty)||0}))
+    : _sdBuildProds(rows).flatMap(g=>g.it).sort((a,b)=>b._tot-a._tot).slice(0,10));
   const maxProd=Math.max(...allProds.map(p=>p._tot),1);
   prodBox.innerHTML=!allProds.length?`<div style="padding:16px;text-align:center;color:var(--TX3);font-size:12.5px">ไม่มีข้อมูล</div>`:`<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr><th style="text-align:left;padding:0 6px 8px;color:var(--TX3);font-size:11px">#</th><th style="text-align:left;padding:0 6px 8px;color:var(--TX3);font-size:11px">สินค้า</th><th style="text-align:right;padding:0 6px 8px;color:var(--TX3);font-size:11px">ยอดขาย</th></tr></thead>
@@ -5847,7 +6102,9 @@ function dashTopTables(){
   // (see loadDashboardCustRows()'s comment), so every row fell into UNASSIGNED_CORP_LABEL regardless
   // of customer_profiles data. window._dashCustRows (loadDashboardCustRows(), fetched alongside the
   // other Dashboard data in pgDash()) carries real per-customer rows instead.
-  const allCusts=_sdBuildCusts(window._dashCustRows||[]).slice(0,10);
+  const allCusts=(summary?.topCustomers?.length && summary.deduped===true
+    ? summary.topCustomers.map(c=>({n:c.name,branches:Array.from({length:Math.max(Number(c.branches)||0,1)}),_tot:Number(c.amount)||Number(c.qty)||0}))
+    : _sdBuildCusts(window._dashCustRows||[]).slice(0,10));
   const custTotal=allCusts.reduce((a,c)=>a+c._tot,0)||1;
   const maxCust=Math.max(...allCusts.map(c=>c._tot),1);
   custBox.innerHTML=!allCusts.length?`<div style="padding:16px;text-align:center;color:var(--TX3);font-size:12.5px">ไม่มีข้อมูล</div>`:`<table style="width:100%;border-collapse:collapse;font-size:12.5px">
@@ -5867,51 +6124,104 @@ function dashTopTables(){
 // real content immediately from whatever's already cached (CACHE.peek(), synchronous, no network
 // wait); Phase 2 is the exact same 6 calls pgDash() always made — no fetch added or removed, only
 // the sequencing changed so they no longer gate first paint.
-async function pgDash(){
-  dashRenderBody(
-    CACHE.peek('dash_po_all'), CACHE.peek('dash_stock_all'), CACHE.peek('dash_fc_all'),
-    CACHE.peek('dash_ss_all'), null, CACHE.peek('data_confidence')
-  );
-
-  const remote = await Promise.allSettled([
-    CACHE.get('dash_po_all',()=>SB.getPOPlans({includeTgm:true})),
-    CACHE.get('dash_stock_all',()=>SB.getStock({includeTgm:true})),
-    CACHE.get('dash_fc_all',()=>SB.getForecasts(null,{includeTgm:true})),
-    CACHE.get('dash_ss_all',()=>SB.getSkuSettings({includeTgm:true})),
-    loadDashboardSalesHist(true),
-    CACHE.get('data_confidence',()=>SB.getDataConfidence()),
-    // Guarded the same way dashTopTables() itself is guarded elsewhere (extract.js's safety net only
-    // recognizes a literal `typeof X==='function'` test — see the comment above dashTopTables()'s own
-    // call site) so the Planning app build, which strips the whole _sd* cluster, never pays for a
-    // fetch feeding a card it doesn't render.
-    (typeof dashTopTables==='function')?loadDashboardCustRows():Promise.resolve(null),
+function dashPromiseTimeout(p,ms,label){
+  let t=null;
+  return Promise.race([
+    Promise.resolve(p).finally(()=>{if(t)clearTimeout(t);}),
+    new Promise((_,reject)=>{t=setTimeout(()=>reject(new Error(`${label||'Dashboard load'} timeout`)),ms);})
   ]);
-  if (!_isActivePage('dash')) return;
-  const value=(i,fallback=null)=>{
-    if(remote[i]?.status==='fulfilled') return remote[i].value;
-    console.warn('Dashboard data part failed', i, remote[i]?.reason?.message || remote[i]?.reason);
-    return fallback;
+}
+function dashSummaryHasValues(summary){
+  if(!summary) return false;
+  if(Number(summary.totalAmount)||Number(summary.totalQty)||Number(summary.totalCount)) return true;
+  return ['companySales','qtyMonthly','topProducts','topCustomers'].some(k=>{
+    const v=summary[k];
+    if(Array.isArray(v)) return v.some(x=>(Number(x.amount)||Number(x.qty)||Number(x.count)||Number(x.branches)));
+    if(v&&typeof v==='object') return Object.values(v).some(x=>typeof x==='object'?Object.values(x).some(n=>Number(n)):Number(x));
+    return false;
+  });
+}
+function dashRowsHaveValues(rows){
+  return (rows||[]).some(r=>(Number(r.amount)||0)!==0 || (Number(r.qty)||0)!==0);
+}
+async function loadDashboardFallbackRollups(){
+  // Fallback for deployments where the lightweight summary endpoint is slow, unavailable, or the
+  // backend service has not been restarted yet. It uses the existing aggregate paths that powered the
+  // Dashboard before the summary endpoint, so users see real data instead of a permanent zero shell.
+  const jobs=[loadDashboardSalesHist(true)];
+  if(typeof dashTopTables==='function') jobs.push(loadDashboardCustRows());
+  const results=await Promise.allSettled(jobs);
+  results.forEach((r,i)=>{if(r.status==='rejected')console.warn('Dashboard fallback failed', i, r.reason?.message||r.reason);});
+  return dashRowsHaveValues(window._dashSalesRows||[]);
+}
+async function pgDash(){
+  // Hot path for the first screen: never load stock/PO/forecast/full sales rollups while the browser is
+  // trying to paint Dashboard. Those datasets can be very large on production and have repeatedly made
+  // Chrome show "page unresponsive". The Dashboard now paints from an empty shell, then hydrates only
+  // lightweight aggregated KPI endpoints. Heavy detail pages still load their own data when opened.
+  try{
+    dashRenderBody(null, null, null, null, null, null);
+  }catch(e){
+    console.warn('Dashboard initial render failed', e.message||e);
+    const ct=document.getElementById('ct');
+    if(ct)ct.innerHTML='<div class="al ali">????????? Dashboard...</div>';
+  }
+
+  const renderLight=()=>{
+    if(!_isActivePage('dash')) return;
+    dashRenderBody([], {}, [], {}, window._dashSalesHistCache||null, CACHE.peek('data_confidence')||null);
   };
-  dashRenderBody(value(0,[]), value(1,null), value(2,[]), value(3,null), value(4,null), value(5,null));
+  const safeLight=(name,p)=>p.then(()=>renderLight()).catch(e=>console.warn(name, e.message||e));
+
+  const summaryP=dashPromiseTimeout(loadDashboardSummary(),8000,'Dashboard summary');
+  const invoiceP=dashPromiseTimeout(loadDashboardInvoiceSummary(),10000,'Dashboard invoice sales');
+  const confP=dashPromiseTimeout(CACHE.get('data_confidence',()=>SB.getDataConfidence(),{force:true}),6000,'Dashboard confidence');
+  safeLight('Dashboard summary failed', summaryP);
+  safeLight('Dashboard invoice sales failed', invoiceP);
+  safeLight('Dashboard confidence failed', confP);
+
+  await Promise.allSettled([summaryP,invoiceP,confP]);
+  if(!_isActivePage('dash')) return;
+  if(!dashSummaryHasValues(window._dashSummary) && !dashRowsHaveValues(window._dashSalesRows||[])){
+    await loadDashboardFallbackRollups();
+  }
+  renderLight();
+}
+function dashQtyForMonth(m){
+  const rows=window._dashSalesRows||[];
+  if(dashRowsHaveValues(rows)){
+    return rows.filter(r=>r.ym===m).reduce((s,r)=>s+(Number(r.qty)||0),0);
+  }
+  const qtyByMonth=window._dashSummary?.qtyMonthly||{};
+  if(Object.prototype.hasOwnProperty.call(qtyByMonth,m)) return Number(qtyByMonth[m])||0;
+  return 0;
+}
+function dashUpdateSummaryTables(){
+  const now=new Date();
+  const baseYear=now.getFullYear();
+  const mths=Array.from({length:now.getMonth()+1},(_,i)=>`${baseYear}-${String(i+1).padStart(2,'0')}`);
+  const actual=mths.map(dashQtyForMonth);
+  const empty=mths.map(()=>0);
+  dashSummaryTables(mths,actual,empty,empty);
 }
 function dashCharts(){
   const allowed=allowedSKUs();
   const period=parseInt(document.getElementById('pf')?.value||'4');
-  const custGroup=document.getElementById('cgf')?.value||'';
+  const custGroup='';
   const dashData=window._dashData||{};
   const hist = (dashData.hist && Object.keys(dashData.hist).length ? dashData.hist : null)
              || (window._dashSalesHistCache && Object.keys(window._dashSalesHistCache).length ? window._dashSalesHistCache : null)
              || (window._salesHistCache && Object.keys(window._salesHistCache).length ? window._salesHistCache : null)
-             || myHist();
-  const fc=dashData.fc||DB.get('forecasts')||[];
-  const po=dashData.po||DB.get('po_log')||[];
-  const stk=dashData.stk||DB.get('stock')||{};
-  const ss=dashData.ss||DB.get('sku_settings')||{};
+             || {};
+  const fc=Array.isArray(dashData.fc)?dashData.fc:[];
+  const po=Array.isArray(dashData.po)?dashData.po:[];
+  const stk=(dashData.stk&&typeof dashData.stk==='object')?dashData.stk:{};
+  const ss=(dashData.ss&&typeof dashData.ss==='object')?dashData.ss:{};
   const now=new Date();
   const baseYear=now.getFullYear();
   const curYm=`${baseYear}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const cutYm=_ymAdd(curYm,-23);
-  const yearMths=Array.from({length:12},(_,i)=>`${baseYear}-${String(i+1).padStart(2,'0')}`);
+  const yearMths=Array.from({length:now.getMonth()+1},(_,i)=>`${baseYear}-${String(i+1).padStart(2,'0')}`);
   const twoYrMths=Array.from({length:24},(_,i)=>`${baseYear-1+Math.floor(i/12)}-${String((i%12)+1).padStart(2,'0')}`);
   const dataMths=[...new Set([
     ...Object.values(hist).flatMap(h=>Object.keys(h.monthly||{})),
@@ -5923,9 +6233,7 @@ function dashCharts(){
   else srcMths=dataMths.length?dataMths:yearMths;
   const mths=srcMths.slice(-period);
   const mls=mths.map(mL);
-  const custSKUs = custGroup ? new Set(salesCustomers()
-    .filter(c=>((c.corp||'อื่นๆ')===custGroup))
-    .flatMap(c=>c.g.flatMap(g=>g.it.map(i=>i.c)))) : null;
+  const custSKUs = null;
   const skuAllowed = key => (!allowed||allowed.has(key)) && (!custSKUs||custSKUs.has(key));
   const actual=mths.map(m=>Object.entries(hist).filter(([k])=>skuAllowed(k)).reduce((a,[,h])=>a+(h.monthly[m]||0),0));
   const fcData=mths.map(m=>fc.filter(f=>skuAllowed(f.sku)&&f.delivDate?.substring(0,7)===m.substring(0,7)).reduce((a,f)=>a+f.qty,0));
@@ -5948,7 +6256,7 @@ function dashCharts(){
   },{});
   const topSKU=Object.entries(topGroups).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8);
   mkChart('c-top','bar',topSKU.map(s=>s.n.substring(0,28)),[{label:'เฉลี่ย/เดือน',data:topSKU.map(s=>s.v),backgroundColor:'rgba(65,43,138,.72)',borderRadius:4}],{indexAxis:'y',scales:{x:{beginAtZero:true}}});
-  const stkE=Object.entries(stk).filter(([k])=>skuAllowed(k)).map(([k,s])=>({k,qty:s.qty,min:(ss[k]?.min_stock||50),name:(skuI(k).name||k).substring(0,16)})).sort((a,b)=>a.qty/a.min-b.qty/b.min).slice(0,8);
+  const stkE=Object.entries(stk).filter(([k])=>skuAllowed(k)&&!String(k||'').trim().startsWith('9')).map(([k,s])=>({k,qty:s.qty,min:(ss[k]?.min_stock||50),name:(skuI(k).name||k).substring(0,16)})).sort((a,b)=>a.qty/a.min-b.qty/b.min).slice(0,8);
   mkChart('c-stk','bar',stkE.map(s=>s.name),[
     {label:'Stock ปัจจุบัน',data:stkE.map(s=>s.qty),backgroundColor:stkE.map(s=>s.qty<s.min?'rgba(163,45,45,.75)':'rgba(10,89,64,.72)'),borderRadius:3},
     {label:'ขั้นต่ำ',data:stkE.map(s=>s.min),type:'line',borderColor:'#C44B0A',borderWidth:2,borderDash:[5,3],pointRadius:3,fill:false,backgroundColor:'transparent'},
@@ -5961,27 +6269,87 @@ function dashCharts(){
   mkChart('c-po','doughnut',['Pending','Overdue','Matched'],[{data:[cnt.pending,cnt.overdue,cnt.matched],backgroundColor:['#1553A0','#A32D2D','#0A5940'],borderWidth:0}],{plugins:{legend:{position:'right'}}});
   dashSummaryTables(mths,actual,fcData,poData);
 }
+function dashValueVisibleColumns(){
+  const defaults={tss:true,consi:true,tssnv:true,tgm:true,total:true};
+  try{return {...defaults,...(JSON.parse(localStorage.getItem('dash_value_columns')||'{}')||{})};}catch(_){return defaults;}
+}
+function dashToggleValueColumn(col,checked){
+  const cfg=dashValueVisibleColumns();
+  cfg[col]=!!checked;
+  try{localStorage.setItem('dash_value_columns',JSON.stringify(cfg));}catch(_){ }
+  dashUpdateSummaryTables();
+}
+function dashVisibleSalesList(){
+  const m=new Map();
+  const add=(code,name='')=>{
+    code=String(code||'').trim();
+    if(!code || code.toUpperCase()==='ALL') return;
+    if(!m.has(code)) m.set(code, salesNameFor(code)||name||code);
+  };
+  (window._dashCustRows||[]).forEach(r=>add(r.slm_id||r.slm_key||r.slm_owner,r.slm_name));
+  (window._dashSalesRows||[]).forEach(r=>add(r.slm_id||r.slm_key,r.slm_name));
+  if(!m.size){
+    salesMaster().filter(s=>s.active!==false).forEach(s=>add(s.code,s.name));
+  }
+  return [...m.entries()].map(([code,name])=>({code,name:`${code} - ${name||code}`})).sort((a,b)=>String(a.code).localeCompare(String(b.code),'th',{numeric:true}));
+}
 function dashSalesValue(m){
   // ใช้เฉพาะ _dashSalesRows — ไม่ fallback ไป _sdApi เพราะอาจคนละ scope
   const rows = window._dashSalesRows || [];
-  const monthly = rows.reduce((acc,r)=>{
-    if(!r.ym) return acc;
-    acc[r.ym] = (acc[r.ym]||0) + (Number(r.amount)||0);
-    return acc;
-  }, {});
+  if(window._dashSalesValueCacheRows!==rows){
+    window._dashSalesValueCacheRows=rows;
+    window._dashSalesValueCache=rows.reduce((acc,r)=>{
+      if(!r.ym) return acc;
+      acc[r.ym] = (acc[r.ym]||0) + (Number(r.amount)||0);
+      return acc;
+    }, {});
+  }
+  const invMonthly=window._dashInvoiceSummary?.amountMonthly;
+  if(invMonthly && Object.prototype.hasOwnProperty.call(invMonthly,m)) return invMonthly[m]||0;
+  const monthly = window._dashSalesValueCache || {};
   return monthly[m] ?? 0;
 }
+function dashSalesValueBreakdown(m){
+  const byCompany=window._dashInvoiceSummary?.amountMonthlyByCompany?.[m]||null;
+  if(byCompany){
+    const tss=Number(byCompany.TSS)||0;
+    const consi=Number(byCompany.CONSI)||0;
+    const tssnv=Number(byCompany.TSSNV)||0;
+    const tgm=Number(byCompany.TGM)||0;
+    return {tss,consi,tssnv,tgm,total:tss+consi+tssnv+tgm,invoiceBased:true};
+  }
+  const rows=window._dashSalesRows||[];
+  if(rows.length){
+    const out={tss:0,consi:0,tssnv:0,tgm:0,total:0,invoiceBased:false};
+    rows.filter(r=>r.ym===m).forEach(r=>{
+      const amount=Number(r.amount)||0;
+      const c=_rowCompany(r);
+      const key=c==='CONSI'?'consi':(c==='TSSNV'||c==='TSS-NV'?'tssnv':(c==='TGM'?'tgm':'tss'));
+      out[key]+=amount;
+      out.total+=amount;
+    });
+    return out;
+  }
+  const total=dashSalesValue(m);
+  return {tss:total,consi:0,tssnv:0,tgm:0,total,invoiceBased:false};
+}
 function dashSummaryTables(mths,actual,fcData,poData){
-  const qtyEl=document.getElementById('dash-qty-tbl'),valEl=document.getElementById('dash-val-tbl');
-  if(!qtyEl||!valEl)return;
-  const qtyRows=mths.map((m,i)=>({m,actual:actual[i]||0,fc:fcData[i]||0,po:poData[i]||0}));
-  const qtyTotA=qtyRows.reduce((s,r)=>s+r.actual,0);
-  const qtyTotF=qtyRows.reduce((s,r)=>s+r.fc,0);
-  const qtyTotP=qtyRows.reduce((s,r)=>s+r.po,0);
-  qtyEl.innerHTML=`<div class="tw"><table><thead><tr><th>เดือน</th><th class="r">ยอดขายจริง (กก.)</th><th class="r">Forecast (กก.)</th><th class="r">PO Plan (กก.)</th></tr></thead><tbody>${qtyRows.map(r=>`<tr><td>${mL(r.m)}</td><td class="r">${fmt(r.actual)}</td><td class="r">${fmt(r.fc)}</td><td class="r">${fmt(r.po)}</td></tr>`).join('')}</tbody><tfoot><tr style="font-weight:700;background:var(--bg2)"><td>รวม</td><td class="r">${fmt(qtyTotA)}</td><td class="r">${fmt(qtyTotF)}</td><td class="r">${fmt(qtyTotP)}</td></tr></tfoot></table></div>`;
-  const valRows=mths.map(m=>({m,val:dashSalesValue(m)}));
-  const valTotal=valRows.reduce((s,r)=>s+r.val,0);
-  valEl.innerHTML=`<div class="tw"><table><thead><tr><th>เดือน</th><th class="r">มูลค่าขาย (฿)</th></tr></thead><tbody>${valRows.map(r=>`<tr><td>${mL(r.m)}</td><td class="r"><strong>${_sdF(r.val)}</strong></td></tr>`).join('')}</tbody><tfoot><tr style="font-weight:700;background:var(--bg2)"><td>รวมทั้งปี</td><td class="r"><strong>${_sdF(valTotal)}</strong></td></tr></tfoot></table></div>`;
+  const valEl=document.getElementById('dash-val-tbl');
+  if(!valEl)return;
+  const cfg=dashValueVisibleColumns();
+  const sumKeys=['tss','consi','tssnv','tgm'].filter(k=>cfg[k]!==false);
+  const valRows=mths.map(m=>{
+    const row={m,...dashSalesValueBreakdown(m)};
+    row.total=sumKeys.reduce((s,k)=>s+(Number(row[k])||0),0);
+    return row;
+  });
+  const valTotals=valRows.reduce((s,r)=>({
+    tss:s.tss+r.tss,consi:s.consi+r.consi,tssnv:s.tssnv+r.tssnv,tgm:s.tgm+r.tgm,total:s.total+r.total,
+  }),{tss:0,consi:0,tssnv:0,tgm:0,total:0});
+  const cols=[['tss','TSS',true],['consi','CONSI'],['tssnv','TSSNV'],['tgm','TGM'],['total','รวม',true]].filter(([k])=>cfg[k]!==false);
+  const picker=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin:0 0 8px;font-size:11.5px;color:var(--TX2)"><span style="font-weight:700;color:var(--TX)">รวม/แสดงบริษัท:</span>${[['tss','TSS'],['consi','CONSI'],['tssnv','TSSNV'],['tgm','TGM'],['total','แสดงคอลัมน์รวม']].map(([k,l])=>`<label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ${cfg[k]!==false?'checked':''} onchange="dashToggleValueColumn('${k}',this.checked)"> ${l}</label>`).join('')}</div>`;
+  const invoiceNote=window._dashInvoiceSummary?' <span style="font-size:11px;color:var(--TX3);font-weight:400">ยอดรวมคิดจากบริษัทที่ติ๊กอยู่; TSS ใช้ชนกับ Sales Overview</span>':'';
+  valEl.innerHTML=`${picker}<div class="tw"><table><thead><tr><th>เดือน${invoiceNote}</th>${cols.map(([,label])=>`<th class="r">${label}</th>`).join('')}</tr></thead><tbody>${valRows.map(r=>`<tr><td>${mL(r.m)}</td>${cols.map(([k,,strong])=>`<td class="r">${strong?`<strong>${_sdF(r[k])}</strong>`:_sdF(r[k])}</td>`).join('')}</tr>`).join('')}</tbody><tfoot><tr style="font-weight:700;background:var(--bg2)"><td>รวมทั้งปี</td>${cols.map(([k])=>`<td class="r"><strong>${_sdF(valTotals[k])}</strong></td>`).join('')}</tr></tfoot></table></div>`;
 }
 
 // ── MY SALES / SALES DASHBOARD ───────────────────────────────────
@@ -5994,6 +6362,7 @@ const SD_SALES=[];
 const SD_VS=[];
 let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'prod',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false};
 let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[],yoy:null,yoyLoading:false,invoiceBased:false,_rows:[],_buildCache:{},_buildCacheKey:''};
+let _sdLoadSeq=0;
 const _SD_CACHE_TTL=5*60*1000;
 const _sdNum=v=>Number.isFinite(Number(v))?Number(v):0;
 const _sdCmp=(a,b,dir=1)=>dir*(_sdNum(b)-_sdNum(a));
@@ -6018,7 +6387,8 @@ function _ymLastDate(ym){
 }
 function _twoYearWindow(refDate=new Date()){
   const y=refDate.getFullYear();
-  return {prevYear:y-1,currentYear:y,start:`${y-1}-01`,end:`${y}-12`,currentStart:`${y}-01`,currentEnd:`${y}-12`};
+  const currentYm=`${y}-${String(refDate.getMonth()+1).padStart(2,'0')}`;
+  return {prevYear:y-1,currentYear:y,start:`${y-1}-01`,end:currentYm,currentStart:`${y}-01`,currentEnd:currentYm};
 }
 function _monthsBetweenYm(startYm,endYm){
   const [sy,sm]=String(startYm||'').split('-').map(Number);
@@ -6162,9 +6532,10 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   const names=_salesNameMap();
   const custCache=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),x]));
   const mapped=(allData)
-    .filter(r=>r.slm_id)
+    .filter(r=>r.slm_id!=null)
     .flatMap(r=>{
       const sp=_splitBranchSlm(r.slm_id);
+      if(!String(r.slm_id||'').trim()) sp.slm='(ไม่ระบุ)';
       const isAll=String(sp.slm||'').toUpperCase().startsWith('ALL');
       const name=names[sp.slm]||names[sp.raw]||(isAll?'ทั้งหมด':sp.slm);
       const qty=Number(r.qty ?? r.quantity ?? 0)||0;
@@ -6191,6 +6562,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     qty,
     amount,
     company:(['TSS','TSSNV','TGM','CONSI'].includes(rowCompany)) ? rowCompany : (sp.prefixed ? _companyFromExpressBranch(sp.branch) : _skuCompanyFromProduct(prod,r.sku)),
+    source_company:r.company||sp.branch||'',
     ym:r.ym||String(r.doc_date||'').slice(0,7),
     doc_date:r.doc_date||null,
       };
@@ -6214,17 +6586,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
       });
     });
   const modeRows=_salesRowsForMode(mapped,opts);
-  // ตาราง year-archive branch → canonical branch (ตรงกับ CANONICAL_BRANCH ใน express_sync.py)
-  const _ARCHIVE={'TSS-67':'TSS','TSS-68':'TSS','TSSN-67':'TSS-NV','TSSN-68':'TSS-NV','CONSI-67':'CONSI'};
-  // สร้าง key ของ primary branches (non-archive) เพื่อใช้ deduplicate archive
-  const _primaryKeys=new Set(
-    modeRows.filter(r=>!r.is_all&&!_ARCHIVE[r.branch])
-            .map(r=>`${r.branch}|${r.slm_id}|${r.ym}|${r.prod_code}`));
-  // กรอง archive-branch rows ออก ถ้ามี primary-branch row สำหรับ canonical+slm+ym+sku เดียวกัน
-  const dedupedRows=modeRows.filter(r=>{
-    if(r.is_all||!_ARCHIVE[r.branch]) return true;
-    return !_primaryKeys.has(`${_ARCHIVE[r.branch]}|${r.slm_id}|${r.ym}|${r.prod_code}`);
-  });
+  const dedupedRows=_dedupeArchiveSalesRows(modeRows,['ym','prod_code']);
   const scopedRows=dedupedRows.filter(r=>_isAllowedCompanyRecord(r, opts));
   // ใช้ ym|prod_code เป็น key (ไม่รวม branch) เพราะ ALL rows มี branch='LEGACY'
   // ทำให้ ALL row ถูก exclude เมื่อมี detail row ของ ym+sku เดียวกัน ไม่ว่า branch จะเป็นอะไร
@@ -6238,7 +6600,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   if(!slmId) return filteredByMode;
   return filteredByMode.filter(r=>r.slm_id===slmId || r.slm_key===slmId || r.slm_key.endsWith(':'+slmId));
 }
-async function _sbSalesOverviewAggRows(startYm,endYm,slmId=''){
+async function _sbSalesOverviewAggRows(startYm,endYm,slmId='',opts={}){
   const PAGE=20000;
   let rows=[],from=0;
   while(true){
@@ -6255,7 +6617,9 @@ async function _sbSalesOverviewAggRows(startYm,endYm,slmId=''){
     if(!data||data.length<PAGE)break;
     from+=PAGE;
   }
-  return rows.map(r=>({
+  const mapped=rows
+  .filter(r=>_isAllowedCompanyRecord({company:r.company,prod_code:r.prod_code},{includeTgm:opts.includeTgm===true}))
+  .map(r=>({
     branch:r.company||'',
     prefixed:true,
     is_all:false,
@@ -6282,6 +6646,7 @@ async function _sbSalesOverviewAggRows(startYm,endYm,slmId=''){
     ym:r.ym,
     company:r.company||''
   }));
+  return _dedupeArchiveSalesRows(mapped,['ym','prod_code']);
 }
 function _sdKpiFromRows(rows){
   const byMonth={};
@@ -6350,13 +6715,14 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
   let rows=await CACHE.get(key,async()=>{
     if(opts.daily){
       try{
-        const agg=await _sbSalesOverviewAggRows(fetchStart,fetchEnd,slmId);
+        const agg=await _sbSalesOverviewAggRows(fetchStart,fetchEnd,slmId,{includeTgm:opts.includeTgm===true});
         if(agg.length)return agg;
       }catch(e){console.warn('sales overview aggregate unavailable; using transactions',e.message||e);}
     }
     return _sbSalesRows(fetchStart,fetchEnd,slmId,{
       includeConsi:false,
       fastProducts:true,
+      includeTgm:opts.includeTgm===true,
       summaryOnly:!!opts.summaryOnly,
       noMonthlyFallback:!!opts.daily,
       dateFrom:opts.daily?`${fetchStart}-01`:null,
@@ -6367,6 +6733,7 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
     rows=await CACHE.get(`sales_rows_v8_${startYm}_${endYm}_ALL_summary_monthly`,()=>_sbSalesRows(startYm,endYm,'',{includeConsi:false,fastProducts:true,summaryOnly:true}),_SD_CACHE_TTL);
     if(!_sd.at || _sd.at==='cust') _sd.at='prod';
   }
+  if(opts.loadSeq!=null && opts.loadSeq!==_sdLoadSeq) return;
   window._salesRows2Y=rows;
   if(!opts.daily){
     try{DB.set('sales_rows_cache',rows);}catch(_){}
@@ -6376,15 +6743,6 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
   _applySalesRowsToSd(rows,activeMonth,slmId);
   _sdApi.rangeMode=opts.daily?'aggregate':'monthly';
 
-  // Override the headline total AND the customer/salesperson breakdown tables with real invoiced
-  // revenue (Express's AR ledger, ARTRN.DBF) when available — confirmed 2026-07-20 that the
-  // order-based figures above (OESO.DBF, DOCSTAT='M') undercount actual tax invoices by ~10x.
-  // invoice_sales_monthly carries company+month+customer+salesperson (ARTRN's own SLMCOD, added
-  // 2026-07-21) but NO SKU/product dimension — Express's AR ledger simply doesn't record one — so
-  // รายสินค้า (product tab) is reconciled to the same total via _sdScaleProdsToTotal instead (an
-  // allocation using the real order-based mix, not a measurement — see the note in sdProd()).
-  // Applies only to the unfiltered "all sales" manager view (per-salesperson login view keeps the
-  // order-based figures, since a sales rep's own invoice totals aren't scoped/verified separately).
   _sdApi.invoiceBased=false;
   if(!slmId && _sd.pt!=='year' && activeMonth){
     try{
@@ -6483,6 +6841,7 @@ function _sdV(v){return Math.round((Number(v)||0)*_sdWeekFactor());}
 function _sdPeriodLabel(){return _sd.pt==='year'?`year_${_sd.cy_y}`:_sd.pt==='week'?`week${_sd.cw}_${SD_MTH[_sd.cm]}_${_sd.cy}`:`${SD_MTH[_sd.cm]}_${_sd.cy}`;}
 
 async function sdLoad(){
+  const loadSeq=++_sdLoadSeq;
   const month=_sdApiMonth();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=isSales()?(me?.slm_id||''):'';
@@ -6494,8 +6853,11 @@ async function sdLoad(){
     const useCustomerDetail=_sd.at==='cust'||_sd.at==='slm';
     await _loadSalesFromSupabase(range.start,range.end,month,slmId,{
       daily:useCustomerDetail,
-      activeMonthOnly:useCustomerDetail
+      activeMonthOnly:useCustomerDetail,
+      includeTgm:!slmId,
+      loadSeq
     });
+    if(loadSeq!==_sdLoadSeq) return;
   }catch(e0){
     console.warn('Supabase sales_history detail unavailable, trying summary rows',e0.message);
     const range=_sdMonthRange(24);
@@ -6534,6 +6896,7 @@ async function sdLoad(){
 }
 
 async function sdLoadYear(){
+  const loadSeq=++_sdLoadSeq;
   const gy=_sdApiYear();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=isSales()?(me?.slm_id||''):'';
@@ -6557,9 +6920,10 @@ async function sdLoadYear(){
     // current year and prior year are independent — prevRows only feeds the YoY % below — so fetch
     // both concurrently instead of one after the other (2026-08-26, general slowness pass).
     const [rows,prevRows]=await Promise.all([
-      _sbSalesRows(start,end,slmId,{includeConsi:false,fastProducts:true}),
-      _sbSalesRows(`${gy-1}-01`,`${gy-1}-12`,slmId,{includeConsi:false}).catch(()=>[]),
+      _sbSalesRows(start,end,slmId,{includeConsi:false,fastProducts:true,includeTgm:!slmId}),
+      _sbSalesRows(`${gy-1}-01`,`${gy-1}-12`,slmId,{includeConsi:false,includeTgm:!slmId}).catch(()=>[]),
     ]);
+    if(loadSeq!==_sdLoadSeq) return;
     const monthly=_sdKpiFromRows(rows);
     _sdApi.valueMode='amount';
     _sdApi.monthly=monthly;
@@ -6575,10 +6939,8 @@ async function sdLoadYear(){
     _sdApi.loaded=true;
     _sdEnsureBuilt(_sd.at==='prod'?'prod':(_sd.at==='slm'?'slm':'cust'));
     _sdUpdateSlmDrop();
-    // Same invoice-based override as the month view (_loadSalesFromSupabase), just summed across
-    // all 12 months instead of one — unfiltered TSS-only manager view. รายสินค้า still can't be
-    // invoice-based (no SKU in ARTRN); reconcile it to the same total via _sdScaleProdsToTotal
-    // instead so it at least foots correctly, clearly labeled as an allocation in sdProd().
+    // Sales Overview headline uses Express AR invoice totals; product rows remain order-based and
+    // scaled because ARTRN has no SKU/product dimension.
     if(!slmId){
       try{
         // FIXED (code review 2026-09-15): same sequential-await regression as the month view above —
@@ -6765,6 +7127,30 @@ async function _sbInvoiceSalesRows(ym,company='TSS'){
     from+=PAGE;
   }
   return rows;
+}
+async function _sbInvoiceSalesMonthlyRowsRange(startYm,endYm,company='TSS'){
+  const PAGE=20000;
+  let rows=[],from=0;
+  while(true){
+    const{data,error}=await getSupabaseClient()
+      .from('invoice_sales_monthly')
+      .select('ym,amount,invoice_count')
+      .eq('company',company).gte('ym',startYm).lte('ym',endYm)
+      .range(from,from+PAGE-1);
+    if(error) throw error;
+    rows=rows.concat(data||[]);
+    if(!data||data.length<PAGE)break;
+    from+=PAGE;
+  }
+  const monthly={};
+  for(const r of rows){
+    const ym=String(r.ym||'');
+    if(!ym) continue;
+    if(!monthly[ym]) monthly[ym]={ym,amount:0,invoice_count:0};
+    monthly[ym].amount+=Number(r.amount)||0;
+    monthly[ym].invoice_count+=Number(r.invoice_count)||0;
+  }
+  return Object.values(monthly).sort((a,b)=>a.ym.localeCompare(b.ym));
 }
 // Year view: sum across all 12 months instead of one — same table, just a wider ym range. Collapses
 // the ym dimension by summing amount/invoice_count per (cust_code,slm_code) so the caller can feed
@@ -8947,7 +9333,10 @@ async function _crRefreshCustomersFromExpress(){
   if(_crCustRefreshing) return;
   _crCustRefreshing=true;
   try{
-    await CACHE.get('remote_customers_cache_live',()=>SB.getCustomers(),2*60*1000);
+    await Promise.allSettled([
+      CACHE.get('remote_customers_cache_live',()=>SB.getCustomers({ includeInactive: true }),2*60*1000),
+      CACHE.get('remote_consi_customers_cache_live',()=>SB.getConsiCustomerRows(),2*60*1000),
+    ]);
     if(_cr.view==='customers') crRenderCustomerHome();
   }catch(e){console.warn('customer refresh from Express failed',e.message||e);}
   finally{_crCustRefreshing=false;}
@@ -11294,7 +11683,7 @@ function saveNewSku(){
 let _groupProductsLoading=false;
 let _groupProductsPromise=null;
 function normalizeSkuRow(s){
-  return {code:String(s.code||s.sku||s.sku_code||'').trim(),name:String(s.name||s.name_th||s.sku_name||s.code||'').trim(),plant:s.plant||s.group_name||'',lt:s.lt||s.lead_time||7,moq:s.moq||0,custom:!!s.custom};
+  return {code:String(s.code||s.sku||s.sku_code||'').trim(),name:String(s.name||s.name_th||s.sku_name||s.code||'').trim(),plant:s.plant||s.group_name||'',lt:s.lt||s.lead_time||7,moq:s.moq||0,standardPrice:s.standard_price??s.standardPrice??'',custom:!!s.custom};
 }
 async function ensureGroupProductsLoaded(){
   // Re-check even if remote_products_loaded was already set — a browser that loaded this before
@@ -11995,8 +12384,11 @@ function _promoEmptyFilters() {
 // createTo}), see its comment) — the initial fetch only pulls the current year. See
 // promoApplyDateRange()/promoClear() below for how re-fetching vs. pure client-side filtering split.
 function _promoCurrentYearRange() {
-  const y = new Date().getFullYear();
-  return { from: `${y}-01-01`, to: `${y}-12-31` };
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const last = new Date(y, d.getMonth() + 1, 0).getDate();
+  return { from: `${y}-${m}-01`, to: `${y}-${m}-${String(last).padStart(2, '0')}` };
 }
 let _promo = (() => {
   const yr = _promoCurrentYearRange();
@@ -12023,21 +12415,33 @@ async function pgPromoHistory() {
     _promoBuildOptions();
     promoRender();
   } else {
-    document.getElementById('ct').innerHTML = '<div class="al ali">กำลังโหลดข้อมูลเอกสารโปรโมชัน...</div>';
+    window._promoDocs = [];
+    window._promoLoadedRange = range;
+    window._promoLoading = true;
+    _promoBuildOptions();
+    promoRender();
   }
   try {
     const fresh = await CACHE.get(_promoRangeKey(range.from, range.to), () => SB.getPromoDocs({ createFrom: range.from, createTo: range.to }));
     if (!_isActivePage('promo_history')) return;
+    window._promoLoading = false;
     if (fresh !== cached) {
       window._promoDocs = fresh;
       window._promoLoadedRange = range;
       _promoBuildOptions();
       if (cached) promoRenderBody(); else promoRender(); // cached: data-region only; cold start: build the shell now that data exists
+    } else {
+      promoRenderBody();
     }
   } catch (e) {
     if (!_isActivePage('promo_history')) return;
     console.error('pgPromoHistory:', e);
-    if (!cached) document.getElementById('ct').innerHTML = `<div class="al ald">โหลดข้อมูลไม่สำเร็จ: ${esc(e.message || e)}</div>`;
+    window._promoLoading = false;
+    if (!cached) {
+      const notice = document.getElementById('promo-notice');
+      if (notice) notice.innerHTML = `<div class="al ald">โหลดข้อมูลไม่สำเร็จ: ${esc(e.message || e)}</div>`;
+      promoRenderBody();
+    }
     // if `cached` existed, leave the stale table showing rather than yanking it for a failed refresh
   }
 }
@@ -12162,6 +12566,9 @@ const PROMO_MS_FIELDS = {
   ref:  { icon: '🔖', label: 'ใบโปรอ้างอิง',   key: r => (r.doc_ref || '').trim(),text: r => (r.doc_ref || '').trim() },
   type: { icon: '🏷️', label: 'ประเภท',        key: r => promoIsCompensate(r) ? 'compensate' : 'normal', text: r => promoIsCompensate(r) ? 'Compensate' : 'ปกติ' },
 };
+function _msSearchText(v) {
+  return String(v || '').replace(/\u00a0/g, ' ').toLowerCase();
+}
 
 function _promoBuildOptions() {
   const docs = window._promoDocs || [];
@@ -12214,9 +12621,9 @@ function promoMsButton(field) {
 
 function promoMsItems(field) {
   const st = _promo.filters[field];
-  const q = (st.q || '').trim().toLowerCase();
+  const q = _msSearchText(st.q).trim();
   const all = _promoOptionsFor(field);
-  const matches = q ? all.filter(o => o.label.toLowerCase().includes(q)) : all;
+  const matches = q ? all.filter(o => _msSearchText(o.label).includes(q)) : all;
   const shown = matches.slice(0, 80);
   const overflow = matches.length > 80
     ? `<div style="font-size:11px;color:var(--TX3);padding:2px 6px 4px">พบ ${matches.length.toLocaleString()} รายการ แสดง 80 รายการแรก — พิมพ์ให้เจาะจงขึ้นเพื่อดูรายการอื่น</div>` : '';
@@ -12243,17 +12650,14 @@ let _promoTableDebounce = null;
 function promoMsSearch(field, value) {
   const st = _promo.filters[field];
   st.q = value;
-  const q = value.trim().toLowerCase();
+  const q = _msSearchText(value).trim();
   const all = _promoOptionsFor(field);
-  st.excluded = q ? new Set(all.filter(o => !o.label.toLowerCase().includes(q)).map(o => o.key)) : new Set();
+  st.excluded = q ? new Set(all.filter(o => !_msSearchText(o.label).includes(q)).map(o => o.key)) : new Set();
 
   const list = document.getElementById('promo-ms-' + field + '-list');
   if (list) list.innerHTML = promoMsItems(field);
   const labelEl = document.getElementById('promo-ms-' + field + '-label');
   if (labelEl) labelEl.textContent = promoMsLabel(field);
-
-  clearTimeout(_promoTableDebounce);
-  _promoTableDebounce = setTimeout(promoRenderBody, 200);
 }
 
 function promoMsConfirm(field) {
@@ -12360,14 +12764,20 @@ function promoRenderBody() {
   const notice = document.getElementById('promo-notice');
   if (notice) {
     const yr = _promoCurrentYearRange();
-    const isDefaultYearFilter = _promo.createFrom === yr.from && _promo.createTo === yr.to;
-    notice.innerHTML = isDefaultYearFilter
-      ? `<div class="al ali" style="margin-bottom:10px">แสดง ${filtered.length.toLocaleString()} รายการ — ค่าเริ่มต้นแสดงเฉพาะเอกสารที่สร้างในปีปัจจุบัน กด "ล้างตัวกรอง" เพื่อดูข้อมูลทุกปี</div>`
+    const isDefaultRange = _promo.createFrom === yr.from && _promo.createTo === yr.to;
+    notice.innerHTML = window._promoLoading
+      ? `<div class="al ali" style="margin-bottom:10px">กำลังโหลดข้อมูลเอกสารโปรโมชัน... สามารถใช้ตัวกรอง/เมนูอื่นระหว่างรอได้</div>`
+      : isDefaultRange
+      ? `<div class="al ali" style="margin-bottom:10px">แสดง ${filtered.length.toLocaleString()} รายการ — ค่าเริ่มต้นแสดงเฉพาะเอกสารที่สร้างในเดือนปัจจุบัน เปลี่ยน "ช่วงวันที่สร้างเอกสาร" เพื่อดูช่วงอื่น</div>`
       : `<div class="al ali" style="margin-bottom:10px">แสดง ${filtered.length.toLocaleString()} รายการ</div>`;
   }
 
   const tbody = document.getElementById('promo-tbody');
   if (!tbody) return;
+  if (window._promoLoading && !rows.length) {
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--TX3);padding:20px">กำลังโหลดข้อมูล...</td></tr>';
+    return;
+  }
   tbody.innerHTML = rows.length ? rows.map(r => `<tr>
     <td class="mono">${esc(r.company || '—')}</td>
     <td>${promoFmtD(r.create_date)}</td>
@@ -12449,29 +12859,70 @@ let _draftSelGroups = new Set(); // corp ที่ติ๊กเลือกไ
 let _draftSelCats = new Set(); // category ที่ติ๊กเลือกไว้ (ขั้นที่ 2) — ว่าง = ทุกประเภท
 window._draftLines = []; // ไม่ใช้ let — เปิดให้ตรวจสอบ/ตั้งค่าจากภายนอกได้เหมือน window._promoDocs (ใช้ใน e2e tests)
 let _draftMsQ = ''; // ช่องค้นหาห้าง/สาขาในตัวเลือก
-let _draftRefData = new Map(); // sku -> {prevPrice, qtySum} — cache ผลลัพธ์ query แบบ batched ต่อ SKU
+let _draftRefData = new Map(); // sku -> {prevPrice, latestSalesPrice, lastMonthQty} — cache ผลลัพธ์ query แบบ batched ต่อ SKU
+let _draftSkuRows = [];
+let _draftSkuLoadPromise = null;
 
 // GP% เริ่มต้น (2026-09-16) — ดึงจาก Master ของลูกค้ารายแรกที่เลือกไว้ (สาขา/ประเภทลูกค้า) ถ้ามี ให้ทั้ง
 // ฝั่งราคาปกติและราคาโปรใช้ค่าเดียวกันเป็นค่าเริ่มต้น (แก้ไขทับได้อิสระต่อบรรทัด/ต่อฝั่งภายหลัง)
-function _draftDefaultGpPct() {
+// ค่าเริ่มต้นหัวเอกสาร → คีย์ของบรรทัด (2026-09-23 เพิ่ม ส่วนลดท้ายบิล% ต่อฝั่ง — ใช้กลไกเดียวกับ GP แต่ไม่ดึงจาก
+// Master ลูกค้า)
+const DRAFT_DEFAULT_FIELDS = {
+  normal:     { elId: 'draft-gp-normal-default',   key: 'gpPct',            fromCustomer: true },
+  promo:      { elId: 'draft-gp-promo-default',    key: 'gpPctPromo',       fromCustomer: true },
+  billNormal: { elId: 'draft-bill-normal-default', key: 'billDiscPct',      fromCustomer: false },
+  billPromo:  { elId: 'draft-bill-promo-default',  key: 'billDiscPctPromo', fromCustomer: false },
+};
+function _draftDefaultGpPct(kind = 'normal') {
+  const def = DRAFT_DEFAULT_FIELDS[kind] || DRAFT_DEFAULT_FIELDS.normal;
+  const fromHeader = document.getElementById(def.elId)?.value;
+  if (fromHeader !== undefined && String(fromHeader).trim() !== '') return String(fromHeader).trim();
+  if (!def.fromCustomer) return '';
   const firstCode = [..._draftSelectedBranches][0];
   if (!firstCode) return '';
   const cust = allCustomerRows().find(c => c.c === firstCode);
   return cust?.gpPct != null ? String(cust.gpPct) : '';
 }
+function _draftInitialDefaultGp(kind = 'normal') {
+  const key = (DRAFT_DEFAULT_FIELDS[kind] || DRAFT_DEFAULT_FIELDS.normal).key;
+  const fromLine = (_draftLines || []).map(l => l?.[key]).find(v => v !== '' && v != null);
+  return fromLine !== undefined ? String(fromLine) : _draftDefaultGpPct(kind);
+}
+function draftApplyDefaultGp(kind, value) {
+  const key = (DRAFT_DEFAULT_FIELDS[kind] || DRAFT_DEFAULT_FIELDS.normal).key;
+  (_draftLines || []).forEach((l, i) => {
+    const input = document.querySelector(`[data-draft-line="${i}"][data-draft-field="${key}"]`);
+    if (input) input.value = value;
+    draftLineField(i, key, value);
+  });
+}
 function _draftEmptyLine(subLevel = 0) {
   const start = document.getElementById('draft-start')?.value || '';
   const due = document.getElementById('draft-due')?.value || '';
-  const gp = _draftDefaultGpPct();
+  const gp = _draftDefaultGpPct('normal');
+  const gpPromo = _draftDefaultGpPct('promo');
+  const billDisc = _draftDefaultGpPct('billNormal');
+  const billDiscPromo = _draftDefaultGpPct('billPromo');
   // subLevel: 0=บรรทัดหลัก, 1=รายการย่อย (1.1), 2=รายการย่อยของย่อย (1.1.1) — isSubItem ยังคงไว้เป็น boolean
   // อนุมาน (subLevel>0) เพื่อไม่ต้องแก้จุดอื่นที่เช็คแค่ "เป็นรายการย่อยหรือไม่" (สไตล์แถว/comment/ฯลฯ)
-  return { sku: '', skuName: '', weight: '', normalPrice: '', unitPrice: '', discountPct: '', gpPct: gp, costPrice: '', gpPctPromo: gp, costPricePromo: '', startDate: start, dueDate: due, subLevel, isSubItem: subLevel > 0, normalPriceEdited: false };
+  return { sku: '', skuName: '', equipmentSet: '', weight: '', normalPrice: '', unitPrice: '', discountPct: '', gpPct: gp, costPrice: '', gpPctPromo: gpPromo, costPricePromo: '', billDiscPct: billDisc, billDiscPctPromo: billDiscPromo, compensate: '', estimatedQty: '', startDate: start, dueDate: due, subLevel, isSubItem: subLevel > 0, normalPriceEdited: false, normalTssCost: null };
+}
+function _draftPrevMonthRange(base = new Date()) {
+  const first = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  const last = new Date(base.getFullYear(), base.getMonth(), 0);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return {
+    from: fmt(first),
+    to: fmt(last),
+    label: first.toLocaleDateString('th-TH', { month: 'short', year: 'numeric' }),
+  };
 }
 // ยืนยันแล้ว (ข้อ 4.4, ขยายเพิ่ม 2026-09-16: รองรับ 1.1.1): รหัสสินค้าที่ขึ้นต้นด้วย "9" คือรหัสราคาพิเศษที่
 // จับสินค้าจริงหลายรายการรวมกัน — ใช้เช็คว่าบรรทัดนี้ควรมีปุ่ม "+ เพิ่มรายการย่อย" ให้กดไหม ทั้งบรรทัดหลัก
 // (เพิ่ม 1.1) และบรรทัดย่อยระดับ 1 (เพิ่ม 1.1.1 ได้ ถ้า SKU ของรายการย่อยนั้นก็ขึ้นต้นด้วย 9 เช่นกัน) — จำกัด
 // ความลึกไว้ที่ 2 ชั้น (subLevel 0/1/2) กันการซ้อนไม่รู้จบ ดู draftAddSubItem/draftRenderLines
-function _draftIsSpecialPriceSku(sku) { return /^9/.test(String(sku || '').trim()); }
+function _draftHasAlphaSuffixSku(sku) { return /-[A-Za-z]+$/.test(String(sku || '').trim()); }
+function _draftIsSpecialPriceSku(sku) { const code=String(sku||'').trim(); return /^9/.test(code) || _draftHasAlphaSuffixSku(code); }
 // เลขลำดับที่แสดงผล ("1", "1.1", "1.1.1", "1.2", "2", ...) คำนวณจากตำแหน่งในอาร์เรย์ล้วนๆ ไม่ต้องมี group id
 // แยก เพราะบรรทัดย่อยจะถูกแทรกไว้ถัดจากบรรทัดหลัก/บรรทัดย่อยของมันเสมอ (draftAddSubItem) — คืน array ความยาว
 // เท่า _draftLines
@@ -12501,10 +12952,95 @@ function draftUpdateDayCounts() {
 function _draftSelectedItemTypes() {
   return [...document.querySelectorAll('.draft-item-type-chk:checked')].map(el => el.value);
 }
+function _draftOtherSelectValue(options, saved) {
+  const v = String(saved || '').trim();
+  if (!v) return options[0] || '';
+  return options.includes(v) ? v : 'อื่นๆ';
+}
+function _draftOtherText(options, saved) {
+  const v = String(saved || '').trim();
+  return v && !options.includes(v) ? v : '';
+}
+function _draftOtherInputVisible(selectId) {
+  const el = document.getElementById(selectId);
+  return String(el?.value || '').trim() === 'อื่นๆ';
+}
+function draftToggleOtherFields() {
+  [['draft-condition', 'draft-condition-other-wrap'], ['draft-equipment', 'draft-equipment-other-wrap']].forEach(([selId, wrapId]) => {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    const equipmentHidden = selId === 'draft-equipment' && document.getElementById('draft-equipment-wrap')?.classList.contains('hidden');
+    wrap.classList.toggle('hidden', equipmentHidden || !_draftOtherInputVisible(selId));
+  });
+}
+function _draftReadOtherSelect(selectId, inputId) {
+  const v = String(document.getElementById(selectId)?.value || '').trim();
+  if (v !== 'อื่นๆ') return v;
+  return String(document.getElementById(inputId)?.value || '').trim() || 'อื่นๆ';
+}
+function _draftSetOtherSelect(selectId, inputId, options, value) {
+  const sel = document.getElementById(selectId);
+  const inp = document.getElementById(inputId);
+  const selected = _draftOtherSelectValue(options, value);
+  if (sel) sel.value = selected;
+  if (inp) inp.value = _draftOtherText(options, value);
+  draftToggleOtherFields();
+}
+async function draftEnsureCustomerCatalog(extraCodes = []) {
+  const required = new Set((extraCodes || []).map(x => String(x || '').trim()).filter(Boolean));
+  const cached = DB.get('remote_customers_cache') || [];
+  const consiCached = DB.get('remote_consi_customers_cache') || [];
+  const profs = DB.get('customer_profiles') || {};
+  const hasRequired = [...required].every(code =>
+    cached.some(r => String(r.code || '').trim() === code) ||
+    consiCached.some(r => String(r.code || '').trim() === code)
+  );
+  const age = Date.now() - (Number(DB.get('remote_customers_cache_ts')) || 0);
+  const consiAge = Date.now() - (Number(DB.get('remote_consi_customers_cache_ts')) || 0);
+  const profAge = Date.now() - (Number(DB.get('customer_profiles_ts')) || 0);
+  const hasProfiles = Object.keys(profs).length > 0;
+  if (cached.length >= 10000 && consiCached.length && hasProfiles && hasRequired && age < 10 * 60 * 1000 && consiAge < 10 * 60 * 1000 && profAge < 10 * 60 * 1000) return cached;
+  try {
+    const [custRes, profRes, consiRes] = await Promise.allSettled([
+      SB.getCustomers({ includeInactive: true }),
+      SB.getCustomerProfiles(),
+      SB.getConsiCustomerRows(),
+    ]);
+    if (profRes.status === 'fulfilled') refreshCustomerProfilesMemo();
+    else console.warn('draft customer profiles failed', profRes.reason?.message || profRes.reason);
+    if (consiRes.status === 'rejected') console.warn('draft CONSI customer catalog failed', consiRes.reason?.message || consiRes.reason);
+    if (custRes.status === 'rejected') throw custRes.reason;
+    const rows = custRes.value || [];
+    if (rows?.length) { DB.set('remote_customers_cache', rows); DB.set('remote_customers_cache_ts', Date.now()); }
+    return rows || cached;
+  } catch (e) {
+    console.warn('draft customer catalog failed', e.message || e);
+    return cached;
+  }
+}
+async function draftRefreshCustomerCatalog(extraCodes = []) {
+  const age = Date.now() - (Number(DB.get('remote_customers_cache_ts')) || 0);
+  const consiAge = Date.now() - (Number(DB.get('remote_consi_customers_cache_ts')) || 0);
+  const profAge = Date.now() - (Number(DB.get('customer_profiles_ts')) || 0);
+  const cached = DB.get('remote_customers_cache') || [];
+  const consiCached = DB.get('remote_consi_customers_cache') || [];
+  const profs = DB.get('customer_profiles') || {};
+  if (cached.length >= 10000 && consiCached.length && Object.keys(profs).length && age < 2 * 60 * 1000 && consiAge < 2 * 60 * 1000 && profAge < 2 * 60 * 1000) return cached;
+  const rows = await draftEnsureCustomerCatalog(extraCodes);
+  if ((Array.isArray(rows) && rows.length) || (DB.get('remote_consi_customers_cache')||[]).length || Object.keys(DB.get('customer_profiles') || {}).length) {
+    refreshCustomerProfilesMemo();
+    draftGroupRefresh();
+    draftMsRefresh();
+  }
+  return rows;
+}
 function draftItemTypeChanged() {
   const types = _draftSelectedItemTypes();
+  const visible = types.includes('อุ่นร้อนพร้อมทาน');
   const wrap = document.getElementById('draft-equipment-wrap');
-  if (wrap) wrap.classList.toggle('hidden', !types.includes('อุ่นร้อนพร้อมทาน'));
+  if (wrap) wrap.classList.toggle('hidden', !visible);
+  const otherWrap = document.getElementById('draft-equipment-other-wrap');
+  if (otherWrap) otherWrap.classList.toggle('hidden', !visible || !_draftOtherInputVisible('draft-equipment'));
 }
 function draftStatusBadgeHtml(status) {
   const [label, cls] = DRAFT_STATUS_LABELS[status] || DRAFT_STATUS_LABELS.draft;
@@ -12546,11 +13082,16 @@ async function showPromoDraftModal(draftNo = '') {
     const bySku = new Map();
     lines.forEach(r => {
       if (bySku.has(r.sku)) return;
-      bySku.set(r.sku, { sku: r.sku, skuName: r.sku_name || '', weight: r.weight ?? '', normalPrice: r.normal_price ?? '', unitPrice: r.unit_price ?? '', discountPct: r.discount_pct ?? '', gpPct: r.gp_pct ?? '', costPrice: r.cost_price ?? '', gpPctPromo: r.gp_pct_promo ?? '', costPricePromo: r.cost_price_promo ?? '', startDate: r.start_date || '', dueDate: r.due_date || '', subLevel: Number(r.is_sub_item) || 0, isSubItem: !!Number(r.is_sub_item) });
+      bySku.set(r.sku, { sku: r.sku, skuName: r.sku_name || '', equipmentSet: r.equipment_set || '', weight: r.weight ?? '', normalPrice: r.normal_price ?? '', unitPrice: r.unit_price ?? '', discountPct: r.discount_pct ?? '', gpPct: r.gp_pct ?? '', costPrice: r.cost_price ?? '', gpPctPromo: r.gp_pct_promo ?? '', costPricePromo: r.cost_price_promo ?? '', billDiscPct: r.bill_disc_pct ?? '', billDiscPctPromo: r.bill_disc_pct_promo ?? '', compensate: r.compensate ?? '', normalPriceEdited: Number(r.normal_price) > 0, normalTssCost: null, estimatedQty: r.estimated_qty ?? '', startDate: r.start_date || '', dueDate: r.due_date || '', subLevel: Number(r.is_sub_item) || 0, isSubItem: !!Number(r.is_sub_item) });
     });
     _draftLines = [...bySku.values()];
     SB.getPromoDraftAttachments(draftNo).then(rows => { _draftAttachments = rows; draftRenderAttachments(); });
   }
+  draftRefreshCustomerCatalog([..._draftSelectedBranches]).catch(e=>toast('โหลดรายชื่อสาขาไม่สำเร็จ: '+(e.message||e),'warn'));
+  await Promise.race([
+    Promise.all([draftEnsureCustomerCatalog([..._draftSelectedBranches]), draftEnsureSkuCatalog()]),
+    new Promise(resolve=>setTimeout(resolve,2500))
+  ]);
   const header = _draftHeader;
   const canEdit = draftCanEditStatus(_draftEditStatus);
   const isPendingApproval = _draftEditStatus === 'pending_approval';
@@ -12578,11 +13119,15 @@ async function showPromoDraftModal(draftNo = '') {
       <div class="field" style="grid-column:1/-1"><label>ชื่อรายการ</label>
         <input type="text" id="draft-name" placeholder="เช่น โปรลดราคา XX ประจำเดือน..." value="${esc(header?.promo_name || '')}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>เงื่อนไข</label>
-        <select id="draft-condition" ${canEdit ? '' : 'disabled'}>${DRAFT_CONDITION_TYPES.map(t => `<option value="${esc(t)}" ${header?.condition_type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+        <select id="draft-condition" onchange="draftToggleOtherFields()" ${canEdit ? '' : 'disabled'}>${DRAFT_CONDITION_TYPES.map(t => `<option value="${esc(t)}" ${_draftOtherSelectValue(DRAFT_CONDITION_TYPES, header?.condition_type) === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field${_draftOtherText(DRAFT_CONDITION_TYPES, header?.condition_type) ? '' : ' hidden'}" id="draft-condition-other-wrap"><label>รายละเอียดเงื่อนไขอื่นๆ</label>
+        <input type="text" id="draft-condition-other" placeholder="ระบุเงื่อนไขอื่นๆ" value="${esc(_draftOtherText(DRAFT_CONDITION_TYPES, header?.condition_type))}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field" style="grid-column:1/-1"><label>ลักษณะรายการ <span style="font-weight:400;color:var(--TX3);font-size:11px">(เลือกได้มากกว่า 1)</span></label>
         <div style="display:flex;gap:16px;flex-wrap:wrap">${DRAFT_ITEM_TYPES.map(t => `<label class="esc-item"><input type="checkbox" class="draft-item-type-chk" value="${esc(t)}" onchange="draftItemTypeChanged()" ${selectedItemTypes.includes(t) ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>${esc(t)}</label>`).join('')}</div></div>
       <div class="field${equipmentHidden ? ' hidden' : ''}" id="draft-equipment-wrap"><label>อุปกรณ์</label>
-        <select id="draft-equipment" ${canEdit ? '' : 'disabled'}>${DRAFT_EQUIPMENT_OPTIONS.map(t => `<option value="${esc(t)}" ${header?.equipment === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+        <select id="draft-equipment" onchange="draftToggleOtherFields()" ${canEdit ? '' : 'disabled'}>${DRAFT_EQUIPMENT_OPTIONS.map(t => `<option value="${esc(t)}" ${_draftOtherSelectValue(DRAFT_EQUIPMENT_OPTIONS, header?.equipment) === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field${equipmentHidden || !_draftOtherText(DRAFT_EQUIPMENT_OPTIONS, header?.equipment) ? ' hidden' : ''}" id="draft-equipment-other-wrap"><label>รายละเอียดอุปกรณ์อื่นๆ</label>
+        <input type="text" id="draft-equipment-other" placeholder="ระบุอุปกรณ์อื่นๆ" value="${esc(_draftOtherText(DRAFT_EQUIPMENT_OPTIONS, header?.equipment))}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>ลดเป็น</label>
         <select id="draft-discount-scope" ${canEdit ? '' : 'disabled'}>
           <option value="item" ${(!header || header.discount_scope === 'item') ? 'selected' : ''}>รายการ</option>
@@ -12602,6 +13147,8 @@ async function showPromoDraftModal(draftNo = '') {
         <input type="text" id="draft-purpose" value="${esc(header?.purpose || '')}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field" style="grid-column:1/-1"><label>หมายเหตุ</label>
         <input type="text" id="draft-note" value="${esc(header?.note || '')}" ${canEdit ? '' : 'disabled'}></div>
+      <div class="field" style="grid-column:1/-1"><label>รูปแบบการจัดจำหน่ายพิเศษ <span style="font-weight:400;color:var(--TX3);font-size:11px">(ถ้ามี)</span></label>
+        <input type="text" id="draft-special-distribution" placeholder="เช่น ขายผ่านบูธ, ขายแบบ bundle, ส่งตรงหน้าร้าน" value="${esc(header?.special_distribution || '')}" ${canEdit ? '' : 'disabled'}></div>
     </div>
     <label style="display:block;font-size:12px;font-weight:600;color:var(--TX2);margin-bottom:7px">เงื่อนไขพิเศษ (มีผลต่อการอนุมัติ)</label>
     <div class="esc-row">
@@ -12610,21 +13157,30 @@ async function showPromoDraftModal(draftNo = '') {
       <label class="esc-item"><input type="checkbox" id="draft-marketing-cost" onchange="draftEscalateChanged()" ${header?.has_marketing_cost ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>📣 มีค่าโปรโมทการตลาดอื่นๆ</label>
     </div>
     <div id="draft-esc-warn" style="margin-bottom:13px"></div>
-    <div class="field" style="margin-bottom:10px"><label>1. กลุ่มลูกค้า</label>${draftGroupPickerHtml()}</div>
-    <div class="field" style="margin-bottom:10px"><label>2. ประเภทลูกค้า (เลือกได้มากกว่า 1)</label>${draftCatPickerHtml()}</div>
-    <div class="field" style="margin-bottom:10px"><label>3. สาขา (เลือกได้มากกว่า 1 สาขา)</label>${draftMsButton()}</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <div class="field" style="margin-bottom:10px"><label>1. สาขา (เลือกได้มากกว่า 1 สาขา)</label>${draftMsButton()}</div>
+    <div class="fg" style="grid-template-columns:repeat(4,150px) auto 1fr;margin-bottom:10px">
+      <div class="field"><label>GP ปกติ (%)</label><input id="draft-gp-normal-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('normal'))}" oninput="draftApplyDefaultGp('normal',this.value)" ${canEdit ? '' : 'disabled'}></div>
+      <div class="field"><label>GP โปรโมชั่น (%)</label><input id="draft-gp-promo-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('promo'))}" oninput="draftApplyDefaultGp('promo',this.value)" ${canEdit ? '' : 'disabled'}></div>
+      <div class="field"><label>ท้ายบิล ปกติ (%)</label><input id="draft-bill-normal-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('billNormal'))}" oninput="draftApplyDefaultGp('billNormal',this.value)" ${canEdit ? '' : 'disabled'}></div>
+      <div class="field"><label>ท้ายบิล โปรโมชั่น (%)</label><input id="draft-bill-promo-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('billPromo'))}" oninput="draftApplyDefaultGp('billPromo',this.value)" ${canEdit ? '' : 'disabled'}></div>
+      <div class="field" style="align-self:end;padding-bottom:6px"><label class="esc-item" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" id="draft-has-compensate" style="margin:0" onchange="draftRenderLines()" ${header?.has_compensate ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>มี Compensate</label></div>
+      <div style="font-size:11.5px;color:var(--TX3);align-self:end;padding-bottom:8px">ใช้เป็นค่าเริ่มต้นในตารางสินค้า แก้ทับรายบรรทัดได้ · ติ๊ก Compensate แล้วต้องกรอกทุกรายการ</div>
+    </div>
+    <div style="margin-bottom:6px">
       <label style="font-size:12px;color:var(--TX2)">รายการสินค้า — ใช้ช่วงเวลาเดียวกับหัวเอกสารทั้งใบ (<span id="draft-lines-period">${header?.start_date && header?.due_date ? `${promoFmtD(header.start_date)} – ${promoFmtD(header.due_date)}` : 'ยังไม่ระบุ — กรอกวันที่เริ่ม/สิ้นสุดโปรด้านบนก่อน'}</span>)</label>
-      ${canEdit ? `<button class="btn btn-xs btn-p" onclick="draftAddLine()">+ เพิ่มรายการสินค้า</button>` : ''}
     </div>
     <div class="tw tw-scroll" style="margin-bottom:8px"><table>
       <thead>
-        <tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2" class="r">น้ำหนัก</th>
-          <th colspan="3" style="text-align:center">ราคาปกติ</th><th colspan="3" style="text-align:center">ราคาโปรโมชั่น</th>
-          <th rowspan="2" class="r">ส่วนลด %</th><th rowspan="2" class="r">ราคาโปรก่อนหน้า</th><th rowspan="2" class="r">ปริมาณขายในช่วง</th><th rowspan="2"></th><th rowspan="2"></th></tr>
-        <tr><th class="r">ราคาขาย</th><th class="r">GP %</th><th class="r">ราคาทุนสุทธิ</th><th class="r">ราคาขาย</th><th class="r">GP %</th><th class="r">ราคาทุนสุทธิ</th></tr>
+        <tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2">Set อุปกรณ์</th><th rowspan="2" class="r">น้ำหนัก</th>
+          <th colspan="3" style="text-align:center">โปรก่อนหน้า</th>
+          <th colspan="4" style="text-align:center">ราคาปกติ</th><th colspan="5" style="text-align:center">ราคาโปรโมชั่น</th>
+          <th rowspan="2" class="r">ส่วนลด %</th><th rowspan="2" class="r">ยอดขายสินค้านี้กับลูกค้าเจ้านี้<br><span style="font-weight:400;color:var(--TX3)">เดือนที่ผ่านมา</span></th><th rowspan="2" class="r">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
+        <tr><th>เลขที่</th><th class="r">ราคา</th><th>ช่วงวันที่</th>
+          <th class="r">ราคาขาย</th><th class="r">GP %</th><th class="r">ท้ายบิล %</th><th class="r">ราคาทุนสุทธิ</th>
+          <th class="r" id="draft-compensate-th">Compensate<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span></th><th class="r">ราคาขาย</th><th class="r">GP %</th><th class="r">ท้ายบิล %</th><th class="r">ราคาทุนสุทธิ</th></tr>
       </thead>
       <tbody id="draft-lines-tbody"></tbody>
+      <tfoot id="draft-lines-tfoot"></tfoot>
     </table></div>
     <datalist id="draft-sku-opts"></datalist>
     <div id="draft-overlap-warning"></div>
@@ -12667,6 +13223,7 @@ async function showPromoDraftModal(draftNo = '') {
   draftRenderAttachments();
   draftRenderOtherCosts();
   draftEscalateChanged();
+  draftToggleOtherFields();
 }
 function draftCanEditStatus(status) {
   return !status || status === 'draft' || status === 'rejected';
@@ -12825,23 +13382,40 @@ function draftMsButton() {
   </div>`;
 }
 function draftMsItems() {
-  const q = (_draftMsQ || '').trim().toLowerCase();
+  const q = _msSearchText(_draftMsQ).trim();
   const groups = _draftBranchGroups().filter(([corp]) => !_draftSelGroups.size || _draftSelGroups.has(corp));
-  return groups.map(([corp, branches]) => {
+  const MAX_ITEMS = 120;
+  const chunks = [];
+  let total = 0, rendered = 0;
+  for (const [corp, branches] of groups) {
     let shown = branches.filter(c => !_draftSelCats.size || _draftSelCats.has(c.category || 'ไม่ระบุประเภท'));
-    if (q) shown = shown.filter(c => (corp + ' ' + c.c + ' ' + c.n).toLowerCase().includes(q));
-    if (!shown.length) return '';
+    if (q) shown = shown.filter(c => _msSearchText(corp + ' ' + c.c + ' ' + c.n + ' ' + (c.branch || '')).includes(q));
+    total += shown.length;
+    shown = shown.slice(0, Math.max(0, MAX_ITEMS - rendered));
+    rendered += shown.length;
+    if (!shown.length) {
+      if (rendered >= MAX_ITEMS) break;
+      continue;
+    }
     const items = shown.map(c => `<div class="ms-item${_draftSelectedBranches.has(c.c) ? ' sel' : ''}" onclick="draftMsToggle('${_promoJsKey(c.c)}')">
       <input type="checkbox" ${_draftSelectedBranches.has(c.c) ? 'checked' : ''}>
       <span style="font-size:12px">${esc(c.c)} — ${esc(c.n || '—')}</span>
     </div>`).join('');
-    return `<div style="font-size:11px;font-weight:600;color:var(--TX2);padding:5px 4px 2px">${esc(corp)}</div>${items}`;
-  }).join('') || '<div style="padding:8px;color:var(--TX3);font-size:12px">ไม่พบรายการ</div>';
+    chunks.push(`<div style="font-size:11px;font-weight:600;color:var(--TX2);padding:5px 4px 2px">${esc(corp)}</div>${items}`);
+    if (rendered >= MAX_ITEMS) break;
+  }
+  const hint = total > MAX_ITEMS
+    ? `<div style="font-size:11px;color:var(--TX3);padding:2px 6px 6px">พบ ${total.toLocaleString()} สาขา แสดง ${MAX_ITEMS} รายการแรก — พิมพ์ให้เจาะจงขึ้นเพื่อให้เร็วขึ้น</div>` : '';
+  return hint + chunks.join('') || '<div style="padding:8px;color:var(--TX3);font-size:12px">ไม่พบรายการ</div>';
 }
+let _draftMsSearchTimer = null;
 function draftMsSearch(value) {
   _draftMsQ = value;
-  const list = document.getElementById('draft-ms-list');
-  if (list) list.innerHTML = draftMsItems();
+  clearTimeout(_draftMsSearchTimer);
+  _draftMsSearchTimer = setTimeout(()=>{
+    const list = document.getElementById('draft-ms-list');
+    if (list) list.innerHTML = draftMsItems();
+  }, 80);
 }
 function draftMsRefresh() {
   const list = document.getElementById('draft-ms-list'); if (list) list.innerHTML = draftMsItems();
@@ -12854,17 +13428,87 @@ function draftMsToggle(code) {
   draftMsRefresh();
 }
 function draftMsSelectAll() {
-  const q = (_draftMsQ || '').trim().toLowerCase();
+  const q = _msSearchText(_draftMsQ).trim();
   _draftBranchGroups().forEach(([corp, branches]) => {
     if (_draftSelGroups.size && !_draftSelGroups.has(corp)) return;
     branches.forEach(c => {
       const cat = c.category || 'ไม่ระบุประเภท';
       if (_draftSelCats.size && !_draftSelCats.has(cat)) return;
-      if (q && !(corp + ' ' + c.c + ' ' + c.n).toLowerCase().includes(q)) return;
+      if (q && !_msSearchText(corp + ' ' + c.c + ' ' + c.n + ' ' + (c.branch || '')).includes(q)) return;
       _draftSelectedBranches.add(c.c);
     });
   });
   draftMsRefresh();
+}
+
+
+function _draftPriceFromText(text) {
+  const s = String(text || '').replace(/\s+/g, '');
+  const m = s.match(/(\d+(?:\.\d+)?)บาท/i);
+  return m ? Number(m[1]) : 0;
+}
+function _draftMasterPrice(skuMeta) {
+  const direct = Number(skuMeta?.standardPrice ?? skuMeta?.standard_price ?? 0);
+  if (direct > 0) return direct;
+  return _draftPriceFromText(skuMeta?.name || skuMeta?.sku_name || '');
+}
+// ราคามาตรฐานมาจาก STMAS ของ TSS (= ทุนสุทธิ) — นับเฉพาะ standard_price จริง ไม่นับราคาที่แกะจากชื่อสินค้า
+function _draftMasterPriceIsTss(skuMeta) {
+  return Number(skuMeta?.standardPrice ?? skuMeta?.standard_price ?? 0) > 0 && _draftIsNetCostCompany(skuMeta?.priceCompany ?? skuMeta?.price_company);
+}
+function _draftApplySkuMeta(i, m, inputEl = null, opts = {}) {
+  if (!_draftLines[i]) return;
+  const code = String(_draftLines[i].sku || '').trim();
+  if (m) _draftLines[i].skuName = m.name || code;
+  const tr = inputEl?.closest?.('tr');
+  if (tr?.cells?.[2]) tr.cells[2].textContent = m ? (m.name || code) : (_draftLines[i].skuName || '—');
+  const price = _draftMasterPrice(m);
+  if (!opts.noPrice && !_draftLines[i].normalPriceEdited && price > 0) {
+    _draftSetAutoNormalPrice(i, price, _draftMasterPriceIsTss(m) ? price : null);
+  }
+}
+function _draftSkuList(){
+  const base = _draftSkuRows && _draftSkuRows.length ? _draftSkuRows : (typeof getSkusMerged === 'function' ? getSkusMerged() : SKUS_MASTER);
+  const map = new Map();
+  (base || []).forEach(s => {
+    const code = String(s.code || s.sku || '').trim();
+    if (!code) return;
+    map.set(code, { ...s, code, name: s.name || s.sku_name || code, standardPrice: s.standardPrice ?? s.standard_price ?? '', priceCompany: s.priceCompany ?? s.price_company ?? '' });
+  });
+  return [...map.values()].sort((a,b)=>a.code.localeCompare(b.code));
+}
+async function draftEnsureSkuCatalog(){
+  if (_draftSkuRows.length) return _draftSkuRows;
+  if (_draftSkuLoadPromise) return _draftSkuLoadPromise;
+  _draftSkuLoadPromise = SB.getProducts({ includeInactive:true, includeTgm:true, includeConsi:true })
+    .then(rows => {
+      _draftSkuRows = (rows || []).map(normalizeSkuRow).map(r => {
+        const raw = (rows || []).find(x => String(x.code || x.sku || '').trim() === r.code) || {};
+        return { ...r, standardPrice: raw.standard_price ?? raw.standardPrice ?? '', priceCompany: raw.price_company ?? '' };
+      });
+      return _draftSkuRows;
+    })
+    .catch(e => { console.warn('draft SKU catalog failed', e.message || e); return []; })
+    .finally(() => { _draftSkuLoadPromise = null; });
+  return _draftSkuLoadPromise;
+}
+function _draftFindSku(code){
+  const key = String(code || '').trim();
+  if (!key) return null;
+  return _draftSkuList().find(s => s.code === key) || null;
+}
+function draftApplySku(i, value, inputEl){
+  if (!_draftLines[i]) return;
+  const code = String(value || '').trim();
+  const m = _draftFindSku(code);
+  _draftLines[i].sku = code;
+  if (!m) _draftLines[i].skuName = '';
+  _draftApplySkuMeta(i, m, inputEl);
+  const sb=document.getElementById(`draft-subitem-btn-${i}`);
+  const level=_draftLines[i].subLevel||0;
+  if(sb) sb.classList.toggle('hidden', level>=2 || !_draftIsSpecialPriceSku(code));
+  draftCheckOverlap();
+  draftRefreshLineRefData();
 }
 
 // ── รายการสินค้าแบบเพิ่ม/ลบบรรทัดได้ (repeatable line-item แรกของแอปนี้)
@@ -12892,19 +13536,57 @@ function draftRemoveLine(i) {
   _draftLines.splice(i, count);
   draftRenderLines(); draftCheckOverlap(); draftRefreshLineRefData();
 }
-// สูตรราคาทุนสุทธิ (ยืนยันกับผู้ใช้ 2026-09-16 ด้วยตัวอย่างตัวเลขจริง: ราคาขาย=100,GP%=20 -> 74.77):
-// ถอด VAT 7% ออกจากราคาขายก่อน แล้วค่อยหัก GP% ออก — ราคาทุนสุทธิ = (ราคาขาย ÷ 1.07) × (1 − GP%/100)
-// ใช้สูตรเดียวกันทั้งฝั่งราคาปกติ (normalPrice->costPrice) และฝั่งราคาโปร (unitPrice->costPricePromo)
-// โดยแต่ละฝั่งมี GP% ของตัวเอง (เริ่มต้นจาก Master ลูกค้าเดียวกัน แต่แก้ไขแยกกันได้ต่อบรรทัด)
-function _draftCalcNetCost(sellPrice, gpPct) {
+// สูตรราคาทุนสุทธิ: ถอด VAT 7% ออกจากราคาขายก่อน แล้วค่อยหัก GP%
+// ตัวอย่างที่ตรวจแล้ว: 158, GP 18% => (158 ÷ 1.07) × (1 - 18%) = 121.08
+// (2026-09-23) ส่วนลดท้ายบิล% หักต่อจาก GP: (ราคาขาย ÷ 1.07) × (1 − GP%) × (1 − ท้ายบิล%) — ท้ายบิลว่าง = 0
+// ตัวอย่าง: 158, GP 18%, ท้ายบิล 5% => 121.08 × 0.95 = 115.03
+function _draftCalcNetCost(sellPrice, gpPct, billDiscPct) {
   const sp = parseFloat(sellPrice), gp = parseFloat(gpPct);
   if (isNaN(sp) || isNaN(gp)) return '';
-  return Math.round((sp / 1.07) * (1 - gp / 100) * 100) / 100;
+  const bill = parseFloat(billDiscPct) || 0;
+  return Math.round((sp / 1.07) * (1 - gp / 100) * (1 - bill / 100) * 100) / 100;
+}
+// ราคาอ้างอิงจากบริษัท TSS ถูกคีย์เป็น "ราคาทุนสุทธิ" (ผู้ใช้ยืนยัน 2026-09-23) — แปลงย้อนเป็นราคาขาย
+// ด้วยสูตรที่ยืนยันแล้วว่า "ไม่หักท้ายบิล": ทุนสุทธิ ÷ (1 − GP%) × 1.07 (GP ว่าง = 0)
+// ตัวอย่าง: ทุน 121.08, GP 18% => 121.08 ÷ 0.82 × 1.07 = 157.99
+const DRAFT_NET_COST_COMPANY = 'TSS';
+function _draftIsNetCostCompany(company) { return String(company || '').trim().toUpperCase() === DRAFT_NET_COST_COMPANY; }
+function _draftCostToSell(cost, gpPct) {
+  const c = parseFloat(cost);
+  if (isNaN(c)) return '';
+  const gp = parseFloat(gpPct) || 0;
+  if (gp >= 100) return '';
+  return Math.round((c / (1 - gp / 100)) * 1.07 * 100) / 100;
+}
+// ตั้ง "ราคาปกติ" จากระบบ (ไม่ใช่ผู้ใช้พิมพ์เอง) — tssCost != null หมายถึงราคาอ้างอิงเป็นทุนสุทธิของ TSS
+// ต้องแปลงย้อนด้วย GP ปกติของบรรทัด และจำทุนไว้เพื่อคำนวณใหม่เมื่อ GP เปลี่ยน (จนกว่าผู้ใช้จะพิมพ์ราคาเอง)
+function _draftSetAutoNormalPrice(i, price, tssCost = null) {
+  const l = _draftLines[i];
+  if (!l) return;
+  l.normalTssCost = tssCost != null ? Number(tssCost) : null;
+  l.normalPrice = tssCost != null ? _draftCostToSell(tssCost, l.gpPct) : Math.round(Number(price) * 100) / 100;
+  l.normalPriceEdited = true;
+  const npEl = document.getElementById(`draft-line-normalprice-${i}`);
+  if (npEl) npEl.value = l.normalPrice;
+  _draftRecalcCost(i);
+  _draftApplyCompensate(i);
+}
+// ราคาขายโปร = ราคาปกติ − Compensate (2026-09-23) — คำนวณใหม่ทุกครั้งที่ Compensate หรือราคาปกติเปลี่ยน
+// ผู้ใช้ยังแก้ราคาขายโปรทับเองได้ภายหลัง
+function _draftApplyCompensate(i) {
+  const l = _draftLines[i];
+  if (!l || l.compensate === '' || l.compensate == null) return;
+  const np = parseFloat(l.normalPrice), comp = parseFloat(l.compensate);
+  if (isNaN(np) || isNaN(comp)) return;
+  l.unitPrice = Math.max(0, Math.round((np - comp) * 100) / 100);
+  const upEl = document.getElementById(`draft-line-unitprice-${i}`);
+  if (upEl) upEl.value = l.unitPrice;
+  _draftRecalcCost(i);
 }
 function _draftRecalcCost(i) {
   const l = _draftLines[i];
-  l.costPrice = _draftCalcNetCost(l.normalPrice, l.gpPct);
-  l.costPricePromo = _draftCalcNetCost(l.unitPrice, l.gpPctPromo);
+  l.costPrice = _draftCalcNetCost(l.normalPrice, l.gpPct, l.billDiscPct);
+  l.costPricePromo = _draftCalcNetCost(l.unitPrice, l.gpPctPromo, l.billDiscPctPromo);
   const fmt2 = v => v !== '' ? Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   const elN = document.getElementById(`draft-line-cost-${i}`); if (elN) elN.textContent = fmt2(l.costPrice);
   const elP = document.getElementById(`draft-line-cost-promo-${i}`); if (elP) elP.textContent = fmt2(l.costPricePromo);
@@ -12918,9 +13600,14 @@ function draftLineField(i, key, value) {
   // sub-item) silently refilled a value the user had just erased on purpose. Track any real user
   // interaction with this field (typing a value OR clearing it) so the auto-fill only ever applies
   // once, before the user has touched it at all.
-  if (key === 'normalPrice') _draftLines[i].normalPriceEdited = true;
-  if (key === 'gpPct' || key === 'normalPrice' || key === 'gpPctPromo' || key === 'unitPrice') _draftRecalcCost(i);
-  if (key === 'sku') { draftCheckOverlap(); draftRefreshLineRefData(); }
+  if (key === 'normalPrice') { _draftLines[i].normalPriceEdited = true; _draftLines[i].normalTssCost = null; }
+  if (['gpPct', 'normalPrice', 'gpPctPromo', 'unitPrice', 'billDiscPct', 'billDiscPctPromo'].includes(key)) _draftRecalcCost(i);
+  // ราคาปกติที่แปลงย้อนจากทุน TSS ต้องคำนวณใหม่เมื่อ GP ปกติเปลี่ยน
+  if (key === 'gpPct' && _draftLines[i].normalTssCost != null) _draftSetAutoNormalPrice(i, null, _draftLines[i].normalTssCost);
+  if (key === 'normalPrice' || key === 'compensate') _draftApplyCompensate(i);
+  if (key === 'compensate') _draftMarkCompensateInput(i);
+  if (key === 'gpPctPromo') draftRenderRefCells();
+  if (key === 'sku') { const m=_draftFindSku(value); if(m && !_draftLines[i].skuName) _draftLines[i].skuName=m.name||value; draftCheckOverlap(); draftRefreshLineRefData(); }
 }
 // ยืนยันแล้วว่า "1 ใบเคาะราคา = 1 ช่วงเวลา" (ผู้ใช้ 2026-09-14) — ทุกบรรทัดผูกกับวันที่ของหัวเอกสารเสมอ
 // ไม่มีช่องแก้วันที่ต่อบรรทัดใน UI แล้ว (ตัดคอลัมน์ออกจาก draftRenderLines) แต่ยังเก็บ startDate/dueDate
@@ -12934,14 +13621,24 @@ function draftSyncLineDates() {
   if (periodEl) periodEl.textContent = (start && due) ? `${promoFmtD(start)} – ${promoFmtD(due)}` : 'ยังไม่ระบุ — กรอกวันที่เริ่ม/สิ้นสุดโปรด้านบนก่อน';
   draftCheckOverlap();
 }
+const DRAFT_LINE_COLS = 22; // จำนวนคอลัมน์ของตารางสินค้า (ใช้กับ colspan แถวปุ่ม "+ เพิ่มรายการสินค้า")
+function _draftIsBlank(v) { return v === '' || v == null || isNaN(parseFloat(v)); }
+// ไฮไลต์ช่อง Compensate ที่ยังว่างเมื่อติ๊ก "มี Compensate" (อัปเดตทีละช่องตอนพิมพ์ ไม่ re-render ทั้งตาราง)
+function _draftMarkCompensateInput(i) {
+  const el = document.getElementById(`draft-line-compensate-${i}`);
+  if (!el) return;
+  const required = !!document.getElementById('draft-has-compensate')?.checked;
+  el.style.borderColor = required && _draftIsBlank(_draftLines[i]?.compensate) ? 'var(--R)' : '';
+}
 function draftRenderLines() {
   const tbody = document.getElementById('draft-lines-tbody');
   if (!tbody) return;
-  const SKUS = typeof getSkusMerged === 'function' ? getSkusMerged() : SKUS_MASTER;
+  const SKUS = _draftSkuList();
   const canEdit = draftCanEditStatus(_draftEditStatus);
   const dis = canEdit ? '' : 'disabled';
   const fmt2 = v => v !== '' && v != null ? Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   const nums = _draftLineNumbers();
+  const hasCompensate = !!document.getElementById('draft-has-compensate')?.checked;
   tbody.innerHTML = _draftLines.map((l, i) => {
     const level = l.subLevel || 0;
     // ปุ่ม "+ ย่อย" กดได้ทั้งบรรทัดหลัก (เพิ่ม 1.1) และบรรทัดย่อยชั้น 1 (เพิ่ม 1.1.1) — จำกัดไว้ที่ 2 ชั้น
@@ -12949,24 +13646,38 @@ function draftRenderLines() {
     const canAddSub = level < 2 && _draftIsSpecialPriceSku(l.sku);
     return `<tr${level > 0 ? ' style="background:var(--bg2)"' : ''}>
     <td class="mono" style="${level > 0 ? `padding-left:${20 * level}px;color:var(--TX3)` : 'font-weight:700'}"><span class="draft-line-num">${nums[i]}</span>
-      ${canEdit && canAddSub ? `<button class="btn btn-xs" id="draft-subitem-btn-${i}" title="รหัสสินค้าราคาพิเศษ (ขึ้นต้นด้วย 9) — จับสินค้าจริงหลายรายการรวมกันได้" onclick="draftAddSubItem(${i})">+ ย่อย</button>` : `<button class="btn btn-xs hidden" id="draft-subitem-btn-${i}" onclick="draftAddSubItem(${i})">+ ย่อย</button>`}</td>
+      ${canEdit && canAddSub ? `<button class="btn btn-xs" id="draft-subitem-btn-${i}" title="รหัสสินค้าราคาพิเศษ หรือรหัสมี suffix -A/-B/-C — เพิ่มรายการย่อยได้" onclick="draftAddSubItem(${i})">+ ย่อย</button>` : `<button class="btn btn-xs hidden" id="draft-subitem-btn-${i}" onclick="draftAddSubItem(${i})">+ ย่อย</button>`}</td>
     <td><input list="draft-sku-opts" value="${esc(l.sku)}" placeholder="ค้นหา/พิมพ์รหัสสินค้า..." style="min-width:130px"
-      oninput="const m=(typeof getSkusMerged==='function'?getSkusMerged():SKUS_MASTER).find(s=>s.code===this.value);draftLineField(${i},'sku',this.value);draftLineField(${i},'skuName',m?m.name:'');this.closest('tr').cells[2].textContent=m?m.name:'—';const sb=document.getElementById('draft-subitem-btn-${i}');if(sb)sb.classList.toggle('hidden',${level}>=2 || !_draftIsSpecialPriceSku(this.value));" ${dis}></td>
+      oninput="draftApplySku(${i},this.value,this)" ${dis}></td>
     <td>${esc((SKUS.find(s => s.code === l.sku) || {}).name || l.skuName || '—')}</td>
+    <td><select onchange="draftLineField(${i},'equipmentSet',this.value)" style="width:70px" ${dis}>
+      ${['', 'A', 'B', 'C', 'D', 'E'].map(v => `<option value="${v}" ${String(l.equipmentSet || '') === v ? 'selected' : ''}>${v || '—'}</option>`).join('')}
+    </select></td>
     <td class="r"><input type="number" step="0.001" min="0" value="${l.weight}" oninput="draftLineField(${i},'weight',this.value)" style="width:80px;text-align:right" ${dis} title="น้ำหนักต่อหน่วย (กก.)"></td>
-    <td class="r"><input id="draft-line-normalprice-${i}" type="number" step="0.01" min="0" value="${l.normalPrice}" oninput="draftLineField(${i},'normalPrice',this.value)" style="width:90px;text-align:right" ${dis} title="เติมอัตโนมัติจากราคาขายล่าสุดที่เจอในระบบ (promo_docs) เมื่อกรอกรหัสสินค้า — แก้ไขทับได้"></td>
-    <td class="r"><input type="number" step="0.01" value="${l.gpPct}" oninput="draftLineField(${i},'gpPct',this.value)" style="width:70px;text-align:right" ${dis} title="GP% (เริ่มต้นจาก Master ลูกค้า) — คำนวณราคาทุนสุทธิอัตโนมัติ (แก้ไขได้)"></td>
+    <td class="mono" id="draft-line-prev-doc-${i}">—</td>
+    <td class="r" id="draft-line-prev-${i}">—</td>
+    <td id="draft-line-prev-period-${i}">—</td>
+    <td class="r"><input id="draft-line-normalprice-${i}" type="number" step="0.01" min="0" value="${l.normalPrice}" oninput="draftLineField(${i},'normalPrice',this.value)" style="width:90px;text-align:right" ${dis} title="เติมอัตโนมัติจากราคามาตรฐาน / ราคาขายล่าสุด / ราคาโปรเก่า (ถ้ามาจาก TSS แปลงย้อนจากทุนสุทธิด้วย GP) — แก้ไขทับได้"></td>
+    <td class="r"><input data-draft-line="${i}" data-draft-field="gpPct" type="number" step="0.01" value="${l.gpPct}" oninput="draftLineField(${i},'gpPct',this.value)" style="width:70px;text-align:right" ${dis} title="GP% (เริ่มต้นจาก Master ลูกค้า) — คำนวณราคาทุนสุทธิอัตโนมัติ (แก้ไขได้)"></td>
+    <td class="r"><input data-draft-line="${i}" data-draft-field="billDiscPct" type="number" step="0.01" value="${l.billDiscPct ?? ''}" oninput="draftLineField(${i},'billDiscPct',this.value)" style="width:70px;text-align:right" ${dis} title="ส่วนลดท้ายบิล% — หักต่อจาก GP ในราคาทุนสุทธิ"></td>
     <td class="r" id="draft-line-cost-${i}">${fmt2(l.costPrice)}</td>
-    <td class="r"><input type="number" step="0.01" min="0" value="${l.unitPrice}" oninput="draftLineField(${i},'unitPrice',this.value)" style="width:90px;text-align:right" ${dis}></td>
-    <td class="r"><input type="number" step="0.01" value="${l.gpPctPromo}" oninput="draftLineField(${i},'gpPctPromo',this.value)" style="width:70px;text-align:right" ${dis} title="GP% (เริ่มต้นจาก Master ลูกค้า) — คำนวณราคาทุนสุทธิอัตโนมัติ (แก้ไขได้)"></td>
+    <td class="r"><input id="draft-line-compensate-${i}" type="number" step="0.01" min="0" value="${l.compensate ?? ''}" oninput="draftLineField(${i},'compensate',this.value)" style="width:80px;text-align:right${hasCompensate && _draftIsBlank(l.compensate) ? ';border-color:var(--R)' : ''}" ${dis} title="Compensate (บาท/หน่วย) — ราคาขายโปร = ราคาปกติ − Compensate"></td>
+    <td class="r"><input id="draft-line-unitprice-${i}" type="number" step="0.01" min="0" value="${l.unitPrice}" oninput="draftLineField(${i},'unitPrice',this.value)" style="width:90px;text-align:right" ${dis}></td>
+    <td class="r"><input data-draft-line="${i}" data-draft-field="gpPctPromo" type="number" step="0.01" value="${l.gpPctPromo}" oninput="draftLineField(${i},'gpPctPromo',this.value)" style="width:70px;text-align:right" ${dis} title="GP% (เริ่มต้นจาก Master ลูกค้า) — คำนวณราคาทุนสุทธิอัตโนมัติ (แก้ไขได้)"></td>
+    <td class="r"><input data-draft-line="${i}" data-draft-field="billDiscPctPromo" type="number" step="0.01" value="${l.billDiscPctPromo ?? ''}" oninput="draftLineField(${i},'billDiscPctPromo',this.value)" style="width:70px;text-align:right" ${dis} title="ส่วนลดท้ายบิล% — หักต่อจาก GP ในราคาทุนสุทธิ"></td>
     <td class="r" id="draft-line-cost-promo-${i}">${fmt2(l.costPricePromo)}</td>
     <td class="r"><input type="number" step="0.01" value="${l.discountPct}" oninput="draftLineField(${i},'discountPct',this.value)" style="width:70px;text-align:right" ${dis}></td>
-    <td class="r" id="draft-line-prev-${i}">—</td>
-    <td class="r" id="draft-line-qty-${i}">—</td>
+    <td class="r" id="draft-line-last-month-qty-${i}" title="รวมยอดขายจริงของสินค้านี้ในสาขาที่เลือก เดือนที่ผ่านมา">—</td>
+    <td class="r"><input type="number" step="0.001" min="0" value="${l.estimatedQty ?? ''}" oninput="draftLineField(${i},'estimatedQty',this.value)" style="width:92px;text-align:right" ${dis} title="จำนวนที่ Sales ประมาณการเอง"></td>
     <td>${_draftEditNo && l.sku ? `<button class="cmt-btn" onclick="draftOpenLineComments('${_promoJsKey(l.sku)}')" id="draft-cmt-btn-${i}">💬</button>` : ''}</td>
     <td>${canEdit ? `<button class="btn btn-xs" onclick="draftRemoveLine(${i})" ${_draftLines.length <= 1 ? 'disabled' : ''}>ลบ</button>` : ''}</td>
   </tr>`;
   }).join('');
+  // ปุ่มเพิ่มบรรทัดอยู่ในตารางใต้เลขลำดับสุดท้าย (tfoot แยกจาก tbody — ให้ #draft-lines-tbody tr เป็นบรรทัดสินค้าล้วน)
+  const tfoot = document.getElementById('draft-lines-tfoot');
+  if (tfoot) tfoot.innerHTML = canEdit ? `<tr><td colspan="${DRAFT_LINE_COLS}" style="padding:6px 8px"><button class="btn btn-xs btn-p" onclick="draftAddLine()">+ เพิ่มรายการสินค้า</button></td></tr>` : '';
+  const compTh = document.getElementById('draft-compensate-th');
+  if (compTh) compTh.innerHTML = `Compensate${hasCompensate ? ' <span style="color:var(--R)">*</span>' : ''}<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span>`;
   const dl = document.getElementById('draft-sku-opts');
   if (dl) dl.innerHTML = SKUS.map(s => `<option value="${esc(s.code)}">${esc(s.name || '')}</option>`).join('');
   draftRenderRefCells();
@@ -13022,18 +13733,19 @@ async function _draftCheckOverlapNow() {
     : '';
 }
 
-// ── ราคาโปรก่อนหน้า + ปริมาณขายในช่วงเวลาเดียวกัน ต่อ SKU — query แบบ batched ครั้งเดียวทั้งตาราง (ไม่ query
+// ── ราคาโปรก่อนหน้า + ยอดขายเดือนที่ผ่านมา ต่อ SKU — query แบบ batched ครั้งเดียวทั้งตาราง (ไม่ query
 // ทีละแถว) แล้ว sum/lookup client-side; รวมทุกสาขาที่เลือกไว้เป็นยอดเดียวต่อ SKU (ตารางแสดงแถวต่อ SKU ไม่ใช่ต่อสาขา)
 async function draftRefreshLineRefData() {
   const custCodes = [..._draftSelectedBranches];
   const skus = [...new Set(_draftLines.map(l => l.sku).filter(Boolean))];
-  if (!custCodes.length || !skus.length) { _draftRefData = new Map(); draftRenderRefCells(); return; }
-  const dateFrom = document.getElementById('draft-start')?.value || '';
-  const dateTo = document.getElementById('draft-due')?.value || '';
+  if (!skus.length) { _draftRefData = new Map(); draftRenderRefCells(); return; }
+  const lastMonth = _draftPrevMonthRange();
   try {
-    const [docs, qtyRows] = await Promise.all([
-      SB.getPromoDocsForOverlap(custCodes, skus),
-      (dateFrom && dateTo) ? SB.getSalesQtyForPairs(custCodes, skus, dateFrom, dateTo) : Promise.resolve([]),
+    const [docs, qtyRows, latestRows, latestPromoRows] = await Promise.all([
+      custCodes.length ? SB.getPromoDocsForOverlap(custCodes, skus) : Promise.resolve([]),
+      custCodes.length ? SB.getSalesQtyForPairs(custCodes, skus, lastMonth.from, lastMonth.to) : Promise.resolve([]),
+      SB.getLatestSalesPricesBySku(skus),
+      SB.getLatestPromoDocsBySku(skus),
     ]);
     const priceMap = new Map();
     docs.forEach(d => {
@@ -13042,20 +13754,63 @@ async function draftRefreshLineRefData() {
       if (!existing || (d.due_date || '') > (existing.due_date || '')) priceMap.set(key, d);
     });
     const qtyMap = new Map();
+    const latestSalesPriceMap = new Map();
     qtyRows.forEach(r => {
       const key = `${r.cust_code}|${r.sku}`;
       qtyMap.set(key, (qtyMap.get(key) || 0) + (Number(r.qty) || 0));
+      const qty=Number(r.qty)||0, amount=Number(r.amount)||0;
+      const price=qty?amount/qty:0;
+      if(price>0){
+        const cur=latestSalesPriceMap.get(key);
+        if(!cur || String(r.tx_date||'')>=String(cur.tx_date||'')) latestSalesPriceMap.set(key,{price,tx_date:r.tx_date||'',company:r.company||''});
+      }
+    });
+    const latestBySku = new Map();
+    latestRows.forEach(r => {
+      const sku=String(r.sku||'');
+      const qty=Number(r.qty)||0, amount=Number(r.amount)||0;
+      const price=qty?amount/qty:0;
+      if(price>0){
+        const cur=latestBySku.get(sku);
+        if(!cur || String(r.tx_date||'')>=String(cur.tx_date||'')) latestBySku.set(sku,{price,tx_date:r.tx_date||'',company:r.company||''});
+      }
+    });
+    const latestPromoBySku = new Map();
+    latestPromoRows.forEach(r => {
+      const sku = String(r.sku || '');
+      const price = Number(r.unit_price) || 0;
+      if (price > 0) {
+        const cur = latestPromoBySku.get(sku);
+        const dateKey = `${r.due_date || ''}|${r.start_date || ''}|${r.sonum || ''}`;
+        if (!cur || dateKey > cur.dateKey) latestPromoBySku.set(sku, { price, dateKey, docNo: r.sonum || '', refNo: (r.doc_ref || '').trim(), startDate: r.start_date || '', dueDate: r.due_date || '', company: r.company || '' });
+      }
     });
     const next = new Map();
     skus.forEach(sku => {
-      let prevPrice = null, qtySum = 0;
+      let prevInfo = null, latestSales = null, lastMonthQty = 0;
       custCodes.forEach(cc => {
         const key = `${cc}|${sku}`;
         const p = priceMap.get(key);
-        if (p && prevPrice === null) prevPrice = p.unit_price;
-        qtySum += qtyMap.get(key) || 0;
+        if (p && prevInfo === null) prevInfo = { price: p.unit_price, docNo: p.sonum || '', refNo: (p.doc_ref || '').trim(), startDate: p.start_date || '', dueDate: p.due_date || '', company: p.company || '' };
+        const sp = latestSalesPriceMap.get(key);
+        if (sp && latestSales === null) latestSales = sp;
+        lastMonthQty += qtyMap.get(key) || 0;
       });
-      next.set(sku, { prevPrice, qtySum });
+      const skuMeta=_draftFindSku(sku);
+      const masterPrice = _draftMasterPrice(skuMeta);
+      const salesRef = latestSales || latestBySku.get(sku) || null;
+      const globalPromo = latestPromoBySku.get(sku) || null;
+      const prev = prevInfo || globalPromo;
+      const refNo = String(prev?.refNo || '').trim();
+      const docNo = String(prev?.docNo || '').trim();
+      // *IsTssCost: ราคาอ้างอิงจากบริษัท TSS เป็น "ทุนสุทธิ" — ต้องแปลงย้อนเป็นราคาขายก่อนใช้ (ดู _draftCostToSell)
+      next.set(sku, {
+        prevPrice: prev?.price ?? null, prevIsTssCost: _draftIsNetCostCompany(prev?.company),
+        prevDocNo: refNo || docNo, prevRefNo: refNo, prevStartDate: prev?.startDate || '', prevDueDate: prev?.dueDate || '',
+        latestSalesPrice: salesRef?.price || null, latestIsTssCost: _draftIsNetCostCompany(salesRef?.company),
+        masterPrice: masterPrice || null, masterIsTssCost: _draftMasterPriceIsTss(skuMeta),
+        lastMonthQty, lastMonthLabel: lastMonth.label,
+      });
     });
     _draftRefData = next;
   } catch (e) { console.warn('draftRefreshLineRefData:', e.message || e); }
@@ -13064,10 +13819,23 @@ async function draftRefreshLineRefData() {
 function draftRenderRefCells() {
   _draftLines.forEach((l, i) => {
     const ref = _draftRefData.get(l.sku);
+    const docEl = document.getElementById(`draft-line-prev-doc-${i}`);
+    if (docEl) docEl.textContent = ref?.prevDocNo || '—';
     const prevEl = document.getElementById(`draft-line-prev-${i}`);
-    if (prevEl) prevEl.textContent = (ref && ref.prevPrice != null) ? Number(ref.prevPrice).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
-    const qtyEl = document.getElementById(`draft-line-qty-${i}`);
-    if (qtyEl) qtyEl.textContent = ref ? Number(ref.qtySum).toLocaleString('th-TH') : '—';
+    if (prevEl) {
+      const pp = _draftPrevPromoPrice(ref, l);
+      const f2 = v => Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      prevEl.innerHTML = pp.sell == null ? '—'
+        : pp.tssCost != null ? `${f2(pp.sell)}<div style="font-size:10px;color:var(--TX3)">ทุน TSS ${f2(pp.tssCost)}</div>` : f2(pp.sell);
+      prevEl.title = pp.tssCost != null ? 'ราคาโปรก่อนหน้าจาก TSS เป็นทุนสุทธิ — แปลงเป็นราคาขายด้วย GP โปรของบรรทัดนี้' : '';
+    }
+    const periodEl = document.getElementById(`draft-line-prev-period-${i}`);
+    if (periodEl) periodEl.textContent = ref?.prevStartDate || ref?.prevDueDate ? `${promoFmtD(ref.prevStartDate)} - ${promoFmtD(ref.prevDueDate)}` : '—';
+    const qtyEl = document.getElementById(`draft-line-last-month-qty-${i}`);
+    if (qtyEl) {
+      qtyEl.textContent = ref ? Number(ref.lastMonthQty || 0).toLocaleString('th-TH') : '—';
+      if (ref?.lastMonthLabel) qtyEl.title = `ยอดขายจริงเดือน ${ref.lastMonthLabel} รวมเฉพาะสาขาที่เลือก`;
+    }
     // "ราคาปกติ" auto-fill (ยืนยันแล้วว่าใช้ "ราคาขายล่าสุดที่เจอใน promo_docs" เป็นค่าตั้งต้น) — promo_docs
     // มาจากเอกสารใบเสนอราคา Express P1/P2 (OESO.DBF/OESOIT.DBF, ดู importFromExpress.js's syncPromoDocs
     // comment) ซึ่ง ref.prevPrice ข้างบนก็ดึงมาจากตารางเดียวกันนี้อยู่แล้ว (ที่จริงคือค่าเดียวกับคอลัมน์
@@ -13077,14 +13845,20 @@ function draftRenderRefCells() {
     // บรรทัดอื่น, เปลี่ยนสาขา/วันที่, เพิ่มรายการย่อย) จะเติมค่ากลับมาทับสิ่งที่ผู้ใช้เพิ่งลบไปเงียบๆ ใช้
     // flag `normalPriceEdited` (ตั้งค่าใน draftLineField() ทุกครั้งที่ผู้ใช้แตะช่องนี้ ไม่ว่าจะพิมพ์หรือลบ)
     // แทน — auto-fill ครั้งเดียวก่อนถูกแตะเท่านั้น แล้ว mark ว่า edited ไปด้วยกันไม่ให้เติมซ้ำอีก
-    if (!l.normalPriceEdited && ref && ref.prevPrice != null) {
-      l.normalPrice = ref.prevPrice;
-      l.normalPriceEdited = true;
-      const npEl = document.getElementById(`draft-line-normalprice-${i}`);
-      if (npEl) npEl.value = ref.prevPrice;
-      _draftRecalcCost(i);
+    // (2026-09-23) ถ้าแหล่งราคาที่เลือกมาจาก TSS (= ทุนสุทธิ) แปลงย้อนเป็นราคาขายด้วย GP ปกติของบรรทัด
+    if (!l.normalPriceEdited && ref) {
+      const src = [[ref.masterPrice, ref.masterIsTssCost], [ref.latestSalesPrice, ref.latestIsTssCost], [ref.prevPrice, ref.prevIsTssCost]]
+        .find(([p]) => p != null);
+      if (src && Number(src[0]) > 0) _draftSetAutoNormalPrice(i, src[0], src[1] ? src[0] : null);
     }
   });
+}
+// ราคาโปรก่อนหน้าสำหรับแสดงผล — ถ้ามาจาก TSS (ทุนสุทธิ) แปลงเป็นราคาขายด้วย GP โปรของบรรทัด
+function _draftPrevPromoPrice(ref, l) {
+  if (!ref || ref.prevPrice == null) return { sell: null, tssCost: null };
+  if (!ref.prevIsTssCost) return { sell: Number(ref.prevPrice), tssCost: null };
+  const sell = _draftCostToSell(ref.prevPrice, l?.gpPctPromo);
+  return { sell: sell === '' ? null : sell, tssCost: Number(ref.prevPrice) };
 }
 
 // ── Comment ต่อแถวสินค้า (ข้อ 8) — ผูกกับทั้งแถว SKU ไม่ใช่ราย field ตามที่ยืนยันไว้ — ใช้ได้เฉพาะเอกสารที่
@@ -13205,9 +13979,9 @@ let _draftSaving = false;
 async function saveDraftPromo(submitAfter = false) {
   if (_draftSaving) return;
   const name = (document.getElementById('draft-name')?.value || '').trim();
-  const condition = document.getElementById('draft-condition')?.value || '';
+  const condition = _draftReadOtherSelect('draft-condition', 'draft-condition-other');
   const itemType = _draftSelectedItemTypes();
-  const equipment = itemType.includes('อุ่นร้อนพร้อมทาน') ? (document.getElementById('draft-equipment')?.value || '') : '';
+  const equipment = itemType.includes('อุ่นร้อนพร้อมทาน') ? _draftReadOtherSelect('draft-equipment', 'draft-equipment-other') : '';
   const discountScope = document.getElementById('draft-discount-scope')?.value || 'item';
   const purpose = (document.getElementById('draft-purpose')?.value || '').trim();
   const note = (document.getElementById('draft-note')?.value || '').trim();
@@ -13218,6 +13992,8 @@ async function saveDraftPromo(submitAfter = false) {
   const isNpd = document.getElementById('draft-npd')?.checked ? 1 : 0;
   const hasOffContractCost = document.getElementById('draft-off-contract')?.checked ? 1 : 0;
   const hasMarketingCost = document.getElementById('draft-marketing-cost')?.checked ? 1 : 0;
+  const hasCompensate = document.getElementById('draft-has-compensate')?.checked ? 1 : 0;
+  const specialDistribution = (document.getElementById('draft-special-distribution')?.value || '').trim();
   const custCodes = [..._draftSelectedBranches];
   const lines = _draftLines.filter(l => l.sku);
   if (!name) { alert('กรุณากรอกชื่อรายการ'); return; }
@@ -13226,6 +14002,11 @@ async function saveDraftPromo(submitAfter = false) {
   // (เดิมเช็คว่าแต่ละบรรทัดมีวันที่ของตัวเอง อนุญาตให้ไม่กรอกวันที่หัวเอกสารได้ถ้าทุกบรรทัดมีวันที่ครบ)
   if (!promoStart || !promoDue) { alert('กรุณากรอกวันที่เริ่ม-สิ้นสุดโปร (หัวเอกสาร) — ใบเคาะราคา 1 ใบใช้ได้แค่ช่วงเวลาเดียว'); return; }
   if (!lines.length) { alert('กรุณาเพิ่มอย่างน้อย 1 รายการสินค้า'); return; }
+  if (hasCompensate) {
+    const nums = _draftLineNumbers();
+    const missing = _draftLines.map((l, i) => (l.sku && _draftIsBlank(l.compensate)) ? nums[i] : null).filter(Boolean);
+    if (missing.length) { alert(`ติ๊ก "มี Compensate" แล้ว กรุณากรอก Compensate ให้ครบทุกรายการ (ลำดับ ${missing.join(', ')})`); return; }
+  }
 
   const editingExisting = !!_draftEditNo;
   if (editingExisting && !draftCanEditStatus(_draftEditStatus)) { alert('เอกสารนี้อยู่ในสถานะที่แก้ไขไม่ได้แล้ว'); return; }
@@ -13236,6 +14017,7 @@ async function saveDraftPromo(submitAfter = false) {
     discount_scope: discountScope, start_date: promoStart || null, due_date: promoDue || null,
     cost_start_date: costStart || null, cost_end_date: costEnd || null,
     is_npd: isNpd, has_off_contract_cost: hasOffContractCost, has_marketing_cost: hasMarketingCost,
+    has_compensate: hasCompensate, special_distribution: specialDistribution || null,
     other_costs_json: _draftOtherCosts.filter(c => (c.item || '').trim() || parseFloat(c.amount)),
     updated_by: UID,
   };
@@ -13248,11 +14030,14 @@ async function saveDraftPromo(submitAfter = false) {
         const numOrNull = v => v !== '' && v != null ? parseFloat(v) : null;
         rows.push({
           draft_no: draftNo, corporate: cust.corp || '', cust_code: custCode, cust_name: cust.n || '',
-          sku: l.sku, sku_name: l.skuName || '', weight: numOrNull(l.weight),
+          sku: l.sku, sku_name: l.skuName || '', equipment_set: l.equipmentSet || '', weight: numOrNull(l.weight),
           normal_price: parseFloat(l.normalPrice) || 0, unit_price: parseFloat(l.unitPrice) || 0,
           discount_pct: parseFloat(l.discountPct) || 0,
           gp_pct: numOrNull(l.gpPct), cost_price: numOrNull(l.costPrice),
           gp_pct_promo: numOrNull(l.gpPctPromo), cost_price_promo: numOrNull(l.costPricePromo),
+          bill_disc_pct: numOrNull(l.billDiscPct), bill_disc_pct_promo: numOrNull(l.billDiscPctPromo),
+          compensate: numOrNull(l.compensate),
+          estimated_qty: numOrNull(l.estimatedQty),
           is_sub_item: l.subLevel || 0, // ข้อ 4.4 — 0=หลัก, 1=ย่อย (1.1), 2=ย่อยของย่อย (1.1.1)
           start_date: promoStart, due_date: promoDue, // ทุกบรรทัดใช้ช่วงเวลาของหัวเอกสารเสมอ (ข้อ 1)
         });
@@ -13700,29 +14485,32 @@ async function draftCopyFrom(draftNo) {
   _draftSelectedBranches = new Set(lines.map(r => r.cust_code));
   _draftSelGroups = new Set(); _draftSelCats = new Set();
   const bySku = new Map();
-  lines.forEach(r => { if (bySku.has(r.sku)) return; bySku.set(r.sku, { sku: r.sku, skuName: r.sku_name || '', weight: r.weight ?? '', normalPrice: r.normal_price ?? '', unitPrice: r.unit_price ?? '', discountPct: r.discount_pct ?? '', gpPct: r.gp_pct ?? '', costPrice: r.cost_price ?? '', gpPctPromo: r.gp_pct_promo ?? '', costPricePromo: r.cost_price_promo ?? '', startDate: r.start_date || '', dueDate: r.due_date || '', subLevel: Number(r.is_sub_item) || 0, isSubItem: !!Number(r.is_sub_item) }); });
+  lines.forEach(r => { if (bySku.has(r.sku)) return; bySku.set(r.sku, { sku: r.sku, skuName: r.sku_name || '', equipmentSet: r.equipment_set || '', weight: r.weight ?? '', normalPrice: r.normal_price ?? '', unitPrice: r.unit_price ?? '', discountPct: r.discount_pct ?? '', gpPct: r.gp_pct ?? '', costPrice: r.cost_price ?? '', gpPctPromo: r.gp_pct_promo ?? '', costPricePromo: r.cost_price_promo ?? '', billDiscPct: r.bill_disc_pct ?? '', billDiscPctPromo: r.bill_disc_pct_promo ?? '', compensate: r.compensate ?? '', normalPriceEdited: Number(r.normal_price) > 0, normalTssCost: null, estimatedQty: r.estimated_qty ?? '', startDate: r.start_date || '', dueDate: r.due_date || '', subLevel: Number(r.is_sub_item) || 0, isSubItem: !!Number(r.is_sub_item) }); });
   _draftLines = [...bySku.values()];
 
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
   set('draft-name', (header.promo_name || '') + ' (คัดลอก)');
-  set('draft-condition', header.condition_type);
+  _draftSetOtherSelect('draft-condition', 'draft-condition-other', DRAFT_CONDITION_TYPES, header.condition_type);
   {
     const copiedTypes = _draftItemTypesArr(header.item_type);
     document.querySelectorAll('.draft-item-type-chk').forEach(el => { el.checked = copiedTypes.includes(el.value); });
   }
   set('draft-purpose', header.purpose);
   set('draft-note', header.note);
+  set('draft-special-distribution', header.special_distribution);
   set('draft-start', header.start_date);
   set('draft-due', header.due_date);
   set('draft-cost-start', header.cost_start_date);
   set('draft-cost-end', header.cost_end_date);
   set('draft-discount-scope', header.discount_scope || 'item');
-  set('draft-equipment', header.equipment);
+  _draftSetOtherSelect('draft-equipment', 'draft-equipment-other', DRAFT_EQUIPMENT_OPTIONS, header.equipment);
   const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
   setChk('draft-npd', header.is_npd);
   setChk('draft-off-contract', header.has_off_contract_cost);
   setChk('draft-marketing-cost', header.has_marketing_cost);
+  setChk('draft-has-compensate', header.has_compensate);
   draftItemTypeChanged();
+  draftToggleOtherFields();
   draftUpdateDayCounts();
   draftEscalateChanged();
   const groupPanel = document.getElementById('draft-group-list'); if (groupPanel) draftGroupRefresh();
@@ -13746,12 +14534,15 @@ async function draftCopyFrom(draftNo) {
 // approvers_json ที่มีอยู่แล้ว) แทนเส้นว่างเปล่า
 function draftPreviewPDF() {
   const name = (document.getElementById('draft-name')?.value || '').trim();
-  const condition = document.getElementById('draft-condition')?.value || '';
+  const condition = _draftReadOtherSelect('draft-condition', 'draft-condition-other');
   const itemType = _draftSelectedItemTypes();
-  const equipment = document.getElementById('draft-equipment')?.value || '';
+  const showEquipment = itemType.includes('อุ่นร้อนพร้อมทาน');
+  const equipment = showEquipment ? _draftReadOtherSelect('draft-equipment', 'draft-equipment-other') : '';
   const discountScope = document.getElementById('draft-discount-scope')?.value || 'item';
   const purpose = (document.getElementById('draft-purpose')?.value || '').trim();
   const note = (document.getElementById('draft-note')?.value || '').trim();
+  const specialDistribution = (document.getElementById('draft-special-distribution')?.value || '').trim();
+  const hasCompensate = !!document.getElementById('draft-has-compensate')?.checked;
   const promoStart = document.getElementById('draft-start')?.value || '';
   const promoDue = document.getElementById('draft-due')?.value || '';
   const costStart = document.getElementById('draft-cost-start')?.value || '';
@@ -13761,17 +14552,33 @@ function draftPreviewPDF() {
     .filter(el => el?.checked)
     .map(el => el.parentElement.textContent.trim());
   const custRows = allCustomerRows();
-  const branches = [..._draftSelectedBranches].map(cc => { const c = custRows.find(x => x.c === cc); return c ? `${c.c} — ${c.n || ''}` : cc; });
+  const branchCodes = [..._draftSelectedBranches].map(cc => String(cc || '').trim()).filter(Boolean).sort((a,b)=>a.localeCompare(b,'th'));
+  const compactBranches = (codes, head = 24, tail = 8) => {
+    if (codes.length <= head + tail + 1) return codes;
+    return [...codes.slice(0, head), '...', ...codes.slice(-tail)];
+  };
+  const branchPreview = compactBranches(branchCodes);
+  const branchHiddenMiddle = Math.max(0, branchCodes.length - branchPreview.filter(x => x !== '...').length);
   const draftNums = _draftLineNumbers();
   const lines = _draftLines.map((l, i) => ({ l, num: draftNums[i] })).filter(x => x.l.sku);
   const fmt2 = v => v !== '' && v != null ? Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
-  const rowsHtml = lines.map(({ l, num }) => `<tr>
-    <td>${esc(num)}</td><td>${esc(l.sku)}</td><td>${esc(l.skuName || '')}</td>
-    <td style="text-align:right">${l.weight !== '' && l.weight != null ? Number(l.weight).toLocaleString('th-TH') + ' กก.' : '—'}</td>
-    <td style="text-align:right">${fmt2(l.normalPrice)}</td><td style="text-align:right">${l.gpPct !== '' && l.gpPct != null ? l.gpPct + '%' : '—'}</td><td style="text-align:right">${fmt2(l.costPrice)}</td>
-    <td style="text-align:right">${fmt2(l.unitPrice)}</td><td style="text-align:right">${l.gpPctPromo !== '' && l.gpPctPromo != null ? l.gpPctPromo + '%' : '—'}</td><td style="text-align:right">${fmt2(l.costPricePromo)}</td>
-    <td style="text-align:right">${l.discountPct || 0}%</td>
-  </tr>`).join('');
+  const rowsHtml = lines.map(({ l, num }) => {
+    const level = l.subLevel || 0;
+    const ref = _draftRefData.get(l.sku);
+    const prevPeriod = ref?.prevStartDate || ref?.prevDueDate ? `${promoFmtD(ref.prevStartDate)}-${promoFmtD(ref.prevDueDate)}` : '—';
+    const lastMonthQty = ref ? Number(ref.lastMonthQty || 0).toLocaleString('th-TH') : '—';
+    const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
+    const pp = _draftPrevPromoPrice(ref, l);
+    return `<tr class="${level ? 'subrow' : ''}">
+    <td class="c num">${esc(num)}</td><td class="mono sku">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${4 + level * 10}px">${esc(l.skuName || '')}</td><td class="c equip">${esc(l.equipmentSet || '—')}</td>
+    <td class="r weight">${l.weight !== '' && l.weight != null ? Number(l.weight).toLocaleString('th-TH') : '—'}</td>
+    <td class="mono prevdoc">${esc(ref?.prevDocNo || '—')}</td><td class="r money">${fmt2(pp.sell)}${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}</td><td class="prevperiod">${esc(prevPeriod)}</td>
+    <td class="r money">${fmt2(l.normalPrice)}</td><td class="r pct">${pct(l.gpPct)}</td><td class="r pct">${pct(l.billDiscPct)}</td><td class="r money">${fmt2(l.costPrice)}</td>
+    <td class="r money">${fmt2(l.compensate)}</td><td class="r money">${fmt2(l.unitPrice)}</td><td class="r pct">${pct(l.gpPctPromo)}</td><td class="r pct">${pct(l.billDiscPctPromo)}</td><td class="r money">${fmt2(l.costPricePromo)}</td>
+    <td class="r pct">${l.discountPct || 0}%</td>
+    <td class="r qty">${esc(lastMonthQty)}</td><td class="r qty">${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
+  </tr>`;
+  }).join('');
   const otherCostsRows = _draftOtherCosts.filter(c => (c.item || '').trim()).map(c => `<tr>
     <td>${esc(c.item || '')}</td><td style="text-align:right">${Number(c.amount || 0).toLocaleString('th-TH')}</td><td>${esc(c.note || '')}</td>
   </tr>`).join('');
@@ -13797,35 +14604,40 @@ function draftPreviewPDF() {
   if (!w) { toast('เบราว์เซอร์บล็อกป็อปอัป กรุณาอนุญาตแล้วลองใหม่', 'warn'); return; }
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle)} ${esc(name || _draftEditNo || '')}</title>
   <style>
-    body{font-family:'TH Sarabun New','Sarabun',sans-serif;margin:0;color:#111;background:#EEF1F5}
-    .sheet{max-width:900px;margin:0 auto;background:#fff}
-    .letterhead{display:flex;align-items:center;gap:16px;padding:20px 26px;border-bottom:3px solid #D4AF37;background:linear-gradient(135deg,#1E3A5F,#28466e)}
-    .letterhead img{width:52px;height:52px;border-radius:50%;background:#fff;padding:3px}
+    @page{size:A4 landscape;margin:8mm}
+    body{font-family:'TH Sarabun New','Sarabun',sans-serif;margin:0;color:#111;background:#EEF1F5;font-size:11px}
+    .sheet{max-width:none;margin:0 auto;background:#fff}
+    .letterhead{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:2px solid #D4AF37;background:linear-gradient(135deg,#1E3A5F,#28466e)}
+    .letterhead img{width:42px;height:42px;border-radius:50%;background:#fff;padding:3px}
     .letterhead .co{color:#fff}
     .letterhead .co .name{font-size:16px;font-weight:700}
     .letterhead .co .sub{font-size:10.5px;color:#cfe0f5;margin-top:2px}
     .letterhead .docno{margin-left:auto;text-align:right;color:#fff}
     .letterhead .docno .lbl{font-size:9.5px;color:#cfe0f5;text-transform:uppercase;letter-spacing:.05em}
     .letterhead .docno .no{font-size:17px;font-weight:700;color:#D4AF37;font-family:monospace}
-    .body{padding:22px 26px}
-    .doctitle{font-size:19px;font-weight:700;color:#1E3A5F;margin:0 0 3px}
+    .body{padding:14px 18px}
+    .doctitle{font-size:17px;font-weight:700;color:#1E3A5F;margin:0 0 2px}
     .doctitle .stamp{font-size:10.5px;font-weight:700;background:#E5F3EE;color:#0A5940;border:1px solid #bfe3d3;padding:2px 9px;border-radius:20px;margin-left:8px}
-    .docsub{font-size:12.5px;color:#4A5568;margin-bottom:14px}
-    .meta{font-size:12.5px;color:#444;background:#F7F9FC;border:1px solid #CDD5E0;border-radius:8px;padding:12px 16px;margin-bottom:14px}
-    .meta div{margin-bottom:4px}
-    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11.5px}
-    thead tr.grp th{background:#16304d;color:#fff;font-size:9.5px;text-align:center;padding:5px 6px}
-    thead tr.cols th{background:#1E3A5F;color:#fff;font-size:10px;padding:7px 6px;text-align:left}
-    th.r,td.r{text-align:right}
-    td{border-bottom:1px solid #EDF0F4;padding:6px}
-    .branches{font-size:12.5px;margin:10px 0}
+    .docsub{font-size:11px;color:#4A5568;margin-bottom:8px}
+    .meta{font-size:10.8px;color:#444;background:#F7F9FC;border:1px solid #CDD5E0;border-radius:7px;padding:8px 10px;margin-bottom:8px}
+    .meta div{margin-bottom:2px}
+    table{width:100%;border-collapse:collapse;margin-top:7px;font-size:8.5px;table-layout:fixed}
+    thead tr.grp th{background:#16304d;color:#fff;font-size:8.2px;text-align:center;padding:3px 4px}
+    thead tr.cols th{background:#1E3A5F;color:#fff;font-size:8.5px;padding:4px 3px;text-align:left;line-height:1.15}
+    th.r,td.r{text-align:right}.c{text-align:center}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+    td{border-bottom:1px solid #EDF0F4;padding:3.5px 3px;vertical-align:top;line-height:1.18;word-break:break-word}
+    tr.subrow td{background:#F7F9FC}
+    td .sub{font-size:7.5px;color:#8896A5}
+    .num{width:30px}.sku{width:58px}.sku-name{width:150px}.equip{width:30px}.weight{width:40px}.money{width:48px}.pct{width:32px}.prevdoc{width:56px}.prevperiod{width:72px}.qty{width:52px}
+    .branches{font-size:10px;margin:6px 0 8px;line-height:1.25;background:#FBFCFE;border:1px solid #E3E8EF;border-radius:6px;padding:6px 8px}
+    .branch-codes{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9.6px;color:#1E3A5F}
     .signrow{display:grid;grid-template-columns:repeat(${signCols.length},1fr);gap:14px;margin-top:30px;padding-top:16px;border-top:1px dashed #CDD5E0}
     .signbox{text-align:center;font-size:11px;color:#4A5568}
     .signbox .line{border-bottom:1px solid #8896A5;height:34px;margin-bottom:5px;display:flex;align-items:flex-end;justify-content:center}
     .signbox .filled{font-weight:700;color:#1E3A5F;font-size:12.5px;padding-bottom:3px}
     .signbox .ts{font-size:10px;color:#8896A5;margin-top:2px}
     .signbox .role{font-weight:600;color:#111}
-    @media print{ body{padding:0;background:#fff} .sheet{box-shadow:none} }
+    @media print{ body{padding:0;background:#fff} .sheet{box-shadow:none} .letterhead{break-inside:avoid} table{break-inside:auto} tr{break-inside:avoid} }
   </style></head><body>
   <div class="sheet">
     <div class="letterhead">
@@ -13841,18 +14653,29 @@ function draftPreviewPDF() {
         <div><b>ช่วงโปร:</b> ${esc(promoFmtD(promoStart))} - ${esc(promoFmtD(promoDue))}${costStart && costEnd ? ` &nbsp; <b>ช่วงทุน:</b> ${esc(promoFmtD(costStart))} - ${esc(promoFmtD(costEnd))}` : ''}</div>
         <div><b>ลดเป็น:</b> ${discountScope === 'bill' ? 'ท้ายบิล' : 'รายการ'}</div>
         ${escFlags.length ? `<div><b>เงื่อนไขพิเศษ:</b> ${escFlags.map(esc).join(', ')} (ต้องผ่านผู้บริหารอนุมัติเพิ่ม)</div>` : ''}
+        ${hasCompensate ? `<div><b>Compensate:</b> มี (ราคาขายโปร = ราคาปกติ − Compensate)</div>` : ''}
+        ${specialDistribution ? `<div><b>รูปแบบการจัดจำหน่ายพิเศษ:</b> ${esc(specialDistribution)}</div>` : ''}
         ${purpose ? `<div><b>วัตถุประสงค์:</b> ${esc(purpose)}</div>` : ''}
         ${note ? `<div><b>หมายเหตุ:</b> ${esc(note)}</div>` : ''}
       </div>
-      <div class="branches"><b>สาขา (${branches.length}):</b> ${branches.map(esc).join(', ') || '—'}</div>
+      <div class="branches"><b>สาขา (${branchCodes.length}):</b> <span class="branch-codes">${branchPreview.map(x => x === '...' ? `... ย่อกลาง ${branchHiddenMiddle.toLocaleString('th-TH')} สาขา ...` : esc(x)).join(', ') || '—'}</span></div>
       <table>
+        <colgroup>
+          <col style="width:26px"><col style="width:54px"><col style="width:120px"><col style="width:26px"><col style="width:36px">
+          <col style="width:54px"><col style="width:46px"><col style="width:66px">
+          <col style="width:44px"><col style="width:30px"><col style="width:30px"><col style="width:46px">
+          <col style="width:44px"><col style="width:44px"><col style="width:30px"><col style="width:30px"><col style="width:46px">
+          <col style="width:30px"><col style="width:46px"><col style="width:46px">
+        </colgroup>
         <thead>
-          <tr class="grp"><th colspan="4"></th><th colspan="3">ราคาปกติ</th><th colspan="3">ราคาโปรโมชั่น</th></tr>
-          <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r">น้ำหนัก</th>
-            <th class="r">ราคาขาย</th><th class="r">GP%</th><th class="r">ราคาทุนสุทธิ</th>
-            <th class="r">ราคาขาย</th><th class="r">GP%</th><th class="r">ราคาทุนสุทธิ</th></tr>
+          <tr class="grp"><th colspan="5"></th><th colspan="3">โปรก่อนหน้า</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th></th><th colspan="2">ปริมาณ</th></tr>
+          <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="c">ชุด</th><th class="r">น้ำหนัก</th>
+            <th>เลขที่ใบโปร</th><th class="r">ราคา</th><th>ช่วงวันที่</th>
+            <th class="r">ราคาขาย</th><th class="r">GP%</th><th class="r">ท้ายบิล%</th><th class="r">ทุนสุทธิ</th>
+            <th class="r">Compensate</th><th class="r">ราคาขาย</th><th class="r">GP%</th><th class="r">ท้ายบิล%</th><th class="r">ทุนสุทธิ</th>
+            <th class="r">ลด%</th><th class="r">ขายเดือนก่อน</th><th class="r">ประมาณการ</th></tr>
         </thead>
-        <tbody>${rowsHtml || '<tr><td colspan="10" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
+        <tbody>${rowsHtml || '<tr><td colspan="20" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
       </table>
       ${otherCostsRows ? `<table><thead><tr class="cols"><th>ค่าใช้จ่ายอื่นๆ</th><th class="r">จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
       <tbody>${otherCostsRows}<tr><td><b>รวม</b></td><td class="r"><b>${otherCostsTotal.toLocaleString('th-TH')}</b></td><td></td></tr></tbody></table>` : ''}
@@ -14761,3 +15584,4 @@ function srSaveTestResult(id) {
 </script>
 </body>
 </html>
+

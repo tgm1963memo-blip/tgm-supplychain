@@ -8,6 +8,10 @@ const { buildApp } = require('./app');
 const { importPoFromEmail, imapConfigured } = require('./jobs/importPoFromEmail');
 
 const PORT = process.env.PORT || 3000;
+const DEFAULT_EXPRESS_SYNC_CRON = '*/15 * * * *';
+const EXPRESS_SYNC_CRON = cron.validate(process.env.EXPRESS_SYNC_CRON || '')
+  ? process.env.EXPRESS_SYNC_CRON
+  : DEFAULT_EXPRESS_SYNC_CRON;
 
 const db = openDb();
 
@@ -92,7 +96,8 @@ app.listen(PORT, () => {
 
 // Every 5 minutes, 24/7 — pulls DBF data from Express into the local SQLite DB.
 // See jobs/importFromExpress.js for the open question on which OESO.DOCSTAT values count as real sales.
-cron.schedule('*/5 * * * *', () => {
+console.log(`[importFromExpress] scheduled sync cron: ${EXPRESS_SYNC_CRON}`);
+cron.schedule(EXPRESS_SYNC_CRON, () => {
   if (syncRunning) {
     console.warn('[importFromExpress] previous sync still running; skipping this tick');
     return;

@@ -9,6 +9,7 @@ const { getApiBase } = require('../../deploy-shared/api-config');
 const { buildApp } = require('../app');
 const { createSession } = require('../middleware/auth');
 const { runMigrations } = require('../db/migrations');
+const { isExcludedSalesDocNum } = require('../jobs/importFromExpress');
 
 test('profile migration reconciles history and keeps financial values through insert/update/delete/rename/rollback', () => {
   const db = new DatabaseSync(':memory:');
@@ -50,6 +51,12 @@ test('API origin validation', () => {
   assert.match(getApiBase({}), /^https:/);
   assert.equal(getApiBase({TGM_API_BASE_URL:'https://supplychain.tgm.co.th/'}),'https://supplychain.tgm.co.th');
   for (const value of ['', 'http://host', 'https://x/path','https://u:p@x','https://x?x','https://x#x',"https://x/'"]) assert.throws(()=>getApiBase({TGM_API_BASE_URL:value}));
+});
+
+
+test('invoice sales excludes LF/LE/LG document series only', () => {
+  for (const docNum of ['LF690001', 'LE690002', 'LG690003', ' lf690004 ']) assert.equal(isExcludedSalesDocNum(docNum), true);
+  for (const docNum of ['AI690001', 'IV690001', 'ON690001', 'SE690001', '', null]) assert.equal(isExcludedSalesDocNum(docNum), false);
 });
 
 test('isolated API approval and both attachment contracts', async t => {

@@ -1,6 +1,6 @@
 'use strict';
 
-const DEFAULT_API_BASE = 'https://gbp-robbie-bonus-gary.trycloudflare.com';
+const DEFAULT_API_BASE = 'https://plates-extension-smtp-pop.trycloudflare.com';
 function getApiBase(env = process.env) {
   const value = env.TGM_API_BASE_URL === undefined ? DEFAULT_API_BASE : env.TGM_API_BASE_URL;
   let url;

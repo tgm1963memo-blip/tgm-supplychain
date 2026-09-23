@@ -29,3 +29,5 @@ convert_encoding.py
 **/.tmp-*
 e2e/debug_*.js
 e2e/tests/_debug_*.spec.js
+
+.vercel

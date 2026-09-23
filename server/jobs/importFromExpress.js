@@ -57,7 +57,10 @@ const fs = require('fs');
 const path = require('path');
 const { DBFFile } = require('dbffile');
 
-const EXPRESS_ROOT = process.env.EXPRESS_DBF_ROOT || 'Z:\\ExpressI';
+const EXPRESS_ROOT_CANDIDATES = process.env.EXPRESS_DBF_ROOT
+  ? [process.env.EXPRESS_DBF_ROOT]
+  : ['Z:\\ExpressI', '\\\\server\\expsrv\\ExpressI'];
+const EXPRESS_ROOT = EXPRESS_ROOT_CANDIDATES.find((root) => fs.existsSync(root)) || EXPRESS_ROOT_CANDIDATES[0];
 const STOCK_COMPANY = 'TSS';
 
 function companyListFromEnv(envVar, fallback) {
@@ -70,7 +73,7 @@ function companyListFromEnv(envVar, fallback) {
 // TSS is listed first so it wins any code that exists in both (see syncProducts()'s dedupe).
 // Overridable via PRODUCT_COMPANIES/SALES_COMPANIES env vars (comma-separated) for staged
 // rollout — e.g. verifying TSS+CONSI alone before adding the rest of the company books.
-const PRODUCT_COMPANIES = companyListFromEnv('PRODUCT_COMPANIES', ['TSS', 'CONSI']);
+const PRODUCT_COMPANIES = companyListFromEnv('PRODUCT_COMPANIES', ['TSS', 'CONSI', 'TGM', 'TSS-NV']);
 // UPDATED 2026-08-10 (confirmed with user): the 2026-07-17 staged rollout limited the recurring
 // 5-minute sync to TSS and CONSI only, with the other 6 company books backfilled ONCE that day and
 // then left frozen — dashboard tiles for TGM/TSS-NV/etc. stopped advancing (found stale by 3-8
@@ -85,6 +88,13 @@ const SALES_COMPANIES = companyListFromEnv('SALES_COMPANIES', ['TSS', 'CONSI', '
 const PRODUCT_STKTYP_INCLUDE = ['0'];
 // Confirmed with user 2026-07-11 (see file header): only 'M' (matched/confirmed order) counts as a real sale.
 const ORDER_DOCSTAT_INCLUDE = ['M'];
+// Accounting confirmed these ARTRN document series must not be counted as sales revenue.
+// Keep the rule close to the Express importer so every invoice-derived total uses the same exclusion.
+const SALES_DOCNUM_EXCLUDE_PREFIXES = new Set(['LF', 'LE', 'LG']);
+function isExcludedSalesDocNum(docNum) {
+  const prefix = String(docNum || '').trim().toUpperCase().slice(0, 2);
+  return SALES_DOCNUM_EXCLUDE_PREFIXES.has(prefix);
+}
 const CONSI_COMPANY = 'CONSI';
 // TABTYP for the warehouse/location code lookup within Express's generic ISTAB.DBF code-table file.
 const WAREHOUSE_TABTYP = '21';
@@ -137,6 +147,25 @@ function normalizeSlmCode(raw) {
   return /^[0-9]/.test(code) ? code.slice(0, 3) : code;
 }
 
+function cleanText(raw) {
+  return String(raw || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function parseSalesLineComponentRemark(raw) {
+  const note = cleanText(raw);
+  if (!note) return null;
+  const codeMatch = note.match(/^([A-Z0-9][A-Z0-9-]*)\b/i);
+  if (!codeMatch) return null;
+  // Express line notes store the child quantity at the very end. Most rows use a pack marker
+  // such as `20p`, but some 90022 notes use Thai/English kilogram markers like `1kg` or Thai
+  // shorthand for kilogram; those are still quantity 1 for route-billing weight calculation.
+  const qtyMatch = note.match(/(\d+(?:\.\d+)?)\s*(?:[pP]\.?|\u0e0a\u0e38\u0e14|\u0e41\u0e1e\u0e04|pack|packs|\u0e01\u0e04|\u0e01\u0e01|kg|kgs)\s*$/i);
+  const childCode = codeMatch[1].trim();
+  const childQty = qtyMatch ? Number(qtyMatch[1]) : 0;
+  let childName = note.slice(codeMatch[0].length).trim();
+  if (qtyMatch) childName = childName.replace(/\s*\d+(?:\.\d+)?\s*(?:[pP]\.?|\u0e0a\u0e38\u0e14|\u0e41\u0e1e\u0e04|pack|packs|\u0e01\u0e04|\u0e01\u0e01|kg|kgs)\s*$/i, '').trim();
+  return { childCode, childName: childName || null, childQty, note };
+}
 // Unit code -> full Thai name, from the same generic code-table file/mechanism syncWarehouses() already
 // uses for warehouse names (see UNIT_TABTYP comment above). Small, stable reference table (~60 rows) —
 // read fresh each sync rather than cached, matching syncWarehouses()'s own plain-upsert-by-code pattern.
@@ -166,16 +195,34 @@ async function loadRouteNameMap() {
   return map;
 }
 
+function joinAddressParts(...parts) {
+  return parts.map((v) => String(v || '').trim()).filter(Boolean).join(' ');
+}
+
+async function loadShipToAddressMap() {
+  const rows = await readTable(STOCK_COMPANY, 'ARSHIP.DBF');
+  const map = new Map();
+  for (const r of rows) {
+    const custCode = String(r.CUSCOD || '').trim();
+    const shipTo = String(r.SHIPTO || '').trim();
+    if (!custCode || !shipTo) continue;
+    const address = joinAddressParts(r.ADDR01, r.ADDR02, r.ADDR03, r.ZIPCOD);
+    if (address) map.set(`${custCode}|${shipTo}`, address);
+  }
+  return map;
+}
+
 async function syncProducts(db) {
   const importedByCompany = {};
   const skipped = {};
   const seen = new Set();
   const unitNames = await loadUnitNameMap();
   const upsert = db.prepare(`
-    INSERT INTO products (code, name, group_name, unit, is_active, updated_at)
-    VALUES (?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    INSERT INTO products (code, name, group_name, unit, standard_price, price_company, is_active, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(code) DO UPDATE SET name = excluded.name, group_name = excluded.group_name,
-      unit = excluded.unit, is_active = 1, updated_at = excluded.updated_at
+      unit = excluded.unit, standard_price = excluded.standard_price, price_company = excluded.price_company,
+      is_active = 1, updated_at = excluded.updated_at
   `);
   // Combo/set codes (STKTYP != '0', e.g. the -A/-B suffix codes STMAS uses for bundle SKUs) are
   // real sales_transactions rows that had no name anywhere in this system — every lookup fell back
@@ -185,9 +232,13 @@ async function syncProducts(db) {
   // this captures their real STKDES name so name lookups resolve instead of falling back to raw
   // codes. The WHERE guards against ever downgrading a row that's genuinely active elsewhere.
   const upsertNameOnly = db.prepare(`
-    INSERT INTO products (code, name, group_name, is_active, updated_at)
-    VALUES (?, ?, ?, 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ON CONFLICT(code) DO UPDATE SET name = excluded.name, group_name = excluded.group_name, updated_at = excluded.updated_at
+    INSERT INTO products (code, name, group_name, unit, standard_price, price_company, is_active, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET name = excluded.name, group_name = excluded.group_name,
+      unit = COALESCE(NULLIF(excluded.unit,''), products.unit),
+      standard_price = COALESCE(excluded.standard_price, products.standard_price),
+      price_company = CASE WHEN excluded.standard_price IS NOT NULL THEN excluded.price_company ELSE products.price_company END,
+      updated_at = excluded.updated_at
     WHERE products.is_active = 0
   `);
   let nameOnlyCount = 0;
@@ -212,14 +263,19 @@ async function syncProducts(db) {
         const code = r.STKCOD.trim();
         if (!PRODUCT_STKTYP_INCLUDE.includes(r.STKTYP)) {
           skipped[r.STKTYP] = (skipped[r.STKTYP] || 0) + 1;
-          upsertNameOnly.run(code, (r.STKDES || '').trim(), (r.STKGRP || '').trim());
+          const unitCode = (r.QUCOD || '').trim();
+          const unit = (unitCode && unitNames.get(unitCode)) || unitCode || 'กิโลกรัม';
+          const standardPrice = [r.SELLPR1, r.SELLPR2, r.SELLPR3, r.SELLPR4, r.SELLPR5].map(Number).find(v => Number.isFinite(v) && v > 0) || null;
+          upsertNameOnly.run(code, (r.STKDES || '').trim(), (r.STKGRP || '').trim(), unit, standardPrice, standardPrice ? company : null);
           nameOnlyCount++;
           continue;
         }
         if (seen.has(code)) continue; // already brought in by an earlier company in PRODUCT_COMPANIES (TSS wins ties)
         const unitCode = (r.QUCOD || '').trim();
         const unit = (unitCode && unitNames.get(unitCode)) || unitCode || 'กิโลกรัม';
-        upsert.run(code, (r.STKDES || '').trim(), (r.STKGRP || '').trim(), unit);
+        const standardPrice = [r.SELLPR1, r.SELLPR2, r.SELLPR3, r.SELLPR4, r.SELLPR5].map(Number).find(v => Number.isFinite(v) && v > 0) || null;
+        // price_company: TSS keys STMAS prices as net cost — ใบเคาะราคา reverse-calculates a sell price from it
+        upsert.run(code, (r.STKDES || '').trim(), (r.STKGRP || '').trim(), unit, standardPrice, standardPrice ? company : null);
         seen.add(code);
         importedByCompany[company]++;
       }
@@ -386,7 +442,7 @@ const STCRD_CATEGORY = {
 // เมื่อ RH/RS ตัวจริงมา ไม่ควรใช้เป็นฐานต้นทุนที่นิ่งแล้ว)
 const WMS_RECEIVED_PREFIXES = new Set(['RH', 'RS', 'CP', 'JX', 'JT']);
 const WMS_GENERAL_SALE_PREFIXES = new Set([
-  'IV', 'AB', 'BE', 'DA', 'AK', 'AY', 'DD', 'DM', 'GP', 'DB', 'IT', 'IE', 'BM', 'FB', 'ON', 'INV', 'BA', 'CJ', 'IC', 'DV', 'DL', 'OL', 'KB',
+  'IV', 'AB', 'BE', 'DA', 'AK', 'AY', 'DD', 'DM', 'GP', 'DB', 'IT', 'IE', 'BM', 'FB', 'ON', 'INV', 'BA', 'CJ', 'CK', 'IC', 'DV', 'DL', 'OL', 'KB',
 ]);
 const WMS_TRANSFER_PREFIXES = new Set(['RL', 'VL', 'TP', 'MK', 'TG', 'LT', 'GR']);
 const WMS_RETURN_PREFIXES = new Set(['PM']);
@@ -403,11 +459,147 @@ const RH_RS_PREFIXES = new Set(['RH', 'RS']);
 // transfer bucket เดิม (ยังคงพฤติกรรมเดิมของทุกหน้าที่ใช้ "net" อยู่ต่อไปเป๊ะๆ) เพราะผู้ใช้ระบุชัดว่าต้องการผลนี้
 // "เฉพาะในหน้าสรุปสต็อก+ตรวจนับ" ของ tgm-wms เท่านั้น ไม่ใช่ทุกหน้าที่มีคำว่า "net"
 const WMS_DISPATCHED_PREFIXES = new Set(['VL', 'LT', 'TP']);
+// FIXED (2026-09-22 ตามที่ผู้ใช้ระบุ "หน้าสรุปสต็อก+ตรวจนับ...ยังมีเอาคลัง 8 มารวมอีก" แม้กดคำนวณใหม่แล้ว):
+// tgm-wms's net_no10 kind excludes warehouses 02/08/10 entirely (KIND_EXTRA_EXCLUDE_WAREHOUSES ใน App.jsx)
+// — เพิ่มขึ้นทีละตัวหลังจากช่อง dispatched_qty นี้ถูกสร้างไปแล้ว (02 เพิ่ม 2026-09-11, 08 เพิ่ม 2026-09-21)
+// แต่ไม่เคยย้อนมาอัพเดทเงื่อนไขตรงนี้ให้ตรงกันเลย — ผลคือเอกสาร VL/LT/TP ที่ปลายทางเป็นคลัง 02/08/10 ยังถูกนับ
+// เข้า "dispatched" (หักออกอีกชั้นนึง) ทั้งที่ยอดปิดวันของฝั่ง tgm-wms (getStockAsOfDateByWarehouse) ได้ตัดยอด
+// คงเหลือของคลัง 02/08/10 ออกไปจากผลรวมทั้งหมดอยู่แล้วตั้งแต่ต้น (เหมือน consi 03/04/05) — กลายเป็นหักซ้ำสอง
+// ชั้นสำหรับของที่โยกเข้าคลัง 02/08/10 พอดี (บั๊กคลาสเดียวกับที่เคยแก้ไปแล้วกับ consi 03/04/05 เมื่อ 2026-08-21
+// ด้านบน แค่ไม่เคยขยายมาครอบคลุม 02/08/10 ที่เพิ่มเข้ามาทีหลัง) — รวมเป็น set เดียวกันไว้กันลืมขยายซ้ำอีกรอบถ้า
+// tgm-wms เพิ่มคลังยกเว้นตัวใหม่ในอนาคต ต้องแก้ทั้ง 2 ที่คู่กันเสมอ (ที่นี่ + KIND_EXTRA_EXCLUDE_WAREHOUSES)
+const WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES = new Set(['02', '08', '10']);
+
+
+const INVOICE_LINE_COMPANIES = ['TSS', 'CONSI'];
+
+function addInvoiceLine(invoiceLines, company, r, day) {
+  const prefix = (r.DOCNUM || '').slice(0, 2);
+  if (!WMS_GENERAL_SALE_PREFIXES.has(prefix)) return;
+  const sku = cleanText(r.STKCOD);
+  const warehouse = cleanText(r.LOCCOD);
+  const docNum = cleanText(r.DOCNUM);
+  const seqNum = cleanText(r.SEQNUM);
+  if (!docNum || !sku) return;
+  const qty = Number(r.XTRNQTY) || Number(r.TRNQTY) || 0;
+  const val = Number(r.TRNVAL) || 0;
+  const key = `${company}|${docNum}|${seqNum}|${sku}|${warehouse}`;
+  if (!invoiceLines.has(key)) {
+    invoiceLines.set(key, {
+      company,
+      docNum,
+      seqNum,
+      docDate: day || toIsoDate(r.DOCDAT),
+      sku,
+      skuName: cleanText(r.STKDES),
+      warehouse,
+      qty: 0,
+      unitCode: cleanText(r.TQUCOD),
+      unitFactor: Number(r.TFACTOR) || null,
+      lineValue: 0,
+      refNum: cleanText(r.REFNUM || r.RDOCNUM),
+    });
+  }
+  const line = invoiceLines.get(key);
+  line.qty += Math.abs(qty);
+  line.lineValue += val;
+}
+
+async function addCompanyInvoiceLines(invoiceLines, company) {
+  const rows = await readTable(company, 'STCRD.DBF');
+  for (const r of rows) addInvoiceLine(invoiceLines, company, r, toIsoDate(r.DOCDAT));
+  return rows.length;
+}
+
+
+function parseInvoiceSourceRef(raw) {
+  const text = cleanText(raw);
+  if (!text) return null;
+  const m = text.match(/^([A-Z0-9-]+)\s+(\d+)$/i);
+  if (m) return { docNum: m[1], seqNum: String(Number(m[2])) };
+  const parts = text.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2 && /^\d+$/.test(parts[parts.length - 1])) {
+    return { docNum: parts.slice(0, -1).join(''), seqNum: String(Number(parts[parts.length - 1])) };
+  }
+  return { docNum: text, seqNum: '' };
+}
+
+function componentCandidateKey(docNum, seqNum) {
+  return `${cleanText(docNum)}|${String(seqNum || '').trim().replace(/^0+(?=\d)/, '')}`;
+}
+
+async function buildInvoiceLineComponents(invoiceLines) {
+  const rows = [];
+  for (const company of INVOICE_LINE_COMPANIES) {
+    const remarks = await readTable(company, 'ARTRNRM.DBF');
+    const remarkByDocSeq = new Map();
+    for (const rm of remarks) {
+      const docNum = cleanText(rm.DOCNUM);
+      const seqNum = cleanText(rm.SEQNUM).replace(/^0+(?=\d)/, '');
+      if (!docNum || !seqNum) continue;
+      const parsed = parseSalesLineComponentRemark(rm.REMARK);
+      if (!parsed?.childCode) continue;
+      const key = componentCandidateKey(docNum, seqNum);
+      if (!remarkByDocSeq.has(key)) remarkByDocSeq.set(key, []);
+      remarkByDocSeq.get(key).push({ ...parsed, sourceDocNum: docNum, sourceSeqNum: seqNum });
+    }
+
+    const headerSoByDoc = new Map();
+    try {
+      const headers = await readTable(company, 'ARTRN.DBF');
+      for (const h of headers) {
+        const docNum = cleanText(h.DOCNUM);
+        const soNum = cleanText(h.SONUM);
+        if (docNum && soNum) headerSoByDoc.set(docNum, soNum);
+      }
+    } catch (_) {}
+
+    for (const d of invoiceLines.values()) {
+      if (d.company !== company) continue;
+      if (!/^90022(?:-|$)/.test(d.sku || '')) continue;
+      const seq = cleanText(d.seqNum).replace(/^0+(?=\d)/, '');
+      const candidates = [];
+      if (d.docNum && seq) candidates.push({ docNum: d.docNum, seqNum: seq });
+      const ref = parseInvoiceSourceRef(d.refNum);
+      if (ref?.docNum) candidates.push({ docNum: ref.docNum, seqNum: ref.seqNum || seq });
+      const soFromHeader = headerSoByDoc.get(d.docNum);
+      if (soFromHeader && seq) candidates.push({ docNum: soFromHeader, seqNum: seq });
+
+      const seenCandidate = new Set();
+      const seenComponent = new Set();
+      for (const c of candidates) {
+        const key = componentCandidateKey(c.docNum, c.seqNum);
+        if (seenCandidate.has(key)) continue;
+        seenCandidate.add(key);
+        const found = remarkByDocSeq.get(key) || [];
+        for (const comp of found) {
+          const unique = `${company}|${d.docNum}|${seq}|${comp.sourceDocNum}|${comp.sourceSeqNum}|${comp.childCode}|${comp.note}`;
+          if (seenComponent.has(unique)) continue;
+          seenComponent.add(unique);
+          rows.push({
+            company,
+            docNum: d.docNum,
+            seqNum: seq,
+            parentSku: d.sku,
+            sourceDocNum: comp.sourceDocNum,
+            sourceSeqNum: comp.sourceSeqNum,
+            childCode: comp.childCode,
+            childName: comp.childName,
+            childQty: comp.childQty,
+            note: comp.note,
+          });
+        }
+      }
+    }
+  }
+  return rows;
+}
 
 async function syncStockMovements(db) {
   const rows = await readTable(STOCK_COMPANY, 'STCRD.DBF');
   const daily = new Map(); // `${sku}|${warehouse}|${day}` -> {received,sold,converted,transferred,other}
   const wmsDaily = new Map(); // `${sku}|${day}` -> {received,general_sale,consi,transfer,converted,reserved,return,writeoff,received_value}
+  const invoiceLines = new Map(); // `${doc}|${seq}|${sku}|${warehouse}` -> invoice item line from STCRD
   for (const r of rows) {
     if (!r.STKCOD || !r.LOCCOD) continue;
     const day = toIsoDate(r.DOCDAT);
@@ -430,6 +622,8 @@ async function syncStockMovements(db) {
     // wherever a promotional/bundle sub-code with TFACTOR≠1 was involved.
     const qty = Number(r.XTRNQTY) || 0;
     const val = Number(r.TRNVAL) || 0;
+
+    addInvoiceLine(invoiceLines, STOCK_COMPANY, r, day);
 
     const category = STCRD_CATEGORY[prefix];
     if (category) {
@@ -463,7 +657,7 @@ async function syncStockMovements(db) {
     // the same physical units): exclude WMS_CONSI_WAREHOUSES here too, matching the destination the
     // "consi" bucket below already claims — dispatched_qty should only cover VL/LT/TP shipments to
     // destinations "net" does NOT already exclude (real branches, warehouse 09, 10, 11, 19, ...).
-    if (WMS_DISPATCHED_PREFIXES.has(prefix) && warehouse !== '01' && !WMS_CONSI_WAREHOUSES.has(warehouse)) {
+    if (WMS_DISPATCHED_PREFIXES.has(prefix) && warehouse !== '01' && warehouse !== '19' && !WMS_CONSI_WAREHOUSES.has(warehouse) && !WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES.has(warehouse)) {
       // only the destination-side row is recorded, same reasoning as the transfer/consi bucket below —
       // independent top-level `if` (not part of the if/else chain) so this doesn't change what consi/
       // transfer/reserved already get credited — this is purely an ADDITIONAL field for tgm-wms's
@@ -484,6 +678,12 @@ async function syncStockMovements(db) {
       ensureWms().writeoff -= qty;
     }
   }
+  for (const company of INVOICE_LINE_COMPANIES) {
+    if (company === STOCK_COMPANY) continue;
+    await addCompanyInvoiceLines(invoiceLines, company);
+  }
+  const invoiceLineComponents = await buildInvoiceLineComponents(invoiceLines);
+
   db.exec('BEGIN');
   try {
     db.exec('DELETE FROM stock_movements_daily');
@@ -496,6 +696,28 @@ async function syncStockMovements(db) {
       const [sku, warehouse, day] = key.split('|');
       insert.run(sku, warehouse, day, d.received, d.sold, d.converted, d.transferred, d.other);
       n++;
+    }
+
+    for (const company of INVOICE_LINE_COMPANIES) db.prepare('DELETE FROM invoice_lines WHERE company = ?').run(company);
+    const insertInvoiceLine = db.prepare(`
+      INSERT INTO invoice_lines (company, doc_num, seq_num, doc_date, sku, sku_name, warehouse, qty, unit_code, unit_factor, line_value, ref_num, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    `);
+    let nInvoiceLines = 0;
+    for (const d of invoiceLines.values()) {
+      insertInvoiceLine.run(d.company, d.docNum, d.seqNum, d.docDate, d.sku, d.skuName, d.warehouse, d.qty, d.unitCode, d.unitFactor, d.lineValue, d.refNum);
+      nInvoiceLines++;
+    }
+
+    for (const company of INVOICE_LINE_COMPANIES) db.prepare('DELETE FROM invoice_line_components WHERE company = ?').run(company);
+    const insertInvoiceLineComponent = db.prepare(`
+      INSERT OR IGNORE INTO invoice_line_components (company, doc_num, seq_num, parent_sku, source_doc_num, source_seq_num, child_code, child_name, child_qty, note, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    `);
+    let nInvoiceLineComponents = 0;
+    for (const c of invoiceLineComponents) {
+      insertInvoiceLineComponent.run(c.company, c.docNum, c.seqNum, c.parentSku, c.sourceDocNum, c.sourceSeqNum, c.childCode, c.childName, c.childQty, c.note);
+      nInvoiceLineComponents++;
     }
 
     db.exec('DELETE FROM stock_movements_wms_daily');
@@ -511,7 +733,7 @@ async function syncStockMovements(db) {
     }
 
     db.exec('COMMIT');
-    console.log(`[importFromExpress] stock movements: ${n} sku/warehouse/day rows, ${nWms} sku/day WMS rows`);
+    console.log(`[importFromExpress] stock movements: ${n} sku/warehouse/day rows, ${nWms} sku/day WMS rows, ${nInvoiceLines} invoice lines, ${nInvoiceLineComponents} invoice line components`);
     return n;
   } catch (e) {
     db.exec('ROLLBACK');
@@ -559,9 +781,20 @@ async function syncWarehouses(db) {
 // the next cron tick.
 const CUTOVER_DATE = new Date('2026-01-01T00:00:00Z');
 const COMPANY_DATE_CUTOFF = {
+  'TSS-68': { before: CUTOVER_DATE },   // TSS-68 is the 2568 archive of TSS; 2026 rows duplicate TSS
   'TSSN-68': { before: CUTOVER_DATE },  // keep only orders strictly before the cutover
   'TSS-NV': { atOrAfter: CUTOVER_DATE }, // keep only orders on/after the cutover
 };
+
+function passesCompanyDateCutoff(company, dateValue) {
+  const cutoff = COMPANY_DATE_CUTOFF[company];
+  if (!cutoff) return true;
+  const d = dateValue;
+  if (!(d instanceof Date) || isNaN(d)) return false;
+  if (cutoff.before && !(d < cutoff.before)) return false;
+  if (cutoff.atOrAfter && !(d >= cutoff.atOrAfter)) return false;
+  return true;
+}
 
 async function syncSales(db) {
   // dlv_date (DLVDAT) added 2026-08-27 — see schema.sql's comment on outbound_orders.dlv_date
@@ -573,7 +806,11 @@ async function syncSales(db) {
       total = excluded.total, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
   `);
   const insertLine = db.prepare(`
-    INSERT INTO outbound_lines (order_id, sku, qty, unit_price, line_value) VALUES (?, ?, ?, ?, ?)
+    INSERT INTO outbound_lines (order_id, seq_num, sku, qty, unit_price, line_value) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const insertComponent = db.prepare(`
+    INSERT OR IGNORE INTO sales_line_components (company, order_id, order_no, seq_num, parent_sku, child_code, child_name, child_qty, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertTx = db.prepare(`
     INSERT INTO sales_transactions (company, tx_date, sku, cust_code, slm_id, qty, amount, so_ref)
@@ -587,6 +824,7 @@ async function syncSales(db) {
 
   let ordersImported = 0;
   let linesImported = 0;
+  let componentsImported = 0;
   const docStatCounts = {};
   // accumulated ACROSS all (non-CONSI) companies before writing — sales_history is a single blended
   // total per (slm_id, sku, ym), so it must sum every company's contribution in one pass. Rolling it up
@@ -598,24 +836,20 @@ async function syncSales(db) {
   for (const company of SALES_COMPANIES) {
     const headers = await readTable(company, 'OESO.DBF');
     const items = await readTable(company, 'OESOIT.DBF');
+    const remarks = await readTable(company, 'ARTRNRM.DBF');
 
     const byOrder = new Map();
-    const cutoff = COMPANY_DATE_CUTOFF[company];
     for (const h of headers) {
       docStatCounts[h.DOCSTAT] = (docStatCounts[h.DOCSTAT] || 0) + 1;
       if (!ORDER_DOCSTAT_INCLUDE.includes(h.DOCSTAT)) continue;
-      if (cutoff) {
-        const d = h.SODAT;
-        if (!(d instanceof Date) || isNaN(d)) continue; // undated order under a cutoff rule — exclude, can't place it
-        if (cutoff.before && !(d < cutoff.before)) continue;
-        if (cutoff.atOrAfter && !(d >= cutoff.atOrAfter)) continue;
-      }
+      if (!passesCompanyDateCutoff(company, h.SODAT)) continue;
       byOrder.set(h.SONUM, h);
     }
 
     db.exec('BEGIN');
     try {
       // wipe this company's rows before reinserting (mirror semantics, avoids duplicate accumulation)
+      db.prepare('DELETE FROM sales_line_components WHERE company = ?').run(company);
       db.prepare('DELETE FROM outbound_lines WHERE order_id IN (SELECT id FROM outbound_orders WHERE company = ?)').run(company);
       db.prepare('DELETE FROM outbound_orders WHERE company = ?').run(company);
       db.prepare('DELETE FROM sales_transactions WHERE company = ?').run(company);
@@ -626,14 +860,18 @@ async function syncSales(db) {
         ordersImported++;
       }
 
+      const lineByOrderSeq = new Map();
       for (const it of items) {
         if (!byOrder.has(it.SONUM)) continue; // excluded order (not DOCSTAT='M') or line has no header
         const h = byOrder.get(it.SONUM);
         const orderId = `${company}:${it.SONUM}`;
         const qty = it.ORDQTY || 0;
         const value = it.TRNVAL || 0;
-        insertLine.run(orderId, it.STKCOD || null, qty, it.UNITPR || 0, value);
-        insertTx.run(company, toIsoDate(it.SODAT || h.SODAT), it.STKCOD || null, h.CUSCOD || null, normalizeSlmCode(h.SLMCOD) || null, qty, value, it.SONUM);
+        const seqNum = cleanText(it.SEQNUM);
+        const sku = cleanText(it.STKCOD) || null;
+        insertLine.run(orderId, seqNum || null, sku, qty, it.UNITPR || 0, value);
+        lineByOrderSeq.set(`${it.SONUM}|${seqNum}`, { orderId, orderNo: it.SONUM, parentSku: sku });
+        insertTx.run(company, toIsoDate(it.SODAT || h.SODAT), sku, h.CUSCOD || null, normalizeSlmCode(h.SLMCOD) || null, qty, value, it.SONUM);
         linesImported++;
 
         // plain sales_history stays CONSI-free — see file header. Consignment numbers still live in
@@ -652,6 +890,19 @@ async function syncSales(db) {
           curAll.amount += value;
           monthly.set(allKey, curAll);
         }
+      }
+
+
+      for (const rm of remarks) {
+        const orderNo = cleanText(rm.DOCNUM);
+        if (!byOrder.has(orderNo)) continue;
+        const seqNum = cleanText(rm.SEQNUM);
+        const parent = lineByOrderSeq.get(`${orderNo}|${seqNum}`);
+        if (!parent?.parentSku || !/^90022(?:-|$)/.test(parent.parentSku)) continue;
+        const component = parseSalesLineComponentRemark(rm.REMARK);
+        if (!component?.childCode) continue;
+        insertComponent.run(company, parent.orderId, parent.orderNo, seqNum, parent.parentSku, component.childCode, component.childName, component.childQty, component.note);
+        componentsImported++;
       }
 
       db.exec('COMMIT');
@@ -674,8 +925,8 @@ async function syncSales(db) {
     throw e;
   }
 
-  console.log(`[importFromExpress] sales: ${ordersImported} orders, ${linesImported} lines. DOCSTAT seen: ${JSON.stringify(docStatCounts)}`);
-  return { ordersImported, linesImported };
+  console.log(`[importFromExpress] sales: ${ordersImported} orders, ${linesImported} lines, ${componentsImported} line components. DOCSTAT seen: ${JSON.stringify(docStatCounts)}`);
+  return { ordersImported, linesImported, componentsImported };
 }
 
 // Real invoiced revenue per Express's own AR ledger (ARTRN.DBF) — see db/schema.sql's
@@ -697,7 +948,10 @@ async function syncInvoiceSales(db) {
     INSERT INTO invoice_sales_monthly (company, ym, cust_code, slm_code, amount, invoice_count)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
-  const INVOICE_RECTYP = new Set(['1', '3', '4', '5']);
+  // Include RECTYP='0' as revenue-bearing AI invoices. Confirmed from live TSS ARTRN on
+  // 2026-09-18: Express's 2026 year-to-date sales total includes these February AI69...
+  // records, and excluding them leaves the dashboard short by ~300,949 THB.
+  const INVOICE_RECTYP = new Set(['0', '1', '3', '4', '5']);
   let rowsImported = 0;
 
   for (const company of SALES_COMPANIES) {
@@ -706,6 +960,8 @@ async function syncInvoiceSales(db) {
 
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
+      if (isExcludedSalesDocNum(r.DOCNUM)) continue;
+      if (!passesCompanyDateCutoff(company, r.DOCDAT)) continue;
       const period = ym(r.DOCDAT);
       if (!period) continue;
       const custCode = (r.CUSCOD || '').trim() || '(none)';
@@ -728,6 +984,7 @@ async function syncInvoiceSales(db) {
         insert.run(company, period, custCode, slmCode, agg.amount, agg.invoice_count);
         rowsImported++;
       }
+
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');
@@ -749,16 +1006,19 @@ async function syncInvoices(db) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - INVOICE_SYNC_WINDOW_DAYS);
   const routeNames = await loadRouteNameMap();
+  const shipToAddresses = await loadShipToAddressMap();
 
   const upsert = db.prepare(`
-    INSERT INTO invoices (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_code, route_name, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    INSERT INTO invoices (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_code, route_name, ship_to_code, ship_to_address, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(doc_num) DO UPDATE SET doc_date = excluded.doc_date, cust_code = excluded.cust_code,
       slm_code = excluded.slm_code, so_num = excluded.so_num, total = excluded.total,
       rectyp = excluded.rectyp, route_code = excluded.route_code, route_name = excluded.route_name,
+      ship_to_code = excluded.ship_to_code, ship_to_address = excluded.ship_to_address,
       updated_at = excluded.updated_at
   `);
-  const INVOICE_RECTYP = new Set(['1', '3', '5']);
+  // Keep the document-level invoice import aligned with syncInvoiceSales() above.
+  const INVOICE_RECTYP = new Set(['0', '1', '3', '5']);
   const seen = new Set();
 
   for (const company of SALES_COMPANIES) {
@@ -766,6 +1026,7 @@ async function syncInvoices(db) {
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
       if (!r.DOCNUM) continue;
+      if (isExcludedSalesDocNum(r.DOCNUM)) continue;
       if (!(r.DOCDAT instanceof Date) || isNaN(r.DOCDAT) || r.DOCDAT < cutoff) continue;
       const docNum = r.DOCNUM.trim();
       if (seen.has(docNum)) continue; // dedupe across companies (first company in SALES_COMPANIES wins, mirrors syncProducts)
@@ -776,9 +1037,12 @@ async function syncInvoices(db) {
       // code itself if a code exists with no matching ISTAB row (better than showing nothing at all).
       const routeCode = (r.AREACOD || '').trim() || null;
       const routeName = routeCode ? (routeNames.get(routeCode) || routeCode) : null;
+      const custCode = (r.CUSCOD || '').trim() || null;
+      const shipToCode = (r.SHIPTO || '').trim() || null;
+      const shipToAddress = custCode && shipToCode ? (shipToAddresses.get(`${custCode}|${shipToCode}`) || null) : null;
       upsert.run(
-        docNum, toIsoDate(r.DOCDAT), (r.CUSCOD || '').trim() || null, normalizeSlmCode(r.SLMCOD) || null,
-        (r.SONUM || '').trim() || null, signedTotal, r.RECTYP, routeCode, routeName,
+        docNum, toIsoDate(r.DOCDAT), custCode, normalizeSlmCode(r.SLMCOD) || null,
+        (r.SONUM || '').trim() || null, signedTotal, r.RECTYP, routeCode, routeName, shipToCode, shipToAddress,
       );
     }
   }
@@ -899,6 +1163,7 @@ async function syncPromoDocs(db) {
         insert.run(company, r.sonum, r.seqnum, r.custCode, r.custName, r.sku, r.skuName, r.unitPrice, r.startDate, r.dueDate, r.docstat, r.createDate, r.docRef);
         rowsImported++;
       }
+
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');
@@ -950,6 +1215,7 @@ function refreshSalesRollups(db) {
     try {
       db.prepare(deleteSql).run(cutoffYm);
       db.prepare(insertSql).run(cutoffYm);
+
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');
@@ -1023,7 +1289,7 @@ async function runImport(db) {
     rowsProcessed += await syncStock(db);
     rowsProcessed += await syncStockMovements(db);
     const salesResult = await syncSales(db);
-    rowsProcessed += salesResult.ordersImported + salesResult.linesImported;
+    rowsProcessed += salesResult.ordersImported + salesResult.linesImported + (salesResult.componentsImported || 0);
     refreshSalesRollups(db);
     rowsProcessed += await syncInvoiceSales(db);
     rowsProcessed += await syncInvoices(db);
@@ -1046,4 +1312,4 @@ async function runImport(db) {
   }
 }
 
-module.exports = { runImport, refreshSalesRollups, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { runImport, refreshSalesRollups, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };

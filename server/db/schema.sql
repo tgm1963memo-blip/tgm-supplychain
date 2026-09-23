@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS products (
   plant       TEXT NOT NULL DEFAULT 'TGM1',
   is_active   INTEGER NOT NULL DEFAULT 1,
   note        TEXT,
+  standard_price REAL,
+  price_company TEXT,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -159,6 +161,7 @@ CREATE TABLE IF NOT EXISTS stock_lots (
   exp_date    TEXT,
   in_date     TEXT NOT NULL DEFAULT (date('now')),
   note        TEXT,
+  standard_price REAL,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE(sku, warehouse, lot_no)
 );
@@ -230,6 +233,53 @@ CREATE TABLE IF NOT EXISTS stock_movements_wms_daily (
 );
 CREATE INDEX IF NOT EXISTS idx_stock_mov_wms_day ON stock_movements_wms_daily(day);
 
+
+-- Invoice-level item lines from Express STCRD.DBF. Used by tgm-wms route billing as a fallback
+-- when ARTRN invoice rows have no linked SO number, so bill weight can still be calculated from
+-- the tax-invoice/stock-card document itself.
+CREATE TABLE IF NOT EXISTS invoice_lines (
+  company     TEXT NOT NULL,
+  doc_num     TEXT NOT NULL,
+  seq_num     TEXT,
+  doc_date    TEXT,
+  sku         TEXT,
+  sku_name    TEXT,
+  warehouse   TEXT,
+  qty         REAL NOT NULL DEFAULT 0,
+  unit_code   TEXT,
+  unit_factor REAL,
+  line_value  REAL,
+  ref_num     TEXT,
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (company, doc_num, seq_num, sku, warehouse)
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_doc ON invoice_lines(doc_num);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_sku ON invoice_lines(sku);
+
+-- Child SKU rows parsed from Express ARTRNRM.DBF notes for invoice lines.
+-- This covers invoice documents directly and invoices whose STCRD.RDOCNUM / ARTRN.SONUM points back
+-- to an SO line carrying 90022 child-item notes. Used by tgm-wms and tss-supplychain for exact
+-- route-billing weight and item detail on 90022 parent rows.
+CREATE TABLE IF NOT EXISTS invoice_line_components (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  company        TEXT NOT NULL,
+  doc_num        TEXT NOT NULL,
+  seq_num        TEXT NOT NULL,
+  parent_sku     TEXT,
+  source_doc_num TEXT,
+  source_seq_num TEXT,
+  child_code     TEXT NOT NULL,
+  child_name     TEXT,
+  child_qty      REAL NOT NULL DEFAULT 0,
+  note           TEXT,
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE(company, doc_num, seq_num, source_doc_num, source_seq_num, child_code, note)
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_line_components_doc ON invoice_line_components(doc_num);
+CREATE INDEX IF NOT EXISTS idx_invoice_line_components_parent ON invoice_line_components(parent_sku);
+CREATE INDEX IF NOT EXISTS idx_invoice_line_components_child ON invoice_line_components(child_code);
+
+
 -- SO / outbound orders mirrored from Express OESO.DBF (id = "<company>:<SONUM>" since SONUM is
 -- only unique within one company's own numbering sequence, and sales are pulled from 7 companies)
 CREATE TABLE IF NOT EXISTS outbound_orders (
@@ -255,6 +305,8 @@ CREATE INDEX IF NOT EXISTS idx_outbound_orders_date ON outbound_orders(order_dat
 CREATE TABLE IF NOT EXISTS outbound_lines (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   order_id    TEXT NOT NULL REFERENCES outbound_orders(id),
+  -- Express OESOIT.SEQNUM, kept so line-level ARTRNRM notes can be joined back to the exact SO line.
+  seq_num     TEXT,
   sku         TEXT,
   qty         REAL NOT NULL DEFAULT 0,
   unit_price  REAL,
@@ -262,6 +314,28 @@ CREATE TABLE IF NOT EXISTS outbound_lines (
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_outbound_lines_order ON outbound_lines(order_id);
+
+-- Line-level component rows parsed from Express ARTRNRM.DBF notes under SO lines.
+-- Confirmed 2026-09-17 for CONSI/TSS route-billing weight: 90022 parent lines carry child SKU notes
+-- per SO line (DOCNUM=SONUM, SEQNUM=line seq), e.g. SE6911630 seq 1 -> 10140-134 20p + 10002-62 10p.
+-- These are document-line facts, not a permanent BOM: the child mix can differ per order/customer.
+CREATE TABLE IF NOT EXISTS sales_line_components (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  company       TEXT NOT NULL,
+  order_id      TEXT NOT NULL,
+  order_no      TEXT NOT NULL,
+  seq_num       TEXT NOT NULL,
+  parent_sku    TEXT,
+  child_code    TEXT NOT NULL,
+  child_name    TEXT,
+  child_qty     REAL NOT NULL DEFAULT 0,
+  note          TEXT,
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE(company, order_no, seq_num, child_code, note)
+);
+CREATE INDEX IF NOT EXISTS idx_sales_line_components_order ON sales_line_components(order_id);
+CREATE INDEX IF NOT EXISTS idx_sales_line_components_parent ON sales_line_components(parent_sku);
+CREATE INDEX IF NOT EXISTS idx_sales_line_components_child ON sales_line_components(child_code);
 
 -- ── USERS / AUTH (owned by this app, never touches Express) ──
 
@@ -607,9 +681,9 @@ CREATE INDEX IF NOT EXISTS idx_sales_hist_co_slm ON v_sales_history_company(slm_
 -- undercounts real invoiced revenue by ~10x (~8M vs ~78M) — orders and invoices are different
 -- documents in this business's Express workflow; many invoices are never linked back to an SO number
 -- (only ~6% carry one), so this can't be reconciled at the product/SKU level, only at the
--- company+month+customer level. RECTYP: '1'=cash invoice, '3'=credit invoice, '5'=credit note/return
--- (subtracted) — see importFromExpress.js's syncInvoiceSales() for the exact filter, validated to
--- land within ~2% of the tax-invoice report's total.
+-- company+month+customer level. RECTYP: '0','1','3','4' count as revenue and '5'=credit note/return
+-- (subtracted). Documents whose DOCNUM starts with LF/LE/LG are excluded from sales totals per
+-- accounting's rule; see importFromExpress.js's syncInvoiceSales() for the exact filter.
 -- slm_code: ARTRN carries its own SLMCOD field per transaction (the salesperson recorded at invoice
 -- time), so salesperson-level invoice totals don't need to go through customers.slm_id (which only
 -- reflects current ownership, not who the sale was actually recorded under). Added 2026-07-21 so the
@@ -654,6 +728,10 @@ CREATE TABLE IF NOT EXISTS invoices (
   -- ROUTE_TABTYP in importFromExpress.js for how this was confirmed.
   route_code  TEXT,
   route_name  TEXT,
+  -- ADDED 2026-09-17 (tgm-wms สายรถ): ARTRN.SHIPTO joined against ARSHIP.DBF by CUSCOD+SHIPTO
+  -- so delivery sheets can show the real Express ship-to/place instead of falling back to WMS customer master.
+  ship_to_code    TEXT,
+  ship_to_address TEXT,
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_invoices_so_num ON invoices(so_num);
@@ -733,6 +811,8 @@ CREATE TABLE IF NOT EXISTS promo_draft_headers (
   has_off_contract_cost INTEGER NOT NULL DEFAULT 0,
   has_marketing_cost    INTEGER NOT NULL DEFAULT 0,
   other_costs_json      TEXT NOT NULL DEFAULT '[]', -- [{item,amount,note}] แบบอิสระ ไม่แยกตาราง
+  has_compensate        INTEGER NOT NULL DEFAULT 0,
+  special_distribution  TEXT,
   levels_json           TEXT NOT NULL DEFAULT '[]', -- clone จาก approval_workflow_templates ตอนส่งอนุมัติ
   current_level         INTEGER NOT NULL DEFAULT 0,
   approvers_json        TEXT NOT NULL DEFAULT '[]', -- flat mirror เหมือน custreg_subs.approvers_json
@@ -755,11 +835,13 @@ CREATE TABLE IF NOT EXISTS promo_drafts (
   cust_name      TEXT,
   sku            TEXT NOT NULL,
   sku_name       TEXT,
+  equipment_set  TEXT,
   normal_price   REAL,
   unit_price     REAL NOT NULL DEFAULT 0,
   discount_pct   REAL,
   gp_pct         REAL,
   cost_price     REAL,
+  estimated_qty  REAL,
   start_date     TEXT,
   due_date       TEXT,
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -1013,6 +1095,10 @@ CREATE TABLE IF NOT EXISTS v_sales_overview_sales_monthly (
 );
 CREATE INDEX IF NOT EXISTS idx_sales_ov_ym ON v_sales_overview_sales_monthly(ym);
 CREATE INDEX IF NOT EXISTS idx_sales_ov_company ON v_sales_overview_sales_monthly(company);
+CREATE INDEX IF NOT EXISTS idx_sales_ov_ym_slm ON v_sales_overview_sales_monthly(ym, slm_owner);
+CREATE INDEX IF NOT EXISTS idx_sales_ov_ym_company ON v_sales_overview_sales_monthly(ym, company);
+CREATE INDEX IF NOT EXISTS idx_sales_ov_prod ON v_sales_overview_sales_monthly(prod_code);
+CREATE INDEX IF NOT EXISTS idx_sales_ov_cust ON v_sales_overview_sales_monthly(cust_code);
 
 -- same shape as v_sales_overview_sales_monthly, scoped to consignment only — this is the "แยกแท็ก"
 -- (tagged separately) requirement: company='CONSI' is a first-class column on sales_transactions

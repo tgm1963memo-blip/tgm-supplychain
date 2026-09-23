@@ -15,6 +15,7 @@ const FIELDS = [
   'promo_name', 'purpose', 'condition_type', 'item_type', 'note', 'equipment', 'discount_scope',
   'cost_start_date', 'cost_end_date', 'start_date', 'due_date',
   'is_npd', 'has_off_contract_cost', 'has_marketing_cost', 'other_costs_json',
+  'has_compensate', 'special_distribution',
   'levels_json', 'current_level', 'approvers_json', 'status', 'keyed_by', 'keyed_at',
   // updated_by ยังรับจาก client ได้ (client ส่ง UID ของตัวเองมาบอกว่า "ฉันเป็นคนแก้ไขล่าสุด") ต่างจาก
   // created_by/doc_no ที่ห้ามเชื่อ เพราะ updated_by ไม่ใช่ช่องทางปลอมตัวเป็นคนอื่น (แค่บันทึกว่าใครกดล่าสุด

@@ -48,11 +48,49 @@ function runMigrations(db) {
     console.log('[migrations] recreated invoice_sales_monthly with PK (company,ym,cust_code,slm_code)');
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_sales_slm ON invoice_sales_monthly(slm_code)');
+  // Emergency DB-side guard used only while an already-running Windows service still has the old
+  // importer loaded. The current importer excludes LF/LE/LG directly; once this migration runs in a
+  // restarted service, remove the temporary adjustment objects so new syncs cannot double-subtract.
+  db.exec(`
+    DROP TRIGGER IF EXISTS trg_invoice_sales_exclude_doc_prefix_adjust;
+    DROP TABLE IF EXISTS _invoice_sales_excluded_doc_adjustments;
+  `);
+  // TSS ARTRN RECTYP='0' AI69... invoices (2026-02-02..2026-02-08) are revenue-bearing and are
+  // included by Express's sales report. New sync code includes RECTYP='0' directly, but production
+  // service processes may keep an already-loaded worker until the Windows service is restarted. These
+  // idempotent triggers keep the two known AI69 rollup keys correct if that old worker refreshes
+  // invoice_sales_monthly before the service can be restarted. The amount guards prevent double-counting
+  // once the new importer is active.
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_invoice_sales_tss_ai69_patch_0001
+    AFTER INSERT ON invoice_sales_monthly
+    WHEN NEW.company='TSS' AND NEW.ym='2026-02' AND NEW.cust_code='01-OK-0001' AND NEW.slm_code='ON-001' AND NEW.amount < 300000
+    BEGIN
+      UPDATE invoice_sales_monthly
+      SET amount = amount + 299268.62,
+          invoice_count = invoice_count + 294
+      WHERE company=NEW.company AND ym=NEW.ym AND cust_code=NEW.cust_code AND slm_code=NEW.slm_code;
+    END;
+    CREATE TRIGGER IF NOT EXISTS trg_invoice_sales_tss_ai69_patch_0002
+    AFTER INSERT ON invoice_sales_monthly
+    WHEN NEW.company='TSS' AND NEW.ym='2026-02' AND NEW.cust_code='01-OK-0002' AND NEW.slm_code='ON-001' AND NEW.amount < 1000
+    BEGIN
+      UPDATE invoice_sales_monthly
+      SET amount = amount + 1680.37,
+          invoice_count = invoice_count + 1
+      WHERE company=NEW.company AND ym=NEW.ym AND cust_code=NEW.cust_code AND slm_code=NEW.slm_code;
+    END;
+  `);
 
   // products.unit: STMAS.QUCOD (stock unit) was never synced before — every row silently fell back
   // to the column default 'กก.' regardless of the item's real unit (e.g. sold by "แพ" — pack — not
   // weight). See syncProducts()'s upsert in importFromExpress.js for the sync side.
   addColumnIfMissing(db, 'products', 'unit', "unit TEXT NOT NULL DEFAULT 'กก.'");
+  // products.standard_price: optional selling price from Express STMAS (SELLPR*), used as a draft fallback.
+  addColumnIfMissing(db, 'products', 'standard_price', 'standard_price REAL');
+  // products.price_company (2026-09-23): which company's STMAS supplied standard_price — TSS keys its
+  // prices in as net cost (ราคาทุนสุทธิ), so ใบเคาะราคา must reverse-calculate a selling price from it.
+  addColumnIfMissing(db, 'products', 'price_company', 'price_company TEXT');
 
   // stock_movements_wms_daily.return_qty/writeoff_qty: added 2026-08-17 — PM (customer returns) and
   // XX (waste/spoilage write-offs) used to fall through every WMS_*_PREFIXES bucket uncategorized and
@@ -147,11 +185,13 @@ function runMigrations(db) {
           cust_name      TEXT,
           sku            TEXT NOT NULL,
           sku_name       TEXT,
+          equipment_set  TEXT,
           normal_price   REAL,
           unit_price     REAL NOT NULL DEFAULT 0,
           discount_pct   REAL,
           gp_pct         REAL,
           cost_price     REAL,
+          estimated_qty  REAL,
           start_date     TEXT,
           due_date       TEXT,
           created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -171,12 +211,14 @@ function runMigrations(db) {
   // promo_drafts.weight (2026-09-16, code-review batch): per-line pack weight (กก.), user-entered,
   // shown alongside the price breakdown — no auto-fill source exists yet, purely a new input field.
   addColumnIfMissing(db, 'promo_drafts', 'weight', 'weight REAL');
+  addColumnIfMissing(db, 'promo_drafts', 'equipment_set', 'equipment_set TEXT');
   // promo_drafts.gp_pct/cost_price (already existed) now specifically mean the "ราคาปกติ" side of the
   // 3-column breakdown (ราคาขาย/GP%/ราคาทุนสุทธิ); these two new columns are the same breakdown for the
   // "ราคาโปรโมชั่น" side (unit_price), since the two sides can have the SKU cost calculated from
   // different selling prices even off the same GP% — see index.html's draftLineCost()/2026-09-16 note.
   addColumnIfMissing(db, 'promo_drafts', 'gp_pct_promo', 'gp_pct_promo REAL');
   addColumnIfMissing(db, 'promo_drafts', 'cost_price_promo', 'cost_price_promo REAL');
+  addColumnIfMissing(db, 'promo_drafts', 'estimated_qty', 'estimated_qty REAL');
 
   // promo_drafts.is_sub_item (2026-09-16, ข้อ 4.4; ขยายรองรับ 1.1.1 เพิ่มเติมวันเดียวกัน): รหัสสินค้าที่
   // ขึ้นต้นด้วย "9" คือรหัสราคาพิเศษที่จับสินค้าจริงหลายรายการรวมกัน — ผู้ใช้กด "+ เพิ่มรายการย่อย" ใต้บรรทัด
@@ -202,11 +244,80 @@ function runMigrations(db) {
   addColumnIfMissing(db, 'promo_draft_headers', 'promo_no', 'promo_no TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_pdh_promo_no ON promo_draft_headers(promo_no) WHERE promo_no IS NOT NULL');
 
+  // ใบเคาะราคา (2026-09-23): ส่วนลดท้ายบิล% ต่อฝั่ง (ปกติ/โปร — หักต่อจาก GP ในสูตรทุนสุทธิ), Compensate
+  // (บาท/หน่วย ฝั่งโปร — ราคาขายโปร = ราคาปกติ − compensate) และหัวเอกสาร "มี Compensate" (บังคับกรอกทุก
+  // บรรทัด) + รูปแบบการจัดจำหน่ายพิเศษ (ข้อความอิสระ)
+  addColumnIfMissing(db, 'promo_drafts', 'bill_disc_pct', 'bill_disc_pct REAL');
+  addColumnIfMissing(db, 'promo_drafts', 'bill_disc_pct_promo', 'bill_disc_pct_promo REAL');
+  addColumnIfMissing(db, 'promo_drafts', 'compensate', 'compensate REAL');
+  addColumnIfMissing(db, 'promo_draft_headers', 'has_compensate', 'has_compensate INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'promo_draft_headers', 'special_distribution', 'special_distribution TEXT');
+
+  // invoice_lines (2026-09-17): STCRD invoice-level item lines for route-billing fallback
+  // when an ARTRN invoice has no linked SO number.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_lines (
+      company     TEXT NOT NULL,
+      doc_num     TEXT NOT NULL,
+      seq_num     TEXT,
+      doc_date    TEXT,
+      sku         TEXT,
+      sku_name    TEXT,
+      warehouse   TEXT,
+      qty         REAL NOT NULL DEFAULT 0,
+      unit_code   TEXT,
+      unit_factor REAL,
+      line_value  REAL,
+      ref_num     TEXT,
+      updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (company, doc_num, seq_num, sku, warehouse)
+    );
+    CREATE INDEX IF NOT EXISTS idx_invoice_lines_doc ON invoice_lines(doc_num);
+    CREATE INDEX IF NOT EXISTS idx_invoice_lines_sku ON invoice_lines(sku);
+  `);
+
+  // outbound_lines.seq_num + sales_line_components (2026-09-17): keep Express OESOIT.SEQNUM
+  // so ARTRNRM line notes can be promoted into a reusable per-order child SKU table for 90022 packs.
+  addColumnIfMissing(db, 'outbound_lines', 'seq_num', 'seq_num TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_outbound_lines_order_seq ON outbound_lines(order_id, seq_num)');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_line_components (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      company       TEXT NOT NULL,
+      order_id      TEXT NOT NULL,
+      order_no      TEXT NOT NULL,
+      seq_num       TEXT NOT NULL,
+      parent_sku    TEXT,
+      child_code    TEXT NOT NULL,
+      child_name    TEXT,
+      child_qty     REAL NOT NULL DEFAULT 0,
+      note          TEXT,
+      updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(company, order_no, seq_num, child_code, note)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_line_components_order ON sales_line_components(order_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_line_components_parent ON sales_line_components(parent_sku);
+    CREATE INDEX IF NOT EXISTS idx_sales_line_components_child ON sales_line_components(child_code);
+  `);
+
   // invoices.route_code/route_name (2026-09-16, สายรถ feature — see ROUTE_TABTYP in
   // importFromExpress.js): ARTRN.AREACOD resolved via ISTAB TABTYP='41' at sync time.
   addColumnIfMissing(db, 'invoices', 'route_code', 'route_code TEXT');
   addColumnIfMissing(db, 'invoices', 'route_name', 'route_name TEXT');
+  // invoices.ship_to_code/ship_to_address (2026-09-17, สายรถ feature): ARTRN.SHIPTO resolved by
+  // joining ARSHIP.DBF on CUSCOD+SHIPTO at sync time so tgm-wms can print the real delivery place.
+  addColumnIfMissing(db, 'invoices', 'ship_to_code', 'ship_to_code TEXT');
+  addColumnIfMissing(db, 'invoices', 'ship_to_address', 'ship_to_address TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_route_code ON invoices(route_code)');
+  // Dashboard and Sales Overview read current-year aggregates by month and salesperson on every open.
+  // Keep those reads index-backed so the single SQLite-backed API does not stall the UI as history grows.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sales_ov_ym_slm ON v_sales_overview_sales_monthly(ym, slm_owner);
+    CREATE INDEX IF NOT EXISTS idx_sales_ov_ym_company ON v_sales_overview_sales_monthly(ym, company);
+    CREATE INDEX IF NOT EXISTS idx_sales_ov_prod ON v_sales_overview_sales_monthly(prod_code);
+    CREATE INDEX IF NOT EXISTS idx_sales_ov_cust ON v_sales_overview_sales_monthly(cust_code);
+  `);
+
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 }
 
