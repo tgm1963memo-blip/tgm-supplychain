@@ -264,6 +264,18 @@ function runMigrations(db) {
   // promo_draft_headers.approval_history_json: ขั้นอนุมัติที่ผ่านไปแล้วก่อนถูกส่งต่อผู้บริหาร — เดิม levels_json
   // ถูกแทนที่ด้วยขั้นผู้บริหารทั้งก้อน ทำให้ชื่อ/เวลา/ลายเซ็นผู้อนุมัติขั้นปกติหายไปจากเอกสาร
   addColumnIfMissing(db, 'promo_draft_headers', 'approval_history_json', "approval_history_json TEXT NOT NULL DEFAULT '[]'");
+  // ลิงก์อนุมัติทางอีเมล (2026-09-23, แบบ e-memo): 1 token ต่อผู้อนุมัติต่อขั้นที่ถูกแจ้ง — ใช้ได้เฉพาะตอนที่
+  // เอกสารยังรออนุมัติ อยู่ขั้นเดิม และผู้อนุมัติคนนั้นยังไม่ได้ตัดสินใจ (ตรวจซ้ำทุกครั้งใน routes/promoEmailApprove.js)
+  db.exec(`CREATE TABLE IF NOT EXISTS promo_approval_tokens (
+    token       TEXT PRIMARY KEY,
+    draft_no    TEXT NOT NULL,
+    uid         TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    level_index INTEGER NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    used_at     TEXT
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_pat_draft ON promo_approval_tokens(draft_no)');
 
   // invoice_lines (2026-09-17): STCRD invoice-level item lines for route-billing fallback
   // when an ARTRN invoice has no linked SO number.

@@ -514,6 +514,8 @@ function buildApp(db, opts = {}) {
     res.status(204).end();
   });
   app.use('/api/user_signatures', authed, signaturesRouter);
+  // อนุมัติใบเคาะราคาผ่านลิงก์ในอีเมล — ไม่ต้อง login (ใช้ token ส่วนตัว) ดู routes/promoEmailApprove.js
+  app.use('/api/promo_approve', require('./routes/promoEmailApprove')(db));
 
   app.use('/api/promo_drafts', authed, makeCrudRouter(db, 'promo_drafts', {
     pk: 'id',

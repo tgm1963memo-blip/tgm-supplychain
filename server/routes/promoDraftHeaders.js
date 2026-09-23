@@ -3,6 +3,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 const { genId } = require('../lib/crud');
 const { validateChange } = require('../lib/promoApproval');
+const promoMail = require('../lib/promoApprovalMail');
 
 // เอกสาร "ใบเคาะราคา" ระดับหัว (1 แถวต่อ 1 เอกสาร, draft_no เป็น PK) — ไม่ใช้ makeCrudRouter ทั่วไปเพราะ
 // ต้องคำนวณ doc_no (เลขที่เอกสารแบบรัน) แบบอะตอมมิกฝั่ง server และ derive created_by จาก session เสมอ
@@ -66,6 +67,29 @@ function nextPromoNo(db) {
   return `${prefix}${String(next).padStart(4, '0')}`;
 }
 
+// ใช้ร่วมกันระหว่าง PATCH ปกติ และการอนุมัติผ่านลิงก์อีเมล (routes/promoEmailApprove.js) — ต้องเรียกภายใน
+// transaction ของผู้เรียก, validateChange เป็นตัวคำนวณผลอนุมัติจริงเสมอ
+function applyHeaderChange(db, target, input, user) {
+  const body = { ...input, updated_by: user.uid, updated_at: new Date().toISOString() };
+  validateChange(db, target, body, user);
+  for (const f of JSON_FIELDS) if (body[f] !== undefined && typeof body[f] !== 'string') body[f] = JSON.stringify(body[f]);
+  const cols = [...FIELDS.filter(f => body[f] !== undefined), 'updated_at'];
+  if (body.status === 'approved' && !target.promo_no) {
+    body.promo_no = nextPromoNo(db);
+    cols.push('promo_no');
+  }
+  db.prepare(`UPDATE promo_draft_headers SET ${cols.map(c => `${c} = ?`).join(',')} WHERE draft_no = ?`)
+    .run(...cols.map(c => body[c]), target.draft_no);
+  return parseRow(db.prepare('SELECT * FROM promo_draft_headers WHERE draft_no=?').get(target.draft_no));
+}
+// URL สาธารณะของ server (ใช้สร้างลิงก์อนุมัติในอีเมล) — PUBLIC_API_URL ถ้าตั้งไว้ ไม่งั้นใช้ host ที่ request
+// เข้ามา (ผ่าน tunnel จะได้ URL ของ tunnel เอง)
+function publicBaseUrl(req) {
+  if (process.env.PUBLIC_API_URL) return process.env.PUBLIC_API_URL.replace(/\/+$/, '');
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+  return `${proto}://${req.get('host')}`;
+}
+
 function parseRow(row) {
   if (!row) return row;
   for (const f of JSON_FIELDS) {
@@ -116,27 +140,37 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     }
   });
 
-  router.patch('/', requireRole(...writeRoles), (req, res) => {
+  // (2026-09-23) เลือกผู้อนุมัติได้ทุกคนในระบบแล้ว — ผู้ที่ไม่มี role ฝ่ายขาย (writeRoles) PATCH ได้เฉพาะ
+  // "การอนุมัติ/ไม่อนุมัติ" ของเอกสารที่ตัวเองเป็นผู้อนุมัติในขั้นปัจจุบันเท่านั้น (แก้ข้อมูลอื่นไม่ได้)
+  // validateChange ยังเป็นตัวคำนวณผลอนุมัติจริงเสมอ (ไม่เชื่อ levels_json ที่ client ส่งมา)
+  const APPROVAL_KEYS = new Set(['status', 'updated_by', 'levels_json', 'current_level', 'approvers_json', 'approval_comment']);
+  const writerOrCurrentApprover = (req, res, next) => {
+    if (writeRoles.includes(req.user.role)) return next();
+    const deny = () => res.status(403).json({ error: 'ไม่มีสิทธิ์แก้ไขเอกสารนี้' });
+    if (Object.keys(req.body || {}).some(k => !APPROVAL_KEYS.has(k))) return deny();
+    const { where, params } = buildWhere(req.query, [...FIELDS, 'draft_no', 'doc_no', 'created_by']);
+    if (!where) return deny();
+    const targets = db.prepare(`SELECT status, levels_json, current_level FROM promo_draft_headers ${where}`).all(...params);
+    const isApprover = t => {
+      if (!['pending_approval', 'pending_exec_approval'].includes(t.status)) return false;
+      let levels = [];
+      try { levels = JSON.parse(t.levels_json || '[]'); } catch { return false; }
+      return (levels[t.current_level || 0]?.approvers || []).some(a => a.uid === req.user.uid && a.status === 'pending');
+    };
+    return targets.length && targets.every(isApprover) ? next() : deny();
+  };
+
+  router.patch('/', writerOrCurrentApprover, (req, res) => {
     const { where, params } = buildWhere(req.query, [...FIELDS, 'draft_no', 'doc_no', 'created_by']);
     if (!where) return res.status(400).json({ error: 'update requires at least one filter' });
     try {
       db.exec('BEGIN IMMEDIATE');
       const targets = db.prepare(`SELECT * FROM promo_draft_headers ${where}`).all(...params);
-      const saved = [];
-      for (const target of targets) {
-        const body = { ...(req.body || {}), updated_by: req.user.uid, updated_at: new Date().toISOString() };
-        validateChange(db, target, body, req.user);
-        for (const f of JSON_FIELDS) if (body[f] !== undefined && typeof body[f] !== 'string') body[f] = JSON.stringify(body[f]);
-        const cols = [...FIELDS.filter(f => body[f] !== undefined), 'updated_at'];
-        if (body.status === 'approved' && !target.promo_no) {
-          body.promo_no = nextPromoNo(db);
-          cols.push('promo_no');
-        }
-        db.prepare(`UPDATE promo_draft_headers SET ${cols.map(c => `${c} = ?`).join(',')} WHERE draft_no = ?`)
-          .run(...cols.map(c => body[c]), target.draft_no);
-        saved.push(parseRow(db.prepare('SELECT * FROM promo_draft_headers WHERE draft_no=?').get(target.draft_no)));
-      }
+      const saved = targets.map(target => applyHeaderChange(db, target, req.body || {}, req.user));
       db.exec('COMMIT');
+      // แจ้งอีเมลผู้อนุมัติขั้นถัดไป / ผู้จัดทำเมื่อจบ (หลัง COMMIT, ไม่บล็อก response)
+      const baseUrl = publicBaseUrl(req);
+      targets.forEach((t, i) => promoMail.afterChange(db, parseRow({ ...t }), saved[i], baseUrl).catch(e => console.warn('[promoMail]', e.message)));
       res.json(saved);
     } catch (e) {
       if (db.isTransaction) db.exec('ROLLBACK');
@@ -153,3 +187,6 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
 
   return router;
 };
+module.exports.applyHeaderChange = applyHeaderChange;
+module.exports.parseRow = parseRow;
+module.exports.publicBaseUrl = publicBaseUrl;

@@ -23,6 +23,9 @@ function history(old) {
 function validateChange(db, old, change, user) {
   // ประวัติขั้นอนุมัติเขียนโดย server เท่านั้น
   if (change.approval_history_json !== undefined) throw new Error('ไม่สามารถแก้ข้อมูลขั้นอนุมัติโดยตรง');
+  // ความเห็นผู้อนุมัติ (ไม่ใช่คอลัมน์ — เก็บลง approver entry ผ่าน workflow.advance)
+  const comment = String(change.approval_comment || '').slice(0, 1000);
+  delete change.approval_comment;
   const next = { ...old, ...change };
   const assign = (levels, current = 0) => Object.assign(change, { levels_json: JSON.stringify(levels), current_level: current, approvers_json: JSON.stringify(levels.flatMap(l => l.approvers)) });
   if (!old) {
@@ -49,12 +52,12 @@ function validateChange(db, old, change, user) {
       if (!result.rejected) {
         const name = db.prepare('SELECT name FROM sc_users WHERE uid=?').get(user.uid)?.name || user.name || user.uid;
         change.approval_history_json = JSON.stringify([...history(old), { label: 'ผู้อนุมัติ', mode: 'any',
-          approvers: [{ uid: user.uid, name, status: 'approved', comment: '', ts: new Date().toISOString(), signature: signatureOf(db, user.uid) }] }]);
+          approvers: [{ uid: user.uid, name, status: 'approved', comment, ts: new Date().toISOString(), signature: signatureOf(db, user.uid) }] }]);
       }
     } else {
       const error = workflow.validate(levels, db.prepare('SELECT uid,is_active FROM sc_users').all());
       if (error) throw new Error(error);
-      result = workflow.advance(levels, old.current_level, user.uid, status !== 'rejected');
+      result = workflow.advance(levels, old.current_level, user.uid, status !== 'rejected', comment);
       stampSignature(db, result.levels, old.current_level, user.uid);
     }
     assign(result.levels, result.current);

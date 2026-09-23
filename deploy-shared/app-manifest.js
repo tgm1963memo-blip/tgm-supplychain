@@ -75,6 +75,7 @@ const SALES_ONLY = [
   '_draftSkuList', 'draftEnsureSkuCatalog', '_draftFindSku', 'draftApplySku',
   // เรียกจากฟอร์มใบเคาะราคาเท่านั้น แต่ตัวเองเรียก draftLineField/draftGroupRefresh/draftMsRefresh (sales-only)
   'draftApplyDefaultGp', 'draftRefreshCustomerCatalog', 'draftCostSameChanged', '_draftRefreshLineRefDataNow', '_draftRefPromise',
+  '_pdWfUsers', '_pdWfPickerHtml', 'pdWfPickerClose', 'pdWfPickerOpen', 'pdWfSetField',
   'draftAddLine', 'draftRemoveLine', 'draftLineField', 'draftSyncLineDates', 'draftRenderLines',
   '_draftOverlapDebounce', 'draftCheckOverlap', '_draftCheckOverlapNow', 'draftRefreshLineRefData', 'draftRenderRefCells',
   'draftRefreshCommentCounts', 'draftOpenLineComments', 'draftAddLineComment',
