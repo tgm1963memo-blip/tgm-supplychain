@@ -14014,7 +14014,15 @@ async function _draftCheckOverlapNow() {
 
 // ── ราคาโปรก่อนหน้า + ยอดขายเดือนที่ผ่านมา ต่อ SKU — query แบบ batched ครั้งเดียวทั้งตาราง (ไม่ query
 // ทีละแถว) แล้ว sum/lookup client-side; รวมทุกสาขาที่เลือกไว้เป็นยอดเดียวต่อ SKU (ตารางแสดงแถวต่อ SKU ไม่ใช่ต่อสาขา)
-async function draftRefreshLineRefData() {
+// เก็บ promise ของรอบโหลดล่าสุดไว้ให้ draftPreviewPDF() รอได้ — เดิมกด PDF ระหว่างที่ยังโหลดไม่เสร็จ
+// (เอกสารหลายสาขาใช้เวลาหลายวินาที) คอลัมน์โปรก่อนหน้า/ยอดขายใน PDF ออกมาว่างทั้งหมด
+let _draftRefPromise = null;
+function draftRefreshLineRefData() {
+  const p = _draftRefreshLineRefDataNow();
+  _draftRefPromise = p;
+  return p;
+}
+async function _draftRefreshLineRefDataNow() {
   const custCodes = [..._draftSelectedBranches];
   const skus = [...new Set(_draftLines.map(l => l.sku).filter(Boolean))];
   if (!skus.length) { _draftRefData = new Map(); draftRenderRefCells(); return; }
@@ -15040,10 +15048,11 @@ async function draftPreviewPDF() {
   const custRows = allCustomerRows();
   const branchCodes = [..._draftSelectedBranches].map(cc => String(cc || '').trim()).filter(Boolean).sort((a,b)=>a.localeCompare(b,'th'));
   const branchPreview = _draftBranchRanges(branchCodes);
+  // กลุ่มลูกค้า (corp) ของสาขาที่เลือก เรียงตามจำนวนสาขา — บอกว่าเป็นลูกค้าเจ้าไหนก่อนรายชื่อรหัสสาขา
+  const custGroups = [...branchCodes.reduce((m, cc) => { const g = (custRows.find(c => c.c === cc) || {}).corp || 'ไม่ระบุกลุ่ม'; return m.set(g, (m.get(g) || 0) + 1); }, new Map())].sort((x, y) => y[1] - x[1]);
   const draftNums = _draftLineNumbers();
-  const lines = _draftLines.map((l, i) => ({ l, num: draftNums[i] })).filter(x => x.l.sku);
   const fmt2 = v => v !== '' && v != null ? Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
-  const rowsHtml = lines.map(({ l, num }) => {
+  const buildRows = lines => lines.map(({ l, num }) => {
     const level = l.subLevel || 0;
     const ref = _draftRefData.get(l.sku);
     // ช่วงวันที่ 2 บรรทัดตายตัว (เริ่ม / – สิ้นสุด) แทนการปล่อยให้ตัดคำเองกลางวันที่
@@ -15084,6 +15093,11 @@ async function draftPreviewPDF() {
   if (!w) { toast('เบราว์เซอร์บล็อกป็อปอัป กรุณาอนุญาตแล้วลองใหม่', 'warn'); return; }
   try { w.document.body && (w.document.body.textContent = 'กำลังสร้างเอกสาร...'); } catch (e) { /* ignore */ }
   // เปิดหน้าต่างก่อน (ต้องอยู่ใน click เดียวกัน ไม่งั้นโดนบล็อกป็อปอัป) แล้วค่อยโหลดเส้นทางอนุมัติ/ลายเซ็น
+  // รอข้อมูลอ้างอิง (โปรก่อนหน้า/ยอดขาย) ให้โหลดเสร็จก่อนสร้างตาราง — ถ้ายังไม่มีของ SKU ไหนเลยสั่งโหลดใหม่
+  try { if (_draftRefPromise) await _draftRefPromise; } catch (e) { /* ignore */ }
+  if (_draftLines.some(l => l.sku && !_draftRefData.has(l.sku))) { try { await draftRefreshLineRefData(); } catch (e) { /* ignore */ } }
+  const lines = _draftLines.map((l, i) => ({ l, num: draftNums[i] })).filter(x => x.l.sku);
+  const rowsHtml = buildRows(lines);
   const loadTpl = entity => SB.getApprovalWorkflowTemplate(entity).then(l => Array.isArray(l) ? l : []).catch(() => []);
   const noRouteLevel = { label: 'ผู้อนุมัติ', noRoute: true, approvers: [] };
   let upcoming = [];
@@ -15139,18 +15153,18 @@ async function draftPreviewPDF() {
     .doctitle{font-size:17px;font-weight:700;color:#1E3A5F;margin:0 0 2px}
     .doctitle .stamp{font-size:10.5px;font-weight:700;background:#E5F3EE;color:#0A5940;border:1px solid #bfe3d3;padding:2px 9px;border-radius:20px;margin-left:8px}
     .docsub{font-size:11px;color:#4A5568;margin-bottom:8px}
-    .meta{font-size:10.8px;color:#444;background:#F7F9FC;border:1px solid #CDD5E0;border-radius:7px;padding:8px 10px;margin-bottom:8px}
-    .meta div{margin-bottom:2px}
+    .meta{font-size:10.8px;color:#444;background:#F7F9FC;border:1px solid #CDD5E0;border-radius:7px;padding:7px 10px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:2px 18px;line-height:1.35}
+    .meta span{max-width:100%} /* แต่ละหัวข้อเรียงต่อกัน ขึ้นบรรทัดใหม่เมื่อเต็ม */
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact} /* พิมพ์พื้นหัวตาราง/แรเงาออกมาด้วย */
     table{width:100%;border-collapse:collapse;margin-top:7px;font-size:8.5px;table-layout:fixed}
-    thead tr.grp th{background:#16304d;color:#fff;font-size:8.4px;font-weight:700;text-align:center;padding:4px 3px;border-left:1px solid rgba(255,255,255,.35)}
+    thead tr.grp th{background:#16304d;color:#fff;font-size:8.4px;font-weight:700;text-align:center;padding:6px 3px;border-left:1px solid rgba(255,255,255,.35)}
     thead tr.grp th:first-child{border-left:none}
-    thead tr.cols th{background:#1E3A5F;color:#fff;font-size:8.2px;font-weight:600;padding:4px 2px;text-align:center;vertical-align:middle;line-height:1.15;border-left:1px solid rgba(255,255,255,.18)}
+    thead tr.cols th{background:#1E3A5F;color:#fff;font-size:8.2px;font-weight:600;padding:7px 2px;text-align:center;vertical-align:middle;line-height:1.15;border-left:1px solid rgba(255,255,255,.18)}
     thead tr.cols th.gs{border-left:1.5px solid rgba(255,255,255,.55)}
     .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
     /* ตารางสินค้า: ทุกคอลัมน์กึ่งกลาง ยกเว้นชื่อสินค้า, เส้นแบ่งคอลัมน์สีอ่อน, เส้นหนาขึ้นที่ต้นกลุ่ม, แรเงาแยกกลุ่ม */
     table.items{border:1px solid #CDD5E0}
-    table.items td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:4px 3px;text-align:center;vertical-align:middle;line-height:1.2;word-break:break-word}
+    table.items td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:7px 3px;height:30px;text-align:center;vertical-align:middle;line-height:1.2;word-break:break-word}
     table.items td.sku-name{text-align:left}
     table.items td.gs{border-left:1.5px solid #9AA8B8}
     table.items td.g-prev{background:#F4F6F8}
@@ -15187,19 +15201,21 @@ async function draftPreviewPDF() {
       <div class="doctitle">${esc(docTitle)}${isApproved ? '<span class="stamp">✅ อนุมัติแล้ว</span>' : ''}</div>
       <div class="docsub">${esc(name || '(ไม่มีชื่อ)')}</div>
       <div class="meta">
-        <div><b>เงื่อนไข:</b> ${esc(condition)} &nbsp; <b>ลักษณะรายการ:</b> ${esc(itemType.join(', ') || '—')}${equipment ? ` (${esc(equipment)})` : ''}</div>
-        <div><b>ช่วงโปร:</b> ${esc(promoFmtD(promoStart))} - ${esc(promoFmtD(promoDue))}${costStart && costEnd ? ` &nbsp; <b>ช่วงทุน:</b> ${esc(promoFmtD(costStart))} - ${esc(promoFmtD(costEnd))}` : ''}</div>
-        <div><b>ลดเป็น:</b> ${discountScope === 'bill' ? 'ท้ายบิล' : 'รายการ'}</div>
-        ${escFlags.length ? `<div><b>เงื่อนไขพิเศษ:</b> ${escFlags.map(esc).join(', ')} (ต้องผ่านผู้บริหารอนุมัติเพิ่ม)</div>` : ''}
-        ${hasCompensate ? `<div><b>Compensate:</b> มี (ราคาขายโปร = ราคาปกติ − Compensate)</div>` : ''}
-        ${specialDistribution ? `<div><b>รูปแบบการจัดจำหน่ายพิเศษ:</b> ${esc(specialDistribution)}</div>` : ''}
-        ${purpose ? `<div><b>วัตถุประสงค์:</b> ${esc(purpose)}</div>` : ''}
-        ${note ? `<div><b>หมายเหตุ:</b> ${esc(note)}</div>` : ''}
+        <span><b>เงื่อนไข:</b> ${esc(condition)}</span>
+        <span><b>ลักษณะรายการ:</b> ${esc(itemType.join(', ') || '—')}${equipment ? ` (${esc(equipment)})` : ''}</span>
+        <span><b>ลดเป็น:</b> ${discountScope === 'bill' ? 'ท้ายบิล' : 'รายการ'}</span>
+        <span><b>ช่วงโปร:</b> ${esc(promoFmtD(promoStart))} – ${esc(promoFmtD(promoDue))}</span>
+        ${costStart && costEnd ? `<span><b>ช่วงทุน:</b> ${esc(promoFmtD(costStart))} – ${esc(promoFmtD(costEnd))}</span>` : ''}
+        ${hasCompensate ? `<span><b>Compensate:</b> มี (ราคาขายโปร = ราคาปกติ − Compensate)</span>` : ''}
+        ${escFlags.length ? `<span><b>เงื่อนไขพิเศษ:</b> ${escFlags.map(esc).join(', ')} (ผ่านผู้บริหารอนุมัติเพิ่ม)</span>` : ''}
+        ${specialDistribution ? `<span><b>รูปแบบการจัดจำหน่ายพิเศษ:</b> ${esc(specialDistribution)}</span>` : ''}
+        ${purpose ? `<span><b>วัตถุประสงค์:</b> ${esc(purpose)}</span>` : ''}
+        ${note ? `<span><b>หมายเหตุ:</b> ${esc(note)}</span>` : ''}
       </div>
-      <div class="branches"><b>สาขา (${branchCodes.length}):</b> <span class="branch-codes">${branchPreview.map(esc).join(', ') || '—'}</span></div>
+      <div class="branches">${custGroups.length ? `<div style="margin-bottom:2px"><b>ลูกค้า:</b> ${custGroups.map(([g, n]) => `${esc(g)} (${n.toLocaleString('th-TH')} สาขา)`).join(', ')}</div>` : ''}<b>สาขา (${branchCodes.length}):</b> <span class="branch-codes">${branchPreview.map(esc).join(', ') || '—'}</span></div>
       <table class="items">
         <colgroup>
-          <col style="width:24px"><col style="width:50px"><col style="width:122px"><col style="width:24px">
+          <col style="width:24px"><col style="width:50px"><col style="width:114px"><col style="width:34px">
           <col style="width:54px"><col style="width:50px"><col style="width:62px">
           <col style="width:44px"><col style="width:34px"><col style="width:36px"><col style="width:46px">
           <col style="width:48px"><col style="width:44px"><col style="width:34px"><col style="width:36px"><col style="width:46px">
@@ -15207,7 +15223,7 @@ async function draftPreviewPDF() {
         </colgroup>
         <thead>
           <tr class="grp"><th colspan="4"></th><th colspan="3">โปรก่อนหน้า</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th></th><th colspan="2">ปริมาณ</th></tr>
-          <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>ชุด</th>
+          <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>ชุด<br>อุปกรณ์</th>
             <th class="gs">เลขที่ใบโปร</th><th>ราคา</th><th>ช่วงวันที่</th>
             <th class="gs">ราคาขาย</th><th>GP%</th><th>ท้ายบิล%</th><th>ทุนสุทธิ</th>
             <th class="gs">Compen-<br>sate</th><th>ราคาขาย</th><th>GP%</th><th>ท้ายบิล%</th><th>ทุนสุทธิ</th>
