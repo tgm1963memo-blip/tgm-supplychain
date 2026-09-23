@@ -13267,7 +13267,7 @@ async function showPromoDraftModal(draftNo = '') {
         <tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2">Set อุปกรณ์</th>
           <th colspan="3" class="dl-prev dl-start">โปรก่อนหน้า</th>
           <th colspan="4" class="dl-norm dl-start">ราคาปกติ</th><th colspan="5" class="dl-promo dl-start">ราคาโปรโมชั่น</th>
-          <th rowspan="2" class="dl-start">ส่วนลด %</th><th rowspan="2">ยอดขายช่วงโปรก่อนหน้า<br><span style="font-weight:400;color:var(--TX3)">ลูกค้าในโปรนั้น</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
+          <th rowspan="2" class="dl-start">ส่วนลด %</th><th rowspan="2">ยอดขายช่วงโปรก่อนหน้า<br><span style="font-weight:400;color:var(--TX3)">สาขาที่เลือก (ไม่มีใช้ CONSI)</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
         <tr><th class="dl-prev dl-start">เลขที่</th><th class="dl-prev">ราคา</th><th class="dl-prev">ช่วงวันที่</th>
           <th class="dl-norm dl-start">ราคาขาย</th><th class="dl-norm">GP %</th><th class="dl-norm">ท้ายบิล %</th><th class="dl-norm">ราคาทุนสุทธิ</th>
           <th class="dl-promo dl-start" id="draft-compensate-th">Compensate<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span></th><th class="dl-promo">ราคาขาย</th><th class="dl-promo">GP %</th><th class="dl-promo">ท้ายบิล %</th><th class="dl-promo">ราคาทุนสุทธิ</th></tr>
@@ -13905,32 +13905,54 @@ async function draftRefreshLineRefData() {
         lastMonthQty, lastMonthLabel: lastMonth.label,
       });
     });
-    // ยอดขายช่วงโปรก่อนหน้า (2026-09-23 แทน "ยอดขายเดือนที่ผ่านมา"): ยอดขายสินค้านี้ของลูกค้าในใบโปรก่อนหน้า
-    // (เอกสารเดียวกัน = doc_ref เดียวกัน หรือ sonum ถ้าไม่มี doc_ref) ภายในช่วงวันที่ของโปรนั้น ถึงวันนี้
+    // ยอดขายอ้างอิง (2026-09-23): ยอดขายสินค้านี้ของ "สาขาที่เลือก" ภายในช่วงวันที่ของโปรก่อนหน้า (ถึงวันนี้)
+    // ถ้าฝั่ง TSS ไม่มียอดเลย ใช้ยอดฝากขายจากสาขาคู่ใน CONSI แทน — รหัสคู่กันคือเปลี่ยนต้นรหัสเป็น BB- เช่น
+    // 01-L2-0001 (โลตัส เทพารักษ์) ↔ BB-L2-0001 (ซีพี แอ็กซ์ตร้า เทพารักษ์) ตรวจกับข้อมูลจริงแล้วตรงกันเกือบทุกสาขา
+    // query ครั้งเดียวต่อช่วงวันที่ (SKU ที่โปรก่อนหน้าช่วงเดียวกันรวมกัน) แล้วแยกผลรวมต่อ SKU เอง
     const today = new Date().toISOString().slice(0, 10);
-    await Promise.all([...next.entries()].map(async ([sku, ref]) => {
+    const consiCodes = [...new Set(custCodes.filter(c => !/^BB-/i.test(c)).map(_draftConsiPairCode).filter(Boolean))];
+    const byPeriod = new Map(); // `${from}|${to}` -> [sku]
+    next.forEach((ref, sku) => {
       if (!ref.prevStartDate || !ref.prevDueDate) return;
       if (ref.prevStartDate > today) { ref.prevPeriodNote = 'ยังไม่ถึงช่วงโปรก่อนหน้า'; return; }
-      const custs = [...new Set(latestPromoRows.filter(r => String(r.sku || '') === sku
-        && (r.start_date || '') === ref.prevStartDate && (r.due_date || '') === ref.prevDueDate
-        && (ref.prevRefNo ? (r.doc_ref || '').trim() === ref.prevRefNo : (r.sonum || '') === ref.prevDocNo))
-        .map(r => r.cust_code).filter(Boolean))];
-      if (!custs.length) return;
       const to = ref.prevDueDate < today ? ref.prevDueDate : today;
-      const key = `${sku}|${ref.prevStartDate}|${to}|${custs.join(',')}`;
+      const k = `${ref.prevStartDate}|${to}`;
+      if (!byPeriod.has(k)) byPeriod.set(k, []);
+      byPeriod.get(k).push(sku);
+    });
+    const sumBySku = rows => rows.reduce((m, r) => m.set(r.sku, (m.get(r.sku) || 0) + (Number(r.qty) || 0)), new Map());
+    const cachedQty = (codes, skuList, from, to) => {
+      const key = `${from}|${to}|${skuList.join(',')}|${codes.join(',')}`;
       if (!_draftPrevSalesCache.has(key)) {
-        _draftPrevSalesCache.set(key, SB.getSalesQtyForPairs(custs, [sku], ref.prevStartDate, to)
-          .then(rows => rows.reduce((s, r) => s + (Number(r.qty) || 0), 0))
+        _draftPrevSalesCache.set(key, SB.getSalesQtyForPairs(codes, skuList, from, to).then(sumBySku)
           .catch(e => { _draftPrevSalesCache.delete(key); throw e; }));
       }
-      try { ref.prevPeriodQty = await _draftPrevSalesCache.get(key); } catch (e) { console.warn('prev period sales:', e.message || e); return; }
-      ref.prevPeriodNote = `ลูกค้า ${custs.length} รายในโปร ${ref.prevDocNo} ช่วง ${promoFmtD(ref.prevStartDate)} – ${promoFmtD(to)}`;
+      return _draftPrevSalesCache.get(key);
+    };
+    if (custCodes.length) await Promise.all([...byPeriod.entries()].map(async ([k, skuList]) => {
+      const [from, to] = k.split('|');
+      try {
+        const tss = await cachedQty(custCodes, skuList, from, to);
+        const missing = skuList.filter(s => !(tss.get(s) > 0));
+        const consi = missing.length && consiCodes.length ? await cachedQty(consiCodes, missing, from, to) : new Map();
+        skuList.forEach(sku => {
+          const ref = next.get(sku), period = `ช่วงโปรก่อนหน้า ${promoFmtD(from)} – ${promoFmtD(to)}`;
+          if (tss.get(sku) > 0) { ref.prevPeriodQty = tss.get(sku); ref.prevPeriodNote = `ยอดขาย TSS สาขาที่เลือก ${period}`; }
+          else if (consi.get(sku) > 0) { ref.prevPeriodQty = consi.get(sku); ref.prevPeriodSource = 'CONSI'; ref.prevPeriodNote = `ไม่มียอดขาย TSS — ใช้ยอดฝากขาย CONSI (สาขาคู่ BB-) ${period}`; }
+          else { ref.prevPeriodQty = 0; ref.prevPeriodNote = `ไม่มียอดขายทั้ง TSS และ CONSI ${period}`; }
+        });
+      } catch (e) { console.warn('prev period sales:', e.message || e); }
     }));
     _draftRefData = next;
   } catch (e) { console.warn('draftRefreshLineRefData:', e.message || e); }
   draftRenderRefCells();
 }
-const _draftPrevSalesCache = new Map(); // key -> Promise<qty> กัน query ซ้ำทุกครั้งที่ตารางรีเฟรช
+const _draftPrevSalesCache = new Map(); // key -> Promise<Map sku->qty> กัน query ซ้ำทุกครั้งที่ตารางรีเฟรช
+// รหัสสาขาฝากขายคู่กัน: 01-L2-0001 -> BB-L2-0001 (ต้องมีต้นรหัสและเลขสาขา ไม่งั้นคืน '')
+function _draftConsiPairCode(code) {
+  const m = String(code || '').trim().match(/^[^-]+-(.+-.+)$/);
+  return m ? `BB-${m[1]}` : '';
+}
 function draftRenderRefCells() {
   _draftLines.forEach((l, i) => {
     const ref = _draftRefData.get(l.sku);
@@ -13948,7 +13970,9 @@ function draftRenderRefCells() {
     if (periodEl) periodEl.textContent = ref?.prevStartDate || ref?.prevDueDate ? `${promoFmtD(ref.prevStartDate)} - ${promoFmtD(ref.prevDueDate)}` : '—';
     const qtyEl = document.getElementById(`draft-line-last-month-qty-${i}`);
     if (qtyEl) {
-      qtyEl.textContent = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') : '—';
+      qtyEl.innerHTML = ref?.prevPeriodQty != null
+        ? `${Number(ref.prevPeriodQty).toLocaleString('th-TH')}${ref.prevPeriodSource ? `<div style="font-size:10px;color:var(--O);font-weight:600">${esc(ref.prevPeriodSource)}</div>` : ''}`
+        : '—';
       qtyEl.title = ref?.prevPeriodNote || (ref ? 'ไม่พบโปรก่อนหน้าของสินค้านี้' : '');
     }
     // "ราคาปกติ" auto-fill (ยืนยันแล้วว่าใช้ "ราคาขายล่าสุดที่เจอใน promo_docs" เป็นค่าตั้งต้น) — promo_docs
@@ -14812,7 +14836,7 @@ async function draftPreviewPDF() {
     const ref = _draftRefData.get(l.sku);
     // ช่วงวันที่ 2 บรรทัดตายตัว (เริ่ม / – สิ้นสุด) แทนการปล่อยให้ตัดคำเองกลางวันที่
     const prevPeriodHtml = ref?.prevStartDate || ref?.prevDueDate ? `${esc(promoFmtD(ref.prevStartDate))}<br>– ${esc(promoFmtD(ref.prevDueDate))}` : '—';
-    const prevPeriodQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') : '—';
+    const prevPeriodQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? ' (' + ref.prevPeriodSource + ')' : '') : '—';
     const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
     const pp = _draftPrevPromoPrice(ref, l);
     return `<tr class="${level ? 'subrow' : ''}">
