@@ -123,6 +123,17 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 .draft-fp-footer{flex-shrink:0;background:var(--W);border-top:1px solid var(--BD);padding:12px 32px;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 /* ── ใบเคาะราคา v2 (2026-09-11): escalate checkbox, comment ต่อ SKU, ไฟล์แนบ, ค่าใช้จ่ายอื่นๆ ── */
 .esc-row{display:flex;gap:18px;flex-wrap:wrap;padding:12px 14px;background:var(--bg2);border-radius:8px}
+/* ตารางสินค้าใบเคาะราคา — หัวคอลัมน์อยู่กึ่งกลางช่องกรอก, เส้นแบ่งคอลัมน์สีอ่อน, แรเงาแยก 3 กลุ่มราคา
+   (tbody ใช้ nth-child: 6-8 โปรก่อนหน้า, 9-12 ราคาปกติ, 13-17 ราคาโปรโมชั่น — ตรงกับ draftRenderLines) */
+#draft-lines-table th,#draft-lines-table td{border-right:1px solid var(--bg2);text-align:center;vertical-align:middle}
+#draft-lines-table th{padding:6px 8px}
+#draft-lines-table td{padding:6px 8px}
+#draft-lines-table thead th.dl-prev,#draft-lines-table tbody td:nth-child(n+6):nth-child(-n+8){background:rgba(136,150,165,.09)}
+#draft-lines-table thead th.dl-norm,#draft-lines-table tbody td:nth-child(n+9):nth-child(-n+12){background:rgba(13,80,104,.06)}
+#draft-lines-table thead th.dl-promo,#draft-lines-table tbody td:nth-child(n+13):nth-child(-n+17){background:rgba(212,175,55,.10)}
+#draft-lines-table th.dl-start,#draft-lines-table tbody td:nth-child(6),#draft-lines-table tbody td:nth-child(9),#draft-lines-table tbody td:nth-child(13),#draft-lines-table tbody td:nth-child(18){border-left:2px solid var(--BD)}
+#draft-lines-table tbody td:nth-child(3){text-align:left}
+#draft-lines-table tfoot td{text-align:left;border-right:none}
 .esc-item{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--TX);cursor:pointer;user-select:none}
 .esc-item input{width:auto;margin:0;accent-color:var(--A)}
 .esc-warn{display:flex;align-items:flex-start;gap:8px;background:var(--LY);color:var(--A);border:1px solid rgba(122,69,0,.25);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px}
@@ -13041,6 +13052,16 @@ function draftItemTypeChanged() {
   if (wrap) wrap.classList.toggle('hidden', !visible);
   const otherWrap = document.getElementById('draft-equipment-other-wrap');
   if (otherWrap) otherWrap.classList.toggle('hidden', !visible || !_draftOtherInputVisible('draft-equipment'));
+  _draftRefreshCompensateMarks();
+}
+// "มี Compensate" มาจาก checkbox "Compensate" ในลักษณะรายการ (2026-09-23 — แทนช่องติ๊กแยกเดิม)
+// header.has_compensate ยังบันทึกไว้เป็นค่าที่ derive จากตรงนี้
+const DRAFT_COMPENSATE_ITEM_TYPE = 'Compensate';
+function _draftHasCompensate() { return _draftSelectedItemTypes().includes(DRAFT_COMPENSATE_ITEM_TYPE); }
+function _draftRefreshCompensateMarks() {
+  const th = document.getElementById('draft-compensate-th');
+  if (th) th.innerHTML = `Compensate${_draftHasCompensate() ? ' <span style="color:var(--R)">*</span>' : ''}<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span>`;
+  (_draftLines || []).forEach((_, i) => _draftMarkCompensateInput(i));
 }
 function draftStatusBadgeHtml(status) {
   const [label, cls] = DRAFT_STATUS_LABELS[status] || DRAFT_STATUS_LABELS.draft;
@@ -13158,26 +13179,25 @@ async function showPromoDraftModal(draftNo = '') {
     </div>
     <div id="draft-esc-warn" style="margin-bottom:13px"></div>
     <div class="field" style="margin-bottom:10px"><label>1. สาขา (เลือกได้มากกว่า 1 สาขา)</label>${draftMsButton()}</div>
-    <div class="fg" style="grid-template-columns:repeat(4,150px) auto 1fr;margin-bottom:10px">
+    <div class="fg" style="grid-template-columns:repeat(4,150px) 1fr;margin-bottom:10px">
       <div class="field"><label>GP ปกติ (%)</label><input id="draft-gp-normal-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('normal'))}" oninput="draftApplyDefaultGp('normal',this.value)" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>GP โปรโมชั่น (%)</label><input id="draft-gp-promo-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('promo'))}" oninput="draftApplyDefaultGp('promo',this.value)" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>ท้ายบิล ปกติ (%)</label><input id="draft-bill-normal-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('billNormal'))}" oninput="draftApplyDefaultGp('billNormal',this.value)" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>ท้ายบิล โปรโมชั่น (%)</label><input id="draft-bill-promo-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('billPromo'))}" oninput="draftApplyDefaultGp('billPromo',this.value)" ${canEdit ? '' : 'disabled'}></div>
-      <div class="field" style="align-self:end;padding-bottom:6px"><label class="esc-item" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" id="draft-has-compensate" style="margin:0" onchange="draftRenderLines()" ${header?.has_compensate ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>มี Compensate</label></div>
-      <div style="font-size:11.5px;color:var(--TX3);align-self:end;padding-bottom:8px">ใช้เป็นค่าเริ่มต้นในตารางสินค้า แก้ทับรายบรรทัดได้ · ติ๊ก Compensate แล้วต้องกรอกทุกรายการ</div>
+      <div style="font-size:11.5px;color:var(--TX3);align-self:end;padding-bottom:8px">ใช้เป็นค่าเริ่มต้นในตารางสินค้า แก้ทับรายบรรทัดได้ · ติ๊ก "Compensate" ที่ลักษณะรายการแล้วต้องกรอกช่อง Compensate ทุกรายการ</div>
     </div>
     <div style="margin-bottom:6px">
       <label style="font-size:12px;color:var(--TX2)">รายการสินค้า — ใช้ช่วงเวลาเดียวกับหัวเอกสารทั้งใบ (<span id="draft-lines-period">${header?.start_date && header?.due_date ? `${promoFmtD(header.start_date)} – ${promoFmtD(header.due_date)}` : 'ยังไม่ระบุ — กรอกวันที่เริ่ม/สิ้นสุดโปรด้านบนก่อน'}</span>)</label>
     </div>
-    <div class="tw tw-scroll" style="margin-bottom:8px"><table>
+    <div class="tw tw-scroll" style="margin-bottom:8px"><table id="draft-lines-table">
       <thead>
-        <tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2">Set อุปกรณ์</th><th rowspan="2" class="r">น้ำหนัก</th>
-          <th colspan="3" style="text-align:center">โปรก่อนหน้า</th>
-          <th colspan="4" style="text-align:center">ราคาปกติ</th><th colspan="5" style="text-align:center">ราคาโปรโมชั่น</th>
-          <th rowspan="2" class="r">ส่วนลด %</th><th rowspan="2" class="r">ยอดขายสินค้านี้กับลูกค้าเจ้านี้<br><span style="font-weight:400;color:var(--TX3)">เดือนที่ผ่านมา</span></th><th rowspan="2" class="r">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
-        <tr><th>เลขที่</th><th class="r">ราคา</th><th>ช่วงวันที่</th>
-          <th class="r">ราคาขาย</th><th class="r">GP %</th><th class="r">ท้ายบิล %</th><th class="r">ราคาทุนสุทธิ</th>
-          <th class="r" id="draft-compensate-th">Compensate<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span></th><th class="r">ราคาขาย</th><th class="r">GP %</th><th class="r">ท้ายบิล %</th><th class="r">ราคาทุนสุทธิ</th></tr>
+        <tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2">Set อุปกรณ์</th><th rowspan="2">น้ำหนัก</th>
+          <th colspan="3" class="dl-prev dl-start">โปรก่อนหน้า</th>
+          <th colspan="4" class="dl-norm dl-start">ราคาปกติ</th><th colspan="5" class="dl-promo dl-start">ราคาโปรโมชั่น</th>
+          <th rowspan="2" class="dl-start">ส่วนลด %</th><th rowspan="2">ยอดขายสินค้านี้กับลูกค้าเจ้านี้<br><span style="font-weight:400;color:var(--TX3)">เดือนที่ผ่านมา</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
+        <tr><th class="dl-prev dl-start">เลขที่</th><th class="dl-prev">ราคา</th><th class="dl-prev">ช่วงวันที่</th>
+          <th class="dl-norm dl-start">ราคาขาย</th><th class="dl-norm">GP %</th><th class="dl-norm">ท้ายบิล %</th><th class="dl-norm">ราคาทุนสุทธิ</th>
+          <th class="dl-promo dl-start" id="draft-compensate-th">Compensate<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span></th><th class="dl-promo">ราคาขาย</th><th class="dl-promo">GP %</th><th class="dl-promo">ท้ายบิล %</th><th class="dl-promo">ราคาทุนสุทธิ</th></tr>
       </thead>
       <tbody id="draft-lines-tbody"></tbody>
       <tfoot id="draft-lines-tfoot"></tfoot>
@@ -13623,11 +13643,11 @@ function draftSyncLineDates() {
 }
 const DRAFT_LINE_COLS = 22; // จำนวนคอลัมน์ของตารางสินค้า (ใช้กับ colspan แถวปุ่ม "+ เพิ่มรายการสินค้า")
 function _draftIsBlank(v) { return v === '' || v == null || isNaN(parseFloat(v)); }
-// ไฮไลต์ช่อง Compensate ที่ยังว่างเมื่อติ๊ก "มี Compensate" (อัปเดตทีละช่องตอนพิมพ์ ไม่ re-render ทั้งตาราง)
+// ไฮไลต์ช่อง Compensate ที่ยังว่างเมื่อเลือก "Compensate" ในลักษณะรายการ (อัปเดตทีละช่องตอนพิมพ์ ไม่ re-render ทั้งตาราง)
 function _draftMarkCompensateInput(i) {
   const el = document.getElementById(`draft-line-compensate-${i}`);
   if (!el) return;
-  const required = !!document.getElementById('draft-has-compensate')?.checked;
+  const required = _draftHasCompensate();
   el.style.borderColor = required && _draftIsBlank(_draftLines[i]?.compensate) ? 'var(--R)' : '';
 }
 function draftRenderLines() {
@@ -13638,7 +13658,7 @@ function draftRenderLines() {
   const dis = canEdit ? '' : 'disabled';
   const fmt2 = v => v !== '' && v != null ? Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   const nums = _draftLineNumbers();
-  const hasCompensate = !!document.getElementById('draft-has-compensate')?.checked;
+  const hasCompensate = _draftHasCompensate();
   tbody.innerHTML = _draftLines.map((l, i) => {
     const level = l.subLevel || 0;
     // ปุ่ม "+ ย่อย" กดได้ทั้งบรรทัดหลัก (เพิ่ม 1.1) และบรรทัดย่อยชั้น 1 (เพิ่ม 1.1.1) — จำกัดไว้ที่ 2 ชั้น
@@ -13676,8 +13696,7 @@ function draftRenderLines() {
   // ปุ่มเพิ่มบรรทัดอยู่ในตารางใต้เลขลำดับสุดท้าย (tfoot แยกจาก tbody — ให้ #draft-lines-tbody tr เป็นบรรทัดสินค้าล้วน)
   const tfoot = document.getElementById('draft-lines-tfoot');
   if (tfoot) tfoot.innerHTML = canEdit ? `<tr><td colspan="${DRAFT_LINE_COLS}" style="padding:6px 8px"><button class="btn btn-xs btn-p" onclick="draftAddLine()">+ เพิ่มรายการสินค้า</button></td></tr>` : '';
-  const compTh = document.getElementById('draft-compensate-th');
-  if (compTh) compTh.innerHTML = `Compensate${hasCompensate ? ' <span style="color:var(--R)">*</span>' : ''}<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span>`;
+  _draftRefreshCompensateMarks();
   const dl = document.getElementById('draft-sku-opts');
   if (dl) dl.innerHTML = SKUS.map(s => `<option value="${esc(s.code)}">${esc(s.name || '')}</option>`).join('');
   draftRenderRefCells();
@@ -13992,7 +14011,7 @@ async function saveDraftPromo(submitAfter = false) {
   const isNpd = document.getElementById('draft-npd')?.checked ? 1 : 0;
   const hasOffContractCost = document.getElementById('draft-off-contract')?.checked ? 1 : 0;
   const hasMarketingCost = document.getElementById('draft-marketing-cost')?.checked ? 1 : 0;
-  const hasCompensate = document.getElementById('draft-has-compensate')?.checked ? 1 : 0;
+  const hasCompensate = _draftHasCompensate() ? 1 : 0;
   const specialDistribution = (document.getElementById('draft-special-distribution')?.value || '').trim();
   const custCodes = [..._draftSelectedBranches];
   const lines = _draftLines.filter(l => l.sku);
@@ -14005,7 +14024,7 @@ async function saveDraftPromo(submitAfter = false) {
   if (hasCompensate) {
     const nums = _draftLineNumbers();
     const missing = _draftLines.map((l, i) => (l.sku && _draftIsBlank(l.compensate)) ? nums[i] : null).filter(Boolean);
-    if (missing.length) { alert(`ติ๊ก "มี Compensate" แล้ว กรุณากรอก Compensate ให้ครบทุกรายการ (ลำดับ ${missing.join(', ')})`); return; }
+    if (missing.length) { alert(`เลือกลักษณะรายการ "Compensate" แล้ว กรุณากรอก Compensate ให้ครบทุกรายการ (ลำดับ ${missing.join(', ')})`); return; }
   }
 
   const editingExisting = !!_draftEditNo;
@@ -14508,7 +14527,6 @@ async function draftCopyFrom(draftNo) {
   setChk('draft-npd', header.is_npd);
   setChk('draft-off-contract', header.has_off_contract_cost);
   setChk('draft-marketing-cost', header.has_marketing_cost);
-  setChk('draft-has-compensate', header.has_compensate);
   draftItemTypeChanged();
   draftToggleOtherFields();
   draftUpdateDayCounts();
@@ -14542,7 +14560,7 @@ function draftPreviewPDF() {
   const purpose = (document.getElementById('draft-purpose')?.value || '').trim();
   const note = (document.getElementById('draft-note')?.value || '').trim();
   const specialDistribution = (document.getElementById('draft-special-distribution')?.value || '').trim();
-  const hasCompensate = !!document.getElementById('draft-has-compensate')?.checked;
+  const hasCompensate = _draftHasCompensate();
   const promoStart = document.getElementById('draft-start')?.value || '';
   const promoDue = document.getElementById('draft-due')?.value || '';
   const costStart = document.getElementById('draft-cost-start')?.value || '';
