@@ -59,7 +59,7 @@ const SALES_ONLY = [
   'promoRender', 'promoRenderBody', 'promoStatusBadge', 'expPromoHistory',
 
   // ใบเคาะราคา (promo_drafts v2)
-  'DRAFT_CONDITION_TYPES', 'DRAFT_ITEM_TYPES', 'DRAFT_EQUIPMENT_OPTIONS', 'DRAFT_STATUS_LABELS',
+  'DRAFT_CONDITION_TYPES', 'DRAFT_ITEM_TYPES', 'DRAFT_STATUS_LABELS',
   'DRAFT_AUDIT_ACTION_LABELS', 'PROMO_DRAFT_WF_ENTITY', 'PROMO_DRAFT_EXEC_WF_ENTITY',
   '_draftEditNo', '_draftHeader', '_draftEditStatus', '_draftEditCreatedBy', '_draftOtherCosts',
   '_draftAttachments', '_draftSelGroups', '_draftSelCats', '_draftMsQ', '_draftRefData',
@@ -91,6 +91,12 @@ const SALES_ONLY = [
   '_pdWfNormalLevels', '_pdWfExecLevels', 'pgPromoDraftWorkflowSettings', '_pdWfLevelsFor',
   'pdWfAddLevel', 'pdWfRemLevel', 'pdWfAddApprover', 'pdWfRemApprover', 'pdWfSave',
   'draftAuditActionLabel', 'draftRenderAuditTrail', 'draftOpenCopyPicker', 'draftCopyFrom', 'draftPreviewPDF',
+  // ใบเคาะราคา v3 (2026-09-24): สินค้า NPD / ค่าใช้จ่ายนอกสัญญา, Pro Period ก่อน / Pro No. ล่าสุด, เส้นทางอนุมัติหลายแบบ
+  '_draftFormExtraHtml', '_draftOtherCostSum', '_draftBranchesFrom', '_draftIsOffContract', 'draftOffContractChanged', '_draftDocDate', '_draftPickSetRoute',
+  'PROMO_DRAFT_ROUTES_ENTITY', '_draftRouteEntity', '_draftLoadRoutes', '_draftNorm', '_draftDocRouteFacts', '_draftRouteMatch', '_draftSuggestRoute',
+  '_pdWfRoutes', '_pdWfRouteId', '_pdWfCorpOpts', '_pdWfCurRoute', 'pdWfSelectRoute', 'pdWfAddRoute', 'pdWfDelRoute',
+  'pdWfRouteName', 'pdWfRouteMatch', 'pdWfRouteType', 'pdWfRouteCorpAdd', 'pdWfRouteCorpRem',
+  '_draftEquipKeep', '_draftSyncOtherCostBox', 'DRAFT_LINE_COL_KEYS', 'DRAFT_LINE_COL_KEYS_V2', '_pdWfDirty',
 
   // ข้อมูลลูกค้า (custreg — สมัคร/แก้ไขข้อมูลลูกค้าใหม่) — ไม่รวม custregSubToRow/custregRowToSub (ใช้ใน
   // SB.getCustregSubs()/upsertCustreg() ซึ่งเป็นส่วนหนึ่งของ SB object กลาง อยู่ทั้ง 2 แอปเสมอ — ย้ายไป core)

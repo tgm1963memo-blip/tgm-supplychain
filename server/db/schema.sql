@@ -815,6 +815,8 @@ CREATE TABLE IF NOT EXISTS promo_draft_headers (
   special_distribution  TEXT,
   form_extra_json       TEXT NOT NULL DEFAULT '{}', -- สถานที่ขาย/ประเภทสินค้า/ค่าแรกเข้า-ลงสื่อ (ฟอร์มใบเคาะ)
   approval_history_json TEXT NOT NULL DEFAULT '[]', -- ขั้นอนุมัติที่ผ่านแล้วก่อน escalate ไปผู้บริหาร
+  route_id              TEXT, -- เส้นทางอนุมัติที่เลือก (ว่าง = มาตรฐาน 'promo_draft', มีค่า = 'promo_draft@<id>')
+  route_name            TEXT, -- ชื่อเส้นทาง ณ ตอนส่งอนุมัติ (snapshot)
   levels_json           TEXT NOT NULL DEFAULT '[]', -- clone จาก approval_workflow_templates ตอนส่งอนุมัติ
   current_level         INTEGER NOT NULL DEFAULT 0,
   approvers_json        TEXT NOT NULL DEFAULT '[]', -- flat mirror เหมือน custreg_subs.approvers_json

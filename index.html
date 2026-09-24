@@ -122,7 +122,6 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 .draft-fp{position:fixed;inset:0;background:var(--W);z-index:150;display:flex;flex-direction:column;overflow:hidden}
 .draft-fp-footer{flex-shrink:0;background:var(--W);border-top:1px solid var(--BD);padding:12px 32px;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 /* ── ใบเคาะราคา v2 (2026-09-11): escalate checkbox, comment ต่อ SKU, ไฟล์แนบ, ค่าใช้จ่ายอื่นๆ ── */
-.esc-row{display:flex;gap:18px;flex-wrap:wrap;padding:12px 14px;background:var(--bg2);border-radius:8px}
 /* กราฟสรุปมูลค่าการขาย (dashValueChartHtml) — ตัวหนังสือใช้สีข้อความ ไม่ใช้สีของ series, กริดจาง */
 .dvc{margin:4px 0 14px}
 .dvc-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
@@ -154,7 +153,7 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 .dvc-tip-t{border-top:1px solid var(--bg2);margin-top:3px;padding-top:4px}
 .dvc-tip-t b{font-weight:800}
 /* ตารางสินค้าใบเคาะราคา — หัวคอลัมน์อยู่กึ่งกลางช่องกรอก, เส้นแบ่งคอลัมน์สีอ่อน, แรเงาแยก 3 กลุ่มราคา
-   (tbody ใช้ nth-child: 6-8 โปรสุดท้าย, 9-12 ราคาปกติ, 13-17 ราคาโปรโมชั่น — ตรงกับ draftRenderLines) */
+   (tbody ใช้ nth-child — ดูคอมเมนต์ด้านล่าง ตรงกับ draftRenderLines) */
 #draft-lines-table th,#draft-lines-table td{border-right:1px solid var(--bg2);text-align:center;vertical-align:middle}
 #draft-lines-table th{padding:6px 8px}
 #draft-lines-table td{padding:6px 8px}
@@ -163,23 +162,28 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 #draft-lines-table thead{position:sticky;top:0;z-index:3}
 #draft-lines-table thead th{position:static;background:var(--bg2)}
 #draft-lines-table thead th.dl-prev{background:linear-gradient(rgba(136,150,165,.16),rgba(136,150,165,.16)),var(--bg2)}
+#draft-lines-table thead th.dl-last{background:linear-gradient(rgba(52,69,138,.14),rgba(52,69,138,.14)),var(--bg2)}
 #draft-lines-table thead th.dl-norm{background:linear-gradient(rgba(13,80,104,.10),rgba(13,80,104,.10)),var(--bg2)}
 #draft-lines-table thead th.dl-promo{background:linear-gradient(rgba(212,175,55,.18),rgba(212,175,55,.18)),var(--bg2)}
-/* tbody (ตรงกับ draftRenderLines): 5-7 โปรสุดท้าย, 8-11 ราคาปกติ, 12-16 ราคาโปรโมชั่น, 17 ส่วนลด% */
+/* tbody (ตรงกับ draftRenderLines, 2026-09-24 v3): 5-7 Pro Period ก่อน, 8-10 Pro No. ล่าสุด, 11-14 ราคาปกติ,
+   15-19 ราคาโปรโมชั่น, 20 ยอดขายช่วง Pro Period ก่อน */
 #draft-lines-table tbody td:nth-child(n+5):nth-child(-n+7){background:rgba(136,150,165,.09)}
-#draft-lines-table tbody td:nth-child(n+8):nth-child(-n+11){background:rgba(13,80,104,.06)}
-#draft-lines-table tbody td:nth-child(n+12):nth-child(-n+16){background:rgba(212,175,55,.10)}
-#draft-lines-table th.dl-start,#draft-lines-table tbody td:nth-child(5),#draft-lines-table tbody td:nth-child(8),#draft-lines-table tbody td:nth-child(12),#draft-lines-table tbody td:nth-child(17){border-left:2px solid var(--BD)}
+#draft-lines-table tbody td:nth-child(n+8):nth-child(-n+10){background:rgba(52,69,138,.07)}
+#draft-lines-table tbody td:nth-child(n+11):nth-child(-n+14){background:rgba(13,80,104,.06)}
+#draft-lines-table tbody td:nth-child(n+15):nth-child(-n+19){background:rgba(212,175,55,.10)}
+#draft-lines-table th.dl-start,#draft-lines-table tbody td:nth-child(5),#draft-lines-table tbody td:nth-child(8),#draft-lines-table tbody td:nth-child(11),#draft-lines-table tbody td:nth-child(15),#draft-lines-table tbody td:nth-child(20){border-left:2px solid var(--BD)}
 #draft-lines-table tbody td:nth-child(3){text-align:left;min-width:180px}
 #draft-lines-table tbody td:nth-child(2){width:1%}
-#draft-lines-table tbody td:nth-child(7){white-space:nowrap;min-width:170px}
+#draft-lines-table tbody td:nth-child(7),#draft-lines-table tbody td:nth-child(10){white-space:nowrap;min-width:150px}
 #draft-lines-table tfoot td{text-align:left;border-right:none}
+table.draft-trail td{padding:4px 8px;font-size:12.5px;text-align:center;vertical-align:middle}
+table.draft-trail td.l{text-align:left}
 /* ช่องวันที่แบบ พ.ศ. (draftRefreshBeDates) — ข้อความจริงของ input โปร่งใส, ข้อความ พ.ศ. วางทับ ไม่รับคลิก */
 /* คอมเมนต์ลอยในเอกสาร (draftToggleCommentMode) */
 #draft-fp.acm-mode .cr-fullpage-content{cursor:crosshair}
 /* ช่องที่ disabled (เอกสารรออนุมัติ) ไม่ส่ง click — ให้คลิกทะลุไปถึงช่อง/เซลล์ด้านหลังเพื่อปักคอมเมนต์ได้ */
 #draft-fp.acm-mode .cr-fullpage-content :is(input,select,textarea,button):disabled{pointer-events:none}
-#draft-fp.acm-mode .cr-fullpage-content .field:hover,#draft-fp.acm-mode #draft-lines-tbody td:hover,#draft-fp.acm-mode .esc-row:hover{outline:2px dashed var(--N2);outline-offset:1px}
+#draft-fp.acm-mode .cr-fullpage-content .field:hover,#draft-fp.acm-mode #draft-lines-tbody td:hover,#draft-fp.acm-mode [data-acm-row]:hover{outline:2px dashed var(--N2);outline-offset:1px}
 .acm-host{position:relative}
 .acm-pin{position:absolute;top:-8px;right:-6px;z-index:4;background:#FDF2C4;border:1px solid var(--N2);color:#5A4300;border-radius:10px;font-size:10.5px;font-weight:700;padding:0 6px;line-height:17px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.12);white-space:nowrap}
 .acm-flash{animation:acmFlash 1.6s ease}
@@ -962,29 +966,6 @@ const SB = {
       from += pageSize;
     }
     return data;
-  },
-
-  async getLatestPromoDocsBySku(skus = []) {
-    const unique = [...new Set((skus || []).map(s => String(s || '').trim()).filter(Boolean))];
-    if (!unique.length) return [];
-    const pageSize = 20000;
-    const out = [];
-    for (let i = 0; i < unique.length; i += 100) {
-      const chunk = unique.slice(i, i + 100);
-      let from = 0;
-      while (true) {
-        const { data: page, error } = await getSupabaseClient()
-          .from('promo_docs').select('*')
-          .in('sku', chunk)
-          .order('due_date', { ascending: false })
-          .range(from, from + pageSize - 1);
-        if (error) throw error;
-        out.push(...(page || []));
-        if (!page || page.length < pageSize) break;
-        from += pageSize;
-      }
-    }
-    return out;
   },
 
   async getPromoDraftsForOverlap(custCodes = [], skus = [], excludeDraftNo = '') {
@@ -13174,7 +13155,6 @@ function _draftItemTypesArr(v) {
   if (typeof v === 'string' && v) return [v];
   return [];
 }
-const DRAFT_EQUIPMENT_OPTIONS = ['ตู้อุ่นร้อนไฟฟ้า', 'เตาไมโครเวฟ', 'หม้อต้มไฟฟ้า', 'อื่นๆ'];
 const DRAFT_STATUS_LABELS = {
   draft: ['ร่าง', 'bbgr'], pending_approval: ['รออนุมัติ', 'bba'],
   pending_exec_approval: ['รอผู้บริหารอนุมัติ', 'bba'], approved: ['อนุมัติแล้ว', 'bbg'],
@@ -13192,6 +13172,8 @@ const PROMO_DRAFT_EXEC_WF_ENTITY = 'promo_draft_exec';
 
 let _draftEditNo = ''; // draft_no ที่กำลังแก้ไข ('' = สร้างใหม่)
 let _draftHeader = null; // แถว promo_draft_headers เต็ม (null = ยังไม่เคยบันทึก/เอกสารใหม่)
+// ค่า "อุปกรณ์" เดิมของเอกสาร — ช่องนี้เอาออกจากฟอร์มแล้ว (2026-09-24 v3) แต่คงค่าเดิมไว้ตอนบันทึก/คัดลอก
+let _draftEquipKeep = '';
 let _draftEditStatus = ''; // สถานะปัจจุบันของเอกสารที่กำลังแก้ไข (ใช้ gate การแก้ไข/ปุ่มสถานะ)
 let _draftEditCreatedBy = ''; // ผู้สร้างเดิม — คงไว้ทุกครั้งที่แก้ไข ไม่ทับด้วย UID ของคนแก้ไขล่าสุด
 let _draftOtherCosts = []; // [{item, amount, note}] — ตารางค่าใช้จ่ายอื่นๆ แบบอิสระ
@@ -13364,12 +13346,8 @@ function _draftOtherInputVisible(selectId) {
   return String(el?.value || '').trim() === 'อื่นๆ';
 }
 function draftToggleOtherFields() {
-  [['draft-condition', 'draft-condition-other-wrap'], ['draft-equipment', 'draft-equipment-other-wrap']].forEach(([selId, wrapId]) => {
-    const wrap = document.getElementById(wrapId);
-    if (!wrap) return;
-    const equipmentHidden = selId === 'draft-equipment' && document.getElementById('draft-equipment-wrap')?.classList.contains('hidden');
-    wrap.classList.toggle('hidden', equipmentHidden || !_draftOtherInputVisible(selId));
-  });
+  const wrap = document.getElementById('draft-condition-other-wrap');
+  if (wrap) wrap.classList.toggle('hidden', !_draftOtherInputVisible('draft-condition'));
 }
 function _draftReadOtherSelect(selectId, inputId) {
   const v = String(document.getElementById(selectId)?.value || '').trim();
@@ -13433,12 +13411,6 @@ async function draftRefreshCustomerCatalog(extraCodes = []) {
   return rows;
 }
 function draftItemTypeChanged() {
-  const types = _draftSelectedItemTypes();
-  const visible = types.includes('อุ่นร้อนพร้อมทาน');
-  const wrap = document.getElementById('draft-equipment-wrap');
-  if (wrap) wrap.classList.toggle('hidden', !visible);
-  const otherWrap = document.getElementById('draft-equipment-other-wrap');
-  if (otherWrap) otherWrap.classList.toggle('hidden', !visible || !_draftOtherInputVisible('draft-equipment'));
   _draftRefreshCompensateMarks();
 }
 // "ใช้วันเดียวกับวันโปร" (2026-09-23) — ไม่มีคอลัมน์ใน DB: เปิดเอกสารเดิมถือว่าติ๊กเมื่อวันทุนตรงกับวันโปร
@@ -13484,6 +13456,7 @@ function draftClose() {
 async function showPromoDraftModal(draftNo = '') {
   _draftEditNo = draftNo;
   _draftHeader = null;
+  _draftEquipKeep = '';
   _draftEditStatus = '';
   _draftEditCreatedBy = '';
   _draftOtherCosts = [];
@@ -13503,10 +13476,11 @@ async function showPromoDraftModal(draftNo = '') {
     } catch (e) { toast('โหลดเอกสารไม่สำเร็จ: ' + (e.message || e), 'warn'); return; }
     if (!header) { toast('ไม่พบใบเคาะราคานี้แล้ว', 'warn'); return; }
     _draftHeader = header;
+    _draftEquipKeep = header.equipment || '';
     _draftEditStatus = header.status || 'draft';
     _draftEditCreatedBy = header.created_by || '';
     _draftOtherCosts = Array.isArray(header.other_costs_json) ? header.other_costs_json : [];
-    _draftSelectedBranches = new Set(lines.map(r => r.cust_code));
+    _draftSelectedBranches = _draftBranchesFrom(header, lines);
     const bySku = new Map();
     lines.forEach(r => {
       if (bySku.has(r.sku)) return;
@@ -13525,7 +13499,6 @@ async function showPromoDraftModal(draftNo = '') {
   const isPendingApproval = _draftEditStatus === 'pending_approval';
   const isExecPending = _draftEditStatus === 'pending_exec_approval';
   const selectedItemTypes = _draftItemTypesArr(header?.item_type);
-  const equipmentHidden = !selectedItemTypes.includes('อุ่นร้อนพร้อมทาน');
   const metaLine = draftNo
     ? `${esc(header.doc_no || draftNo)} · สร้างโดย ${esc(uidToName(header.created_by))} · ${new Date(header.created_at || Date.now()).toLocaleDateString('th-TH')}${header.updated_by ? ` · แก้ไขล่าสุดโดย ${esc(uidToName(header.updated_by))}` : ''}`
     : 'ยังไม่บันทึก';
@@ -13554,10 +13527,6 @@ async function showPromoDraftModal(draftNo = '') {
         <input type="text" id="draft-condition-other" placeholder="ระบุเงื่อนไขอื่นๆ" value="${esc(_draftOtherText(DRAFT_CONDITION_TYPES, header?.condition_type))}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field" style="grid-column:1/-1"><label>ลักษณะรายการ <span style="font-weight:400;color:var(--TX3);font-size:11px">(เลือกได้มากกว่า 1)</span></label>
         <div style="display:flex;gap:16px;flex-wrap:wrap">${DRAFT_ITEM_TYPES.map(t => `<label class="esc-item"><input type="checkbox" class="draft-item-type-chk" value="${esc(t)}" onchange="draftItemTypeChanged()" ${selectedItemTypes.includes(t) ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>${esc(t)}</label>`).join('')}</div></div>
-      <div class="field${equipmentHidden ? ' hidden' : ''}" id="draft-equipment-wrap"><label>อุปกรณ์</label>
-        <select id="draft-equipment" onchange="draftToggleOtherFields()" ${canEdit ? '' : 'disabled'}>${DRAFT_EQUIPMENT_OPTIONS.map(t => `<option value="${esc(t)}" ${_draftOtherSelectValue(DRAFT_EQUIPMENT_OPTIONS, header?.equipment) === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
-      <div class="field${equipmentHidden || !_draftOtherText(DRAFT_EQUIPMENT_OPTIONS, header?.equipment) ? ' hidden' : ''}" id="draft-equipment-other-wrap"><label>รายละเอียดอุปกรณ์อื่นๆ</label>
-        <input type="text" id="draft-equipment-other" placeholder="ระบุอุปกรณ์อื่นๆ" value="${esc(_draftOtherText(DRAFT_EQUIPMENT_OPTIONS, header?.equipment))}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>ลดเป็น</label>
         <select id="draft-discount-scope" ${canEdit ? '' : 'disabled'}>
           <option value="item" ${(!header || header.discount_scope === 'item') ? 'selected' : ''}>รายการ</option>
@@ -13580,16 +13549,17 @@ async function showPromoDraftModal(draftNo = '') {
         <input type="text" id="draft-note" value="${esc(header?.note || '')}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field" style="grid-column:1/-1"><label>รูปแบบการจัดจำหน่ายพิเศษ <span style="font-weight:400;color:var(--TX3);font-size:11px">(ถ้ามี)</span></label>
         <input type="text" id="draft-special-distribution" placeholder="เช่น ขายผ่านบูธ, ขายแบบ bundle, ส่งตรงหน้าร้าน" value="${esc(header?.special_distribution || '')}" ${canEdit ? '' : 'disabled'}></div>
-      ${_draftFormExtraHtml(header?.form_extra_json, canEdit)}
-    </div>
-    <label style="display:block;font-size:12px;font-weight:600;color:var(--TX2);margin-bottom:7px">เงื่อนไขพิเศษ (มีผลต่อการอนุมัติ)</label>
-    <div class="esc-row">
-      <label class="esc-item"><input type="checkbox" id="draft-npd" onchange="draftEscalateChanged()" ${header?.is_npd ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>🆕 สินค้า NPD</label>
-      <label class="esc-item"><input type="checkbox" id="draft-off-contract" onchange="draftEscalateChanged()" ${header?.has_off_contract_cost ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>📄 มีค่าใช้จ่ายนอกสัญญา</label>
-      <label class="esc-item"><input type="checkbox" id="draft-marketing-cost" onchange="draftEscalateChanged()" ${header?.has_marketing_cost ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>📣 มีค่าโปรโมทการตลาดอื่นๆ</label>
+      ${_draftFormExtraHtml(header?.form_extra_json, canEdit, header)}
     </div>
     <div id="draft-esc-warn" style="margin-bottom:13px"></div>
     <div class="field" style="margin-bottom:10px"><label>1. สาขา (เลือกได้มากกว่า 1 สาขา)</label>${draftMsButton()}</div>
+    <!-- ติ๊ก "ค่าใช้จ่ายนอกสัญญา" (2026-09-24 v3): ซ่อนตารางสินค้า แสดงรายละเอียดข้อความ + ไฟล์แนบแทน (draftOffContractChanged) -->
+    <div id="draft-offc-wrap" class="${header?.has_off_contract_cost ? '' : 'hidden'}" style="margin-bottom:10px">
+      <div class="field"><label>📄 รายละเอียดค่าใช้จ่ายนอกสัญญา <span style="color:var(--R)">*</span></label>
+        <textarea id="draft-off-contract-text" maxlength="5000" placeholder="ระบุรายการ จำนวนเงิน เงื่อนไข และเหตุผลของค่าใช้จ่ายนอกสัญญา" style="width:100%;min-height:130px;border:1px solid var(--BD);border-radius:7px;padding:8px;font:inherit;font-size:13px;box-sizing:border-box" ${canEdit ? '' : 'disabled'}>${esc(_draftFx(header?.form_extra_json).off_contract_text || '')}</textarea></div>
+      <div id="draft-offc-att-slot"></div>
+    </div>
+    <div id="draft-lines-wrap" class="${header?.has_off_contract_cost ? 'hidden' : ''}">
     <div class="fg" style="grid-template-columns:repeat(4,150px) 1fr;margin-bottom:10px">
       <div class="field"><label>GP ปกติ (%)</label><input id="draft-gp-normal-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('normal'))}" oninput="draftApplyDefaultGp('normal',this.value)" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>GP โปรโมชั่น (%)</label><input id="draft-gp-promo-default" type="number" step="0.01" value="${esc(_draftInitialDefaultGp('promo'))}" oninput="draftApplyDefaultGp('promo',this.value)" ${canEdit ? '' : 'disabled'}></div>
@@ -13603,10 +13573,12 @@ async function showPromoDraftModal(draftNo = '') {
     <div class="tw tw-scroll" style="margin-bottom:8px"><table id="draft-lines-table">
       <thead>
         <tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2">Set อุปกรณ์</th>
-          <th colspan="3" class="dl-prev dl-start">โปรสุดท้าย</th>
+          <th colspan="3" class="dl-prev dl-start" title="โปรล่าสุดของสาขาที่เลือก + สินค้านี้ ที่เริ่มโปรก่อนวันทำเอกสาร">Pro Period ก่อน</th>
+          <th colspan="3" class="dl-last dl-start" title="ใบโปรที่สร้างล่าสุดของสาขาที่เลือก + สินค้านี้ (ดูวันที่สร้างเอกสาร ไม่สนช่วงโปร)">Pro No. ล่าสุด</th>
           <th colspan="4" class="dl-norm dl-start">ราคาปกติ</th><th colspan="5" class="dl-promo dl-start">ราคาโปรโมชั่น</th>
-          <th rowspan="2" class="dl-start">ส่วนลด %</th><th rowspan="2">ยอดขายช่วงโปรสุดท้าย<br><span style="font-weight:400;color:var(--TX3)">สาขาที่เลือก (ไม่มียอด TSS ใช้ CONSI)</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
+          <th rowspan="2" class="dl-start">ยอดขายช่วง Pro Period ก่อน<br><span style="font-weight:400;color:var(--TX3)">สาขาที่เลือก (ไม่มียอด TSS ใช้ CONSI)</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
         <tr><th class="dl-prev dl-start">เลขที่</th><th class="dl-prev">ราคา</th><th class="dl-prev">ช่วงวันที่</th>
+          <th class="dl-last dl-start">เลขที่</th><th class="dl-last">ราคา</th><th class="dl-last">ช่วงวันที่</th>
           <th class="dl-norm dl-start">ราคาขาย</th><th class="dl-norm">GP %</th><th class="dl-norm">ท้ายบิล %</th><th class="dl-norm">ราคาทุนสุทธิ</th>
           <th class="dl-promo dl-start" id="draft-compensate-th">Compensate<br><span style="font-weight:400;color:var(--TX3)">บาท/หน่วย</span></th><th class="dl-promo">ราคาขาย</th><th class="dl-promo">GP %</th><th class="dl-promo">ท้ายบิล %</th><th class="dl-promo">ราคาทุนสุทธิ</th></tr>
       </thead>
@@ -13615,6 +13587,7 @@ async function showPromoDraftModal(draftNo = '') {
     </table></div>
     <datalist id="draft-sku-opts"></datalist>
     <div id="draft-overlap-warning"></div>
+    </div>
 
     <div class="card" style="margin-top:16px">
       <div class="ch"><div class="ct2">🧭 ลำดับการอนุมัติ</div></div>
@@ -13624,13 +13597,13 @@ async function showPromoDraftModal(draftNo = '') {
       <div class="ch"><div class="ct2">💬 คอมเมนต์ในเอกสาร <span id="draft-anchor-count" style="font-weight:400;color:var(--TX3)"></span></div></div>
       <div id="draft-anchor-list"></div>
     </div>` : ''}
-    <div class="card" style="margin-top:16px">
+    <div id="draft-att-home"><div class="card" id="draft-att-card" style="margin-top:16px">
       <div class="ch"><div class="ct2">📎 ไฟล์แนบ</div></div>
       ${draftNo ? `<div class="upz" onclick="document.getElementById('draft-file-inp').click()"><b>คลิกเพื่อเลือกไฟล์</b>รูปภาพ (JPG/PNG) หรือ PDF — ไม่เกิน 15MB ต่อไฟล์</div>
       <input type="file" id="draft-file-inp" accept="image/*,.pdf" style="display:none" onchange="draftUploadAttachment(event)">`
         : `<div class="al ali" style="font-size:12px">บันทึกร่างก่อนเพื่อแนบไฟล์</div>`}
       <div class="att-list" id="draft-attachments"></div>
-    </div>
+    </div></div>
 
     <div class="card" style="margin-top:16px">
       <div class="ch">
@@ -13666,13 +13639,18 @@ async function showPromoDraftModal(draftNo = '') {
   draftRenderOtherCosts();
   draftEscalateChanged();
   draftToggleOtherFields();
+  draftOffContractChanged();
   draftSyncCostDates();
   draftUpdateDayCounts();
 }
-// ── หัวข้อเพิ่มตามฟอร์มใบเคาะกระดาษ (2026-09-24): สถานที่ขาย / ประเภทสินค้า / ค่าแรกเข้า-ลงสื่อ ──
+// ── หัวข้อเพิ่มตามฟอร์มใบเคาะกระดาษ (2026-09-24): สถานที่ขาย / ประเภทสินค้า / สินค้า NPD / นอกสัญญา ──
 // เก็บใน promo_draft_headers.form_extra_json ก้อนเดียว:
 // { sale:{regular:{on,n},promo:{on,n},pretty:{on,n},other:{on,text}}, ptypes:[...], ptype_other:{on,text},
-//   fee_none:bool, fee:{on,amt}, media:{on,amt} }
+//   fee_none:bool, fee:{on,amt}, media:{on,amt}, other_cost:{on,amt}, off_contract_text, branches:[...] }
+// v3 (2026-09-24): แถว "สินค้า NPD" แทน "เงื่อนไขพิเศษ" + "ค่าแรกเข้า/สื่อ" เดิม — checkbox สินค้า NPD /
+// ค่าลงสื่อ-การตลาด / ค่าใช้จ่ายนอกสัญญา ยังเป็นคอลัมน์ is_npd / has_marketing_cost / has_off_contract_cost
+// (id เดิม draft-npd / draft-marketing-cost / draft-off-contract) จึงยัง escalate ผู้บริหารเหมือนเดิม
+// branches: เอกสารนอกสัญญาไม่มีบรรทัดสินค้า (promo_drafts) จึงเก็บรหัสสาขาที่เลือกไว้ที่นี่ — ดู _draftBranchesFrom
 const DRAFT_SALE_PLACES = [
   { k: 'regular', label: 'จุดประจำ', unit: 'สาขา' },
   { k: 'promo', label: 'จุดโปร', unit: 'สาขา' },
@@ -13681,22 +13659,37 @@ const DRAFT_SALE_PLACES = [
 ];
 const DRAFT_PRODUCT_TYPES = ['ตู้สด TSS', 'ตู้สด TGM', '1 แถม 1 (แพ็คคู่)', 'PACK TSS', 'PACK TGM', 'PACK HB'];
 function _draftFx(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
-function _draftFormExtraHtml(raw, canEdit) {
+function _draftOtherCostSum() { return _draftOtherCosts.reduce((a, c) => a + (parseFloat(c.amount) || 0), 0); }
+function _draftBranchesFrom(header, lines) {
+  const fromLines = (lines || []).map(r => r.cust_code).filter(Boolean);
+  const saved = _draftFx(header?.form_extra_json).branches;
+  return new Set(fromLines.length ? fromLines : (Array.isArray(saved) ? saved.map(String) : []));
+}
+function _draftIsOffContract() { return !!document.getElementById('draft-off-contract')?.checked; }
+function _draftFormExtraHtml(raw, canEdit, header) {
   const fx = _draftFx(raw), dis = canEdit ? '' : 'disabled';
   const sale = fx.sale || {};
-  const ck = (id, on, label, extra = '') => `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox" id="${id}" ${on ? 'checked' : ''} ${dis}>${label}${extra}</label>`;
+  const ck = (id, on, label, extra = '', attrs = '') => `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox" id="${id}" ${on ? 'checked' : ''} ${attrs} ${dis}>${label}${extra}</label>`;
   const num = (id, v, w = 64, ph = '') => `<input type="number" id="${id}" value="${esc(v ?? '')}" placeholder="${ph}" min="0" style="width:${w}px;padding:3px 6px;font-size:12px" ${dis}>`;
   const txt = (id, v, w = 150) => `<input type="text" id="${id}" value="${esc(v ?? '')}" style="width:${w}px;padding:3px 6px;font-size:12px" ${dis}>`;
-  const row = (label, body) => `<div style="display:grid;grid-template-columns:110px 1fr;gap:6px;align-items:center;margin-top:6px"><b style="font-size:12px;color:var(--TX2)">${label}</b><div style="display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:12.5px">${body}</div></div>`;
+  const row = (label, body, cls = '') => `<div class="${cls}" data-acm-row="${esc(label)}" style="display:grid;grid-template-columns:130px 1fr;gap:6px;align-items:center;margin-top:6px"><b style="font-size:12px;color:var(--TX2)">${label}</b><div style="display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:12.5px">${body}</div></div>`;
+  // ค่าใช้จ่ายอื่นๆ: ยังไม่เคยบันทึก → ใช้ผลรวมตาราง 💵 ค่าใช้จ่ายอื่นๆ เป็นค่าเริ่มต้น
+  const ocSum = _draftOtherCostSum();
+  const oc = fx.other_cost || { on: ocSum > 0, amt: ocSum > 0 ? ocSum : null };
+  const escAttr = 'onchange="draftEscalateChanged()"';
   return `<div class="field" style="grid-column:1/-1"><label>รายละเอียดตามฟอร์มใบเคาะ <span style="font-weight:400;color:var(--TX3);font-size:11px">(แสดงในเอกสาร — ติ๊กเฉพาะที่เกี่ยวข้อง)</span></label>
     <div style="background:var(--bg2);border-radius:8px;padding:6px 12px 10px">
       ${row('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => ck(`fx-sale-${p.k}`, sale[p.k]?.on, p.label,
         p.text ? ' ' + txt(`fx-sale-${p.k}-v`, sale[p.k]?.text) : ` ${num(`fx-sale-${p.k}-v`, sale[p.k]?.n)} ${p.unit}`)).join(''))}
       ${row('ประเภทสินค้า', DRAFT_PRODUCT_TYPES.map((t, i) => ck(`fx-pt-${i}`, (fx.ptypes || []).includes(t), t)).join('')
         + ck('fx-pt-other', fx.ptype_other?.on, 'อื่นๆ', ' ' + txt('fx-pt-other-v', fx.ptype_other?.text)))}
-      ${row('ค่าแรกเข้า / สื่อ', ck('fx-fee-none', fx.fee_none, 'ไม่มีค่าแรกเข้า')
-        + ck('fx-fee', fx.fee?.on, 'มีค่าแรกเข้า =', ` ${num('fx-fee-v', fx.fee?.amt, 100)} บาท`)
-        + ck('fx-media', fx.media?.on, 'ลงสื่อ =', ` ${num('fx-media-v', fx.media?.amt, 100)} บาท`))}
+      ${row('สินค้า NPD', ck('draft-npd', header?.is_npd, '🆕 สินค้า NPD', '', escAttr)
+        + ck('fx-fee-none', fx.fee_none, 'ไม่มีค่าแรกเข้า')
+        + ck('fx-fee', fx.fee?.on, 'ค่าแรกเข้า', ` ${num('fx-fee-v', fx.fee?.amt, 100)} บาท`)
+        + ck('draft-marketing-cost', header?.has_marketing_cost, 'ค่าลงสื่อ/โฆษณา/การตลาด', ` ${num('fx-media-v', fx.media?.amt, 100)} บาท`, escAttr)
+        + ck('fx-other-cost', oc.on, 'ค่าใช้จ่ายอื่นๆ', ` ${num('fx-other-cost-v', oc.amt, 100).replace('<input ', `<input data-manual="${fx.other_cost && Number(fx.other_cost.amt || 0) !== ocSum ? 1 : ''}" oninput="this.dataset.manual=1" `)} บาท`))}
+      ${row('ค่าใช้จ่ายนอกสัญญา', ck('draft-off-contract', header?.has_off_contract_cost, '📄 ค่าใช้จ่ายนอกสัญญา', '', 'onchange="draftEscalateChanged();draftOffContractChanged()"')
+        + '<span style="font-size:11px;color:var(--TX3)">ติ๊กแล้ว ตารางรายการสินค้าจะเปลี่ยนเป็นช่องพิมพ์รายละเอียด + แนบไฟล์</span>')}
     </div></div>`;
 }
 function _draftReadFormExtra() {
@@ -13705,13 +13698,17 @@ function _draftReadFormExtra() {
   const n = id => { const v = val(id); return v === '' ? null : Number(v); };
   const sale = {};
   DRAFT_SALE_PLACES.forEach(p => { sale[p.k] = p.text ? { on: on(`fx-sale-${p.k}`), text: val(`fx-sale-${p.k}-v`) } : { on: on(`fx-sale-${p.k}`), n: n(`fx-sale-${p.k}-v`) }; });
+  const offContract = on('draft-off-contract');
   return {
     sale,
     ptypes: DRAFT_PRODUCT_TYPES.filter((_, i) => on(`fx-pt-${i}`)),
     ptype_other: { on: on('fx-pt-other'), text: val('fx-pt-other-v') },
     fee_none: on('fx-fee-none'),
     fee: { on: on('fx-fee'), amt: n('fx-fee-v') },
-    media: { on: on('fx-media'), amt: n('fx-media-v') },
+    media: { on: on('draft-marketing-cost'), amt: n('fx-media-v') },
+    other_cost: { on: on('fx-other-cost'), amt: n('fx-other-cost-v') },
+    off_contract_text: offContract ? val('draft-off-contract-text') : '',
+    branches: offContract ? [..._draftSelectedBranches] : [],
   };
 }
 function _draftSetFormExtra(raw) {
@@ -13721,7 +13718,20 @@ function _draftSetFormExtra(raw) {
   DRAFT_SALE_PLACES.forEach(p => { setC(`fx-sale-${p.k}`, sale[p.k]?.on); setV(`fx-sale-${p.k}-v`, p.text ? sale[p.k]?.text : sale[p.k]?.n); });
   DRAFT_PRODUCT_TYPES.forEach((t, i) => setC(`fx-pt-${i}`, (fx.ptypes || []).includes(t)));
   setC('fx-pt-other', fx.ptype_other?.on); setV('fx-pt-other-v', fx.ptype_other?.text);
-  setC('fx-fee-none', fx.fee_none); setC('fx-fee', fx.fee?.on); setV('fx-fee-v', fx.fee?.amt); setC('fx-media', fx.media?.on); setV('fx-media-v', fx.media?.amt);
+  setC('fx-fee-none', fx.fee_none); setC('fx-fee', fx.fee?.on); setV('fx-fee-v', fx.fee?.amt); setV('fx-media-v', fx.media?.amt);
+  setC('fx-other-cost', fx.other_cost?.on); setV('fx-other-cost-v', fx.other_cost?.amt);
+  setV('draft-off-contract-text', fx.off_contract_text);
+}
+// ติ๊ก/ไม่ติ๊ก "ค่าใช้จ่ายนอกสัญญา": ซ่อน/แสดงตารางสินค้า (+ GP/ท้ายบิลค่าเริ่มต้น, คำเตือนซ้อนโปร) สลับกับ
+// ช่องรายละเอียด + ย้ายการ์ดไฟล์แนบ (#draft-att-card) มาไว้ใต้ช่องรายละเอียด — บรรทัดสินค้าที่กรอกไว้ยังอยู่
+// ใน state (เอาติ๊กออกแล้วกลับมาครบ) แต่บันทึกแบบนอกสัญญาจะไม่บันทึกบรรทัดสินค้า (ดู saveDraftPromo)
+function draftOffContractChanged() {
+  const off = _draftIsOffContract();
+  document.getElementById('draft-lines-wrap')?.classList.toggle('hidden', off);
+  document.getElementById('draft-offc-wrap')?.classList.toggle('hidden', !off);
+  const card = document.getElementById('draft-att-card');
+  const target = document.getElementById(off ? 'draft-offc-att-slot' : 'draft-att-home');
+  if (card && target && card.parentElement !== target) target.appendChild(card);
 }
 function draftCanEditStatus(status) {
   return !status || status === 'draft' || status === 'rejected';
@@ -14119,7 +14129,7 @@ function draftSyncLineDates() {
   if (periodEl) periodEl.textContent = (start && due) ? `${promoFmtD(start)} – ${promoFmtD(due)}` : 'ยังไม่ระบุ — กรอกวันที่เริ่ม/สิ้นสุดโปรด้านบนก่อน';
   draftCheckOverlap();
 }
-const DRAFT_LINE_COLS = 21; // จำนวนคอลัมน์ของตารางสินค้า (ใช้กับ colspan แถวปุ่ม "+ เพิ่มรายการสินค้า")
+const DRAFT_LINE_COLS = 23; // จำนวนคอลัมน์ของตารางสินค้า (ใช้กับ colspan แถวปุ่ม "+ เพิ่มรายการสินค้า")
 function _draftIsBlank(v) { return v === '' || v == null || isNaN(parseFloat(v)); }
 // ไฮไลต์ช่อง Compensate ที่ยังว่างเมื่อเลือก "Compensate" ในลักษณะรายการ (อัปเดตทีละช่องตอนพิมพ์ ไม่ re-render ทั้งตาราง)
 function _draftMarkCompensateInput(i) {
@@ -14154,6 +14164,9 @@ function draftRenderLines() {
     <td class="mono" id="draft-line-prev-doc-${i}">—</td>
     <td class="r" id="draft-line-prev-${i}">—</td>
     <td id="draft-line-prev-period-${i}">—</td>
+    <td class="mono" id="draft-line-last-doc-${i}">—</td>
+    <td class="r" id="draft-line-last-${i}">—</td>
+    <td id="draft-line-last-period-${i}">—</td>
     <td class="r"><input id="draft-line-normalprice-${i}" type="number" step="0.01" min="0" value="${l.normalPrice}" oninput="draftLineField(${i},'normalPrice',this.value)" style="width:90px;text-align:right" ${dis} title="เติมอัตโนมัติจากราคามาตรฐาน / ราคาขายล่าสุด / ราคาโปรเก่า (ถ้ามาจาก TSS แปลงย้อนจากทุนสุทธิด้วย GP) — แก้ไขทับได้"></td>
     <td class="r"><input data-draft-line="${i}" data-draft-field="gpPct" type="number" step="0.01" value="${l.gpPct}" oninput="draftLineField(${i},'gpPct',this.value)" style="width:70px;text-align:right" ${dis} title="GP% (เริ่มต้นจาก Master ลูกค้า) — คำนวณราคาทุนสุทธิอัตโนมัติ (แก้ไขได้)"></td>
     <td class="r"><input data-draft-line="${i}" data-draft-field="billDiscPct" type="number" step="0.01" value="${l.billDiscPct ?? ''}" oninput="draftLineField(${i},'billDiscPct',this.value)" style="width:70px;text-align:right" ${dis} title="ส่วนลดท้ายบิล% — หักต่อจาก GP ในราคาทุนสุทธิ"></td>
@@ -14163,8 +14176,7 @@ function draftRenderLines() {
     <td class="r"><input data-draft-line="${i}" data-draft-field="gpPctPromo" type="number" step="0.01" value="${l.gpPctPromo}" oninput="draftLineField(${i},'gpPctPromo',this.value)" style="width:70px;text-align:right" ${dis} title="GP% (เริ่มต้นจาก Master ลูกค้า) — คำนวณราคาทุนสุทธิอัตโนมัติ (แก้ไขได้)"></td>
     <td class="r"><input data-draft-line="${i}" data-draft-field="billDiscPctPromo" type="number" step="0.01" value="${l.billDiscPctPromo ?? ''}" oninput="draftLineField(${i},'billDiscPctPromo',this.value)" style="width:70px;text-align:right" ${dis} title="ส่วนลดท้ายบิล% — หักต่อจาก GP ในราคาทุนสุทธิ"></td>
     <td class="r" id="draft-line-cost-promo-${i}">${fmt2(l.costPricePromo)}</td>
-    <td class="r"><input type="number" step="0.01" value="${l.discountPct}" oninput="draftLineField(${i},'discountPct',this.value)" style="width:70px;text-align:right" ${dis}></td>
-    <td class="r" id="draft-line-last-month-qty-${i}" title="ยอดขายจริงของสินค้านี้ ช่วงโปรสุดท้าย">—</td>
+    <td class="r" id="draft-line-last-month-qty-${i}" title="ยอดขายจริงของสินค้านี้ ช่วง Pro Period ก่อน">—</td>
     <td class="r"><input type="number" step="0.001" min="0" value="${l.estimatedQty ?? ''}" oninput="draftLineField(${i},'estimatedQty',this.value)" style="width:92px;text-align:right" ${dis} title="จำนวนที่ Sales ประมาณการเอง"></td>
     <td>${_draftEditNo && l.sku ? `<button class="cmt-btn" onclick="draftOpenLineComments('${_promoJsKey(l.sku)}')" id="draft-cmt-btn-${i}">💬</button>` : ''}</td>
     <td>${canEdit ? `<button class="btn btn-xs" onclick="draftRemoveLine(${i})" ${_draftLines.length <= 1 ? 'disabled' : ''}>ลบ</button>` : ''}</td>
@@ -14235,6 +14247,11 @@ async function _draftCheckOverlapNow() {
 // เก็บ promise ของรอบโหลดล่าสุดไว้ให้ draftPreviewPDF() รอได้ — เดิมกด PDF ระหว่างที่ยังโหลดไม่เสร็จ
 // (เอกสารหลายสาขาใช้เวลาหลายวินาที) คอลัมน์โปรสุดท้าย/ยอดขายใน PDF ออกมาว่างทั้งหมด
 let _draftRefPromise = null;
+// วันทำเอกสาร (YYYY-MM-DD เวลาเครื่อง) = วันที่สร้างใบเคาะราคา — ใบใหม่/คัดลอกยังไม่มี created_at ใช้วันนี้
+function _draftDocDate() {
+  const d = _draftHeader?.created_at ? new Date(_draftHeader.created_at) : new Date();
+  return isNaN(d) ? new Date().toLocaleDateString('sv-SE') : d.toLocaleDateString('sv-SE');
+}
 function draftRefreshLineRefData() {
   const p = _draftRefreshLineRefDataNow();
   _draftRefPromise = p;
@@ -14246,23 +14263,35 @@ async function _draftRefreshLineRefDataNow() {
   if (!skus.length) { _draftRefData = new Map(); draftRenderRefCells(); return; }
   const lastMonth = _draftPrevMonthRange();
   try {
-    const [docs, qtyRows, latestRows, latestPromoRows] = await Promise.all([
-      custCodes.length ? SB.getPromoDocsForOverlap(custCodes, skus) : Promise.resolve([]),
+    // Pro Period ก่อน / Pro No. ล่าสุด (2026-09-24 v3, ยืนยันกับผู้ใช้): ใช้ใบโปรของ "สาขาที่เลือก + สินค้านี้"
+    // เท่านั้น — ไม่เอาใบของลูกค้าอื่นมาแทนแล้ว (เดิม fallback ไปใบล่าสุดของ SKU ทั้งระบบ ทำให้เอกสารโลตัสขึ้นเลขที่
+    // CJ-xxxx ของ ซี.เจ.เอ็กซ์เพรส) รวมรหัสสาขาคู่ CONSI (BB-) ด้วย เพราะใบโปรโลตัสใน Express อยู่ฝั่ง CONSI
+    // (BB-L2-xxxx) ไม่ใช่ 01-L2-xxxx — ตรวจกับข้อมูลจริงแล้ว
+    // วันทำเอกสาร = วันที่สร้างใบเคาะ (ใบใหม่/คัดลอก = วันนี้) — ทั้งสองกลุ่มนับเฉพาะใบที่มีอยู่แล้ว ณ วันนั้น
+    // เปิดเอกสารเก่าดูภายหลังจึงได้ค่าเดิม ไม่ถูกใบโปรที่คีย์ทีหลัง (รวมถึงใบของเอกสารนี้เอง) มาแทนที่
+    //   · Pro Period ก่อน = ใบที่ start_date ≤ วันทำเอกสาร และ start_date ล่าสุด (เท่ากันดู due_date, sonum)
+    //   · Pro No. ล่าสุด  = ใบที่ create_date ≤ วันทำเอกสาร และ create_date ล่าสุด (เท่ากันดู start_date, sonum)
+    const consiCodes = [...new Set(custCodes.filter(c => !/^BB-/i.test(c)).map(_draftConsiPairCode).filter(Boolean))];
+    const promoCodes = [...new Set([...custCodes, ...consiCodes])];
+    const [docs, qtyRows, latestRows] = await Promise.all([
+      promoCodes.length ? SB.getPromoDocsForOverlap(promoCodes, skus) : Promise.resolve([]),
       custCodes.length ? SB.getSalesQtyForPairs(custCodes, skus, lastMonth.from, lastMonth.to) : Promise.resolve([]),
       SB.getLatestSalesPricesBySku(skus),
-      SB.getLatestPromoDocsBySku(skus),
     ]);
-    // "โปรสุดท้าย" (2026-09-23): ใบล่าสุดที่เริ่มไปแล้ว (start_date ≤ วันนี้) ก่อนเสมอ — เดิมเลือก due_date
-    // ล่าสุดซึ่งมักเป็นโปรในอนาคตที่ยังไม่มียอดขายให้อ้างอิง ถ้าไม่มีใบที่เริ่มแล้วเลยจึงใช้ใบอนาคต (due ล่าสุด)
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const promoRank = r => (r.start_date || '') && (r.start_date || '') <= todayIso
-      ? `1|${r.start_date || ''}|${r.due_date || ''}|${r.sonum || ''}`
-      : `0|${r.due_date || ''}|${r.start_date || ''}|${r.sonum || ''}`;
-    const priceMap = new Map();
+    const docDate = _draftDocDate();
+    const periodRank = r => `${r.start_date || ''}|${r.due_date || ''}|${r.sonum || ''}`;
+    const createdRank = r => `${r.create_date || ''}|${r.start_date || ''}|${r.sonum || ''}`;
+    const periodBySku = new Map(), lastBySku = new Map();
     docs.forEach(d => {
-      const key = `${d.cust_code}|${d.sku}`;
-      const existing = priceMap.get(key);
-      if (!existing || promoRank(d) > promoRank(existing)) priceMap.set(key, d);
+      if (!(Number(d.unit_price) > 0)) return;
+      if (d.start_date && d.start_date <= docDate) {
+        const cur = periodBySku.get(d.sku);
+        if (!cur || periodRank(d) > periodRank(cur)) periodBySku.set(d.sku, d);
+      }
+      if (d.create_date && d.create_date <= docDate) {
+        const cur = lastBySku.get(d.sku);
+        if (!cur || createdRank(d) > createdRank(cur)) lastBySku.set(d.sku, d);
+      }
     });
     const qtyMap = new Map();
     const latestSalesPriceMap = new Map();
@@ -14286,23 +14315,14 @@ async function _draftRefreshLineRefDataNow() {
         if(!cur || String(r.tx_date||'')>=String(cur.tx_date||'')) latestBySku.set(sku,{price,tx_date:r.tx_date||'',company:r.company||''});
       }
     });
-    const latestPromoBySku = new Map();
-    latestPromoRows.forEach(r => {
-      const sku = String(r.sku || '');
-      const price = Number(r.unit_price) || 0;
-      if (price > 0) {
-        const cur = latestPromoBySku.get(sku);
-        const dateKey = promoRank(r);
-        if (!cur || dateKey > cur.dateKey) latestPromoBySku.set(sku, { price, dateKey, docNo: r.sonum || '', refNo: (r.doc_ref || '').trim(), startDate: r.start_date || '', dueDate: r.due_date || '', company: r.company || '' });
-      }
-    });
+    // เลขที่ที่แสดง = หมายเหตุอ้างอิง (doc_ref) ของใบ — ใบเดียวกันคีย์แยกทุกสาขา (sonum ต่างกัน) แต่ doc_ref ร่วมกัน
+    const promoInfo = d => d ? { price: d.unit_price, docNo: String(d.doc_ref || '').trim() || String(d.sonum || '').trim(), sonum: d.sonum || '',
+      startDate: d.start_date || '', dueDate: d.due_date || '', createDate: d.create_date || '', company: d.company || '' } : null;
     const next = new Map();
     skus.forEach(sku => {
-      let prevInfo = null, latestSales = null, lastMonthQty = 0;
+      let latestSales = null, lastMonthQty = 0;
       custCodes.forEach(cc => {
         const key = `${cc}|${sku}`;
-        const p = priceMap.get(key);
-        if (p && (prevInfo === null || promoRank(p) > prevInfo.rank)) prevInfo = { price: p.unit_price, docNo: p.sonum || '', refNo: (p.doc_ref || '').trim(), startDate: p.start_date || '', dueDate: p.due_date || '', company: p.company || '', rank: promoRank(p) };
         const sp = latestSalesPriceMap.get(key);
         if (sp && latestSales === null) latestSales = sp;
         lastMonthQty += qtyMap.get(key) || 0;
@@ -14310,16 +14330,13 @@ async function _draftRefreshLineRefDataNow() {
       const skuMeta=_draftFindSku(sku);
       const masterPrice = _draftMasterPrice(skuMeta);
       const salesRef = latestSales || latestBySku.get(sku) || null;
-      const globalPromo = latestPromoBySku.get(sku) || null;
-      // โปรของสาขาที่เลือกมาก่อน เว้นแต่ใบนั้นยังไม่เริ่มแต่มีใบของลูกค้าอื่นที่เริ่มไปแล้ว
-      const started = r => String(r?.rank || r?.dateKey || '').startsWith('1|');
-      const prev = prevInfo && (started(prevInfo) || !started(globalPromo)) ? prevInfo : (globalPromo || prevInfo);
-      const refNo = String(prev?.refNo || '').trim();
-      const docNo = String(prev?.docNo || '').trim();
+      const prev = promoInfo(periodBySku.get(sku)), last = promoInfo(lastBySku.get(sku));
       // *IsTssCost: ราคาอ้างอิงจากบริษัท TSS เป็น "ทุนสุทธิ" — ต้องแปลงย้อนเป็นราคาขายก่อนใช้ (ดู _draftCostToSell)
       next.set(sku, {
         prevPrice: prev?.price ?? null, prevIsTssCost: _draftIsNetCostCompany(prev?.company),
-        prevDocNo: refNo || docNo, prevRefNo: refNo, prevStartDate: prev?.startDate || '', prevDueDate: prev?.dueDate || '',
+        prevDocNo: prev?.docNo || '', prevSonum: prev?.sonum || '', prevStartDate: prev?.startDate || '', prevDueDate: prev?.dueDate || '',
+        lastPrice: last?.price ?? null, lastIsTssCost: _draftIsNetCostCompany(last?.company),
+        lastDocNo: last?.docNo || '', lastSonum: last?.sonum || '', lastStartDate: last?.startDate || '', lastDueDate: last?.dueDate || '', lastCreateDate: last?.createDate || '',
         latestSalesPrice: salesRef?.price || null, latestIsTssCost: _draftIsNetCostCompany(salesRef?.company),
         masterPrice: masterPrice || null, masterIsTssCost: _draftMasterPriceIsTss(skuMeta),
         lastMonthQty, lastMonthLabel: lastMonth.label,
@@ -14330,11 +14347,10 @@ async function _draftRefreshLineRefDataNow() {
     // 01-L2-0001 (โลตัส เทพารักษ์) ↔ BB-L2-0001 (ซีพี แอ็กซ์ตร้า เทพารักษ์) ตรวจกับข้อมูลจริงแล้วตรงกันเกือบทุกสาขา
     // query ครั้งเดียวต่อช่วงวันที่ (SKU ที่โปรสุดท้ายช่วงเดียวกันรวมกัน) แล้วแยกผลรวมต่อ SKU เอง
     const today = new Date().toISOString().slice(0, 10);
-    const consiCodes = [...new Set(custCodes.filter(c => !/^BB-/i.test(c)).map(_draftConsiPairCode).filter(Boolean))];
     const byPeriod = new Map(); // `${from}|${to}` -> [sku]
     next.forEach((ref, sku) => {
       if (!ref.prevStartDate || !ref.prevDueDate) return;
-      if (ref.prevStartDate > today) { ref.prevPeriodNote = 'ยังไม่ถึงช่วงโปรสุดท้าย'; return; }
+      if (ref.prevStartDate > today) { ref.prevPeriodNote = 'ยังไม่ถึงช่วง Pro Period ก่อน'; return; }
       const to = ref.prevDueDate < today ? ref.prevDueDate : today;
       const k = `${ref.prevStartDate}|${to}`;
       if (!byPeriod.has(k)) byPeriod.set(k, []);
@@ -14355,7 +14371,7 @@ async function _draftRefreshLineRefDataNow() {
     // ไม่ใช้ยอดของลูกค้าอื่นแล้ว
     await Promise.all([...byPeriod.entries()].map(async ([k, skuList]) => {
       const [from, to] = k.split('|');
-      const period = `ช่วงโปรสุดท้าย ${promoFmtD(from)} – ${promoFmtD(to)}`;
+      const period = `ช่วง Pro Period ก่อน ${promoFmtD(from)} – ${promoFmtD(to)}`;
       const found = new Map(); // sku -> {qty, source, note}
       const take = (map, source, note) => skuList.forEach(sku => { if (!found.has(sku) && map.get(sku) > 0) found.set(sku, { qty: map.get(sku), source, note }); });
       const pending = () => skuList.filter(s => !found.has(s));
@@ -14380,26 +14396,32 @@ function _draftConsiPairCode(code) {
   return m ? `BB-${m[1]}` : '';
 }
 function draftRenderRefCells() {
+  const f2 = v => Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   _draftLines.forEach((l, i) => {
     const ref = _draftRefData.get(l.sku);
-    const docEl = document.getElementById(`draft-line-prev-doc-${i}`);
-    if (docEl) docEl.textContent = ref?.prevDocNo || '—';
-    const prevEl = document.getElementById(`draft-line-prev-${i}`);
-    if (prevEl) {
-      const pp = _draftPrevPromoPrice(ref, l);
-      const f2 = v => Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      prevEl.innerHTML = pp.sell == null ? '—'
-        : pp.tssCost != null ? `${f2(pp.sell)}<div style="font-size:10px;color:var(--TX3)">ทุน TSS ${f2(pp.tssCost)}</div>` : f2(pp.sell);
-      prevEl.title = pp.tssCost != null ? 'ราคาโปรสุดท้ายจาก TSS เป็นทุนสุทธิ — แปลงเป็นราคาขายด้วย GP โปรของบรรทัดนี้' : '';
-    }
-    const periodEl = document.getElementById(`draft-line-prev-period-${i}`);
-    if (periodEl) periodEl.textContent = ref?.prevStartDate || ref?.prevDueDate ? `${promoFmtD(ref.prevStartDate)} - ${promoFmtD(ref.prevDueDate)}` : '—';
+    // 2 กลุ่มใช้โครงเดียวกัน: prev = Pro Period ก่อน, last = Pro No. ล่าสุด (ดู _draftRefreshLineRefDataNow)
+    [['prev', 'Pro Period ก่อน'], ['last', 'Pro No. ล่าสุด']].forEach(([k, title]) => {
+      const docEl = document.getElementById(`draft-line-${k}-doc-${i}`);
+      if (docEl) {
+        docEl.textContent = ref?.[k + 'DocNo'] || '—';
+        docEl.title = ref?.[k + 'Sonum'] ? `${title} · Express ${ref[k + 'Sonum']}${ref[k + 'CreateDate'] ? ' · สร้าง ' + promoFmtD(ref[k + 'CreateDate']) : ''}` : '';
+      }
+      const priceEl = document.getElementById(`draft-line-${k}-${i}`);
+      if (priceEl) {
+        const pp = _draftPrevPromoPrice(ref, l, k);
+        priceEl.innerHTML = pp.sell == null ? '—'
+          : pp.tssCost != null ? `${f2(pp.sell)}<div style="font-size:10px;color:var(--TX3)">ทุน TSS ${f2(pp.tssCost)}</div>` : f2(pp.sell);
+        priceEl.title = pp.tssCost != null ? `ราคา${title}จาก TSS เป็นทุนสุทธิ — แปลงเป็นราคาขายด้วย GP โปรของบรรทัดนี้` : '';
+      }
+      const periodEl = document.getElementById(`draft-line-${k}-period-${i}`);
+      if (periodEl) periodEl.innerHTML = ref?.[k + 'StartDate'] || ref?.[k + 'DueDate'] ? `${esc(promoFmtD(ref[k + 'StartDate']))}<br>– ${esc(promoFmtD(ref[k + 'DueDate']))}` : '—';
+    });
     const qtyEl = document.getElementById(`draft-line-last-month-qty-${i}`);
     if (qtyEl) {
       qtyEl.innerHTML = ref?.prevPeriodQty != null
         ? `${Number(ref.prevPeriodQty).toLocaleString('th-TH')}${ref.prevPeriodSource ? `<div style="font-size:10px;color:var(--O);font-weight:600">${esc(ref.prevPeriodSource)}</div>` : ''}`
         : '—';
-      qtyEl.title = ref?.prevPeriodNote || (ref ? 'ไม่พบโปรสุดท้ายของสินค้านี้' : '');
+      qtyEl.title = ref?.prevPeriodNote || (ref ? 'ไม่พบ Pro Period ก่อนของสาขาที่เลือก + สินค้านี้' : '');
     }
     // "ราคาปกติ" auto-fill (ยืนยันแล้วว่าใช้ "ราคาขายล่าสุดที่เจอใน promo_docs" เป็นค่าตั้งต้น) — promo_docs
     // มาจากเอกสารใบเสนอราคา Express P1/P2 (OESO.DBF/OESOIT.DBF, ดู importFromExpress.js's syncPromoDocs
@@ -14418,12 +14440,14 @@ function draftRenderRefCells() {
     }
   });
 }
-// ราคาโปรสุดท้ายสำหรับแสดงผล — ถ้ามาจาก TSS (ทุนสุทธิ) แปลงเป็นราคาขายด้วย GP โปรของบรรทัด
-function _draftPrevPromoPrice(ref, l) {
-  if (!ref || ref.prevPrice == null) return { sell: null, tssCost: null };
-  if (!ref.prevIsTssCost) return { sell: Number(ref.prevPrice), tssCost: null };
-  const sell = _draftCostToSell(ref.prevPrice, l?.gpPctPromo);
-  return { sell: sell === '' ? null : sell, tssCost: Number(ref.prevPrice) };
+// ราคาโปรอ้างอิงสำหรับแสดงผล (which: 'prev' = Pro Period ก่อน, 'last' = Pro No. ล่าสุด) — ถ้ามาจาก TSS
+// (ทุนสุทธิ) แปลงเป็นราคาขายด้วย GP โปรของบรรทัด
+function _draftPrevPromoPrice(ref, l, which = 'prev') {
+  const price = ref?.[which + 'Price'];
+  if (!ref || price == null) return { sell: null, tssCost: null };
+  if (!ref[which + 'IsTssCost']) return { sell: Number(price), tssCost: null };
+  const sell = _draftCostToSell(price, l?.gpPctPromo);
+  return { sell: sell === '' ? null : sell, tssCost: Number(price) };
 }
 
 // ── Comment ต่อแถวสินค้า (ข้อ 8) — ผูกกับทั้งแถว SKU ไม่ใช่ราย field ตามที่ยืนยันไว้ — ใช้ได้เฉพาะเอกสารที่
@@ -14477,12 +14501,23 @@ function draftRenderApprovalTrail() {
   if (!levels.length) { box.innerHTML = `<div class="al ali" style="font-size:12px;margin:10px">${h && h.status !== 'draft' ? 'เอกสารนี้ไม่มีเส้นทางอนุมัติ — ผู้จัดการอนุมัติได้โดยตรง' : 'ยังไม่ได้ส่งอนุมัติ'}</div>`; return; }
   const st = { approved: ['อนุมัติ', 'bbg'], rejected: ['ไม่อนุมัติ', 'bbr'], pending: ['รออนุมัติ', 'bbgr'] };
   const cur = (Array.isArray(h.approval_history_json) ? h.approval_history_json.length : 0) + (h.current_level || 0);
-  box.innerHTML = `<div style="padding:6px 10px">${levels.map((lv, i) => `<div style="border-left:3px solid ${i === cur && ['pending_approval', 'pending_exec_approval'].includes(h.status) ? 'var(--N2)' : 'var(--BD)'};padding:4px 10px;margin:6px 0">
-    <div style="font-size:12px;font-weight:700;color:var(--TX2)">ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}${(lv.approvers || []).length > 1 ? ` <span style="font-weight:400;color:var(--TX3)">(${lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง'})</span>` : ''}</div>
-    ${(lv.approvers || []).map(a => { const [t, cls] = st[a.status] || st.pending; return `<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;margin-top:3px">
-      <b>${esc(a.name || uidToName(a.uid))}</b><span class="badge ${cls}">${t}</span>${a.ts ? `<span style="color:var(--TX3);font-size:11.5px">${new Date(a.ts).toLocaleString('th-TH')}</span>` : ''}
-      ${a.comment ? `<div style="flex-basis:100%;background:var(--bg2);border-radius:6px;padding:5px 9px;margin-top:2px">💬 ${esc(a.comment)}</div>` : ''}</div>`; }).join('')}
-  </div>`).join('')}</div>`;
+  const active = ['pending_approval', 'pending_exec_approval'].includes(h.status);
+  const fmtTs = ts => ts ? new Date(ts).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  // v3 (2026-09-24, ตาม mockup): ตารางแถวเตี้ย ผู้จัดทำ + ผู้อนุมัติทุกคนทุกขั้น — คอลัมน์ความเห็นกว้างที่สุด
+  const rows = [`<tr><td>1</td><td class="l"><b>ผู้จัดทำ</b></td><td class="l">${esc(uidToName(h.created_by) || h.created_by || '—')}</td>
+    <td><span class="badge bbg">ส่งอนุมัติ</span></td><td class="l">—</td></tr>`];
+  levels.forEach((lv, i) => (lv.approvers || []).forEach(a => {
+    const [t, cls] = st[a.status] || st.pending;
+    const isCur = i === cur && active;
+    rows.push(`<tr${isCur ? ' style="background:var(--LBL)"' : ''}><td>${rows.length + 1}</td>
+      <td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b>${(lv.approvers || []).length > 1 ? `<div style="font-size:10.5px;color:var(--TX3)">(${lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง'})</div>` : ''}</td>
+      <td class="l">${esc(a.name || uidToName(a.uid))}</td>
+      <td style="white-space:nowrap"><span class="badge ${cls}">${t}</span>${a.ts ? ` <span style="color:var(--TX3);font-size:11px">${fmtTs(a.ts)}</span>` : ''}</td>
+      <td class="l" style="white-space:pre-wrap">${a.comment ? esc(a.comment) : ''}</td></tr>`);
+  }));
+  box.innerHTML = `${h.route_name ? `<div style="font-size:12px;color:var(--TX2);margin:6px 10px 0">เส้นทางอนุมัติ: <b>${esc(h.route_name)}</b></div>` : ''}
+    <div class="tw" style="margin:6px 10px 10px"><table class="draft-trail"><thead><tr><th style="width:44px">ลำดับ</th><th style="width:210px">ขั้น</th><th style="width:180px">ผู้ลงนาม</th><th style="width:210px">สถานะ · วันเวลา</th><th>ความเห็น</th></tr></thead>
+    <tbody>${rows.join('')}</tbody></table></div>`;
 }
 
 // ── คอมเมนต์ลอยปักตำแหน่งในเอกสาร (2026-09-24) ──────────────────────────────────
@@ -14491,24 +14526,33 @@ function draftRenderApprovalTrail() {
 // · section:<ชื่อการ์ด> — ทุกคนที่เปิดเอกสาร (รวมผู้อนุมัติขั้นถัดไป) เห็นหมุดและรายการทั้งหมด
 let _draftAnchorCmts = [];
 let _draftCmtMode = false;
-const DRAFT_LINE_COL_LABELS = ['ลำดับ', 'รหัสสินค้า', 'ชื่อสินค้า', 'Set อุปกรณ์', 'โปรสุดท้าย · เลขที่', 'โปรสุดท้าย · ราคา', 'โปรสุดท้าย · ช่วงวันที่',
+// รหัสคอลัมน์ (ตรงลำดับ DRAFT_LINE_COL_LABELS) — anchor ใหม่เก็บเป็น cell:<sku>:<รหัส> ไม่ผูกกับลำดับคอลัมน์
+// anchor เดิม (ก่อน v3) เก็บลำดับคอลัมน์ของตารางเก่า → แปลงผ่าน DRAFT_LINE_COL_KEYS_V2 ให้ปักตรงช่องเดิม
+const DRAFT_LINE_COL_KEYS = ['num', 'sku', 'name', 'set', 'pp_doc', 'pp_price', 'pp_period', 'last_doc', 'last_price', 'last_period',
+  'n_sell', 'n_gp', 'n_bill', 'n_cost', 'comp', 'p_sell', 'p_gp', 'p_bill', 'p_cost', 'qty', 'est'];
+const DRAFT_LINE_COL_KEYS_V2 = ['num', 'sku', 'name', 'set', 'pp_doc', 'pp_price', 'pp_period', 'n_sell', 'n_gp', 'n_bill', 'n_cost',
+  'comp', 'p_sell', 'p_gp', 'p_bill', 'p_cost', 'disc', 'qty', 'est'];
+const DRAFT_LINE_COL_LABELS = ['ลำดับ', 'รหัสสินค้า', 'ชื่อสินค้า', 'Set อุปกรณ์', 'Pro Period ก่อน · เลขที่', 'Pro Period ก่อน · ราคา', 'Pro Period ก่อน · ช่วงวันที่',
+  'Pro No. ล่าสุด · เลขที่', 'Pro No. ล่าสุด · ราคา', 'Pro No. ล่าสุด · ช่วงวันที่',
   'ราคาปกติ · ราคาขาย', 'ราคาปกติ · GP%', 'ราคาปกติ · ท้ายบิล%', 'ราคาปกติ · ทุนสุทธิ', 'Compensate', 'ราคาโปร · ราคาขาย', 'ราคาโปร · GP%',
-  'ราคาโปร · ท้ายบิล%', 'ราคาโปร · ทุนสุทธิ', 'ส่วนลด%', 'ยอดขายช่วงโปรสุดท้าย', 'ประมาณการจำนวน'];
+  'ราคาโปร · ท้ายบิล%', 'ราคาโปร · ทุนสุทธิ', 'ยอดขายช่วง Pro Period ก่อน', 'ประมาณการจำนวน'];
 function _draftAnchorFor(el) {
   const td = el.closest('#draft-lines-tbody td');
   if (td) {
     const tr = td.parentElement, i = [...tr.parentElement.children].indexOf(tr), col = [...tr.children].indexOf(td);
     const sku = _draftLines[i]?.sku;
     if (!sku || col >= DRAFT_LINE_COL_LABELS.length) return null;
-    return { key: `cell:${sku}:${col}`, label: `${sku} · ${DRAFT_LINE_COL_LABELS[col]}` };
+    return { key: `cell:${sku}:${DRAFT_LINE_COL_KEYS[col]}`, label: `${sku} · ${DRAFT_LINE_COL_LABELS[col]}` };
   }
+  // แถวในกล่องฟอร์มใบเคาะ (สถานที่ขาย/ประเภทสินค้า/สินค้า NPD/นอกสัญญา) ปักรายแถว — ต้องเช็คก่อน .field ที่ครอบทั้งกล่อง
+  const fxRow = el.closest('#draft-fp [data-acm-row]');
+  if (fxRow) return { key: `section:fx:${fxRow.dataset.acmRow}`, label: fxRow.dataset.acmRow };
   const field = el.closest('#draft-fp .field');
   if (field) {
     const inp = field.querySelector('input[id],select[id],textarea[id],[id^="draft-promo-days"],[id^="draft-cost-days"]');
     const lbl = (field.querySelector('label')?.firstChild?.textContent || field.querySelector('label')?.textContent || '').trim();
     if (inp) return { key: `field:${inp.id}`, label: lbl || inp.id };
   }
-  if (el.closest('#draft-fp .esc-row')) return { key: 'section:เงื่อนไขพิเศษ', label: 'เงื่อนไขพิเศษ' };
   const card = el.closest('#draft-fp .card');
   const t = card?.querySelector('.ct2')?.textContent.trim();
   return t ? { key: `section:${t}`, label: t } : null;
@@ -14516,13 +14560,17 @@ function _draftAnchorFor(el) {
 function _draftElForAnchor(key) {
   const [kind, ...rest] = String(key).split(':');
   if (kind === 'cell') {
-    const col = Number(rest.pop()), sku = rest.join(':');
+    const c = rest.pop(), sku = rest.join(':');
+    const col = /^\d+$/.test(c) ? DRAFT_LINE_COL_KEYS.indexOf(DRAFT_LINE_COL_KEYS_V2[Number(c)]) : DRAFT_LINE_COL_KEYS.indexOf(c);
+    if (col < 0) return null; // คอลัมน์ที่ถูกเอาออกแล้ว (เช่น ส่วนลด%) — ยังเห็นในรายการคอมเมนต์ แต่ไม่มีหมุด
     const i = _draftLines.findIndex(l => l.sku === sku);
     return document.getElementById('draft-lines-tbody')?.children[i]?.children[col] || null;
   }
   if (kind === 'field') return document.getElementById(rest.join(':'))?.closest('.field') || null;
   const t = rest.join(':');
-  if (t === 'เงื่อนไขพิเศษ') return document.querySelector('#draft-fp .esc-row');
+  // "เงื่อนไขพิเศษ" (ก่อน v3) ย้ายมาเป็นแถว สินค้า NPD / ค่าใช้จ่ายนอกสัญญา ในกล่องฟอร์มใบเคาะ
+  if (t === 'เงื่อนไขพิเศษ') return document.querySelector('#draft-fp [data-acm-row="สินค้า NPD"]');
+  if (t.startsWith('fx:')) return [...document.querySelectorAll('#draft-fp [data-acm-row]')].find(r => r.dataset.acmRow === t.slice(3)) || null;
   return [...document.querySelectorAll('#draft-fp .card')].find(c => c.querySelector('.ct2')?.textContent.trim() === t) || null;
 }
 const _acmSplit = a => { const s = String(a || ''); const i = s.indexOf('|'); return i < 0 ? { key: s, label: s } : { key: s.slice(0, i), label: s.slice(i + 1) }; };
@@ -14656,7 +14704,15 @@ function draftRenderOtherCosts() {
   <div class="oc-total">รวมค่าใช้จ่ายอื่นๆ <b id="draft-oc-total">฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></div>`;
 }
 function draftAddOtherCost() { _draftOtherCosts.push({ item: '', amount: '', note: '' }); draftRenderOtherCosts(); }
-function draftRemoveOtherCost(i) { _draftOtherCosts.splice(i, 1); draftRenderOtherCosts(); }
+function draftRemoveOtherCost(i) { _draftOtherCosts.splice(i, 1); draftRenderOtherCosts(); _draftSyncOtherCostBox(); }
+// ช่อง "ค่าใช้จ่ายอื่นๆ" ในแถวสินค้า NPD ตามผลรวมตาราง 💵 อัตโนมัติ จนกว่าผู้ใช้จะพิมพ์จำนวนเงินเอง (data-manual)
+function _draftSyncOtherCostBox() {
+  const inp = document.getElementById('fx-other-cost-v'), chk = document.getElementById('fx-other-cost');
+  if (!inp || inp.dataset.manual) return;
+  const sum = _draftOtherCostSum();
+  inp.value = sum > 0 ? sum : '';
+  if (chk) chk.checked = sum > 0;
+}
 function draftOtherCostField(i, key, value) {
   if (!_draftOtherCosts[i]) return;
   _draftOtherCosts[i][key] = value;
@@ -14666,6 +14722,7 @@ function draftOtherCostField(i, key, value) {
     const total = _draftOtherCosts.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
     const el = document.getElementById('draft-oc-total');
     if (el) el.textContent = `฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    _draftSyncOtherCostBox();
   }
 }
 
@@ -14681,7 +14738,8 @@ async function saveDraftPromo(submitAfter = false) {
   const name = (document.getElementById('draft-name')?.value || '').trim();
   const condition = _draftReadOtherSelect('draft-condition', 'draft-condition-other');
   const itemType = _draftSelectedItemTypes();
-  const equipment = itemType.includes('อุ่นร้อนพร้อมทาน') ? _draftReadOtherSelect('draft-equipment', 'draft-equipment-other') : '';
+  // ช่อง "อุปกรณ์" ถูกเอาออกจากฟอร์มแล้ว (2026-09-24 v3) — คงค่าเดิมของเอกสารไว้ ไม่ลบทิ้ง
+  const equipment = _draftEquipKeep || '';
   const discountScope = document.getElementById('draft-discount-scope')?.value || 'item';
   const purpose = (document.getElementById('draft-purpose')?.value || '').trim();
   const note = (document.getElementById('draft-note')?.value || '').trim();
@@ -14695,14 +14753,20 @@ async function saveDraftPromo(submitAfter = false) {
   const hasCompensate = _draftHasCompensate() ? 1 : 0;
   const specialDistribution = (document.getElementById('draft-special-distribution')?.value || '').trim();
   const custCodes = [..._draftSelectedBranches];
-  const lines = _draftLines.filter(l => l.sku);
+  // ค่าใช้จ่ายนอกสัญญา (2026-09-24 v3): ไม่มีตารางสินค้า — บันทึกรายละเอียดข้อความ (form_extra_json) แทนบรรทัด
+  const offContract = !!hasOffContractCost;
+  const offText = (document.getElementById('draft-off-contract-text')?.value || '').trim();
+  const lines = offContract ? [] : _draftLines.filter(l => l.sku);
   if (!name) { alert('กรุณากรอกชื่อรายการ'); return; }
   if (!custCodes.length) { alert('กรุณาเลือกอย่างน้อย 1 สาขา'); return; }
   // ยืนยันแล้ว (2026-09-14): 1 ใบเคาะราคา = 1 ช่วงเวลาเดียวเท่านั้น — วันที่ของหัวเอกสารจึงบังคับกรอกเสมอ
   // (เดิมเช็คว่าแต่ละบรรทัดมีวันที่ของตัวเอง อนุญาตให้ไม่กรอกวันที่หัวเอกสารได้ถ้าทุกบรรทัดมีวันที่ครบ)
   if (!promoStart || !promoDue) { alert('กรุณากรอกวันที่เริ่ม-สิ้นสุดโปร (หัวเอกสาร) — ใบเคาะราคา 1 ใบใช้ได้แค่ช่วงเวลาเดียว'); return; }
-  if (!lines.length) { alert('กรุณาเพิ่มอย่างน้อย 1 รายการสินค้า'); return; }
-  if (hasCompensate) {
+  if (offContract) {
+    if (!offText) { alert('ติ๊ก "ค่าใช้จ่ายนอกสัญญา" แล้ว กรุณากรอกรายละเอียดค่าใช้จ่ายนอกสัญญา'); return; }
+    if (_draftLines.some(l => l.sku) && !confirm('เอกสารค่าใช้จ่ายนอกสัญญาจะไม่บันทึกตารางรายการสินค้า — รายการสินค้าที่กรอกไว้จะไม่ถูกบันทึก ยืนยันบันทึก?')) return;
+  } else if (!lines.length) { alert('กรุณาเพิ่มอย่างน้อย 1 รายการสินค้า'); return; }
+  if (hasCompensate && !offContract) {
     const nums = _draftLineNumbers();
     const missing = _draftLines.map((l, i) => (l.sku && _draftIsBlank(l.compensate)) ? nums[i] : null).filter(Boolean);
     if (missing.length) { alert(`เลือกลักษณะรายการ "Compensate" แล้ว กรุณากรอก Compensate ให้ครบทุกรายการ (ลำดับ ${missing.join(', ')})`); return; }
@@ -14746,8 +14810,8 @@ async function saveDraftPromo(submitAfter = false) {
     });
     // แก้ไข: ลบบรรทัดเดิมทั้งหมดของ draft_no นี้ แล้วเขียนชุดใหม่แทน (ง่ายกว่า diff รายบรรทัด) — ไม่กระทบ
     // header/ไฟล์แนบ/comment ซึ่งอยู่คนละตารางแล้วตั้งแต่แยก header/lines
-    if (editingExisting) { await SB.deletePromoDraftLines(draftNo); await SB.addPromoDraftLines(rows); }
-    else { await SB.addPromoDraftLines(rows); }
+    if (editingExisting) await SB.deletePromoDraftLines(draftNo);
+    if (rows.length) await SB.addPromoDraftLines(rows); // เอกสารนอกสัญญาไม่มีบรรทัดสินค้า
     CACHE.clear('promo_drafts');
     audit(editingExisting ? 'PROMO_DRAFT_EDIT' : 'PROMO_DRAFT_CREATE', draftNo, { name });
   };
@@ -14844,8 +14908,11 @@ async function pgPromoDraftsRenderBody() {
 
   box.innerHTML = drafts.map(h => {
     const docLines = linesByDraftNo.get(h.draft_no) || [];
-    const branches = [...new Set(docLines.map(l => `${l.cust_code} — ${l.cust_name || ''}`))];
-    const branchRanges = _draftBranchRanges(docLines.map(l => l.cust_code));
+    // เอกสารค่าใช้จ่ายนอกสัญญาไม่มีบรรทัดสินค้า — รหัสสาขาเก็บใน form_extra_json.branches
+    const offContract = !!Number(h.has_off_contract_cost) && !docLines.length;
+    const branchCodes = docLines.length ? docLines.map(l => l.cust_code) : [..._draftBranchesFrom(h, [])];
+    const branches = docLines.length ? [...new Set(docLines.map(l => `${l.cust_code} — ${l.cust_name || ''}`))] : [...new Set(branchCodes)];
+    const branchRanges = _draftBranchRanges(branchCodes);
     const skuLines = [...new Set(docLines.map(l => `${l.sku} — ${l.sku_name || ''} (${(Number(l.unit_price) || 0).toLocaleString('th-TH')})`))];
     const canEdit = draftCanEditStatus(h.status);
     return `<div class="card" style="margin-bottom:10px;background:var(--bg2)">
@@ -14864,7 +14931,8 @@ async function pgPromoDraftsRenderBody() {
         </div>
       </div>
       <div style="font-size:12px" title="${esc(branches.join('\n'))}"><b>สาขา (${branches.length}):</b> <span class="mono">${branchRanges.map(esc).join(', ')}</span></div>
-      <div style="font-size:12px;margin-top:3px"><b>สินค้า:</b> ${skuLines.map(esc).join(', ')}</div>
+      ${offContract ? `<div style="font-size:12px;margin-top:3px"><b>📄 ค่าใช้จ่ายนอกสัญญา:</b> ${esc(String(_draftFx(h.form_extra_json).off_contract_text || '').slice(0, 160))}</div>`
+        : `<div style="font-size:12px;margin-top:3px"><b>สินค้า:</b> ${skuLines.map(esc).join(', ')}</div>`}
       ${h.note ? `<div style="font-size:12px;margin-top:3px;color:var(--TX3)">หมายเหตุ: ${esc(h.note)}</div>` : ''}
     </div>`;
   }).join('');
@@ -14879,7 +14947,12 @@ async function draftMarkKeyed(draftNo) {
     [header, lines] = await Promise.all([SB.getPromoDraftHeader(draftNo), SB.getPromoDraftLines(draftNo)]);
   } catch (e) { toast('โหลดเอกสารไม่สำเร็จ: ' + (e.message || e), 'warn'); return; }
   if (!header) { toast('ไม่พบเอกสารนี้แล้ว', 'warn'); return; }
-  if (!lines.length) { toast('เอกสารนี้ยังไม่มีรายการสินค้า', 'warn'); return; }
+  if (!lines.length) {
+    // ค่าใช้จ่ายนอกสัญญา: ไม่มีรายการสินค้าให้เทียบกับ Express — ยืนยันปิดสถานะได้เลย
+    if (Number(header.has_off_contract_cost) && confirm('เอกสารค่าใช้จ่ายนอกสัญญา (ไม่มีรายการสินค้าให้ตรวจกับ Express) — ยืนยันปิดสถานะ "คีย์เข้า Express แล้ว"?')) _draftConfirmMarkKeyed(draftNo);
+    else if (!Number(header.has_off_contract_cost)) toast('เอกสารนี้ยังไม่มีรายการสินค้า', 'warn');
+    return;
+  }
   const custCodes = [...new Set(lines.map(l => l.cust_code))];
   const skus = [...new Set(lines.map(l => l.sku))];
   let docs = [];
@@ -14961,25 +15034,39 @@ async function _draftCheckExecRoute(header) {
     return true;
   } catch (e) { toast('ตรวจเส้นทางผู้บริหารไม่สำเร็จ: ' + e.message, 'warn'); return false; }
 }
-// หน้าต่างเลือกผู้อนุมัติของขั้น "ผู้สร้างเลือกเอง" — resolve { [levelId]: [uid] } หรือ null ถ้ายกเลิก
+// หน้าต่างส่งอนุมัติ: เลือกเส้นทาง + ผู้อนุมัติของขั้น "ผู้สร้างเลือกเอง" — resolve { routeId, picks: { [levelId]: [uid] } } หรือ null ถ้ายกเลิก
 let _draftPickUsers = [];
 let _draftPickState = null;
-async function _draftAskPickApprovers(levels) {
+async function _draftAskPickApprovers(cfg) {
   try { _draftPickUsers = (await CACHE.get('users', () => SB.getUsers())).filter(u => u.is_active !== 0 && u.is_active !== false && u.active !== false); }
   catch (e) { _draftPickUsers = DB.get('users') || []; }
-  const pickLevels = levels.map((lv, i) => ({ lv, i })).filter(x => x.lv.pick_by_creator);
+  // เลือกเส้นทาง + ผู้อนุมัติขั้นที่ผู้สร้างเลือกเอง (2026-09-24) — การเลือกของแต่ละเส้นทางเก็บแยกกัน สลับไปมาไม่หาย
+  const pickLevelsOf = levels => levels.map((lv, i) => ({ lv, i })).filter(x => x.lv.pick_by_creator)
+    .map(({ lv, i }) => ({ id: lv.id, label: lv.label || `ขั้น ${i + 1}`, step: i + 1, mode: lv.mode,
+      sel: new Set([...(lv.default_self ? [UID] : []), ...(lv.approvers || []).map(a => a.uid)]) }));
   return new Promise(resolve => {
-    _draftPickState = {
-      resolve, q: {},
-      levels: pickLevels.map(({ lv, i }) => ({ id: lv.id, label: lv.label || `ขั้น ${i + 1}`, step: i + 1, mode: lv.mode,
-        sel: new Set([...(lv.default_self ? [UID] : []), ...(lv.approvers || []).map(a => a.uid)]) })),
-    };
+    const byRoute = new Map(cfg.options.map(o => [o.id, pickLevelsOf(o.levels)]));
+    _draftPickState = { resolve, q: {}, cfg, byRoute, routeId: cfg.routeId, levels: byRoute.get(cfg.routeId) || [] };
     _draftPickRender();
   });
+}
+function _draftPickSetRoute(id) {
+  const st = _draftPickState; if (!st) return;
+  st.routeId = id; st.levels = st.byRoute.get(id) || []; st.q = {};
+  _draftPickRender();
 }
 function _draftPickRender(focusIdx) {
   const st = _draftPickState; if (!st) return;
   const nameOf = uid => (_draftPickUsers.find(u => u.uid === uid)?.name) || uidToName(uid) || uid;
+  const { options, why, execNote } = st.cfg;
+  const stepsOf = levels => levels.length ? levels.map((lv, i) => `${i + 1}. ${esc(lv.label || 'ผู้อนุมัติ')} — ${lv.pick_by_creator ? '<i>ผู้สร้างเลือก</i>' : esc((lv.approvers || []).map(a => a.name || uidToName(a.uid)).join(' / ') || '—')}`).join(' → ')
+    : '<span style="color:var(--TX3)">ไม่มีขั้นอนุมัติ — ผู้จัดการอนุมัติได้โดยตรง</span>';
+  const routeHtml = options.length > 1 ? `<div style="font-weight:700;font-size:13px;margin-bottom:6px">1. เลือกเส้นทางอนุมัติ</div>
+    ${options.map(o => `<label style="display:block;border:1.5px solid ${o.id === st.routeId ? 'var(--N)' : 'var(--BD)'};background:${o.id === st.routeId ? 'var(--LBL)' : 'var(--W)'};border-radius:8px;padding:7px 10px;margin-bottom:6px;cursor:pointer">
+      <input type="radio" name="draft-route" ${o.id === st.routeId ? 'checked' : ''} onchange="_draftPickSetRoute('${_promoJsKey(o.id)}')"> <b>${o.id ? '' : '⭐ '}${esc(o.name)}</b>
+      ${o.id === st.cfg.routeId ? `<span style="font-size:10.5px;font-weight:700;background:var(--LG);color:var(--G);border-radius:8px;padding:0 7px;margin-left:4px">แนะนำ${why ? ' · ตรงกับ ' + esc(why) : ''}</span>` : ''}
+      <div style="font-size:11.5px;color:var(--TX2);margin:3px 0 0 22px">${stepsOf(o.levels)}</div></label>`).join('')}
+    ${execNote ? '<div style="font-size:11.5px;color:var(--TX3);margin:0 0 10px">+ ขั้นผู้บริหารต่อท้ายอัตโนมัติ (เอกสารนี้ติ๊กเงื่อนไขพิเศษ)</div>' : ''}` : '';
   const lvHtml = st.levels.map((L, li) => {
     const q = _msSearchText(st.q[L.id] || '').trim();
     const cand = _draftPickUsers.filter(u => !L.sel.has(u.uid) && (!q || _msSearchText([u.name, u.uid, u.department, u.position].join(' ')).includes(q)));
@@ -14995,9 +15082,10 @@ function _draftPickRender(focusIdx) {
     </div>`;
   }).join('');
   const ready = st.levels.every(L => L.sel.size);
-  openMod(`<div class="mh"><div class="mt2">เลือกผู้อนุมัติก่อนส่ง</div><span class="mx" onclick="_draftPickDone(false)">✕</span></div>
-    <div style="font-size:12px;color:var(--TX3);margin-bottom:8px">ขั้นเหล่านี้ตั้งค่าให้ผู้สร้างเอกสารเลือกผู้อนุมัติเอง (เลือกตัวเองได้)</div>
-    <div style="max-height:62vh;overflow:auto">${lvHtml}</div>
+  openMod(`<div class="mh"><div class="mt2">📤 ส่งอนุมัติ</div><span class="mx" onclick="_draftPickDone(false)">✕</span></div>
+    <div style="max-height:66vh;overflow:auto">${routeHtml}
+      ${st.levels.length ? `<div style="font-weight:700;font-size:13px;margin:4px 0 4px">${options.length > 1 ? '2. ' : ''}เลือกผู้อนุมัติ</div>
+      <div style="font-size:12px;color:var(--TX3);margin-bottom:8px">ขั้นเหล่านี้ตั้งค่าให้ผู้สร้างเอกสารเลือกผู้อนุมัติเอง (เลือกตัวเองได้)</div>${lvHtml}` : ''}</div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn" onclick="_draftPickDone(false)">ยกเลิก</button>
       <button class="btn btn-p" id="pick-go" onclick="_draftPickDone(true)" ${ready ? '' : 'disabled'}>ส่งอนุมัติ</button></div>`);
   if (focusIdx != null) { const el = document.getElementById('pick-q-' + focusIdx); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
@@ -15010,25 +15098,34 @@ function _draftPickToggle(li, uid) {
 function _draftPickDone(ok) {
   const st = _draftPickState; _draftPickState = null; closeM();
   if (!st) return;
-  st.resolve(ok ? Object.fromEntries(st.levels.map(L => [L.id, [...L.sel]])) : null);
+  st.resolve(ok ? { routeId: st.routeId, picks: Object.fromEntries(st.levels.map(L => [L.id, [...L.sel]])) } : null);
 }
 async function draftSubmitForApproval(draftNo) {
   const no = draftNo || _draftEditNo;
   if (!no) { toast('กรุณาบันทึกร่างก่อนส่งอนุมัติ', 'warn'); return; }
-  let levels;
+  // เส้นทางอนุมัติหลายแบบ (2026-09-24): โหลดทุกเส้นทาง + ขั้นของแต่ละเส้นทาง แล้วแนะนำเส้นทางที่ตรงเงื่อนไข
+  let header, options, suggest;
   try {
-    const header = await SB.getPromoDraftHeader(no);
+    header = await SB.getPromoDraftHeader(no);
     if (!header || !await _draftCheckExecRoute(header)) return;
-    levels = await SB.getApprovalWorkflowTemplate(PROMO_DRAFT_WF_ENTITY);
+    const [routes, lines] = await Promise.all([_draftLoadRoutes(), SB.getPromoDraftLines(no)]);
+    const all = [{ id: '', name: 'มาตรฐาน' }, ...routes];
+    const levelsList = await Promise.all(all.map(r => SB.getApprovalWorkflowTemplate(_draftRouteEntity(r.id))));
+    if (levelsList.some(l => l === null)) throw new Error('โหลดขั้นอนุมัติบางเส้นทางไม่สำเร็จ');
+    // เส้นทางเพิ่มเติมที่ยังไม่ได้ตั้งขั้นอนุมัติ ไม่ให้เลือก (server ก็ตีกลับเหมือนกัน — ดู promoApproval.validateChange)
+    options = all.map((r, i) => ({ id: r.id, name: r.name || r.id, levels: levelsList[i] || [] })).filter(o => !o.id || o.levels.length);
+    suggest = _draftSuggestRoute(routes.filter(r => options.some(o => o.id === r.id)), _draftDocRouteFacts(header, _draftBranchesFrom(header, lines)));
   }
   catch (e) { toast('โหลด route อนุมัติไม่สำเร็จ: ' + (e.message || e), 'warn'); return; }
-  // ขั้นที่ให้ผู้สร้างเลือกผู้อนุมัติเอง (2026-09-24) — ถามก่อนส่ง, ยกเลิก = ไม่ส่ง
-  let picks = {};
-  if ((levels || []).some(lv => lv.pick_by_creator)) {
-    picks = await _draftAskPickApprovers(levels);
-    if (!picks) return;
-    levels = levels.map(lv => lv.pick_by_creator ? { ...lv, approvers: picks[lv.id].map(uid => { const u = _draftPickUsers.find(x => x.uid === uid) || {}; return { uid, name: u.name || uid, role: u.role || '' }; }) } : lv);
+  // เลือกเส้นทาง (ถ้ามีมากกว่า 1) + ผู้อนุมัติของขั้น "ผู้สร้างเลือกเอง" ในหน้าต่างเดียว — ยกเลิก = ไม่ส่ง
+  let routeId = suggest.id, picks = {};
+  if (options.length > 1 || options[0].levels.some(lv => lv.pick_by_creator)) {
+    const r = await _draftAskPickApprovers({ options, routeId: suggest.id, why: suggest.why, execNote: _draftNeedsEscalation(header) });
+    if (!r) return;
+    routeId = r.routeId; picks = r.picks;
   }
+  let levels = (options.find(o => o.id === routeId) || options[0]).levels;
+  levels = levels.map(lv => lv.pick_by_creator ? { ...lv, approvers: (picks[lv.id] || []).map(uid => { const u = _draftPickUsers.find(x => x.uid === uid) || {}; return { uid, name: u.name || uid, role: u.role || '' }; }) } : lv);
   const routeError = ApprovalWorkflow.validate(levels || [], null, true);
   if (routeError) { toast(routeError, 'warn'); return; }
   await sigEnsureMine(); // ผู้จัดทำลงนามในเอกสารด้วยลายเซ็นประจำตัว (ไม่มีก็สร้างเริ่มต้นจากชื่อ)
@@ -15036,10 +15133,11 @@ async function draftSubmitForApproval(draftNo) {
     id: lv.id, label: lv.label || `ขั้น ${i + 1}`, mode: lv.mode || 'any',
     approvers: (lv.approvers || []).map(a => ({ uid: a.uid, name: a.name, role: a.role, status: 'pending', comment: '', ts: null })),
   }));
-  const patch = { status: 'pending_approval', updated_by: UID, picked_approvers: picks };
+  // server โคลนขั้นจากเส้นทาง route_id เองอีกรอบ (validateChange) — levels ที่ส่งไปใช้แค่ตอนไม่มี server route
+  const patch = { status: 'pending_approval', updated_by: UID, picked_approvers: picks, route_id: routeId || '' };
   if (clonedLevels.length) { patch.levels_json = clonedLevels; patch.current_level = 0; patch.approvers_json = clonedLevels.flatMap(lv => lv.approvers); }
   SB.updatePromoDraftHeader(no, patch)
-    .then(() => { audit('PROMO_DRAFT_SUBMIT', no, { levels: clonedLevels.length }); toast('ส่งอนุมัติแล้ว' + (clonedLevels.length ? ` (${clonedLevels.length} ขั้นตอน)` : '')); _draftAfterStatusChange(no); })
+    .then(() => { audit('PROMO_DRAFT_SUBMIT', no, { levels: clonedLevels.length, route: routeId || 'standard' }); toast('ส่งอนุมัติแล้ว' + (clonedLevels.length ? ` (${clonedLevels.length} ขั้นตอน)` : '')); _draftAfterStatusChange(no); })
     .catch(e => toast('ส่งอนุมัติไม่สำเร็จ: ' + (e.message || e), 'warn'));
 }
 // ติ๊กเงื่อนไขพิเศษข้อใดข้อหนึ่งไว้ = ต้อง escalate ไปผู้บริหารต่อท้าย route ปกติเสมอ (ยืนยันกับผู้ใช้แล้ว)
@@ -15133,16 +15231,70 @@ function _draftCanApprove(h) {
   return (levels[h.current_level || 0]?.approvers || []).some(a => a.uid === UID && a.status === 'pending');
 }
 let _pdWfUsers = [];
+// ── เส้นทางอนุมัติหลายแบบ (2026-09-24, ตาม mockup ที่อนุมัติ) ─────────────────────────────
+// รายชื่อเส้นทางเก็บที่ entity 'promo_draft_routes' (levels_json = [{id,name,match}]) ขั้นของแต่ละเส้นทางเก็บที่
+// 'promo_draft@<id>' — เส้นทางมาตรฐานยังเป็น 'promo_draft' เดิม (route_id ว่าง) ตรวจฝั่ง server ที่ lib/promoApproval.js
+// match (เงื่อนไขแนะนำ — ข้อที่ไม่ได้กำหนด = ไม่สนใจ, ต้องตรงทุกข้อที่กำหนด): corps = กลุ่มลูกค้า (ตรงอย่างน้อย 1),
+// item_types = ลักษณะรายการ (ตรงอย่างน้อย 1), npd / off_contract / marketing = เอกสารต้องติ๊กข้อนั้น
+// ตอนส่งอนุมัติ ระบบแนะนำเส้นทางแรกที่ตรง (ไม่ตรงเลย = มาตรฐาน) ผู้สร้างเปลี่ยนเองได้ในหน้าต่างส่งอนุมัติ
+const PROMO_DRAFT_ROUTES_ENTITY = 'promo_draft_routes';
+const _draftRouteEntity = id => id ? `${PROMO_DRAFT_WF_ENTITY}@${id}` : PROMO_DRAFT_WF_ENTITY;
+async function _draftLoadRoutes() {
+  const r = await SB.getApprovalWorkflowTemplate(PROMO_DRAFT_ROUTES_ENTITY);
+  if (r === null) throw new Error('โหลดรายการเส้นทางอนุมัติไม่สำเร็จ');
+  return Array.isArray(r) ? r.filter(x => x && x.id) : [];
+}
+const _draftNorm = v => String(v || '').trim().toLowerCase();
+function _draftDocRouteFacts(header, branches) {
+  const corpOf = _draftCorpResolver(allCustomerRows());
+  return {
+    corps: new Set([...(branches || [])].map(cc => _draftNorm(corpOf(cc))).filter(Boolean)),
+    itemTypes: _draftItemTypesArr(header?.item_type),
+    npd: !!Number(header?.is_npd), off: !!Number(header?.has_off_contract_cost), mkt: !!Number(header?.has_marketing_cost),
+  };
+}
+// คืนเหตุผลที่ตรง (ข้อความ) หรือ null ถ้าไม่ตรง — เส้นทางที่ไม่ได้ตั้งเงื่อนไขเลยไม่ถูกแนะนำอัตโนมัติ (เลือกเองได้)
+function _draftRouteMatch(route, f) {
+  const m = route?.match || {}, why = [];
+  const corps = (m.corps || []).filter(Boolean), types = (m.item_types || []).filter(Boolean);
+  if (corps.length) { const hit = corps.find(c => f.corps.has(_draftNorm(c))); if (!hit) return null; why.push(`กลุ่มลูกค้า ${hit}`); }
+  if (types.length) { const hit = types.find(t => f.itemTypes.includes(t)); if (!hit) return null; why.push(`ลักษณะรายการ ${hit}`); }
+  if (m.npd) { if (!f.npd) return null; why.push('สินค้า NPD'); }
+  if (m.off_contract) { if (!f.off) return null; why.push('ค่าใช้จ่ายนอกสัญญา'); }
+  if (m.marketing) { if (!f.mkt) return null; why.push('ค่าลงสื่อ/การตลาด'); }
+  return why.length ? why.join(' · ') : null;
+}
+function _draftSuggestRoute(routes, facts) {
+  for (const r of routes || []) { const why = _draftRouteMatch(r, facts); if (why) return { id: r.id, why }; }
+  return { id: '', why: '' };
+}
+let _pdWfRoutes = [];
+let _pdWfRouteId = ''; // เส้นทางที่กำลังแก้ในหน้าตั้งค่า ('' = มาตรฐาน)
+let _pdWfCorpOpts = null;
+let _pdWfDirty = false; // มีการแก้เส้นทางที่เปิดอยู่ (ชื่อ/เงื่อนไข/ขั้น/ผู้อนุมัติ) ที่ยังไม่ได้บันทึก
 async function pgPromoDraftWorkflowSettings(skipFetch) {
   if (!skipFetch) {
-    const [normal, exec, users] = await Promise.all([
-      SB.getApprovalWorkflowTemplate(PROMO_DRAFT_WF_ENTITY),
+    const [routes, normal, exec, users] = await Promise.all([
+      _draftLoadRoutes().catch(() => null),
+      SB.getApprovalWorkflowTemplate(_draftRouteEntity(_pdWfRouteId)),
       SB.getApprovalWorkflowTemplate(PROMO_DRAFT_EXEC_WF_ENTITY),
       CACHE.get('users', () => SB.getUsers()).catch(() => DB.get('users') || []),
     ]);
+    if (routes === null || normal === null || exec === null) {
+      document.getElementById('ct').innerHTML = `<div class="ch" style="margin-bottom:10px"><button class="btn btn-sm" onclick="_pdListView='list';pgPromoDrafts()">← กลับ</button></div>
+        <div class="al alw">โหลดเส้นทางอนุมัติไม่สำเร็จ — ยังไม่เปิดให้แก้ไข เพื่อไม่ให้บันทึกทับเส้นทางที่มีอยู่ <button class="btn btn-sm" onclick="pgPromoDraftWorkflowSettings()">ลองใหม่</button></div>`;
+      return;
+    }
+    _pdWfRoutes = routes;
+    _pdWfDirty = false;
+    if (_pdWfRouteId && !routes.some(r => r.id === _pdWfRouteId)) { _pdWfRouteId = ''; return pgPromoDraftWorkflowSettings(); }
     _pdWfNormalLevels = normal || [];
     _pdWfExecLevels = exec || [];
     _pdWfUsers = (users || []).filter(u => u.is_active !== 0 && u.is_active !== false && u.active !== false);
+  }
+  if (!_pdWfCorpOpts) {
+    const rows = allCustomerRows(), corpOf = _draftCorpResolver(rows);
+    _pdWfCorpOpts = [...new Set(rows.map(r => corpOf(r.c)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th'));
   }
   const lvlHtml = (levels, kind) => (levels.length ? levels.map((lv, i) => `
     <div class="card" style="margin-bottom:8px;padding:12px 14px">
@@ -15165,20 +15317,43 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
       </div>
       ${_pdWfPickerHtml(kind, lv)}
     </div>`).join('') : `<div style="background:var(--bg2);border-radius:8px;padding:16px;text-align:center;color:var(--TX3);font-size:12.5px;margin-bottom:8px">ยังไม่มีขั้นตอน</div>`);
+  const cur = _pdWfRoutes.find(r => r.id === _pdWfRouteId) || null;
+  const m = cur?.match || {};
+  const tab = (id, label) => `<button class="btn btn-sm" onclick="pdWfSelectRoute('${_promoJsKey(id)}')" style="border-radius:6px 6px 0 0;${id === _pdWfRouteId ? 'background:var(--W);font-weight:700;color:var(--N);box-shadow:inset 0 3px 0 var(--A)' : 'background:var(--bg2)'}">${label}</button>`;
+  const chk = (field, label, on) => `<label style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox" ${on ? 'checked' : ''} onchange="pdWfRouteMatch('${field}',this.checked)">${esc(label)}</label>`;
+  const condHtml = cur ? `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><b style="font-size:12px;white-space:nowrap">ชื่อเส้นทาง</b>
+      <input type="text" value="${esc(cur.name || '')}" oninput="pdWfRouteName(this.value)" style="flex:1;padding:5px 8px;border:1px solid var(--BD);border-radius:5px;font-size:13px">
+      <button class="btn btn-sm btn-r" onclick="pdWfDelRoute()">ลบเส้นทาง</button></div>
+    <div style="background:var(--bg2);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12.5px">
+      <b style="color:var(--TX2)">เงื่อนไขแนะนำ</b> <span style="color:var(--TX3);font-size:11.5px">(ต้องตรงทุกข้อที่กำหนด — ข้อที่ไม่กำหนด = ไม่สนใจ · ไม่กำหนดเลย = ไม่แนะนำอัตโนมัติ ผู้สร้างเลือกเองได้)</span>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">กลุ่มลูกค้า:
+        ${(m.corps || []).map((c, i) => `<span style="font-size:11.5px;background:var(--LBL);color:var(--BL);border-radius:4px;padding:2px 8px">${esc(c)} <button onclick="pdWfRouteCorpRem(${i})" style="background:none;border:0;cursor:pointer;color:var(--TX3);padding:0">✕</button></span>`).join('') || '<span style="color:var(--TX3)">ทุกกลุ่ม</span>'}
+        <input type="text" id="pdwf-corp-inp" list="pdwf-corp-opts" placeholder="+ พิมพ์/เลือกกลุ่มลูกค้า" style="width:190px;padding:3px 7px;font-size:12px" onkeydown="if(event.key==='Enter')pdWfRouteCorpAdd()">
+        <button class="btn btn-xs" onclick="pdWfRouteCorpAdd()">เพิ่ม</button>
+        <datalist id="pdwf-corp-opts">${_pdWfCorpOpts.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:6px">ลักษณะรายการ:
+        ${DRAFT_ITEM_TYPES.map(t => `<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" ${(m.item_types || []).includes(t) ? 'checked' : ''} onchange="pdWfRouteType('${_promoJsKey(t)}',this.checked)">${esc(t)}</label>`).join('')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:6px">เอกสารที่ติ๊ก:
+        ${chk('npd', 'สินค้า NPD', m.npd)}${chk('off_contract', 'ค่าใช้จ่ายนอกสัญญา', m.off_contract)}${chk('marketing', 'ค่าลงสื่อ/การตลาด', m.marketing)}</div>
+    </div>` : `<div class="al ali" style="margin-bottom:10px;font-size:12px">⭐ เส้นทางมาตรฐาน — ใช้เมื่อเอกสารไม่ตรงเงื่อนไขของเส้นทางอื่น (ผู้สร้างเปลี่ยนเส้นทางเองได้ตอนส่งอนุมัติ)</div>`;
   document.getElementById('ct').innerHTML = `
   <div class="ch" style="margin-bottom:10px"><button class="btn btn-sm" onclick="_pdListView='list';pgPromoDrafts()">← กลับ</button></div>
-  <div class="al ali" style="margin-bottom:12px">กำหนดลำดับผู้อนุมัติใบเคาะราคา — ระบบจะโคลนลำดับนี้ลงในเอกสารตอนกด "ส่งอนุมัติ" · เลือกผู้อนุมัติได้ทุกคนในระบบ (พิมพ์ชื่อเพื่อค้นหา)</div>
-  <div class="card">
-    <div class="ch"><div class="ct2">🧭 เส้นทางอนุมัติปกติ</div></div>
+  <div class="al ali" style="margin-bottom:12px">กำหนดลำดับผู้อนุมัติใบเคาะราคา — ตั้งได้หลายเส้นทาง ระบบจะโคลนลำดับของเส้นทางที่เลือกลงในเอกสารตอนกด "ส่งอนุมัติ" · เลือกผู้อนุมัติได้ทุกคนในระบบ (พิมพ์ชื่อเพื่อค้นหา)</div>
+  <div style="display:flex;gap:4px;flex-wrap:wrap">${tab('', '⭐ มาตรฐาน')}${_pdWfRoutes.map(r => tab(r.id, esc(r.name || r.id))).join('')}
+    <button class="btn btn-sm" onclick="pdWfAddRoute()" style="border-radius:6px 6px 0 0;color:var(--BL)">+ เพิ่มเส้นทาง</button></div>
+  <div class="card" style="border-top-left-radius:0">
+    <div class="ch"><div class="ct2">🧭 ${cur ? `เส้นทาง: ${esc(cur.name || cur.id)}` : 'เส้นทางมาตรฐาน'}</div></div>
+    ${condHtml}
     <div id="pdwf-normal-lvls">${lvlHtml(_pdWfNormalLevels, 'normal')}</div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-sm btn-t" onclick="pdWfAddLevel('normal')">+ เพิ่มขั้น</button>
-      <button class="btn btn-sm btn-g" onclick="pdWfSave('normal')" style="margin-left:auto">💾 บันทึกเส้นทางปกติ</button>
+      <button class="btn btn-sm btn-g" onclick="pdWfSave('normal')" style="margin-left:auto">💾 บันทึกเส้นทางนี้</button>
     </div>
   </div>
   <div class="card" style="border:1.5px solid var(--A);background:var(--LY)">
     <div class="ch"><div class="ct2" style="color:var(--A)">⚠️ ขั้นผู้บริหาร (เมื่อ escalate)</div></div>
-    <div class="al alw" style="margin-bottom:10px">ขั้นพิเศษต่างหากจากเส้นทางปกติด้านบน — เพิ่มเข้าไปต่อท้ายโดยอัตโนมัติ เฉพาะเอกสารที่ติ๊ก "สินค้า NPD" / "ค่าใช้จ่ายนอกสัญญา" / "ค่าโปรโมทการตลาดอื่นๆ" ข้อใดข้อหนึ่ง</div>
+    <div class="al alw" style="margin-bottom:10px">ขั้นพิเศษต่างหาก — เพิ่มเข้าไปต่อท้ายทุกเส้นทางโดยอัตโนมัติ เฉพาะเอกสารที่ติ๊ก "สินค้า NPD" / "ค่าใช้จ่ายนอกสัญญา" / "ค่าลงสื่อ/โฆษณา/การตลาด" ข้อใดข้อหนึ่ง</div>
     ${!_pdWfExecLevels?.length ? '<div class="al alw">ยังไม่ได้ตั้งค่าผู้บริหาร: เอกสาร NPD หรือมีค่าใช้จ่ายพิเศษจะบันทึกร่างได้ แต่ยังส่งอนุมัติไม่ได้</div>' : ''}
     <div id="pdwf-exec-lvls">${lvlHtml(_pdWfExecLevels, 'exec')}</div>
     <div style="display:flex;gap:8px;margin-top:8px">
@@ -15186,6 +15361,55 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
       <button class="btn btn-sm btn-g" onclick="pdWfSave('exec')" style="margin-left:auto">💾 บันทึกขั้นผู้บริหาร</button>
     </div>
   </div>`;
+}
+function _pdWfCurRoute() { return _pdWfRoutes.find(r => r.id === _pdWfRouteId) || null; }
+function pdWfSelectRoute(id) {
+  if ((id || '') === _pdWfRouteId) return;
+  if (_pdWfDirty && !confirm('เส้นทางนี้มีการแก้ไขที่ยังไม่ได้บันทึก — เปลี่ยนแท็บแล้วการแก้ไขจะหาย ยืนยัน?')) return;
+  _pdWfRouteId = id || ''; pgPromoDraftWorkflowSettings();
+}
+async function pdWfAddRoute() {
+  if (_pdWfDirty && !confirm('เส้นทางนี้มีการแก้ไขที่ยังไม่ได้บันทึก — เพิ่มเส้นทางใหม่แล้วการแก้ไขจะหาย ยืนยัน?')) return;
+  const name = (prompt('ชื่อเส้นทางอนุมัติใหม่ เช่น "โลตัส / Modern Trade"') || '').trim();
+  if (!name) return;
+  const route = { id: 'r' + Date.now().toString(36), name, match: {} };
+  const next = [..._pdWfRoutes, route];
+  if (!await SB.saveApprovalWorkflowTemplate(PROMO_DRAFT_ROUTES_ENTITY, next)) { toast('เพิ่มเส้นทางไม่สำเร็จ ลองใหม่', 'warn'); return; }
+  _pdWfRouteId = route.id;
+  toast(`เพิ่มเส้นทาง "${name}" แล้ว — เพิ่มขั้นอนุมัติแล้วกดบันทึก`);
+  pgPromoDraftWorkflowSettings();
+}
+async function pdWfDelRoute() {
+  const cur = _pdWfCurRoute(); if (!cur) return;
+  if (!confirm(`ลบเส้นทาง "${cur.name}"? เอกสารที่ส่งอนุมัติไปแล้วไม่กระทบ (ใช้ลำดับที่โคลนไว้ในเอกสาร)`)) return;
+  const next = _pdWfRoutes.filter(r => r.id !== cur.id);
+  if (!await SB.saveApprovalWorkflowTemplate(PROMO_DRAFT_ROUTES_ENTITY, next)) { toast('ลบไม่สำเร็จ ลองใหม่', 'warn'); return; }
+  await SB.saveApprovalWorkflowTemplate(_draftRouteEntity(cur.id), []);
+  _pdWfRouteId = '';
+  toast('ลบเส้นทางแล้ว');
+  pgPromoDraftWorkflowSettings();
+}
+function pdWfRouteName(v) { const r = _pdWfCurRoute(); if (r) { r.name = v; _pdWfDirty = true; } }
+function pdWfRouteMatch(field, on) { const r = _pdWfCurRoute(); if (!r) return; r.match = { ...(r.match || {}), [field]: !!on }; _pdWfDirty = true; }
+function pdWfRouteType(t, on) {
+  const r = _pdWfCurRoute(); if (!r) return;
+  _pdWfDirty = true;
+  const set = new Set(r.match?.item_types || []); on ? set.add(t) : set.delete(t);
+  r.match = { ...(r.match || {}), item_types: [...set] };
+}
+function pdWfRouteCorpAdd() {
+  const r = _pdWfCurRoute(), inp = document.getElementById('pdwf-corp-inp'); if (!r || !inp) return;
+  const v = inp.value.trim(); if (!v) return;
+  _pdWfDirty = true;
+  const corps = r.match?.corps || [];
+  if (!corps.some(c => _draftNorm(c) === _draftNorm(v))) r.match = { ...(r.match || {}), corps: [...corps, v] };
+  pgPromoDraftWorkflowSettings(true);
+}
+function pdWfRouteCorpRem(i) {
+  const r = _pdWfCurRoute(); if (!r) return;
+  r.match = { ...(r.match || {}), corps: (r.match?.corps || []).filter((_, j) => j !== i) };
+  _pdWfDirty = true;
+  pgPromoDraftWorkflowSettings(true);
 }
 // ช่องค้นหาผู้อนุมัติ: พิมพ์ชื่อ/รหัส/แผนก/ตำแหน่ง แล้วเลือกจากรายการที่จัดกลุ่มตามแผนก
 function _pdWfPickerHtml(kind, lv) {
@@ -15224,16 +15448,19 @@ function pdWfTogglePick(lvId, on) {
   const levels = _pdWfLevelsFor('normal');
   const lv = levels.find(l => l.id === lvId); if (!lv) return;
   lv.pick_by_creator = !!on;
+  _pdWfDirty = true;
   if (on && levels.indexOf(lv) === 0 && lv.default_self === undefined) lv.default_self = true;
   pgPromoDraftWorkflowSettings(true);
 }
 function pdWfSetField(kind, lvId, field, value) {
   const lv = _pdWfLevelsFor(kind).find(l => l.id === lvId);
   if (lv) lv[field] = value;
+  if (kind === 'normal') _pdWfDirty = true;
 }
-function pdWfAddLevel(kind) { _pdWfLevelsFor(kind).push({ id: 'lv' + Date.now(), label: '', mode: 'any', approvers: [] }); pgPromoDraftWorkflowSettings(true); }
+function pdWfAddLevel(kind) { if (kind === 'normal') _pdWfDirty = true; _pdWfLevelsFor(kind).push({ id: 'lv' + Date.now(), label: '', mode: 'any', approvers: [] }); pgPromoDraftWorkflowSettings(true); }
 function pdWfRemLevel(kind, id) {
   const arr = _pdWfLevelsFor(kind);
+  if (kind === 'normal') _pdWfDirty = true;
   const idx = arr.findIndex(l => l.id === id);
   if (idx !== -1) arr.splice(idx, 1);
   pgPromoDraftWorkflowSettings(true);
@@ -15242,6 +15469,7 @@ function pdWfAddApprover(kind, lvId, uid) {
   if (!uid) return;
   const u = _pdWfUsers.find(x => x.uid === uid) || (DB.get('users') || []).find(x => x.uid === uid); if (!u) return;
   const lv = _pdWfLevelsFor(kind).find(l => l.id === lvId);
+  if (kind === 'normal') _pdWfDirty = true;
   if (lv && !lv.approvers.find(a => a.uid === uid)) lv.approvers.push({ uid: u.uid, name: u.name, role: u.role, department: u.department || '' });
   pdWfPickerClose();
   pgPromoDraftWorkflowSettings(true);
@@ -15249,6 +15477,7 @@ function pdWfAddApprover(kind, lvId, uid) {
 function pdWfRemApprover(kind, lvId, uid) {
   const lv = _pdWfLevelsFor(kind).find(l => l.id === lvId);
   if (lv) lv.approvers = lv.approvers.filter(a => a.uid !== uid);
+  if (kind === 'normal') _pdWfDirty = true;
   pgPromoDraftWorkflowSettings(true);
 }
 function pdWfSave(kind) {
@@ -15264,9 +15493,15 @@ function pdWfSave(kind) {
   const fixed = levels.filter(lv => !(kind === 'normal' && lv.pick_by_creator && !(lv.approvers || []).length));
   const error = ApprovalWorkflow.validate(fixed, DB.get('users') || [], kind !== 'exec' || fixed.length > 0);
   if (error) { toast(error, 'warn'); return; }
-  const entityType = kind === 'exec' ? PROMO_DRAFT_EXEC_WF_ENTITY : PROMO_DRAFT_WF_ENTITY;
-  SB.saveApprovalWorkflowTemplate(entityType, levels).then(ok => {
-    toast(ok ? `บันทึกเส้นทาง${kind === 'exec' ? 'ผู้บริหาร' : 'ปกติ'}แล้ว — ${levels.length} ขั้นตอน` : 'บันทึกไม่สำเร็จ ลองใหม่', ok ? undefined : 'warn');
+  const route = kind === 'exec' ? null : _pdWfCurRoute();
+  if (route && !String(route.name || '').trim()) { toast('กรุณาตั้งชื่อเส้นทาง', 'warn'); return; }
+  const entityType = kind === 'exec' ? PROMO_DRAFT_EXEC_WF_ENTITY : _draftRouteEntity(_pdWfRouteId);
+  // เส้นทางเพิ่มเติม: บันทึกชื่อ/เงื่อนไขแนะนำ (รายการเส้นทาง) ไปพร้อมกับขั้นอนุมัติ
+  Promise.all([SB.saveApprovalWorkflowTemplate(entityType, levels), route ? SB.saveApprovalWorkflowTemplate(PROMO_DRAFT_ROUTES_ENTITY, _pdWfRoutes) : true]).then(([ok, ok2]) => {
+    const label = kind === 'exec' ? 'ผู้บริหาร' : route ? ` "${route.name}"` : 'มาตรฐาน';
+    toast(ok && ok2 ? `บันทึกเส้นทาง${label}แล้ว — ${levels.length} ขั้นตอน` : 'บันทึกไม่สำเร็จ ลองใหม่', ok && ok2 ? undefined : 'warn');
+    if (ok && ok2 && kind !== 'exec') _pdWfDirty = false;
+    if (route && ok2) pgPromoDraftWorkflowSettings(true);
   });
 }
 
@@ -15321,7 +15556,7 @@ async function draftCopyFrom(draftNo) {
   _draftHeader = null; _draftEditStatus = ''; _draftEditCreatedBy = '';
   _draftOtherCosts = Array.isArray(header.other_costs_json) ? header.other_costs_json.map(c => ({ ...c })) : [];
   _draftAttachments = []; // ไม่คัดลอกไฟล์แนบ — เอกสารใหม่แนบเองใหม่
-  _draftSelectedBranches = new Set(lines.map(r => r.cust_code));
+  _draftSelectedBranches = _draftBranchesFrom(header, lines);
   _draftSelGroups = new Set(); _draftSelCats = new Set();
   const bySku = new Map();
   lines.forEach(r => { if (bySku.has(r.sku)) return; bySku.set(r.sku, { sku: r.sku, skuName: r.sku_name || '', equipmentSet: r.equipment_set || '', weight: r.weight ?? '', normalPrice: r.normal_price ?? '', unitPrice: r.unit_price ?? '', discountPct: r.discount_pct ?? '', gpPct: r.gp_pct ?? '', costPrice: r.cost_price ?? '', gpPctPromo: r.gp_pct_promo ?? '', costPricePromo: r.cost_price_promo ?? '', billDiscPct: r.bill_disc_pct ?? '', billDiscPctPromo: r.bill_disc_pct_promo ?? '', compensate: r.compensate ?? '', normalPriceEdited: Number(r.normal_price) > 0, normalTssCost: null, estimatedQty: r.estimated_qty ?? '', startDate: r.start_date || '', dueDate: r.due_date || '', subLevel: Number(r.is_sub_item) || 0, isSubItem: !!Number(r.is_sub_item) }); });
@@ -15343,12 +15578,13 @@ async function draftCopyFrom(draftNo) {
   set('draft-cost-start', header.cost_start_date);
   set('draft-cost-end', header.cost_end_date);
   set('draft-discount-scope', header.discount_scope || 'item');
-  _draftSetOtherSelect('draft-equipment', 'draft-equipment-other', DRAFT_EQUIPMENT_OPTIONS, header.equipment);
+  _draftEquipKeep = header.equipment || '';
   const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
   setChk('draft-npd', header.is_npd);
   setChk('draft-off-contract', header.has_off_contract_cost);
   setChk('draft-marketing-cost', header.has_marketing_cost);
   setChk('draft-cost-same', _draftCostSameInitial(header));
+  draftOffContractChanged();
   draftItemTypeChanged();
   draftToggleOtherFields();
   draftSyncCostDates();
@@ -15546,11 +15782,11 @@ async function draftPreviewPDF(orient = 'landscape') {
   const name = (document.getElementById('draft-name')?.value || '').trim();
   const condition = _draftReadOtherSelect('draft-condition', 'draft-condition-other');
   const itemType = _draftSelectedItemTypes();
-  const showEquipment = itemType.includes('อุ่นร้อนพร้อมทาน');
-  const equipment = showEquipment ? _draftReadOtherSelect('draft-equipment', 'draft-equipment-other') : '';
   const discountScope = document.getElementById('draft-discount-scope')?.value || 'item';
   const purpose = (document.getElementById('draft-purpose')?.value || '').trim();
   const note = (document.getElementById('draft-note')?.value || '').trim();
+  const offContract = _draftIsOffContract();
+  const offText = (document.getElementById('draft-off-contract-text')?.value || '').trim();
   const specialDistribution = (document.getElementById('draft-special-distribution')?.value || '').trim();
   const hasCompensate = _draftHasCompensate();
   const promoStart = document.getElementById('draft-start')?.value || '';
@@ -15572,13 +15808,10 @@ async function draftPreviewPDF(orient = 'landscape') {
   const fx = _draftReadFormExtra();
   const fv = (v, w = 0) => `<span class="fv${v === '' || v == null ? ' empty' : ''}"${w ? ` style="flex:0 0 ${w}px;min-width:${w}px;text-align:center"` : ''}>${v === '' || v == null ? '-' : esc(String(v))}</span>`;
   const box = (on, label, extra = '') => `<span class="ck${on ? ' on' : ''}"><i class="box${on ? ' on' : ''}">${on ? '✓' : ''}</i>${label}${extra}</span>`;
-  const optRow = (title, items) => `<b>${title}</b><div class="row">${items.join('')}</div>`;
+  const optRow = (title, items, cls = '') => `<b>${title}</b><div class="row ${cls}">${items.join('')}</div>`;
   const condSel = document.getElementById('draft-condition')?.value || '';
   const condOther = condSel === 'อื่นๆ' ? (document.getElementById('draft-condition-other')?.value || '').trim() : '';
-  const eqSel = showEquipment ? (document.getElementById('draft-equipment')?.value || '') : '';
-  const eqOther = eqSel === 'อื่นๆ' ? (document.getElementById('draft-equipment-other')?.value || '').trim() : '';
   const flag = id => !!document.getElementById(id)?.checked;
-  const otherCostSum = _draftOtherCosts.reduce((a, c) => a + (parseFloat(c.amount) || 0), 0);
   const gpv = id => (document.getElementById(id)?.value || '').trim();
   const days = (x, y) => { const d = x && y ? Math.round((new Date(y + 'T00:00:00') - new Date(x + 'T00:00:00')) / 86400000) + 1 : null; return d > 0 ? d : ''; };
   const range = (x, y) => x || y ? `${promoFmtD(x)} – ${promoFmtD(y)}` : '';
@@ -15599,15 +15832,15 @@ async function draftPreviewPDF(orient = 'landscape') {
       <div class="opts">
         ${optRow('เงื่อนไข', DRAFT_CONDITION_TYPES.map(t => box(condSel === t, esc(t), t === 'อื่นๆ' ? ' ' + fv(condOther) : '')))}
         ${optRow('ลักษณะรายการ', DRAFT_ITEM_TYPES.map(t => box(itemType.includes(t), esc(t))))}
-        ${optRow('อุปกรณ์', DRAFT_EQUIPMENT_OPTIONS.map(t => box(eqSel === t, esc(t), t === 'อื่นๆ' ? ' ' + fv(eqOther) : '')))}
         ${optRow('ลดเป็น', [box(discountScope !== 'bill', 'รายการ'), box(discountScope === 'bill', 'ท้ายบิล')])}
-        ${optRow('เงื่อนไขพิเศษ', [box(flag('draft-npd'), 'สินค้า NPD (New item)'), box(flag('draft-off-contract'), 'มีค่าใช้จ่ายนอกสัญญา'),
-          box(flag('draft-marketing-cost'), 'มีค่าโปรโมทการตลาดอื่นๆ'), box(otherCostSum > 0, 'ค่าใช้จ่ายอื่นๆ =', ` ${fv(otherCostSum > 0 ? otherCostSum.toLocaleString('th-TH') : '')} บาท`)])}
+        ${optRow('สินค้า NPD', [box(flag('draft-npd'), 'สินค้า NPD'), box(fx.fee_none, 'ไม่มีค่าแรกเข้า'),
+          box(fx.fee?.on, 'ค่าแรกเข้า', ` ${fv(fmtAmt(fx.fee?.amt), 50)} บาท`),
+          box(flag('draft-marketing-cost'), 'ค่าลงสื่อ/โฆษณา/การตลาด', ` ${fv(fmtAmt(fx.media?.amt), 44)} บาท`),
+          box(fx.other_cost?.on, 'ค่าใช้จ่ายอื่นๆ', ` ${fv(fmtAmt(fx.other_cost?.amt), 44)} บาท`)], 'r5')}
+        ${optRow('ค่าใช้จ่ายนอกสัญญา', [box(offContract, 'ค่าใช้จ่ายนอกสัญญา')])}
         ${optRow('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => box(sale[p.k]?.on, p.label,
           p.text ? ' ' + fv(sale[p.k]?.text) : ` ${fv(sale[p.k]?.n ?? '', 48)} ${p.unit}`)))}
         ${optRow('ประเภทสินค้า', [...DRAFT_PRODUCT_TYPES.map(t => box((fx.ptypes || []).includes(t), esc(t))), box(fx.ptype_other?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other?.text))])}
-        ${optRow('ค่าแรกเข้า / สื่อ', [box(fx.fee_none, 'ไม่มีค่าแรกเข้า'), box(fx.fee?.on, 'มีค่าแรกเข้า =', ` ${fv(fmtAmt(fx.fee?.amt))} บาท`),
-          box(fx.media?.on, 'ลงสื่อ =', ` ${fv(fmtAmt(fx.media?.amt))} บาท`)])}
         <b>ส่วนลด</b><div class="disc">
           <span>GP ปกติ ${fv(gpv('draft-gp-normal-default'), 48)} %</span><span>GP โปร ${fv(gpv('draft-gp-promo-default'), 48)} %</span>
           <span>ท้ายบิล ปกติ ${fv(gpv('draft-bill-normal-default'), 48)} %</span><span>ท้ายบิล โปร ${fv(gpv('draft-bill-promo-default'), 48)} %</span>
@@ -15623,35 +15856,36 @@ async function draftPreviewPDF(orient = 'landscape') {
     const level = l.subLevel || 0;
     const ref = _draftRefData.get(l.sku);
     // ช่วงวันที่ 2 บรรทัดตายตัว (เริ่ม / – สิ้นสุด) แทนการปล่อยให้ตัดคำเองกลางวันที่
-    const prevPeriodHtml = ref?.prevStartDate || ref?.prevDueDate ? `${esc(promoFmtD(ref.prevStartDate))}<br>– ${esc(promoFmtD(ref.prevDueDate))}` : '—';
-    const prevPeriodQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? ' (' + ref.prevPeriodSource + ')' : '') : '—';
+    const periodHtml = k => ref?.[k + 'StartDate'] || ref?.[k + 'DueDate'] ? `${esc(promoFmtD(ref[k + 'StartDate']))}<br>– ${esc(promoFmtD(ref[k + 'DueDate']))}` : '—';
+    const prevPeriodQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? `<div class="sub">${esc(ref.prevPeriodSource)}</div>` : '') : '—';
     const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
-    const pp = _draftPrevPromoPrice(ref, l);
+    const promoCells = (k, cls) => { const pp = _draftPrevPromoPrice(ref, l, k);
+      return `<td class="mono ${cls} gs">${esc(ref?.[k + 'DocNo'] || '—')}</td><td class="${cls}">${fmt2(pp.sell)}${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}</td><td class="${cls} period">${periodHtml(k)}</td>`; };
     return `<tr class="${level ? 'subrow' : ''}">
-    <td class="num">${esc(num)}</td><td class="mono">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}</td><td>${esc(l.equipmentSet || '—')}</td>    <td class="mono g-prev gs">${esc(ref?.prevDocNo || '—')}</td><td class="g-prev">${fmt2(pp.sell)}${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}</td><td class="g-prev period">${prevPeriodHtml}</td>
+    <td class="num">${esc(num)}</td><td class="mono">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
     <td class="g-norm gs">${fmt2(l.normalPrice)}</td><td class="g-norm">${pct(l.gpPct)}</td><td class="g-norm">${pct(l.billDiscPct)}</td><td class="g-norm strong">${fmt2(l.costPrice)}</td>
     <td class="g-promo gs">${fmt2(l.compensate)}</td><td class="g-promo">${fmt2(l.unitPrice)}</td><td class="g-promo">${pct(l.gpPctPromo)}</td><td class="g-promo">${pct(l.billDiscPctPromo)}</td><td class="g-promo strong">${fmt2(l.costPricePromo)}</td>
-    <td class="gs">${l.discountPct || 0}%</td>
-    <td class="gs">${esc(prevPeriodQty)}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
+    <td class="gs">${prevPeriodQty}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
   </tr>`;
   }).join('');
-  // แถวแบบแนวตั้ง: สินค้า (รหัส/ชื่อ/ชุด) · โปรสุดท้าย (เลขที่/ราคา/ช่วง) · ราคาปกติ & ราคาโปร (ขาย·GP·ท้ายบิล → ทุน)
+  // แถวแบบแนวตั้ง: สินค้า (รหัส/ชื่อ/ชุด) · Pro Period ก่อน / Pro No. ล่าสุด (เลขที่/ราคา/ช่วง ช่องละกลุ่ม)
+  // · ราคาปกติ & ราคาโปร (ขาย·GP·ท้ายบิล → ทุน)
   const buildRowsPortrait = lines => lines.map(({ l, num }) => {
     const level = l.subLevel || 0;
     const ref = _draftRefData.get(l.sku);
     const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
-    const pp = _draftPrevPromoPrice(ref, l);
-    const prevPeriod = ref?.prevStartDate || ref?.prevDueDate ? `${esc(promoFmtD(ref.prevStartDate))} – ${esc(promoFmtD(ref.prevDueDate))}` : '';
+    const promoCell = (k, cls) => { const pp = _draftPrevPromoPrice(ref, l, k);
+      const period = ref?.[k + 'StartDate'] || ref?.[k + 'DueDate'] ? `${esc(promoFmtD(ref[k + 'StartDate']))}<br>– ${esc(promoFmtD(ref[k + 'DueDate']))}` : '';
+      return `<td class="${cls} gs"><span class="mono">${esc(ref?.[k + 'DocNo'] || '—')}</span>${pp.sell != null ? `<br><b>${fmt2(pp.sell)}</b>` : ''}${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}${period ? `<div class="sub">${period}</div>` : ''}</td>`; };
     const prevQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? `<div class="sub">${esc(ref.prevPeriodSource)}</div>` : '') : '—';
     const kv = (sell, gp, bill, cost) => `<div class="kv"><span>ขาย</span><b>${fmt2(sell)}</b><span>GP</span><b>${pct(gp)}</b><span>ท้ายบิล</span><b>${pct(bill)}</b><span class="tot">ทุน</span><b class="tot">${fmt2(cost)}</b></div>`;
     return `<tr class="${level ? 'subrow' : ''}">
     <td class="num">${esc(num)}</td>
     <td class="sku-name" style="padding-left:${5 + level * 10}px"><b class="mono">${esc(l.sku)}</b><br>${esc(l.skuName || '')}<div class="sub">ชุด ${esc(l.equipmentSet || '—')}</div></td>
-    <td class="g-prev gs"><span class="mono">${esc(ref?.prevDocNo || '—')}</span><br><b>${fmt2(pp.sell)}</b>${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}${prevPeriod ? `<div class="sub">${prevPeriod}</div>` : ''}</td>
+    ${promoCell('prev', 'g-prev')}${promoCell('last', 'g-last')}
     <td class="g-norm gs">${kv(l.normalPrice, l.gpPct, l.billDiscPct, l.costPrice)}</td>
     <td class="g-promo gs">${fmt2(l.compensate)}</td>
     <td class="g-promo">${kv(l.unitPrice, l.gpPctPromo, l.billDiscPctPromo, l.costPricePromo)}</td>
-    <td class="gs">${l.discountPct || 0}%</td>
     <td class="gs">${prevQty}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
   </tr>`;
   }).join('');
@@ -15688,8 +15922,19 @@ async function draftPreviewPDF(orient = 'landscape') {
   const loadTpl = entity => SB.getApprovalWorkflowTemplate(entity).then(l => Array.isArray(l) ? l : []).catch(() => []);
   const noRouteLevel = { label: 'ผู้อนุมัติ', noRoute: true, approvers: [] };
   let upcoming = [];
+  // ชื่อเส้นทาง: ส่งแล้ว = snapshot ในเอกสาร, ยังเป็นร่าง = เส้นทางที่ระบบจะแนะนำตอนส่ง (เปลี่ยนได้ตอนส่ง)
+  let routeName = docStatus === 'draft' ? '' : (_draftHeader?.route_name || 'มาตรฐาน');
   if (docStatus === 'draft' || docStatus === 'pending_approval') {
-    if (docStatus === 'draft') { const normal = await loadTpl(PROMO_DRAFT_WF_ENTITY); upcoming.push(...(normal.length ? normal : [noRouteLevel])); }
+    if (docStatus === 'draft') {
+      let routeId = '';
+      try {
+        const routes = await _draftLoadRoutes();
+        const facts = _draftDocRouteFacts({ item_type: itemType, is_npd: flag('draft-npd') ? 1 : 0, has_off_contract_cost: offContract ? 1 : 0, has_marketing_cost: flag('draft-marketing-cost') ? 1 : 0 }, branchCodes);
+        routeId = _draftSuggestRoute(routes, facts).id;
+        routeName = routeId ? (routes.find(r => r.id === routeId)?.name || '') + ' (แนะนำ)' : 'มาตรฐาน';
+      } catch (e) { /* โหลดไม่ได้ใช้เส้นทางมาตรฐาน */ }
+      const normal = await loadTpl(_draftRouteEntity(routeId)); upcoming.push(...(normal.length ? normal : [noRouteLevel]));
+    }
     else if (!current.length) upcoming.push(noRouteLevel); // ส่งแล้วแต่ไม่มีเส้นทางปกติ — ผู้จัดการอนุมัติได้
     if (escFlags.length) upcoming.push(...(await loadTpl(PROMO_DRAFT_EXEC_WF_ENTITY)).map((lv, i) => ({ ...lv, label: lv.label || `ผู้บริหาร ${i + 1}`, exec: true })));
   }
@@ -15712,15 +15957,16 @@ async function draftPreviewPDF(orient = 'landscape') {
     const sigMap = await _sigLoadMap(needSig);
     signRows.forEach(s => { if (s.state === 'signed' && !s.signature) s.signature = sigMap.get(s.uid) || null; });
   }
+  // v3 (2026-09-24, ตาม mockup ที่อนุมัติ): แถวเตี้ย, สถานะ+วันเวลาช่องเดียว, คอลัมน์ความเห็นกว้างที่สุด (~ครึ่งกระดาษ)
   const signTableHtml = `<table class="signs">
-        <colgroup><col style="width:28px"><col style="width:22%"><col><col style="width:13%"><col style="width:17%"><col style="width:22%"></colgroup>
-        <thead><tr class="cols"><th>ลำดับ</th><th>ขั้นการลงนาม</th><th>ชื่อผู้ลงนาม / ผู้อนุมัติ</th><th>สถานะ</th><th>วันเวลา</th><th>ลายเซ็น</th></tr></thead>
+        <colgroup><col style="width:22px"><col style="width:13%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col></colgroup>
+        <thead><tr class="cols"><th>ลำดับ</th><th>ขั้น</th><th>ผู้ลงนาม</th><th>สถานะ/เวลา</th><th>ลายเซ็น</th><th>ความเห็น</th></tr></thead>
         <tbody>${signRows.map((s, i) => `<tr class="${s.state}">
           <td>${i + 1}</td><td class="l"><b>${esc(s.step)}</b></td>
-          <td class="l">${esc(s.name)}${s.mode ? `<div class="sub">(${esc(s.mode)})</div>` : ''}${s.comment ? `<div class="sub">ความเห็น: ${esc(s.comment)}</div>` : ''}</td>
-          <td><span class="st ${s.state}">${esc(s.status)}</span></td>
-          <td>${esc(s.ts || '—')}</td>
+          <td class="l">${esc(s.name)}${s.mode ? `<div class="sub">(${esc(s.mode)})</div>` : ''}</td>
+          <td class="stc"><span class="st ${s.state}">${esc(s.status)}</span>${s.ts ? `<br>${esc(s.ts)}` : ''}</td>
           <td class="sig">${s.state === 'signed' ? (s.signature ? `<img src="${esc(s.signature)}" alt="ลายเซ็น">` : `<span class="sigtext">${esc(s.name)}</span>`) : ''}</td>
+          <td class="cmt">${s.comment ? esc(s.comment) : (s.state === 'pending' ? '' : '—')}</td>
         </tr>`).join('')}</tbody></table>`;
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle)} ${esc(name || _draftEditNo || '')}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Charmonman:wght@700&display=swap">
@@ -15771,14 +16017,14 @@ async function draftPreviewPDF(orient = 'landscape') {
     .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
     /* ตารางสินค้า: ทุกคอลัมน์กึ่งกลาง ยกเว้นชื่อสินค้า, เส้นแบ่งคอลัมน์สีอ่อน, เส้นหนาขึ้นที่ต้นกลุ่ม, แรเงาแยกกลุ่ม */
     table.items{border:1px solid #CDD5E0}
-    table.items td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:7px 3px;height:30px;text-align:center;vertical-align:middle;line-height:1.2;word-break:break-word}
+    table.items td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:4px 3px;height:26px;text-align:center;vertical-align:middle;line-height:1.2;word-break:break-word}
     table.items td.sku-name{text-align:left}
     table.items td.gs{border-left:1.5px solid #9AA8B8}
     table.items td.g-prev{background:#F4F6F8}
     table.items td.g-norm{background:#EFF5F7}
     table.items td.g-promo{background:#FBF6E6}
     table.items td.strong{font-weight:700;color:#1E3A5F}
-    table.items td.period{white-space:nowrap;font-size:10.6px}
+    table.items td.period{white-space:nowrap;font-size:9.6px;letter-spacing:-.1px}
     table.items tr.subrow td.num,table.items tr.subrow td.sku-name{color:#4A5568}
     td .sub{font-size:9.8px;color:#8896A5;white-space:nowrap}
     table.costs td{border-bottom:1px solid #E3E8EF;padding:4px 6px}
@@ -15788,18 +16034,35 @@ async function draftPreviewPDF(orient = 'landscape') {
     .kv{display:grid;grid-template-columns:auto 1fr;gap:0 5px;font-size:10.4px;text-align:right}
     .kv span{color:#6B7280;text-align:left}.kv b{font-weight:600}
     .kv .tot{border-top:1px solid #CDD5E0;margin-top:1px;padding-top:1px;color:#1E3A5F;font-weight:800}
-    ${portrait ? '.body{padding:9px 14px} .form{font-size:9.4px;padding:6px 10px} .opts{grid-template-columns:82px 1fr} .fl > b{min-width:68px} .ck .fv{min-width:40px} .letterhead{padding:10px 14px} .doctitle{font-size:15px}' : ''}
+    ${portrait ? '.body{padding:9px 14px} .form{font-size:9.4px;padding:6px 10px} .opts{grid-template-columns:96px 1fr} .fl > b{min-width:68px} .ck .fv{min-width:40px} .letterhead{padding:10px 14px} .doctitle{font-size:15px}' : '.letterhead{padding:8px 18px} .body{padding:8px 18px} .form{padding:5px 12px;margin-bottom:5px} .opts{row-gap:1px} .grid2{gap:2px 26px;margin-bottom:3px}'}
+    /* ความกว้างกระดาษจริงลบขอบ 8mm — ใช้ตอนแสดงบนจอด้วย ให้ _fitPages วัดความสูงได้ตรงกับตอนพิมพ์ */
+    .sheet{width:${portrait ? '194mm' : '281mm'};margin:0 auto}
     .branches{font-size:10px;margin:6px 0 8px;line-height:1.25;background:#FBFCFE;border:1px solid #E3E8EF;border-radius:6px;padding:6px 8px}
     .branch-codes{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9.6px;color:#1E3A5F}
-    .signhead{margin-top:18px;padding-top:12px;border-top:1px dashed #CDD5E0;font-size:12px;font-weight:700;color:#1E3A5F}
-    table.signs{border:1px solid #CDD5E0;font-size:9.5px;margin-top:6px;break-inside:avoid}
-    table.signs td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:4px 6px;text-align:center;vertical-align:middle;height:40px}
-    table.signs td.l{text-align:left}
+    /* ตารางลงนามติดล่างสุดของกระดาษเสมอ (2026-09-24 v3): .sheet เป็น flex column สูงเท่าจำนวนหน้าเต็ม
+       (_fitPages ในสคริปต์ท้ายเอกสารวัดความสูงจริงแล้วปัดขึ้นเป็นหน้าเต็ม) + .signblock margin-top:auto */
+    .sheet{display:flex;flex-direction:column}
+    .sheet > .body{flex:1;display:flex;flex-direction:column}
+    .signblock{margin-top:auto;padding-top:6px;break-inside:avoid}
+    .signhead{padding-top:5px;border-top:1px dashed #CDD5E0;font-size:10.5px;font-weight:700;color:#1E3A5F;display:flex;justify-content:space-between;align-items:baseline}
+    .signhead span{font-weight:400;color:#4A5568}
+    table.signs{border:1px solid #CDD5E0;font-size:9.6px;margin-top:3px;break-inside:avoid}
+    table.signs thead tr.cols th{padding:3px 3px;font-size:9.2px}
+    table.signs td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:2px 4px;text-align:center;vertical-align:middle;height:24px;line-height:1.2}
+    table.signs td.l,table.signs td.cmt{text-align:left}
+    table.signs td.cmt{font-size:9.8px;color:#1f2937;white-space:pre-wrap}
+    table.signs td.stc{font-size:8.6px;line-height:1.2;color:#374151}
     table.signs td .sub{font-size:8.5px;color:#8896A5;white-space:normal}
     table.signs tr.pending td{color:#8896A5}
-    table.signs td.sig img{max-height:36px;max-width:100%;object-fit:contain;mix-blend-mode:multiply;display:block;margin:0 auto}
-    table.signs .sigtext{font-family:'Charmonman',cursive;font-weight:700;font-size:17px;color:#1a2b4c;line-height:1}
-    .st{display:inline-block;padding:1px 8px;border-radius:10px;font-weight:700;font-size:8.8px;border:1px solid}
+    table.signs td.sig img{max-height:22px;max-width:100%;object-fit:contain;mix-blend-mode:multiply;display:block;margin:0 auto}
+    table.signs .sigtext{font-family:'Charmonman',cursive;font-weight:700;font-size:12px;color:#1a2b4c;line-height:1}
+    .offbox{margin-top:7px;border:1px solid #CDD5E0;border-radius:7px;padding:8px 12px;font-size:11.2px;line-height:1.55;background:#fff;break-inside:avoid}
+    .offbox h4{margin:0 0 4px;font-size:11.2px;color:#1E3A5F}
+    .offbox .txt{white-space:pre-wrap}
+    .offbox .atts{margin-top:8px;font-size:10.6px}
+    .row.r5{display:flex;flex-wrap:wrap;gap:2px 18px}
+    table.items td.g-last{background:#EEF0FA}
+    .st{display:inline-block;padding:0 6px;border-radius:9px;font-weight:700;font-size:8.4px;border:1px solid}
     .st.signed{color:#0A5940;background:#E5F3EE;border-color:#bfe3d3}
     .st.rejected{color:#A32D2D;background:#FBEAEA;border-color:#EFC4C4}
     .st.pending{color:#8896A5;background:#F4F6F8;border-color:#E3E8EF}
@@ -15813,37 +16076,51 @@ async function draftPreviewPDF(orient = 'landscape') {
     </div>
     <div class="body">
       ${buildFormHeader()}
-      ${portrait ? `<table class="items portrait">
-        <colgroup><col style="width:24px"><col><col style="width:112px"><col style="width:104px"><col style="width:52px"><col style="width:104px"><col style="width:34px"><col style="width:54px"><col style="width:54px"></colgroup>
-        <thead><tr class="cols"><th>ลำดับ</th><th>สินค้า<small>รหัส · ชื่อ · ชุดอุปกรณ์</small></th><th class="gs">โปรสุดท้าย<small>เลขที่ · ราคา · ช่วง</small></th>
-          <th class="gs">ราคาปกติ<small>ขาย · GP · ท้ายบิล → ทุน</small></th><th class="gs">Compen-<br>sate</th><th>ราคาโปรโมชั่น<small>ขาย · GP · ท้ายบิล → ทุน</small></th>
-          <th class="gs">ลด%</th><th class="gs">ขายช่วง<br>โปรสุดท้าย</th><th>ประมาณ<br>การ</th></tr></thead>
+      ${offContract ? `<div class="offbox"><h4>รายละเอียดค่าใช้จ่ายนอกสัญญา</h4><div class="txt">${esc(offText) || '—'}</div>
+        ${_draftAttachments.length ? `<div class="atts"><b>ไฟล์แนบ (${_draftAttachments.length})</b>${_draftAttachments.map(a => `<div>📎 ${esc(a.filename)}</div>`).join('')}</div>` : ''}</div>`
+      : portrait ? `<table class="items portrait">
+        <colgroup><col style="width:22px"><col><col style="width:84px"><col style="width:84px"><col style="width:98px"><col style="width:40px"><col style="width:98px"><col style="width:50px"><col style="width:46px"></colgroup>
+        <thead><tr class="cols"><th>ลำดับ</th><th>สินค้า<small>รหัส · ชื่อ · ชุดอุปกรณ์</small></th><th class="gs">Pro Period ก่อน<small>เลขที่ · ราคา · ช่วง</small></th><th class="gs">Pro No. ล่าสุด<small>เลขที่ · ราคา · ช่วง</small></th>
+          <th class="gs">ราคาปกติ<small>ขาย · GP · ท้ายบิล → ทุน</small></th><th class="gs">Comp-<br>ensate</th><th>ราคาโปรโมชั่น<small>ขาย · GP · ท้ายบิล → ทุน</small></th>
+          <th class="gs">ขายช่วง<br>Pro Period<br>ก่อน</th><th>ประมาณ<br>การ</th></tr></thead>
         <tbody>${rowsHtml || '<tr><td colspan="9" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
       </table>` : `<table class="items">
         <colgroup>
-          <col style="width:24px"><col style="width:50px"><col style="width:114px"><col style="width:34px">
-          <col style="width:54px"><col style="width:50px"><col style="width:62px">
-          <col style="width:44px"><col style="width:34px"><col style="width:36px"><col style="width:46px">
-          <col style="width:48px"><col style="width:44px"><col style="width:34px"><col style="width:36px"><col style="width:46px">
-          <col style="width:30px"><col style="width:44px"><col style="width:46px">
+          <col style="width:28px"><col style="width:64px"><col><col style="width:34px">
+          <col style="width:56px"><col style="width:46px"><col style="width:56px">
+          <col style="width:56px"><col style="width:46px"><col style="width:56px">
+          <col style="width:44px"><col style="width:36px"><col style="width:38px"><col style="width:44px">
+          <col style="width:40px"><col style="width:44px"><col style="width:36px"><col style="width:38px"><col style="width:44px">
+          <col style="width:46px"><col style="width:44px">
         </colgroup>
         <thead>
-          <tr class="grp"><th colspan="4"></th><th colspan="3">โปรสุดท้าย</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th></th><th colspan="2">ปริมาณ</th></tr>
+          <tr class="grp"><th colspan="4"></th><th colspan="3">Pro Period ก่อน</th><th colspan="3">Pro No. ล่าสุด</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th colspan="2">ปริมาณ</th></tr>
           <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>ชุด<br>อุปกรณ์</th>
-            <th class="gs">เลขที่ใบโปร</th><th>ราคา</th><th>ช่วงวันที่</th>
+            <th class="gs">เลขที่</th><th>ราคา</th><th>ช่วงวันที่</th>
+            <th class="gs">เลขที่</th><th>ราคา</th><th>ช่วงวันที่</th>
             <th class="gs">ราคาขาย</th><th>GP%</th><th>ท้ายบิล%</th><th>ทุนสุทธิ</th>
             <th class="gs">Compen-<br>sate</th><th>ราคาขาย</th><th>GP%</th><th>ท้ายบิล%</th><th>ทุนสุทธิ</th>
-            <th class="gs">ลด%</th><th class="gs">ขายช่วง<br>โปรสุดท้าย</th><th>ประมาณ<br>การ</th></tr>
+            <th class="gs">ขายช่วง Pro<br>Period ก่อน</th><th>ประมาณ<br>การ</th></tr>
         </thead>
-        <tbody>${rowsHtml || '<tr><td colspan="19" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
+        <tbody>${rowsHtml || '<tr><td colspan="21" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
       </table>`}
       ${otherCostsRows ? `<table class="costs"><thead><tr class="cols"><th>ค่าใช้จ่ายอื่นๆ</th><th class="r">จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
       <tbody>${otherCostsRows}<tr><td><b>รวม</b></td><td class="r"><b>${otherCostsTotal.toLocaleString('th-TH')}</b></td><td></td></tr></tbody></table>` : ''}
-      <div class="signhead">ลำดับการลงนามและอนุมัติ</div>
-      ${signTableHtml}
+      <div class="signblock"><div class="signhead">ลำดับการลงนามและอนุมัติ${routeName ? `<span>เส้นทางอนุมัติ: <b>${esc(routeName)}</b></span>` : ''}</div>
+      ${signTableHtml}</div>
     </div>
   </div>
-  <script>window.onload=()=>{const go=()=>setTimeout(()=>window.print(),200);document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go();}<` + `/script>
+  <script>
+  // ปัดความสูงเอกสารขึ้นเป็นจำนวนหน้าเต็ม ให้ตารางลงนาม (margin-top:auto) ไปอยู่ล่างสุดของหน้าสุดท้ายเสมอ
+  // ความสูงบนจอไม่รวมหัวตารางที่พิมพ์ซ้ำทุกหน้า/แถวที่ break-inside:avoid ดันไปหน้าใหม่ → เผื่อ ~1 หัวตาราง+1 แถวต่อรอยตัดหน้า
+  function _fitPages(){const sh=document.querySelector('.sheet');if(!sh)return;const mm=96/25.4,pageH=(${portrait ? 281 : 194}-1.5)*mm;
+    sh.style.minHeight='0';const th=document.querySelector('table.items thead'),tr=document.querySelector('table.items tbody tr');
+    const perBreak=(th?th.offsetHeight:0)+(tr?tr.offsetHeight:0);let h=sh.scrollHeight,n=Math.max(1,Math.ceil(h/pageH));
+    for(let k=0;k<3;k++){const n2=Math.max(1,Math.ceil((h+(n-1)*perBreak)/pageH));if(n2===n)break;n=n2;}
+    sh.style.minHeight=(n*pageH)+'px';}
+  window.addEventListener('beforeprint',_fitPages);
+  window.matchMedia&&window.matchMedia('print').addEventListener('change',e=>{if(e.matches)_fitPages();});
+  window.onload=()=>{const go=()=>{_fitPages();setTimeout(()=>window.print(),200);};document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go();}<` + `/script>
   </body></html>`);
   w.document.close();
 }

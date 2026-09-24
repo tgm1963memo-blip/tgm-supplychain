@@ -17,6 +17,8 @@ const FIELDS = [
   'cost_start_date', 'cost_end_date', 'start_date', 'due_date',
   'is_npd', 'has_off_contract_cost', 'has_marketing_cost', 'other_costs_json',
   'has_compensate', 'special_distribution', 'form_extra_json',
+  // เส้นทางอนุมัติที่เลือกตอนส่ง (2026-09-24) — route_name เป็น snapshot ที่ validateChange เขียนเอง
+  'route_id', 'route_name',
   // approval_history_json ถูกเขียนโดย validateChange เท่านั้น (client ส่งมาก็ถูก reject — ดู promoApproval.js)
   'approval_history_json',
   'levels_json', 'current_level', 'approvers_json', 'status', 'keyed_by', 'keyed_at',

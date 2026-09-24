@@ -269,6 +269,9 @@ function runMigrations(db) {
   addColumnIfMissing(db, 'promo_draft_line_comments', 'anchor', 'anchor TEXT');
   addColumnIfMissing(db, 'promo_draft_headers', 'form_extra_json', "form_extra_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, 'promo_draft_headers', 'approval_history_json', "approval_history_json TEXT NOT NULL DEFAULT '[]'");
+  // เส้นทางอนุมัติหลายแบบ (2026-09-24): ว่าง = เส้นทางมาตรฐาน ('promo_draft'), มีค่า = 'promo_draft@<route_id>'
+  addColumnIfMissing(db, 'promo_draft_headers', 'route_id', 'route_id TEXT');
+  addColumnIfMissing(db, 'promo_draft_headers', 'route_name', 'route_name TEXT');
   // ลิงก์อนุมัติทางอีเมล (2026-09-23, แบบ e-memo): 1 token ต่อผู้อนุมัติต่อขั้นที่ถูกแจ้ง — ใช้ได้เฉพาะตอนที่
   // เอกสารยังรออนุมัติ อยู่ขั้นเดิม และผู้อนุมัติคนนั้นยังไม่ได้ตัดสินใจ (ตรวจซ้ำทุกครั้งใน routes/promoEmailApprove.js)
   db.exec(`CREATE TABLE IF NOT EXISTS promo_approval_tokens (
