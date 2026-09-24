@@ -813,6 +813,7 @@ CREATE TABLE IF NOT EXISTS promo_draft_headers (
   other_costs_json      TEXT NOT NULL DEFAULT '[]', -- [{item,amount,note}] แบบอิสระ ไม่แยกตาราง
   has_compensate        INTEGER NOT NULL DEFAULT 0,
   special_distribution  TEXT,
+  form_extra_json       TEXT NOT NULL DEFAULT '{}', -- สถานที่ขาย/ประเภทสินค้า/ค่าแรกเข้า-ลงสื่อ (ฟอร์มใบเคาะ)
   approval_history_json TEXT NOT NULL DEFAULT '[]', -- ขั้นอนุมัติที่ผ่านแล้วก่อน escalate ไปผู้บริหาร
   levels_json           TEXT NOT NULL DEFAULT '[]', -- clone จาก approval_workflow_templates ตอนส่งอนุมัติ
   current_level         INTEGER NOT NULL DEFAULT 0,

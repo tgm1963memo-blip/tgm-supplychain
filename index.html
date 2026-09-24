@@ -13558,6 +13558,7 @@ async function showPromoDraftModal(draftNo = '') {
         <input type="text" id="draft-note" value="${esc(header?.note || '')}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field" style="grid-column:1/-1"><label>รูปแบบการจัดจำหน่ายพิเศษ <span style="font-weight:400;color:var(--TX3);font-size:11px">(ถ้ามี)</span></label>
         <input type="text" id="draft-special-distribution" placeholder="เช่น ขายผ่านบูธ, ขายแบบ bundle, ส่งตรงหน้าร้าน" value="${esc(header?.special_distribution || '')}" ${canEdit ? '' : 'disabled'}></div>
+      ${_draftFormExtraHtml(header?.form_extra_json, canEdit)}
     </div>
     <label style="display:block;font-size:12px;font-weight:600;color:var(--TX2);margin-bottom:7px">เงื่อนไขพิเศษ (มีผลต่อการอนุมัติ)</label>
     <div class="esc-row">
@@ -13634,6 +13635,60 @@ async function showPromoDraftModal(draftNo = '') {
   draftToggleOtherFields();
   draftSyncCostDates();
   draftUpdateDayCounts();
+}
+// ── หัวข้อเพิ่มตามฟอร์มใบเคาะกระดาษ (2026-09-24): สถานที่ขาย / ประเภทสินค้า / ค่าแรกเข้า-ลงสื่อ ──
+// เก็บใน promo_draft_headers.form_extra_json ก้อนเดียว:
+// { sale:{regular:{on,n},promo:{on,n},pretty:{on,n},other:{on,text}}, ptypes:[...], ptype_other:{on,text},
+//   fee_none:bool, fee:{on,amt}, media:{on,amt} }
+const DRAFT_SALE_PLACES = [
+  { k: 'regular', label: 'จุดประจำ', unit: 'สาขา' },
+  { k: 'promo', label: 'จุดโปร', unit: 'สาขา' },
+  { k: 'pretty', label: 'มีพริตตี้', unit: 'คน' },
+  { k: 'other', label: 'จุดขายอื่นๆ', text: true },
+];
+const DRAFT_PRODUCT_TYPES = ['ตู้สด TSS', 'ตู้สด TGM', '1 แถม 1 (แพ็คคู่)', 'PACK TSS', 'PACK TGM', 'PACK HB'];
+function _draftFx(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function _draftFormExtraHtml(raw, canEdit) {
+  const fx = _draftFx(raw), dis = canEdit ? '' : 'disabled';
+  const sale = fx.sale || {};
+  const ck = (id, on, label, extra = '') => `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox" id="${id}" ${on ? 'checked' : ''} ${dis}>${label}${extra}</label>`;
+  const num = (id, v, w = 64, ph = '') => `<input type="number" id="${id}" value="${esc(v ?? '')}" placeholder="${ph}" min="0" style="width:${w}px;padding:3px 6px;font-size:12px" ${dis}>`;
+  const txt = (id, v, w = 150) => `<input type="text" id="${id}" value="${esc(v ?? '')}" style="width:${w}px;padding:3px 6px;font-size:12px" ${dis}>`;
+  const row = (label, body) => `<div style="display:grid;grid-template-columns:110px 1fr;gap:6px;align-items:center;margin-top:6px"><b style="font-size:12px;color:var(--TX2)">${label}</b><div style="display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:12.5px">${body}</div></div>`;
+  return `<div class="field" style="grid-column:1/-1"><label>รายละเอียดตามฟอร์มใบเคาะ <span style="font-weight:400;color:var(--TX3);font-size:11px">(แสดงในเอกสาร — ติ๊กเฉพาะที่เกี่ยวข้อง)</span></label>
+    <div style="background:var(--bg2);border-radius:8px;padding:6px 12px 10px">
+      ${row('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => ck(`fx-sale-${p.k}`, sale[p.k]?.on, p.label,
+        p.text ? ' ' + txt(`fx-sale-${p.k}-v`, sale[p.k]?.text) : ` ${num(`fx-sale-${p.k}-v`, sale[p.k]?.n)} ${p.unit}`)).join(''))}
+      ${row('ประเภทสินค้า', DRAFT_PRODUCT_TYPES.map((t, i) => ck(`fx-pt-${i}`, (fx.ptypes || []).includes(t), t)).join('')
+        + ck('fx-pt-other', fx.ptype_other?.on, 'อื่นๆ', ' ' + txt('fx-pt-other-v', fx.ptype_other?.text)))}
+      ${row('ค่าแรกเข้า / สื่อ', ck('fx-fee-none', fx.fee_none, 'ไม่มีค่าแรกเข้า')
+        + ck('fx-fee', fx.fee?.on, 'มีค่าแรกเข้า =', ` ${num('fx-fee-v', fx.fee?.amt, 100)} บาท`)
+        + ck('fx-media', fx.media?.on, 'ลงสื่อ =', ` ${num('fx-media-v', fx.media?.amt, 100)} บาท`))}
+    </div></div>`;
+}
+function _draftReadFormExtra() {
+  const on = id => !!document.getElementById(id)?.checked;
+  const val = id => (document.getElementById(id)?.value || '').trim();
+  const n = id => { const v = val(id); return v === '' ? null : Number(v); };
+  const sale = {};
+  DRAFT_SALE_PLACES.forEach(p => { sale[p.k] = p.text ? { on: on(`fx-sale-${p.k}`), text: val(`fx-sale-${p.k}-v`) } : { on: on(`fx-sale-${p.k}`), n: n(`fx-sale-${p.k}-v`) }; });
+  return {
+    sale,
+    ptypes: DRAFT_PRODUCT_TYPES.filter((_, i) => on(`fx-pt-${i}`)),
+    ptype_other: { on: on('fx-pt-other'), text: val('fx-pt-other-v') },
+    fee_none: on('fx-fee-none'),
+    fee: { on: on('fx-fee'), amt: n('fx-fee-v') },
+    media: { on: on('fx-media'), amt: n('fx-media-v') },
+  };
+}
+function _draftSetFormExtra(raw) {
+  const fx = _draftFx(raw), sale = fx.sale || {};
+  const setC = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+  const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+  DRAFT_SALE_PLACES.forEach(p => { setC(`fx-sale-${p.k}`, sale[p.k]?.on); setV(`fx-sale-${p.k}-v`, p.text ? sale[p.k]?.text : sale[p.k]?.n); });
+  DRAFT_PRODUCT_TYPES.forEach((t, i) => setC(`fx-pt-${i}`, (fx.ptypes || []).includes(t)));
+  setC('fx-pt-other', fx.ptype_other?.on); setV('fx-pt-other-v', fx.ptype_other?.text);
+  setC('fx-fee-none', fx.fee_none); setC('fx-fee', fx.fee?.on); setV('fx-fee-v', fx.fee?.amt); setC('fx-media', fx.media?.on); setV('fx-media-v', fx.media?.amt);
 }
 function draftCanEditStatus(status) {
   return !status || status === 'draft' || status === 'rejected';
@@ -14494,6 +14549,7 @@ async function saveDraftPromo(submitAfter = false) {
     cost_start_date: costStart || null, cost_end_date: costEnd || null,
     is_npd: isNpd, has_off_contract_cost: hasOffContractCost, has_marketing_cost: hasMarketingCost,
     has_compensate: hasCompensate, special_distribution: specialDistribution || null,
+    form_extra_json: _draftReadFormExtra(),
     other_costs_json: _draftOtherCosts.filter(c => (c.item || '').trim() || parseFloat(c.amount)),
     updated_by: UID,
   };
@@ -15021,6 +15077,7 @@ async function draftCopyFrom(draftNo) {
   set('draft-purpose', header.purpose);
   set('draft-note', header.note);
   set('draft-special-distribution', header.special_distribution);
+  _draftSetFormExtra(header.form_extra_json);
   set('draft-start', header.start_date);
   set('draft-due', header.due_date);
   set('draft-cost-start', header.cost_start_date);
@@ -15193,6 +15250,8 @@ function _draftCorpResolver(rows) {
   const byCode = new Map(rows.map(c => [c.c, c]));
   const prefixOf = code => String(code || '').split('-').slice(0, 2).join('-');
   const votes = new Map(); // prefix -> Map(corp -> n)
+  const namesByPrefix = new Map(), prefixLabel = new Map();
+  rows.forEach(c => { const p = prefixOf(c.c); if (!namesByPrefix.has(p)) namesByPrefix.set(p, []); namesByPrefix.get(p).push(c.n); });
   rows.forEach(c => {
     const corp = String(c.corp || '').trim();
     if (_DRAFT_NO_CORP.has(corp)) return;
@@ -15205,9 +15264,20 @@ function _draftCorpResolver(rows) {
     if (!_DRAFT_NO_CORP.has(corp)) return corp;
     const v = votes.get(prefixOf(code));
     if (v && v.size) return [...v.entries()].sort((x, y) => y[1] - x[1])[0][0];
-    const first = String(row.n || '').trim().split(/\s+/)[0];
-    return first || 'ไม่ระบุกลุ่ม';
+    // ไม่มีสาขาไหนในรหัสต้นเดียวกันตั้งกลุ่มไว้เลย: ใช้คำนำหน้าชื่อร่วมของสาขาในรหัสต้นนั้น (เช่น "โลตัสเทพารักษ์",
+    // "โลตัสรัชดา" → "โลตัส") แทนการแตกเป็นชื่อสาขาทีละชื่อ
+    const p = prefixOf(code);
+    if (!prefixLabel.has(p)) prefixLabel.set(p, _draftCommonNamePrefix(namesByPrefix.get(p) || []));
+    return prefixLabel.get(p) || String(row.n || '').trim().split(/\s+/)[0] || 'ไม่ระบุกลุ่ม';
   };
+}
+function _draftCommonNamePrefix(names) {
+  const list = names.map(n => String(n || '').trim()).filter(Boolean);
+  if (list.length < 2) return '';
+  let pre = list[0];
+  for (const n of list.slice(1)) { let i = 0; while (i < pre.length && i < n.length && pre[i] === n[i]) i++; pre = pre.slice(0, i); if (!pre) break; }
+  pre = pre.replace(/[\s\-–(]+$/, '').trim();
+  return pre.length >= 2 ? pre : '';
 }
 async function draftPreviewPDF() {
   const name = (document.getElementById('draft-name')?.value || '').trim();
@@ -15234,6 +15304,56 @@ async function draftPreviewPDF() {
   // กลุ่มลูกค้า (corp) ของสาขาที่เลือก เรียงตามจำนวนสาขา — บอกว่าเป็นลูกค้าเจ้าไหนก่อนรายชื่อรหัสสาขา
   const corpOf = _draftCorpResolver(custRows);
   const custGroups = [...branchCodes.reduce((m, cc) => { const g = corpOf(cc); return m.set(g, (m.get(g) || 0) + 1); }, new Map())].sort((x, y) => y[1] - x[1]);
+  // ── ส่วนหัวแบบฟอร์มใบเคาะ (2026-09-24, ตาม mockup ที่อนุมัติ): แสดงทุกหัวข้อ/ทุกตัวเลือกพร้อม ☑/☐ แม้ไม่ได้กรอก
+  // ช่องข้อความว่างเป็นเส้นประให้เขียนต่อด้วยมือได้
+  const fx = _draftReadFormExtra();
+  const fv = (v, w = 0) => `<span class="fv${v === '' || v == null ? ' empty' : ''}"${w ? ` style="flex:0 0 ${w}px;min-width:${w}px;text-align:center"` : ''}>${v === '' || v == null ? '-' : esc(String(v))}</span>`;
+  const box = (on, label, extra = '') => `<span class="ck${on ? ' on' : ''}"><i class="box${on ? ' on' : ''}">${on ? '✓' : ''}</i>${label}${extra}</span>`;
+  const optRow = (title, items) => `<b>${title}</b><div class="row">${items.join('')}</div>`;
+  const condSel = document.getElementById('draft-condition')?.value || '';
+  const condOther = condSel === 'อื่นๆ' ? (document.getElementById('draft-condition-other')?.value || '').trim() : '';
+  const eqSel = showEquipment ? (document.getElementById('draft-equipment')?.value || '') : '';
+  const eqOther = eqSel === 'อื่นๆ' ? (document.getElementById('draft-equipment-other')?.value || '').trim() : '';
+  const flag = id => !!document.getElementById(id)?.checked;
+  const otherCostSum = _draftOtherCosts.reduce((a, c) => a + (parseFloat(c.amount) || 0), 0);
+  const gpv = id => (document.getElementById(id)?.value || '').trim();
+  const days = (x, y) => { const d = x && y ? Math.round((new Date(y + 'T00:00:00') - new Date(x + 'T00:00:00')) / 86400000) + 1 : null; return d > 0 ? d : ''; };
+  const range = (x, y) => x || y ? `${promoFmtD(x)} – ${promoFmtD(y)}` : '';
+  const fmtAmt = v => v == null || v === '' ? '' : Number(v).toLocaleString('th-TH');
+  const writtenAt = promoFmtD(_draftHeader?.created_at || new Date().toISOString());
+  const sale = fx.sale || {};
+  const buildFormHeader = () => `<div class="titlerow"><div class="doctitle">${esc(docTitle)}${isApproved ? '<span class="stamp">✅ อนุมัติแล้ว</span>' : ''}</div>
+      <div class="written">วันที่เขียนใบ Pro ${fv(writtenAt)}</div></div>
+    <div class="form">
+      <div class="grid2">
+        <div class="fl"><b>ห้าง/ร้านค้า</b>${fv(custGroups.map(([g, n]) => custGroups.length > 1 ? `${g} (${n})` : g).join(', '))}</div>
+        <div class="fl"><b>สาขา/จำนวน</b>${fv(branchCodes.length ? `${branchCodes.length.toLocaleString('th-TH')} สาขา · ${branchPreview.join(', ')}` : '')}</div>
+        <div class="fl"><b>ชื่อรายการ</b>${fv(name)}</div>
+        <div class="fl"><b>วัตถุประสงค์</b>${fv(purpose)}</div>
+        <div class="fl"><b>เริ่มตั้งแต่</b>${fv(range(promoStart, promoDue))}<b class="k">รวม</b>${fv(days(promoStart, promoDue), 56)}วัน</div>
+        <div class="fl"><b>ทุนเริ่ม</b>${fv(range(costStart, costEnd))}<b class="k">รวม</b>${fv(days(costStart, costEnd), 56)}วัน</div>
+      </div>
+      <div class="opts">
+        ${optRow('เงื่อนไข', DRAFT_CONDITION_TYPES.map(t => box(condSel === t, esc(t), t === 'อื่นๆ' ? ' ' + fv(condOther) : '')))}
+        ${optRow('ลักษณะรายการ', DRAFT_ITEM_TYPES.map(t => box(itemType.includes(t), esc(t))))}
+        ${optRow('อุปกรณ์', DRAFT_EQUIPMENT_OPTIONS.map(t => box(eqSel === t, esc(t), t === 'อื่นๆ' ? ' ' + fv(eqOther) : '')))}
+        ${optRow('ลดเป็น', [box(discountScope !== 'bill', 'รายการ'), box(discountScope === 'bill', 'ท้ายบิล')])}
+        ${optRow('เงื่อนไขพิเศษ', [box(flag('draft-npd'), 'สินค้า NPD (New item)'), box(flag('draft-off-contract'), 'มีค่าใช้จ่ายนอกสัญญา'),
+          box(flag('draft-marketing-cost'), 'มีค่าโปรโมทการตลาดอื่นๆ'), box(otherCostSum > 0, 'ค่าใช้จ่ายอื่นๆ =', ` ${fv(otherCostSum > 0 ? otherCostSum.toLocaleString('th-TH') : '')} บาท`)])}
+        ${optRow('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => box(sale[p.k]?.on, p.label,
+          p.text ? ' ' + fv(sale[p.k]?.text) : ` ${fv(sale[p.k]?.n ?? '', 48)} ${p.unit}`)))}
+        ${optRow('ประเภทสินค้า', [...DRAFT_PRODUCT_TYPES.map(t => box((fx.ptypes || []).includes(t), esc(t))), box(fx.ptype_other?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other?.text))])}
+        ${optRow('ค่าแรกเข้า / สื่อ', [box(fx.fee_none, 'ไม่มีค่าแรกเข้า'), box(fx.fee?.on, 'มีค่าแรกเข้า =', ` ${fv(fmtAmt(fx.fee?.amt))} บาท`),
+          box(fx.media?.on, 'ลงสื่อ =', ` ${fv(fmtAmt(fx.media?.amt))} บาท`)])}
+        <b>ส่วนลด</b><div class="disc">
+          <span>GP ปกติ ${fv(gpv('draft-gp-normal-default'), 48)} %</span><span>GP โปร ${fv(gpv('draft-gp-promo-default'), 48)} %</span>
+          <span>ท้ายบิล ปกติ ${fv(gpv('draft-bill-normal-default'), 48)} %</span><span>ท้ายบิล โปร ${fv(gpv('draft-bill-promo-default'), 48)} %</span>
+          ${hasCompensate ? '<span style="color:#4A5568">Compensate: ราคาขายโปร = ราคาปกติ − Compensate</span>' : ''}</div>
+        <b>อื่นๆ</b><div class="grid2" style="margin:0">
+          <div class="fl"><b class="k">รูปแบบการจัดจำหน่ายพิเศษ</b>${fv(specialDistribution)}</div>
+          <div class="fl"><b class="k">หมายเหตุ</b>${fv(note)}</div></div>
+      </div>
+    </div>`;
   const draftNums = _draftLineNumbers();
   const fmt2 = v => v !== '' && v != null ? Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   const buildRows = lines => lines.map(({ l, num }) => {
@@ -15338,7 +15458,27 @@ async function draftPreviewPDF() {
     .doctitle .stamp{font-size:10.5px;font-weight:700;background:#E5F3EE;color:#0A5940;border:1px solid #bfe3d3;padding:2px 9px;border-radius:20px;margin-left:8px}
     .docsub{font-size:11px;color:#4A5568;margin-bottom:8px}
     .meta{font-size:10.8px;color:#444;background:#F7F9FC;border:1px solid #CDD5E0;border-radius:7px;padding:7px 10px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:2px 18px;line-height:1.35}
-    .meta span{max-width:100%} /* แต่ละหัวข้อเรียงต่อกัน ขึ้นบรรทัดใหม่เมื่อเต็ม */
+    /* ส่วนหัวแบบฟอร์มใบเคาะ (buildFormHeader) — ทุกหัวข้อ/ตัวเลือกพร้อมช่องติ๊ก, ค่าว่างเป็นเส้นประให้เขียนมือ */
+    .titlerow{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:7px}
+    .titlerow .doctitle{margin:0}
+    .written{font-size:10.5px;color:#4A5568;display:flex;align-items:baseline;gap:6px}
+    .fv{display:inline-block;min-width:90px;border-bottom:1px dotted #8896A5;padding:0 4px;color:#1E3A5F;font-weight:600}
+    .fv.empty{color:transparent}
+    .form{border:1px solid #CDD5E0;border-radius:7px;padding:7px 12px;background:#FBFCFE;margin-bottom:8px;font-size:10.3px;break-inside:avoid}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:3px 26px;margin-bottom:5px}
+    .fl{display:flex;align-items:baseline;gap:7px;min-width:0}
+    .fl > b{white-space:nowrap;min-width:84px}
+    .fl > b.k{min-width:auto}
+    .fl > .fv{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .opts{display:grid;grid-template-columns:104px 1fr;row-gap:3px;border-top:1px dashed #CDD5E0;padding-top:5px}
+    .opts > b{text-decoration:underline;text-underline-offset:2px}
+    .row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px 12px}
+    .ck{display:flex;align-items:center;gap:5px;white-space:nowrap;color:#374151}
+    .ck .fv{min-width:60px}
+    .box{width:10px;height:10px;border:1.2px solid #4A5568;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:8px;line-height:1;flex:none;font-style:normal}
+    .box.on{background:#1E3A5F;border-color:#1E3A5F;color:#fff}
+    .ck.on{font-weight:700;color:#1E3A5F}
+    .disc{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact} /* พิมพ์พื้นหัวตาราง/แรเงาออกมาด้วย */
     table{width:100%;border-collapse:collapse;margin-top:7px;font-size:8.5px;table-layout:fixed}
     thead tr.grp th{background:#16304d;color:#fff;font-size:8.4px;font-weight:700;text-align:center;padding:6px 3px;border-left:1px solid rgba(255,255,255,.35)}
@@ -15382,21 +15522,7 @@ async function draftPreviewPDF() {
       <div class="docno"><div class="lbl">เลขที่เอกสาร</div><div class="no">${esc(docNo || '—')}</div>${refLine}</div>
     </div>
     <div class="body">
-      <div class="doctitle">${esc(docTitle)}${isApproved ? '<span class="stamp">✅ อนุมัติแล้ว</span>' : ''}</div>
-      <div class="docsub">${esc(name || '(ไม่มีชื่อ)')}</div>
-      <div class="meta">
-        <span><b>เงื่อนไข:</b> ${esc(condition)}</span>
-        <span><b>ลักษณะรายการ:</b> ${esc(itemType.join(', ') || '—')}${equipment ? ` (${esc(equipment)})` : ''}</span>
-        <span><b>ลดเป็น:</b> ${discountScope === 'bill' ? 'ท้ายบิล' : 'รายการ'}</span>
-        <span><b>ช่วงโปร:</b> ${esc(promoFmtD(promoStart))} – ${esc(promoFmtD(promoDue))}</span>
-        ${costStart && costEnd ? `<span><b>ช่วงทุน:</b> ${esc(promoFmtD(costStart))} – ${esc(promoFmtD(costEnd))}</span>` : ''}
-        ${hasCompensate ? `<span><b>Compensate:</b> มี (ราคาขายโปร = ราคาปกติ − Compensate)</span>` : ''}
-        ${escFlags.length ? `<span><b>เงื่อนไขพิเศษ:</b> ${escFlags.map(esc).join(', ')} (ผ่านผู้บริหารอนุมัติเพิ่ม)</span>` : ''}
-        ${specialDistribution ? `<span><b>รูปแบบการจัดจำหน่ายพิเศษ:</b> ${esc(specialDistribution)}</span>` : ''}
-        ${purpose ? `<span><b>วัตถุประสงค์:</b> ${esc(purpose)}</span>` : ''}
-        ${note ? `<span><b>หมายเหตุ:</b> ${esc(note)}</span>` : ''}
-      </div>
-      <div class="branches">${custGroups.length ? `<div style="margin-bottom:2px"><b>ลูกค้า:</b> ${custGroups.map(([g, n]) => `${esc(g)} (${n.toLocaleString('th-TH')} สาขา)`).join(', ')}</div>` : ''}<b>สาขา (${branchCodes.length}):</b> <span class="branch-codes">${branchPreview.map(esc).join(', ') || '—'}</span></div>
+      ${buildFormHeader()}
       <table class="items">
         <colgroup>
           <col style="width:24px"><col style="width:50px"><col style="width:114px"><col style="width:34px">

@@ -263,6 +263,8 @@ function runMigrations(db) {
   )`);
   // promo_draft_headers.approval_history_json: ขั้นอนุมัติที่ผ่านไปแล้วก่อนถูกส่งต่อผู้บริหาร — เดิม levels_json
   // ถูกแทนที่ด้วยขั้นผู้บริหารทั้งก้อน ทำให้ชื่อ/เวลา/ลายเซ็นผู้อนุมัติขั้นปกติหายไปจากเอกสาร
+  // หัวข้อเพิ่มตามฟอร์มใบเคาะกระดาษ (2026-09-24): สถานที่ขาย / ประเภทสินค้า / ค่าแรกเข้า-ลงสื่อ เก็บเป็น JSON ก้อนเดียว
+  addColumnIfMissing(db, 'promo_draft_headers', 'form_extra_json', "form_extra_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, 'promo_draft_headers', 'approval_history_json', "approval_history_json TEXT NOT NULL DEFAULT '[]'");
   // ลิงก์อนุมัติทางอีเมล (2026-09-23, แบบ e-memo): 1 token ต่อผู้อนุมัติต่อขั้นที่ถูกแจ้ง — ใช้ได้เฉพาะตอนที่
   // เอกสารยังรออนุมัติ อยู่ขั้นเดิม และผู้อนุมัติคนนั้นยังไม่ได้ตัดสินใจ (ตรวจซ้ำทุกครั้งใน routes/promoEmailApprove.js)
