@@ -1,5 +1,6 @@
 const { validate } = require('../../shared/approval-workflow');
 const { ROUTES_ENTITY, validateRoutes } = require('../lib/promoApproval');
+const { PREFIXES_ENTITY, validatePrefixes } = require('../lib/promoNumber');
 module.exports = function validateWorkflow(db) {
   return (req, res, next) => {
     if (!['POST', 'PATCH'].includes(req.method)) return next();
@@ -8,8 +9,9 @@ module.exports = function validateWorkflow(db) {
         if (row.levels_json === undefined) continue;
         const levels = typeof row.levels_json === 'string' ? JSON.parse(row.levels_json) : row.levels_json;
         // รายการเส้นทางอนุมัติใบเคาะราคา (2026-09-24) — levels_json ของแถวนี้คือรายชื่อเส้นทาง ไม่ใช่ขั้นอนุมัติ
-        if (row.entity_type === ROUTES_ENTITY) {
-          const error = validateRoutes(levels);
+        if (row.entity_type === ROUTES_ENTITY || row.entity_type === PREFIXES_ENTITY) {
+          // รายการเส้นทาง / ตัวอักษรนำเลขที่ใบโปรตามลูกค้า — levels_json ของแถวเหล่านี้ไม่ใช่ขั้นอนุมัติ
+          const error = row.entity_type === ROUTES_ENTITY ? validateRoutes(levels) : validatePrefixes(levels);
           if (error) return res.status(400).json({ error });
           continue;
         }

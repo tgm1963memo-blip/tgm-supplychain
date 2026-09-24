@@ -1082,6 +1082,16 @@ const SB = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
+  // ตัวอย่างเลขที่ใบโปรถัดไปของกลุ่มลูกค้า — [{ corp, prefix, source: config|express|none, next }]
+  async getPromoNoPreview(corps = []) {
+    const q = corps.filter(Boolean).map(c => 'corp=' + encodeURIComponent(c)).join('&');
+    if (!q) return [];
+    const res = await fetch(`${API_BASE}/api/promo_draft_headers/promo-no-preview?${q}`, {
+      headers: { 'ngrok-skip-browser-warning': 'true', ...(getSessionToken() ? { Authorization: 'Bearer ' + getSessionToken() } : {}) },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
   async openPromoDraftAttachment(id) {
     try {
       const res = await fetch(`${API_BASE}/api/promo_draft_attachments/${encodeURIComponent(id)}/content`, {
@@ -13532,7 +13542,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
   const isExecPending = _draftEditStatus === 'pending_exec_approval';
   const selectedItemTypes = _draftItemTypesArr(header?.item_type);
   const metaLine = draftNo
-    ? `${esc(header.doc_no || draftNo)} · สร้างโดย ${esc(uidToName(header.created_by))} · ${new Date(header.created_at || Date.now()).toLocaleDateString('th-TH')}${header.updated_by ? ` · แก้ไขล่าสุดโดย ${esc(uidToName(header.updated_by))}` : ''}`
+    ? `${esc(header.doc_no || draftNo)}${header.promo_no ? ` · 🎫 ใบโปร <b>${esc(header.promo_no)}</b>` : ''} · สร้างโดย ${esc(uidToName(header.created_by))} · ${new Date(header.created_at || Date.now()).toLocaleDateString('th-TH')}${header.updated_by ? ` · แก้ไขล่าสุดโดย ${esc(uidToName(header.updated_by))}` : ''}`
     : 'ยังไม่บันทึก';
   document.getElementById('draft-fp').innerHTML = `
   <div class="cr-fullpage-header">
@@ -14524,6 +14534,12 @@ function draftRenderRefCells() {
     }
   });
 }
+// รหัสเอกสารแบบสั้นสำหรับพิมพ์ (2026-09-24): doc_ref มักมีหมายเหตุต่อท้าย เช่น "LT-0149 compensate.." → "LT-0149"
+function _draftRefCode(v) {
+  const t = String(v || '').trim();
+  const m = t.match(/^[A-Za-z]{1,6}-?\d+[A-Za-z0-9]*/);
+  return m ? m[0] : (t.split(/\s+/)[0] || '');
+}
 // ราคาโปรอ้างอิงสำหรับแสดงผล (which: 'prev' = Pro Period ก่อน, 'last' = Pro No. ล่าสุด) — ถ้ามาจาก TSS
 // (ทุนสุทธิ) แปลงเป็นราคาขายด้วย GP โปรของบรรทัด
 function _draftPrevPromoPrice(ref, l, which = 'prev') {
@@ -15127,7 +15143,7 @@ async function pgPromoDraftsRenderBody() {
     return `<div class="card" style="margin-bottom:10px;background:var(--bg2)">
       <div class="ch" style="margin-bottom:8px">
         <div><b>${esc(h.promo_name || h.draft_no)}</b> ${draftStatusBadgeHtml(h.status || 'draft')}
-          <div style="font-size:11px;color:var(--TX3)"><span class="mono">${esc(h.doc_no || h.draft_no)}</span> · ${esc(h.condition_type || '')} · ${esc(_draftItemTypesArr(h.item_type).join(', '))} · สร้างโดย ${esc(uidToName(h.created_by))}</div>
+          <div style="font-size:11px;color:var(--TX3)"><span class="mono">${esc(h.doc_no || h.draft_no)}</span>${h.promo_no ? ` · <b style="color:var(--G)">🎫 ใบโปร <span class="mono">${esc(h.promo_no)}</span></b>` : ''} · ${esc(h.condition_type || '')} · ${esc(_draftItemTypesArr(h.item_type).join(', '))} · สร้างโดย ${esc(uidToName(h.created_by))}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${canEdit ? `<button class="btn btn-xs" onclick="showPromoDraftModal('${esc(h.draft_no)}')">แก้ไข</button>` : `<button class="btn btn-xs" onclick="showPromoDraftModal('${esc(h.draft_no)}')">ดู</button>`}
@@ -15501,6 +15517,7 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
     }
     _pdWfRoutes = routes;
     _pdWfDirty = false;
+    _pdWfPrefixes = null; _pdWfPrefixPrev = new Map();
     if (_pdWfRouteId && !routes.some(r => r.id === _pdWfRouteId)) { _pdWfRouteId = ''; return pgPromoDraftWorkflowSettings(); }
     _pdWfNormalLevels = normal || [];
     _pdWfExecLevels = exec || [];
@@ -15575,7 +15592,64 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
       <button class="btn btn-sm btn-t" onclick="pdWfAddLevel('exec')">+ เพิ่มขั้น</button>
       <button class="btn btn-sm btn-g" onclick="pdWfSave('exec')" style="margin-left:auto">💾 บันทึกขั้นผู้บริหาร</button>
     </div>
+  </div>
+  ${_pdWfPrefixHtml()}`;
+  _pdWfPrefixPreview();
+}
+// ── เลขที่ใบโปรโมชั่นแยกตามลูกค้า (2026-09-24) — ต่อเลขชุดเดิมของลูกค้าใน Express (server: lib/promoNumber.js)
+// ตั้งตัวอักษรนำเองได้ต่อกลุ่มลูกค้า (entity 'promo_no_prefixes' = [{corp, prefix}]) ไม่ตั้ง = หาจากใบโปรเดิมอัตโนมัติ
+let _pdWfPrefixes = null;
+let _pdWfPrefixPrev = new Map(); // corp -> {prefix, source, next}
+const _PD_PREFIX_SRC = { config: 'ตั้งค่าเอง', express: 'จากใบโปรใน Express', none: 'ไม่พบ — ใช้ชุด PM ของระบบ' };
+function _pdWfPrefixHtml() {
+  if (_pdWfPrefixes === null) {
+    SB.getApprovalWorkflowTemplate('promo_no_prefixes').then(r => { _pdWfPrefixes = Array.isArray(r) ? r : []; pgPromoDraftWorkflowSettings(true); });
+    return '';
+  }
+  const prev = c => { const p = _pdWfPrefixPrev.get(c); return p ? `<b class="mono">${esc(p.next)}</b> <span style="color:var(--TX3);font-size:11px">(${esc(_PD_PREFIX_SRC[p.source] || p.source)})</span>` : '<span style="color:var(--TX3)">…</span>'; };
+  return `<div class="card">
+    <div class="ch"><div class="ct2">🔢 เลขที่ใบโปรโมชั่น (แยกตามลูกค้า)</div></div>
+    <div class="al ali" style="margin-bottom:10px;font-size:12px">ออกเลขตอนอนุมัติครบ — ต่อเลขชุดเดิมของลูกค้าใน Express อัตโนมัติ (เช่น โลตัส ล่าสุด LT-0149 → LT-0150) โดยหาตัวอักษรนำจากใบโปรเดิมของกลุ่มลูกค้านั้น · ตั้งเองด้านล่างเมื่อต้องการเปลี่ยนหรือเป็นลูกค้าใหม่ที่ยังไม่มีใบโปร</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:12.5px"><b>ดูเลขถัดไปของกลุ่ม</b>
+      <input type="text" id="pdwf-pfx-test" list="pdwf-corp-opts2" placeholder="พิมพ์/เลือกกลุ่มลูกค้า เช่น โลตัส" style="width:220px;padding:4px 8px;font-size:12px" onkeydown="if(event.key==='Enter')pdWfPrefixTest()">
+      <button class="btn btn-sm" onclick="pdWfPrefixTest()">ดู</button><span id="pdwf-pfx-test-out"></span>
+      <datalist id="pdwf-corp-opts2">${(_pdWfCorpOpts || []).map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+    <div class="tw"><table class="draft-trail"><thead><tr><th>กลุ่มลูกค้า</th><th style="width:130px">ตัวอักษรนำ</th><th>เลขถัดไป</th><th style="width:50px"></th></tr></thead><tbody>
+      ${_pdWfPrefixes.map((r, i) => `<tr><td class="l"><input type="text" list="pdwf-corp-opts2" value="${esc(r.corp || '')}" onchange="pdWfPrefixField(${i},'corp',this.value)" style="width:100%;padding:3px 7px;font-size:12px"></td>
+        <td><input type="text" value="${esc(r.prefix || '')}" maxlength="6" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z]/g,'')" onchange="pdWfPrefixField(${i},'prefix',this.value)" style="width:90px;padding:3px 7px;font-size:12px;text-align:center" class="mono"></td>
+        <td class="l">${r.corp ? prev(r.corp) : ''}</td><td><button class="btn btn-xs btn-r" onclick="pdWfPrefixRem(${i})">✕</button></td></tr>`).join('') || '<tr><td colspan="4" style="color:var(--TX3);font-size:12px">ยังไม่ได้ตั้งเอง — ใช้ตัวอักษรนำจากใบโปรใน Express ทุกกลุ่ม</td></tr>'}
+    </tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-sm btn-t" onclick="pdWfPrefixAdd()">+ ตั้งตัวอักษรนำเอง</button>
+      <button class="btn btn-sm btn-g" onclick="pdWfPrefixSave()" style="margin-left:auto">💾 บันทึกเลขที่ใบโปร</button></div>
   </div>`;
+}
+async function _pdWfPrefixPreview() {
+  const corps = (_pdWfPrefixes || []).map(r => r.corp).filter(c => c && !_pdWfPrefixPrev.has(c));
+  if (!corps.length) return;
+  try { (await SB.getPromoNoPreview(corps)).forEach(p => _pdWfPrefixPrev.set(p.corp, p)); pgPromoDraftWorkflowSettings(true); }
+  catch (e) { console.warn('promo-no preview:', e.message || e); }
+}
+async function pdWfPrefixTest() {
+  const v = (document.getElementById('pdwf-pfx-test')?.value || '').trim(), out = document.getElementById('pdwf-pfx-test-out');
+  if (!v || !out) return;
+  out.textContent = 'กำลังตรวจ...';
+  try { const [p] = await SB.getPromoNoPreview([v]); out.innerHTML = `→ <b class="mono">${esc(p.next)}</b> <span style="color:var(--TX3);font-size:11px">(${esc(_PD_PREFIX_SRC[p.source] || p.source)})</span>`; }
+  catch (e) { out.textContent = 'ตรวจไม่สำเร็จ: ' + (e.message || e); }
+}
+function pdWfPrefixAdd() { (_pdWfPrefixes = _pdWfPrefixes || []).push({ corp: '', prefix: '' }); pgPromoDraftWorkflowSettings(true); }
+function pdWfPrefixRem(i) { _pdWfPrefixes.splice(i, 1); pgPromoDraftWorkflowSettings(true); }
+function pdWfPrefixField(i, k, v) {
+  if (!_pdWfPrefixes[i]) return;
+  _pdWfPrefixes[i][k] = k === 'prefix' ? String(v || '').toUpperCase() : String(v || '').trim();
+  if (k === 'corp') { _pdWfPrefixPrev.delete(_pdWfPrefixes[i].corp); pgPromoDraftWorkflowSettings(true); }
+}
+async function pdWfPrefixSave() {
+  const rows = (_pdWfPrefixes || []).filter(r => r.corp || r.prefix);
+  if (rows.some(r => !r.corp || !/^[A-Z]{1,6}$/.test(r.prefix || ''))) { toast('กรอกกลุ่มลูกค้า และตัวอักษรนำภาษาอังกฤษตัวใหญ่ 1-6 ตัว ให้ครบทุกแถว', 'warn'); return; }
+  if (!await SB.saveApprovalWorkflowTemplate('promo_no_prefixes', rows)) { toast('บันทึกไม่สำเร็จ (ตรวจกลุ่มลูกค้าซ้ำ/รูปแบบตัวอักษรนำ)', 'warn'); return; }
+  _pdWfPrefixes = rows; _pdWfPrefixPrev = new Map();
+  toast('บันทึกเลขที่ใบโปรตามลูกค้าแล้ว');
+  pgPromoDraftWorkflowSettings(true);
 }
 function _pdWfCurRoute() { return _pdWfRoutes.find(r => r.id === _pdWfRouteId) || null; }
 function pdWfSelectRoute(id) {
@@ -16055,14 +16129,15 @@ async function draftPreviewPDF(orient = 'landscape') {
     // ช่วงวันที่ 2 บรรทัดตายตัว (เริ่ม / – สิ้นสุด) แทนการปล่อยให้ตัดคำเองกลางวันที่
     const periodHtml = k => ref?.[k + 'StartDate'] || ref?.[k + 'DueDate'] ? `${esc(promoFmtD(ref[k + 'StartDate']))}<br>– ${esc(promoFmtD(ref[k + 'DueDate']))}` : '—';
     const prevPeriodQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? `<div class="sub">${esc(ref.prevPeriodSource)}</div>` : '') : '—';
-    const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
+    // ตัวเลขทุกช่องพิมพ์บรรทัดเดียว (class n) — % อยู่ที่หัวคอลัมน์ (GP% / ท้ายบิล%) แล้ว ไม่ต้องต่อท้ายค่า
+    const pct = v => v !== '' && v != null ? esc(String(v)) : '—';
     const promoCells = (k, cls) => { const pp = _draftPrevPromoPrice(ref, l, k);
-      return `<td class="mono ${cls} gs">${esc(ref?.[k + 'DocNo'] || '—')}</td><td class="${cls}">${fmt2(pp.sell)}${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}</td><td class="${cls} period">${periodHtml(k)}</td>`; };
+      return `<td class="mono docc ${cls} gs">${esc(_draftRefCode(ref?.[k + 'DocNo']) || '—')}</td><td class="n ${cls}">${fmt2(pp.sell)}${pp.tssCost != null ? `<div class="sub">ทุน TSS<br>${fmt2(pp.tssCost)}</div>` : ''}</td><td class="${cls} period">${periodHtml(k)}</td>`; };
     return `<tr class="${level ? 'subrow' : ''}">
-    <td class="num">${esc(num)}</td><td class="mono">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
-    <td class="g-norm gs">${fmt2(l.normalPrice)}</td><td class="g-norm">${pct(l.gpPct)}</td><td class="g-norm">${pct(l.billDiscPct)}</td><td class="g-norm strong">${fmt2(l.costPrice)}</td>
-    <td class="g-promo gs">${fmt2(l.compensate)}</td><td class="g-promo">${fmt2(l.unitPrice)}</td><td class="g-promo">${pct(l.gpPctPromo)}</td><td class="g-promo">${pct(l.billDiscPctPromo)}</td><td class="g-promo strong">${fmt2(l.costPricePromo)}</td>
-    <td class="gs">${prevPeriodQty}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
+    <td class="num n">${esc(num)}</td><td class="mono n">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
+    <td class="n g-norm gs">${fmt2(l.normalPrice)}</td><td class="n g-norm">${pct(l.gpPct)}</td><td class="n g-norm">${pct(l.billDiscPct)}</td><td class="n g-norm strong">${fmt2(l.costPrice)}</td>
+    <td class="n g-promo gs">${fmt2(l.compensate)}</td><td class="n g-promo">${fmt2(l.unitPrice)}</td><td class="n g-promo">${pct(l.gpPctPromo)}</td><td class="n g-promo">${pct(l.billDiscPctPromo)}</td><td class="n g-promo strong">${fmt2(l.costPricePromo)}</td>
+    <td class="n gs">${prevPeriodQty}</td><td class="n">${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
   </tr>`;
   }).join('');
   // แถวแบบแนวตั้ง: สินค้า (รหัส/ชื่อ/ชุด) · Pro Period ก่อน / Pro No. ล่าสุด (เลขที่/ราคา/ช่วง ช่องละกลุ่ม)
@@ -16073,7 +16148,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
     const promoCell = (k, cls) => { const pp = _draftPrevPromoPrice(ref, l, k);
       const period = ref?.[k + 'StartDate'] || ref?.[k + 'DueDate'] ? `${esc(promoFmtD(ref[k + 'StartDate']))}<br>– ${esc(promoFmtD(ref[k + 'DueDate']))}` : '';
-      return `<td class="${cls} gs"><span class="mono">${esc(ref?.[k + 'DocNo'] || '—')}</span>${pp.sell != null ? `<br><b>${fmt2(pp.sell)}</b>` : ''}${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}${period ? `<div class="sub">${period}</div>` : ''}</td>`; };
+      return `<td class="${cls} gs"><span class="mono n">${esc(_draftRefCode(ref?.[k + 'DocNo']) || '—')}</span>${pp.sell != null ? `<br><b>${fmt2(pp.sell)}</b>` : ''}${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}${period ? `<div class="sub">${period}</div>` : ''}</td>`; };
     const prevQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? `<div class="sub">${esc(ref.prevPeriodSource)}</div>` : '') : '—';
     const kv = (sell, gp, bill, cost) => `<div class="kv"><span>ขาย</span><b>${fmt2(sell)}</b><span>GP</span><b>${pct(gp)}</b><span>ท้ายบิล</span><b>${pct(bill)}</b><span class="tot">ทุน</span><b class="tot">${fmt2(cost)}</b></div>`;
     return `<tr class="${level ? 'subrow' : ''}">
@@ -16219,7 +16294,11 @@ async function draftPreviewPDF(orient = 'landscape') {
     .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
     /* ตารางสินค้า: ทุกคอลัมน์กึ่งกลาง ยกเว้นชื่อสินค้า, เส้นแบ่งคอลัมน์สีอ่อน, เส้นหนาขึ้นที่ต้นกลุ่ม, แรเงาแยกกลุ่ม */
     table.items{border:1px solid #CDD5E0}
-    table.items td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:4px 3px;height:26px;text-align:center;vertical-align:middle;line-height:1.2;word-break:break-word}
+    table.items td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:4px 3px;height:26px;text-align:center;vertical-align:middle;line-height:1.2;word-break:normal;overflow-wrap:break-word}
+    /* ตัวเลข/รหัสพิมพ์บรรทัดเดียวเสมอ (2026-09-24) — ข้อความ (ชื่อสินค้า) ขึ้นบรรทัดใหม่ได้ */
+    table.items td.n,table.items .n,.kv b{white-space:nowrap}
+    table.items td.docc{font-size:9.8px;white-space:nowrap;letter-spacing:-.2px}
+    table.items td.sku-name{overflow-wrap:anywhere}
     table.items td.sku-name{text-align:left}
     table.items td.gs{border-left:1.5px solid #9AA8B8}
     table.items td.g-prev{background:#F4F6F8}
@@ -16236,7 +16315,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     .kv{display:grid;grid-template-columns:auto 1fr;gap:0 5px;font-size:10.4px;text-align:right}
     .kv span{color:#6B7280;text-align:left}.kv b{font-weight:600}
     .kv .tot{border-top:1px solid #CDD5E0;margin-top:1px;padding-top:1px;color:#1E3A5F;font-weight:800}
-    ${portrait ? '.body{padding:9px 14px} .form{font-size:9.4px;padding:6px 10px} .opts{grid-template-columns:96px 1fr} .fl > b{min-width:68px} .ck .fv{min-width:40px} .letterhead{padding:10px 14px} .doctitle{font-size:15px}' : '.letterhead{padding:8px 18px} .body{padding:8px 18px} .form{padding:5px 12px;margin-bottom:5px} .opts{row-gap:1px} .grid2{gap:2px 26px;margin-bottom:3px}'}
+    ${portrait ? '.body{padding:9px 14px} .form{font-size:9.4px;padding:6px 10px} .opts{grid-template-columns:96px 1fr} .fl > b{min-width:68px} .ck .fv{min-width:40px} .letterhead{padding:10px 14px} .doctitle{font-size:15px}' : '.letterhead{padding:6px 18px} .body{padding:6px 18px} .form{padding:4px 12px;margin-bottom:4px;line-height:1.25} .opts{row-gap:0} .grid2{gap:1px 26px;margin-bottom:2px} table.items{margin-top:4px} table.items td{padding:3px 3px;height:22px;line-height:1.15} table.items td .sub{font-size:8.8px;line-height:1.05} table.items thead tr.cols th{padding:4px 2px} thead tr.grp th{padding:4px 3px}'}
     /* ความกว้างกระดาษจริงลบขอบ 8mm — ใช้ตอนแสดงบนจอด้วย ให้ _fitPages วัดความสูงได้ตรงกับตอนพิมพ์ */
     .sheet{width:${portrait ? '194mm' : '281mm'};margin:0 auto}
     .branches{font-size:10px;margin:6px 0 8px;line-height:1.25;background:#FBFCFE;border:1px solid #E3E8EF;border-radius:6px;padding:6px 8px}
@@ -16289,8 +16368,8 @@ async function draftPreviewPDF(orient = 'landscape') {
       </table>` : `<table class="items">
         <colgroup>
           <col style="width:28px"><col style="width:64px"><col><col style="width:34px">
-          <col style="width:56px"><col style="width:46px"><col style="width:56px">
-          <col style="width:56px"><col style="width:46px"><col style="width:56px">
+          <col style="width:58px"><col style="width:48px"><col style="width:60px">
+          <col style="width:58px"><col style="width:48px"><col style="width:60px">
           <col style="width:44px"><col style="width:36px"><col style="width:38px"><col style="width:44px">
           <col style="width:40px"><col style="width:44px"><col style="width:36px"><col style="width:38px"><col style="width:44px">
           <col style="width:46px"><col style="width:44px">

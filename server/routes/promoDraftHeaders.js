@@ -4,6 +4,7 @@ const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 const { genId } = require('../lib/crud');
 const { validateChange } = require('../lib/promoApproval');
 const promoMail = require('../lib/promoApprovalMail');
+const { nextPromoNoFor, previewForCorp } = require('../lib/promoNumber');
 
 // เอกสาร "ใบเคาะราคา" ระดับหัว (1 แถวต่อ 1 เอกสาร, draft_no เป็น PK) — ไม่ใช้ makeCrudRouter ทั่วไปเพราะ
 // ต้องคำนวณ doc_no (เลขที่เอกสารแบบรัน) แบบอะตอมมิกฝั่ง server และ derive created_by จาก session เสมอ
@@ -54,20 +55,9 @@ function nextDocNo(db) {
   return `${prefix}${String(next).padStart(4, '0')}`;
 }
 
-// เลขที่ "ใบโปรโมชั่น" (2026-09-16) — ชุดเลขแยกจาก doc_no (PC-series) ออกให้ครั้งเดียวตอนอนุมัติผ่านขั้น
-// สุดท้ายจริง (ไม่ใช่ตอนสร้างร่าง) เอกสารที่เคยมี promo_no แล้วจะไม่ออกซ้ำ (idempotent ต่อการ PATCH ซ้ำ)
-// เหตุผลเดียวกับ nextDocNo() ข้างบน — single-writer node:sqlite connection ไม่มี race ระหว่าง SELECT MAX
-// กับ UPDATE แม้ไม่ได้ห่อ BEGIN/COMMIT ชัดเจน
-function nextPromoNo(db) {
-  const year = new Date().getFullYear() + 543;
-  const prefix = `PM${year}-`;
-  const row = db.prepare(`
-    SELECT MAX(CAST(SUBSTR(promo_no, LENGTH(?) + 1) AS INTEGER)) AS maxN
-    FROM promo_draft_headers WHERE promo_no LIKE ?
-  `).get(prefix, `${prefix}%`);
-  const next = (row?.maxN || 0) + 1;
-  return `${prefix}${String(next).padStart(4, '0')}`;
-}
+// เลขที่ "ใบโปรโมชั่น" — ออกให้ครั้งเดียวตอนอนุมัติผ่านขั้นสุดท้ายจริง เอกสารที่เคยมี promo_no แล้วไม่ออกซ้ำ
+// (idempotent ต่อการ PATCH ซ้ำ) · 2026-09-24: แยกตามลูกค้า ต่อเลขชุดเดิมใน Express (LT-0149 → LT-0150) —
+// ดู lib/promoNumber.js · single-writer node:sqlite ไม่มี race ระหว่างหาเลขสูงสุดกับ UPDATE
 
 // ใช้ร่วมกันระหว่าง PATCH ปกติ และการอนุมัติผ่านลิงก์อีเมล (routes/promoEmailApprove.js) — ต้องเรียกภายใน
 // transaction ของผู้เรียก, validateChange เป็นตัวคำนวณผลอนุมัติจริงเสมอ
@@ -77,7 +67,7 @@ function applyHeaderChange(db, target, input, user) {
   for (const f of JSON_FIELDS) if (body[f] !== undefined && typeof body[f] !== 'string') body[f] = JSON.stringify(body[f]);
   const cols = [...FIELDS.filter(f => body[f] !== undefined), 'updated_at'];
   if (body.status === 'approved' && !target.promo_no) {
-    body.promo_no = nextPromoNo(db);
+    body.promo_no = nextPromoNoFor(db, target);
     cols.push('promo_no');
   }
   db.prepare(`UPDATE promo_draft_headers SET ${cols.map(c => `${c} = ?`).join(',')} WHERE draft_no = ?`)
@@ -105,6 +95,12 @@ function parseRow(row) {
 module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   const router = express.Router();
   router.use(requireAuth(db));
+
+  // ตัวอย่างเลขที่ใบโปรถัดไปของกลุ่มลูกค้า (หน้าตั้งค่า) — ?corp=โลตัส → { prefix, source, next }
+  router.get('/promo-no-preview', (req, res) => {
+    const corps = [].concat(req.query.corp || []).map(String).filter(Boolean).slice(0, 50);
+    res.json(corps.map(c => previewForCorp(db, c)));
+  });
 
   router.get('/', (req, res) => {
     const { where, params } = buildWhere(req.query, [...FIELDS, 'draft_no', 'doc_no', 'created_by']);
