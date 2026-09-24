@@ -661,7 +661,7 @@ test.describe('promo draft creation (ใบเคาะราคา)', () => {
     await page.locator('#draft-name').fill('โปร PDF ทดสอบ');
     const [popup] = await Promise.all([
       context.waitForEvent('page'),
-      page.locator('button', { hasText: 'ดูตัวอย่าง PDF' }).click(),
+      page.locator('button', { hasText: 'PDF แนวนอน' }).click(),
     ]);
     await expect(popup.locator('.doctitle')).toContainText('ใบเคาะราคา');
     await expect(popup.locator('.docsub')).toContainText('โปร PDF ทดสอบ');

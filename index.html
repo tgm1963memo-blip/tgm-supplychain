@@ -13538,7 +13538,8 @@ async function showPromoDraftModal(draftNo = '') {
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-sm" onclick="draftOpenCopyPicker()">📋 คัดลอกจากเอกสารเดิม</button>
       ${draftNo ? '<button class="btn btn-sm" id="draft-cmt-mode-btn" onclick="draftToggleCommentMode()">💬 คอมเมนต์ในเอกสาร</button>' : ''}
-      <button class="btn btn-sm" onclick="draftPreviewPDF()">🖨️ ดูตัวอย่าง PDF</button>
+      <button class="btn btn-sm" onclick="draftPreviewPDF('landscape')" title="A4 แนวนอน — ตารางแยกครบทุกคอลัมน์">🖨️ PDF แนวนอน</button>
+      <button class="btn btn-sm" onclick="draftPreviewPDF('portrait')" title="A4 แนวตั้ง — รวมคอลัมน์กลุ่มเดียวกัน จบหน้าเดียว">🖨️ PDF แนวตั้ง</button>
       <span class="mx" style="color:#fff" onclick="draftClose()">✕</span>
     </div>
   </div>
@@ -15538,7 +15539,10 @@ function _draftCommonNamePrefix(names) {
   pre = pre.replace(/[\s\-–(]+$/, '').trim();
   return pre.length >= 2 ? pre : '';
 }
-async function draftPreviewPDF() {
+// orient (2026-09-24): 'landscape' = ตาราง 19 คอลัมน์ครบ, 'portrait' = A4 แนวตั้ง รวมคอลัมน์กลุ่มเดียวกัน
+// (โปรสุดท้าย / ราคาปกติ / ราคาโปร) ไว้ในช่องเดียวซ้อนบรรทัด เหลือ 9 คอลัมน์ ให้จบในหน้าเดียว
+async function draftPreviewPDF(orient = 'landscape') {
+  const portrait = orient === 'portrait';
   const name = (document.getElementById('draft-name')?.value || '').trim();
   const condition = _draftReadOtherSelect('draft-condition', 'draft-condition-other');
   const itemType = _draftSelectedItemTypes();
@@ -15631,6 +15635,26 @@ async function draftPreviewPDF() {
     <td class="gs">${esc(prevPeriodQty)}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
   </tr>`;
   }).join('');
+  // แถวแบบแนวตั้ง: สินค้า (รหัส/ชื่อ/ชุด) · โปรสุดท้าย (เลขที่/ราคา/ช่วง) · ราคาปกติ & ราคาโปร (ขาย·GP·ท้ายบิล → ทุน)
+  const buildRowsPortrait = lines => lines.map(({ l, num }) => {
+    const level = l.subLevel || 0;
+    const ref = _draftRefData.get(l.sku);
+    const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
+    const pp = _draftPrevPromoPrice(ref, l);
+    const prevPeriod = ref?.prevStartDate || ref?.prevDueDate ? `${esc(promoFmtD(ref.prevStartDate))} – ${esc(promoFmtD(ref.prevDueDate))}` : '';
+    const prevQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? `<div class="sub">${esc(ref.prevPeriodSource)}</div>` : '') : '—';
+    const kv = (sell, gp, bill, cost) => `<div class="kv"><span>ขาย</span><b>${fmt2(sell)}</b><span>GP</span><b>${pct(gp)}</b><span>ท้ายบิล</span><b>${pct(bill)}</b><span class="tot">ทุน</span><b class="tot">${fmt2(cost)}</b></div>`;
+    return `<tr class="${level ? 'subrow' : ''}">
+    <td class="num">${esc(num)}</td>
+    <td class="sku-name" style="padding-left:${5 + level * 10}px"><b class="mono">${esc(l.sku)}</b><br>${esc(l.skuName || '')}<div class="sub">ชุด ${esc(l.equipmentSet || '—')}</div></td>
+    <td class="g-prev gs"><span class="mono">${esc(ref?.prevDocNo || '—')}</span><br><b>${fmt2(pp.sell)}</b>${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}${prevPeriod ? `<div class="sub">${prevPeriod}</div>` : ''}</td>
+    <td class="g-norm gs">${kv(l.normalPrice, l.gpPct, l.billDiscPct, l.costPrice)}</td>
+    <td class="g-promo gs">${fmt2(l.compensate)}</td>
+    <td class="g-promo">${kv(l.unitPrice, l.gpPctPromo, l.billDiscPctPromo, l.costPricePromo)}</td>
+    <td class="gs">${l.discountPct || 0}%</td>
+    <td class="gs">${prevQty}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
+  </tr>`;
+  }).join('');
   const otherCostsRows = _draftOtherCosts.filter(c => (c.item || '').trim()).map(c => `<tr>
     <td>${esc(c.item || '')}</td><td style="text-align:right">${Number(c.amount || 0).toLocaleString('th-TH')}</td><td>${esc(c.note || '')}</td>
   </tr>`).join('');
@@ -15660,7 +15684,7 @@ async function draftPreviewPDF() {
   try { if (_draftRefPromise) await _draftRefPromise; } catch (e) { /* ignore */ }
   if (_draftLines.some(l => l.sku && !_draftRefData.has(l.sku))) { try { await draftRefreshLineRefData(); } catch (e) { /* ignore */ } }
   const lines = _draftLines.map((l, i) => ({ l, num: draftNums[i] })).filter(x => x.l.sku);
-  const rowsHtml = buildRows(lines);
+  const rowsHtml = portrait ? buildRowsPortrait(lines) : buildRows(lines);
   const loadTpl = entity => SB.getApprovalWorkflowTemplate(entity).then(l => Array.isArray(l) ? l : []).catch(() => []);
   const noRouteLevel = { label: 'ผู้อนุมัติ', noRoute: true, approvers: [] };
   let upcoming = [];
@@ -15701,7 +15725,7 @@ async function draftPreviewPDF() {
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle)} ${esc(name || _draftEditNo || '')}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Charmonman:wght@700&display=swap">
   <style>
-    @page{size:A4 landscape;margin:8mm}
+    @page{size:A4 ${portrait ? 'portrait' : 'landscape'};margin:8mm}
     body{font-family:'TH Sarabun New','Sarabun',sans-serif;margin:0;color:#111;background:#EEF1F5;font-size:11px}
     .sheet{max-width:none;margin:0 auto;background:#fff}
     .letterhead{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:2px solid #D4AF37;background:linear-gradient(135deg,#1E3A5F,#28466e)}
@@ -15758,6 +15782,13 @@ async function draftPreviewPDF() {
     table.items tr.subrow td.num,table.items tr.subrow td.sku-name{color:#4A5568}
     td .sub{font-size:9.8px;color:#8896A5;white-space:nowrap}
     table.costs td{border-bottom:1px solid #E3E8EF;padding:4px 6px}
+    /* แนวตั้ง (draftPreviewPDF('portrait')) */
+    table.items.portrait thead th small{display:block;font-weight:400;font-size:9px;color:#cfe0f5}
+    table.items.portrait td{height:auto;padding:5px 4px;line-height:1.3}
+    .kv{display:grid;grid-template-columns:auto 1fr;gap:0 5px;font-size:10.4px;text-align:right}
+    .kv span{color:#6B7280;text-align:left}.kv b{font-weight:600}
+    .kv .tot{border-top:1px solid #CDD5E0;margin-top:1px;padding-top:1px;color:#1E3A5F;font-weight:800}
+    ${portrait ? '.body{padding:9px 14px} .form{font-size:9.4px;padding:6px 10px} .opts{grid-template-columns:82px 1fr} .fl > b{min-width:68px} .ck .fv{min-width:40px} .letterhead{padding:10px 14px} .doctitle{font-size:15px}' : ''}
     .branches{font-size:10px;margin:6px 0 8px;line-height:1.25;background:#FBFCFE;border:1px solid #E3E8EF;border-radius:6px;padding:6px 8px}
     .branch-codes{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9.6px;color:#1E3A5F}
     .signhead{margin-top:18px;padding-top:12px;border-top:1px dashed #CDD5E0;font-size:12px;font-weight:700;color:#1E3A5F}
@@ -15782,7 +15813,13 @@ async function draftPreviewPDF() {
     </div>
     <div class="body">
       ${buildFormHeader()}
-      <table class="items">
+      ${portrait ? `<table class="items portrait">
+        <colgroup><col style="width:24px"><col><col style="width:112px"><col style="width:104px"><col style="width:52px"><col style="width:104px"><col style="width:34px"><col style="width:54px"><col style="width:54px"></colgroup>
+        <thead><tr class="cols"><th>ลำดับ</th><th>สินค้า<small>รหัส · ชื่อ · ชุดอุปกรณ์</small></th><th class="gs">โปรสุดท้าย<small>เลขที่ · ราคา · ช่วง</small></th>
+          <th class="gs">ราคาปกติ<small>ขาย · GP · ท้ายบิล → ทุน</small></th><th class="gs">Compen-<br>sate</th><th>ราคาโปรโมชั่น<small>ขาย · GP · ท้ายบิล → ทุน</small></th>
+          <th class="gs">ลด%</th><th class="gs">ขายช่วง<br>โปรสุดท้าย</th><th>ประมาณ<br>การ</th></tr></thead>
+        <tbody>${rowsHtml || '<tr><td colspan="9" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
+      </table>` : `<table class="items">
         <colgroup>
           <col style="width:24px"><col style="width:50px"><col style="width:114px"><col style="width:34px">
           <col style="width:54px"><col style="width:50px"><col style="width:62px">
@@ -15799,7 +15836,7 @@ async function draftPreviewPDF() {
             <th class="gs">ลด%</th><th class="gs">ขายช่วง<br>โปรสุดท้าย</th><th>ประมาณ<br>การ</th></tr>
         </thead>
         <tbody>${rowsHtml || '<tr><td colspan="19" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
-      </table>
+      </table>`}
       ${otherCostsRows ? `<table class="costs"><thead><tr class="cols"><th>ค่าใช้จ่ายอื่นๆ</th><th class="r">จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
       <tbody>${otherCostsRows}<tr><td><b>รวม</b></td><td class="r"><b>${otherCostsTotal.toLocaleString('th-TH')}</b></td><td></td></tr></tbody></table>` : ''}
       <div class="signhead">ลำดับการลงนามและอนุมัติ</div>
