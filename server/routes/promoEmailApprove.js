@@ -62,6 +62,7 @@ module.exports = function promoEmailApproveRoutes(db) {
       <p style="font-size:14px;margin:0 0 6px">คุณ${e(st.user.name)} — ยืนยันการ${reject ? '<b style="color:#A32D2D">ไม่อนุมัติ</b>' : '<b style="color:#0A5940">อนุมัติ</b>'}ใบเคาะราคานี้</p>
       ${promoMail.summaryBlockHtml(st.header, sum, step)}
       ${promoMail.itemsTableHtml(sum.items)}
+      ${promoMail.prevCommentsHtml(st.header)}
       <form method="post" action="" style="margin-top:14px">
         <input type="hidden" name="action" value="${reject ? 'reject' : 'approve'}">
         <label style="font-size:13px;font-weight:600">ความเห็น ${reject ? '(ควรระบุเหตุผล)' : '(ไม่บังคับ)'}</label>

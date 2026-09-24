@@ -76,6 +76,18 @@ function summaryBlockHtml(header, sum, stepLabel) {
   </table>`;
 }
 
+// ความเห็นของผู้อนุมัติขั้นก่อนหน้า (ประวัติ + ขั้นปัจจุบันที่มีคนตัดสินใจแล้ว) — ให้ขั้นถัดไปเห็นในอีเมล/หน้ายืนยัน
+function prevCommentsHtml(header) {
+  const levels = [...parse(header.approval_history_json), ...parse(header.levels_json)];
+  const rows = levels.flatMap((lv, i) => (lv.approvers || []).filter(a => a.ts && (a.status === 'approved' || a.status === 'rejected'))
+    .map(a => ({ step: `ขั้นที่ ${i + 1}${lv.label ? ' · ' + lv.label : ''}`, name: a.name || a.uid, ok: a.status === 'approved', ts: a.ts, comment: a.comment || '' })));
+  if (!rows.length) return '';
+  return `<div style="margin:10px 0 4px"><div style="font-size:13px;font-weight:700;color:#1E3A5F;margin-bottom:4px">ความเห็นจากขั้นก่อนหน้า</div>
+    ${rows.map(r => `<div style="border-left:3px solid ${r.ok ? '#0A5940' : '#A32D2D'};background:#F7F9FC;padding:6px 10px;margin-bottom:4px;font-size:12.5px">
+      <b>${e(r.name)}</b> <span style="color:#6B7280">· ${e(r.step)} · ${r.ok ? 'อนุมัติ' : 'ไม่อนุมัติ'} · ${new Date(r.ts).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })} น.</span>
+      ${r.comment ? `<div style="margin-top:2px">💬 ${e(r.comment)}</div>` : ''}</div>`).join('')}</div>`;
+}
+
 function renderApprovalRequestEmail({ header, sum, approverName, stepLabel, approveUrl, rejectUrl, openUrl }) {
   const btn = (href, bg, color, label) => `<a href="${e(href)}" style="background:${bg};color:${color};padding:11px 22px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block;margin:4px 6px">${label}</a>`;
   const subject = `[รออนุมัติ] ใบเคาะราคา ${header.doc_no || header.draft_no} — ${header.promo_name || ''}`.trim();
@@ -84,6 +96,7 @@ function renderApprovalRequestEmail({ header, sum, approverName, stepLabel, appr
       มีใบเคาะราคารอการอนุมัติจากท่าน</p>
     ${summaryBlockHtml(header, sum, stepLabel)}
     ${itemsTableHtml(sum.items)}
+    ${prevCommentsHtml(header)}
     <div style="text-align:center;margin:22px 0 8px">
       ${btn(approveUrl, '#0A5940', '#fff', '✅ อนุมัติ')}
       ${btn(rejectUrl, '#A32D2D', '#fff', '❌ ไม่อนุมัติ')}
@@ -162,4 +175,4 @@ async function afterChange(db, before, after, baseUrl) {
   }
 }
 
-module.exports = { afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, shell, appUrl };
+module.exports = { afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };
