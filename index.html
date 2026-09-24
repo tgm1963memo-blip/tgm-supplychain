@@ -123,6 +123,36 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 .draft-fp-footer{flex-shrink:0;background:var(--W);border-top:1px solid var(--BD);padding:12px 32px;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 /* ── ใบเคาะราคา v2 (2026-09-11): escalate checkbox, comment ต่อ SKU, ไฟล์แนบ, ค่าใช้จ่ายอื่นๆ ── */
 .esc-row{display:flex;gap:18px;flex-wrap:wrap;padding:12px 14px;background:var(--bg2);border-radius:8px}
+/* กราฟสรุปมูลค่าการขาย (dashValueChartHtml) — ตัวหนังสือใช้สีข้อความ ไม่ใช้สีของ series, กริดจาง */
+.dvc{margin:4px 0 14px}
+.dvc-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.dvc-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--TX2)}
+.dvc-leg{display:inline-flex;align-items:center;gap:6px}
+.dvc-leg i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.dvc-leg b{color:var(--TX);font-weight:700}
+.dvc-pct{color:var(--TX3);font-size:11px}
+.dvc-seg{display:inline-flex;border:1px solid var(--BD);border-radius:7px;overflow:hidden}
+.dvc-seg button{background:var(--W);border:0;padding:4px 10px;font:inherit;font-size:11.5px;color:var(--TX2);cursor:pointer}
+.dvc-seg button+button{border-left:1px solid var(--BD)}
+.dvc-seg button.act{background:var(--N);color:#fff}
+.dvc-plot{position:relative}
+.dvc-plot svg{width:100%;height:auto;display:block}
+.dvc-grid{stroke:var(--bg2);stroke-width:1}
+.dvc-base{stroke:var(--BD);stroke-width:1}
+.dvc-y{font-size:11px;fill:var(--TX3)}
+.dvc-x{font-size:12px;fill:var(--TX2)}
+.dvc-val{font-size:11.5px;font-weight:700;fill:var(--TX)}
+.dvc-hit{fill:transparent;cursor:default}
+.dvc-hit.on{fill:rgba(30,58,95,.06)}
+.dvc-tip{position:absolute;pointer-events:none;background:var(--W);border:1px solid var(--BD);border-radius:8px;box-shadow:0 6px 18px rgba(13,17,23,.12);padding:8px 10px;font-size:12px;min-width:210px;z-index:5}
+.dvc-tip-h{font-weight:700;color:var(--TX);margin-bottom:4px}
+.dvc-tip-r{display:grid;grid-template-columns:1fr auto 48px;gap:8px;align-items:center;color:var(--TX2);padding:1px 0}
+.dvc-tip-r span{display:inline-flex;align-items:center;gap:6px}
+.dvc-tip-r i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.dvc-tip-r b{color:var(--TX);text-align:right;font-weight:600}
+.dvc-tip-r em{font-style:normal;color:var(--TX3);text-align:right;font-size:11px}
+.dvc-tip-t{border-top:1px solid var(--bg2);margin-top:3px;padding-top:4px}
+.dvc-tip-t b{font-weight:800}
 /* ตารางสินค้าใบเคาะราคา — หัวคอลัมน์อยู่กึ่งกลางช่องกรอก, เส้นแบ่งคอลัมน์สีอ่อน, แรเงาแยก 3 กลุ่มราคา
    (tbody ใช้ nth-child: 6-8 โปรสุดท้าย, 9-12 ราคาปกติ, 13-17 ราคาโปรโมชั่น — ตรงกับ draftRenderLines) */
 #draft-lines-table th,#draft-lines-table td{border-right:1px solid var(--bg2);text-align:center;vertical-align:middle}
@@ -6388,6 +6418,112 @@ function dashSalesValueBreakdown(m){
   const total=dashSalesValue(m);
   return {tss:total,consi:0,tssnv:0,tgm:0,total,invoiceBased:false};
 }
+// ── กราฟสรุปมูลค่าการขายรายเดือน (2026-09-23) ─────────────────────────────
+// คอลัมน์รายเดือน แยกบริษัท — "ซ้อน" (ดูยอดรวม + สัดส่วน) หรือ "เทียบข้างกัน" (เทียบบริษัทต่อเดือน)
+// สีผูกกับบริษัทตายตัว (ไม่ขึ้นกับลำดับ/จำนวนที่ติ๊ก) จาก categorical palette ที่ validate แล้ว (CVD ΔE ≥ 9.1
+// adjacent) — CONSI/TSSNV/TGM ตัดกับพื้นต่ำกว่า 3:1 จึงมีตารางตัวเลขด้านล่าง + tooltip เป็นช่องทางอ่านค่าเสมอ
+const DASH_VAL_SERIES = [
+  { k: 'tss', label: 'TSS', color: '#2a78d6' },
+  { k: 'consi', label: 'CONSI', color: '#eb6834' },
+  { k: 'tssnv', label: 'TSSNV', color: '#1baf7a' },
+  { k: 'tgm', label: 'TGM', color: '#eda100' },
+];
+function _dashValMode(){ try { return localStorage.getItem('dash_value_chart_mode') === 'group' ? 'group' : 'stack'; } catch (_) { return 'stack'; } }
+function dashSetValueChartMode(mode){ try { localStorage.setItem('dash_value_chart_mode', mode); } catch (_) { } dashUpdateSummaryTables(); }
+function _dashFmtM(v){
+  const n = Number(v) || 0, a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toLocaleString('th-TH', { maximumFractionDigits: a >= 1e8 ? 0 : 1 }) + 'M';
+  if (a >= 1e3) return Math.round(n / 1e3).toLocaleString('th-TH') + 'K';
+  return Math.round(n).toLocaleString('th-TH');
+}
+function _dashNiceMax(v){
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+function dashValueChartHtml(valRows, sumKeys){
+  const series = DASH_VAL_SERIES.filter(s => sumKeys.includes(s.k));
+  if (!series.length || !valRows.length) return '';
+  const mode = _dashValMode();
+  const W = 1000, H = 300, padL = 56, padR = 12, padT = 26, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const monthTotal = r => series.reduce((s, x) => s + Math.max(0, Number(r[x.k]) || 0), 0);
+  const maxVal = mode === 'stack' ? Math.max(...valRows.map(monthTotal)) : Math.max(...valRows.flatMap(r => series.map(x => Number(r[x.k]) || 0)));
+  const yMax = _dashNiceMax(maxVal * 1.08);
+  const y = v => padT + plotH - (v / yMax) * plotH;
+  const slot = plotW / valRows.length;
+  const barW = Math.min(46, slot * 0.62);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => t * yMax);
+  // แท่งมุมบนมน 4px (ฐานเรียบติดแกน) — path แทน rect เพื่อมนเฉพาะด้านบน
+  const topRounded = (x, y0, w, h) => {
+    if (h <= 0) return '';
+    const r = Math.min(4, w / 2, h);
+    return `M${x},${y0 + h}V${y0 + r}Q${x},${y0} ${x + r},${y0}H${x + w - r}Q${x + w},${y0} ${x + w},${y0 + r}V${y0 + h}Z`;
+  };
+  let bars = '', labels = '', hits = '';
+  valRows.forEach((r, i) => {
+    const cx = padL + slot * i + slot / 2;
+    if (mode === 'stack') {
+      let acc = 0;
+      const vis = series.filter(s => (Number(r[s.k]) || 0) > 0);
+      vis.forEach((s, j) => {
+        const v = Number(r[s.k]) || 0;
+        const y1 = y(acc + v), h = y(acc) - y1;
+        const top = j === vis.length - 1;
+        // ช่องว่าง 2px สีพื้นระหว่างชั้น (ลบความสูงชั้นบน 2px แทน stroke กันขอบเบลอ)
+        const hh = Math.max(0, h - (j > 0 ? 2 : 0));
+        bars += top ? `<path d="${topRounded(cx - barW / 2, y1, barW, hh)}" fill="${s.color}"/>`
+          : `<rect x="${cx - barW / 2}" y="${y1}" width="${barW}" height="${hh}" fill="${s.color}"/>`;
+        acc += v;
+      });
+      const tot = monthTotal(r);
+      if (tot > 0) labels += `<text x="${cx}" y="${y(tot) - 7}" text-anchor="middle" class="dvc-val">${_dashFmtM(tot)}</text>`;
+    } else {
+      const gap = 2, bw = Math.max(4, (barW * 1.35 - gap * (series.length - 1)) / series.length);
+      const start = cx - (bw * series.length + gap * (series.length - 1)) / 2;
+      series.forEach((s, j) => {
+        const v = Number(r[s.k]) || 0;
+        if (v <= 0) return;
+        bars += `<path d="${topRounded(start + j * (bw + gap), y(v), bw, y(0) - y(v))}" fill="${s.color}"/>`;
+      });
+    }
+    labels += `<text x="${cx}" y="${H - 9}" text-anchor="middle" class="dvc-x">${esc(mL(r.m))}</text>`;
+    hits += `<rect class="dvc-hit" x="${padL + slot * i}" y="${padT}" width="${slot}" height="${plotH}" data-i="${i}" onmousemove="dashValTip(event,${i})" onmouseleave="dashValTipHide()"/>`;
+  });
+  const grid = ticks.map(t => `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" class="${t === 0 ? 'dvc-base' : 'dvc-grid'}"/><text x="${padL - 8}" y="${y(t) + 4}" text-anchor="end" class="dvc-y">${t === 0 ? '0' : '฿' + _dashFmtM(t)}</text>`).join('');
+  const yearTot = series.map(s => ({ ...s, v: valRows.reduce((a, r) => a + (Number(r[s.k]) || 0), 0) }));
+  const grand = yearTot.reduce((a, s) => a + s.v, 0) || 1;
+  window._dashValChart = { valRows, series };
+  const legend = yearTot.map(s => `<span class="dvc-leg"><i style="background:${s.color}"></i>${esc(s.label)} <b>฿${_dashFmtM(s.v)}</b><span class="dvc-pct">${(s.v / grand * 100).toFixed(0)}%</span></span>`).join('');
+  const seg = (m, label) => `<button class="${mode === m ? 'act' : ''}" onclick="dashSetValueChartMode('${m}')">${label}</button>`;
+  return `<div class="dvc">
+    <div class="dvc-head"><div class="dvc-legend">${legend}</div><div class="dvc-seg">${seg('stack', 'ซ้อน (ยอดรวม)')}${seg('group', 'เทียบข้างกัน')}</div></div>
+    <div class="dvc-plot" id="dash-val-plot">
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="กราฟมูลค่าการขายรายเดือนแยกบริษัท">${grid}${bars}${labels}${hits}</svg>
+      <div class="dvc-tip hidden" id="dash-val-tip"></div>
+    </div>
+  </div>`;
+}
+function dashValTip(ev, i){
+  const st = window._dashValChart; if (!st) return;
+  const r = st.valRows[i]; const plot = document.getElementById('dash-val-plot'); const tip = document.getElementById('dash-val-tip');
+  if (!r || !plot || !tip) return;
+  const tot = st.series.reduce((a, s) => a + (Number(r[s.k]) || 0), 0);
+  tip.innerHTML = `<div class="dvc-tip-h">${esc(mL(r.m))}</div>` + st.series.map(s => {
+    const v = Number(r[s.k]) || 0;
+    return `<div class="dvc-tip-r"><span><i style="background:${s.color}"></i>${esc(s.label)}</span><b>${_sdF(v)}</b><em>${tot ? (v / tot * 100).toFixed(1) : '0.0'}%</em></div>`;
+  }).join('') + `<div class="dvc-tip-r dvc-tip-t"><span>รวม</span><b>${_sdF(tot)}</b><em></em></div>`;
+  tip.classList.remove('hidden');
+  const box = plot.getBoundingClientRect();
+  const x = ev.clientX - box.left, tw = tip.offsetWidth;
+  tip.style.left = Math.max(4, Math.min(box.width - tw - 4, x + 14 + tw > box.width ? x - tw - 14 : x + 14)) + 'px';
+  tip.style.top = Math.max(4, ev.clientY - box.top - tip.offsetHeight / 2) + 'px';
+  plot.querySelectorAll('.dvc-hit').forEach(h => h.classList.toggle('on', Number(h.dataset.i) === i));
+}
+function dashValTipHide(){
+  document.getElementById('dash-val-tip')?.classList.add('hidden');
+  document.querySelectorAll('#dash-val-plot .dvc-hit.on').forEach(h => h.classList.remove('on'));
+}
 function dashSummaryTables(mths,actual,fcData,poData){
   const valEl=document.getElementById('dash-val-tbl');
   if(!valEl)return;
@@ -6404,7 +6540,7 @@ function dashSummaryTables(mths,actual,fcData,poData){
   const cols=[['tss','TSS',true],['consi','CONSI'],['tssnv','TSSNV'],['tgm','TGM'],['total','รวม',true]].filter(([k])=>cfg[k]!==false);
   const picker=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin:0 0 8px;font-size:11.5px;color:var(--TX2)"><span style="font-weight:700;color:var(--TX)">รวม/แสดงบริษัท:</span>${[['tss','TSS'],['consi','CONSI'],['tssnv','TSSNV'],['tgm','TGM'],['total','แสดงคอลัมน์รวม']].map(([k,l])=>`<label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ${cfg[k]!==false?'checked':''} onchange="dashToggleValueColumn('${k}',this.checked)"> ${l}</label>`).join('')}</div>`;
   const invoiceNote=window._dashInvoiceSummary?' <span style="font-size:11px;color:var(--TX3);font-weight:400">ยอดรวมคิดจากบริษัทที่ติ๊กอยู่; TSS ใช้ชนกับ Sales Overview</span>':'';
-  valEl.innerHTML=`${picker}<div class="tw"><table><thead><tr><th>เดือน${invoiceNote}</th>${cols.map(([,label])=>`<th class="r">${label}</th>`).join('')}</tr></thead><tbody>${valRows.map(r=>`<tr><td>${mL(r.m)}</td>${cols.map(([k,,strong])=>`<td class="r">${strong?`<strong>${_sdF(r[k])}</strong>`:_sdF(r[k])}</td>`).join('')}</tr>`).join('')}</tbody><tfoot><tr style="font-weight:700;background:var(--bg2)"><td>รวมทั้งปี</td>${cols.map(([k])=>`<td class="r"><strong>${_sdF(valTotals[k])}</strong></td>`).join('')}</tr></tfoot></table></div>`;
+  valEl.innerHTML=`${picker}${dashValueChartHtml(valRows,sumKeys)}<div class="tw"><table><thead><tr><th>เดือน${invoiceNote}</th>${cols.map(([,label])=>`<th class="r">${label}</th>`).join('')}</tr></thead><tbody>${valRows.map(r=>`<tr><td>${mL(r.m)}</td>${cols.map(([k,,strong])=>`<td class="r">${strong?`<strong>${_sdF(r[k])}</strong>`:_sdF(r[k])}</td>`).join('')}</tr>`).join('')}</tbody><tfoot><tr style="font-weight:700;background:var(--bg2)"><td>รวมทั้งปี</td>${cols.map(([k])=>`<td class="r"><strong>${_sdF(valTotals[k])}</strong></td>`).join('')}</tr></tfoot></table></div>`;
 }
 
 // ── MY SALES / SALES DASHBOARD ───────────────────────────────────
