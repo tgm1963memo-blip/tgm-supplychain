@@ -171,7 +171,7 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 #draft-lines-table tbody td:nth-child(n+8):nth-child(-n+10){background:rgba(52,69,138,.07)}
 #draft-lines-table tbody td:nth-child(n+11):nth-child(-n+14){background:rgba(13,80,104,.06)}
 #draft-lines-table tbody td:nth-child(n+15):nth-child(-n+19){background:rgba(212,175,55,.10)}
-#draft-lines-table th.dl-start,#draft-lines-table tbody td:nth-child(5),#draft-lines-table tbody td:nth-child(8),#draft-lines-table tbody td:nth-child(11),#draft-lines-table tbody td:nth-child(15),#draft-lines-table tbody td:nth-child(20){border-left:2px solid var(--BD)}
+#draft-lines-table th.dl-start,#draft-lines-table tbody td:nth-child(5),#draft-lines-table tbody td:nth-child(8),#draft-lines-table tbody td:nth-child(11),#draft-lines-table tbody td:nth-child(15),#draft-lines-table tbody td:nth-child(20),#draft-lines-table tbody td:nth-child(22){border-left:2px solid var(--BD)}
 #draft-lines-table tbody td:nth-child(3){text-align:left;min-width:180px}
 #draft-lines-table tbody td:nth-child(2){width:1%}
 #draft-lines-table tbody td:nth-child(7),#draft-lines-table tbody td:nth-child(10){white-space:nowrap;min-width:150px}
@@ -13498,6 +13498,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
   _draftCopyHeader = null;
   _draftCopySrcNo = '';
   _draftPlan = null; _draftPlanOpts = null; _draftPlanLoading = null; _draftFormSeq++;
+  _draftLineVerdicts = {};
   _draftPromoDocsCache.clear();
   _draftEquipKeep = '';
   _draftEditStatus = '';
@@ -13520,6 +13521,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
     if (!header) { toast('ไม่พบใบเคาะราคานี้แล้ว', 'warn'); return; }
     _draftHeader = header;
     _draftEquipKeep = header.equipment || '';
+    _draftLineVerdicts = { ...(_draftSavedLineVerdicts(header) || {}) };
     _draftEditStatus = header.status || 'draft';
     _draftEditCreatedBy = header.created_by || '';
     _draftOtherCosts = Array.isArray(header.other_costs_json) ? header.other_costs_json : [];
@@ -13599,7 +13601,8 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
       ${_draftFormExtraHtml(header?.form_extra_json, canEdit, header)}
     </div>
     <div id="draft-esc-warn" style="margin-bottom:13px"></div>
-    <div class="field" style="margin-bottom:10px"><label>1. สาขา (เลือกได้มากกว่า 1 สาขา)</label>${draftMsButton()}</div>
+    <div class="field" style="margin-bottom:10px"><label>1. สาขา (เลือกได้มากกว่า 1 สาขา)</label>${draftMsButton()}
+      <div id="draft-cust-summary" style="font-size:12.5px;color:var(--TX2);margin-top:5px"></div></div>
     <!-- ติ๊ก "ค่าใช้จ่ายนอกสัญญา" (2026-09-24 v3): ซ่อนตารางสินค้า แสดงรายละเอียดข้อความ + ไฟล์แนบแทน (draftOffContractChanged) -->
     <div id="draft-offc-wrap" class="${header?.has_off_contract_cost ? '' : 'hidden'}" style="margin-bottom:10px">
       <div class="field"><label>📄 รายละเอียดค่าใช้จ่ายนอกสัญญา <span style="color:var(--R)">*</span></label>
@@ -13623,7 +13626,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
           <th colspan="3" class="dl-prev dl-start" title="โปรล่าสุดของสาขาที่เลือก + สินค้านี้ ที่เริ่มโปรก่อนวันทำเอกสาร">Pro Period ก่อน</th>
           <th colspan="3" class="dl-last dl-start" title="ใบโปรที่สร้างล่าสุดของสาขาที่เลือก + สินค้านี้ (ดูวันที่สร้างเอกสาร ไม่สนช่วงโปร)">Pro No. ล่าสุด</th>
           <th colspan="4" class="dl-norm dl-start">ราคาปกติ</th><th colspan="5" class="dl-promo dl-start">ราคาโปรโมชั่น</th>
-          <th rowspan="2" class="dl-start">ยอดขายช่วง Pro Period ก่อน<br><span style="font-weight:400;color:var(--TX3)">สาขาที่เลือก (ไม่มียอด TSS ใช้ CONSI)</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2"></th><th rowspan="2"></th></tr>
+          <th rowspan="2" class="dl-start">ยอดขายช่วง Pro Period ก่อน<br><span style="font-weight:400;color:var(--TX3)">สาขาที่เลือก → CONSI → ทั้งกลุ่ม</span></th><th rowspan="2">ประมาณการจำนวน</th><th rowspan="2" class="dl-start" title="ผู้อนุมัติขั้นตรวจสอบเลือก ขายได้ / ขาดทุน ทุกรายการ">🔍 ผลตรวจสอบ</th><th rowspan="2"></th><th rowspan="2"></th></tr>
         <tr><th class="dl-prev dl-start">เลขที่</th><th class="dl-prev">ราคา</th><th class="dl-prev">ช่วงวันที่</th>
           <th class="dl-last dl-start">เลขที่</th><th class="dl-last">ราคา</th><th class="dl-last">ช่วงวันที่</th>
           <th class="dl-norm dl-start">ราคาขาย</th><th class="dl-norm">GP %</th><th class="dl-norm">ท้ายบิล %</th><th class="dl-norm">ราคาทุนสุทธิ</th>
@@ -13673,6 +13676,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
     ${canEdit ? `<button class="btn btn-p" id="draft-save-btn" onclick="saveDraftPromo()">บันทึกร่าง</button><button class="btn btn-g" id="draft-save-submit-btn" onclick="saveDraftPromo(true)">บันทึกและส่งอนุมัติ</button>` : ''}
   </div>`;
   document.getElementById('draft-fp').classList.remove('hidden');
+  _draftRenderCustSummary();
   if (!_draftLines.length) _draftLines.push(_draftEmptyLine());
   draftRenderLines();
   draftUpdateDayCounts();
@@ -13705,6 +13709,10 @@ const DRAFT_SALE_PLACES = [
   { k: 'other', label: 'จุดขายอื่นๆ', text: true },
 ];
 const DRAFT_PRODUCT_TYPES = ['ตู้สด TSS', 'ตู้สด TGM', '1 แถม 1 (แพ็คคู่)', 'PACK TSS', 'PACK TGM', 'PACK HB'];
+// ลำดับแสดง (2026-09-24): บรรทัดแรก ตู้สด TSS · ตู้สด TGM · 1 แถม 1 · อื่นๆ / บรรทัดสอง PACK TSS · PACK TGM · PACK HB
+// (ลำดับใน DRAFT_PRODUCT_TYPES ใช้เป็น id ของ checkbox fx-pt-<i> — ห้ามสลับ จึงจัดลำดับแสดงแยก)
+// 'อื่นๆ' = ช่องอื่นๆ ท้ายบรรทัดแรก (ptype_other) · 'อื่นๆ2' = ช่องอื่นๆ ท้ายบรรทัดสอง ต่อจาก PACK HB (ptype_other2)
+function _draftPtypeOrder() { return ['ตู้สด TSS', 'ตู้สด TGM', '1 แถม 1 (แพ็คคู่)', 'อื่นๆ', 'PACK TSS', 'PACK TGM', 'PACK HB', 'อื่นๆ2']; }
 function _draftFx(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
 function _draftOtherCostSum() { return _draftOtherCosts.reduce((a, c) => a + (parseFloat(c.amount) || 0), 0); }
 function _draftBranchesFrom(header, lines) {
@@ -13728,12 +13736,14 @@ function _draftFormExtraHtml(raw, canEdit, header) {
     <div style="background:var(--bg2);border-radius:8px;padding:6px 12px 10px">
       ${row('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => ck(`fx-sale-${p.k}`, sale[p.k]?.on, p.label,
         p.text ? ' ' + txt(`fx-sale-${p.k}-v`, sale[p.k]?.text) : ` ${num(`fx-sale-${p.k}-v`, sale[p.k]?.n)} ${p.unit}`)).join(''))}
-      ${row('ประเภทสินค้า', DRAFT_PRODUCT_TYPES.map((t, i) => ck(`fx-pt-${i}`, (fx.ptypes || []).includes(t), t)).join('')
-        + ck('fx-pt-other', fx.ptype_other?.on, 'อื่นๆ', ' ' + txt('fx-pt-other-v', fx.ptype_other?.text)))}
-      ${row('สินค้า NPD', ck('draft-npd', header?.is_npd, '🆕 สินค้า NPD', '', escAttr)
+      ${row('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? ck('fx-pt-other', fx.ptype_other?.on, 'อื่นๆ', ' ' + txt('fx-pt-other-v', fx.ptype_other?.text)) + '<span style="flex-basis:100%;height:0"></span>'
+          : t === 'อื่นๆ2' ? ck('fx-pt-other2', fx.ptype_other2?.on, 'อื่นๆ', ' ' + txt('fx-pt-other2-v', fx.ptype_other2?.text))
+          : ck(`fx-pt-${DRAFT_PRODUCT_TYPES.indexOf(t)}`, (fx.ptypes || []).includes(t), t)).join(''))}
+      ${row('สินค้า NPD/ลงสื่อ', ck('draft-npd', header?.is_npd, '🆕 สินค้า NPD', '', escAttr)
         + ck('fx-fee-none', fx.fee_none, 'ไม่มีค่าแรกเข้า')
         + ck('fx-fee', fx.fee?.on, 'ค่าแรกเข้า', ` ${num('fx-fee-v', fx.fee?.amt, 100)} บาท`)
-        + ck('draft-marketing-cost', header?.has_marketing_cost, 'ค่าลงสื่อ/โฆษณา/การตลาด', ` ${num('fx-media-v', fx.media?.amt, 100)} บาท`, escAttr)
+        + ck('draft-marketing-cost', header?.has_marketing_cost, 'ค่าลงสื่อ/โฆษณา', ` ${num('fx-media-v', fx.media?.amt, 100)} บาท`, escAttr)
+        + ck('fx-media-online', fx.media_online?.on, 'ค่าลงสื่อ online', ` ${num('fx-media-online-v', fx.media_online?.amt, 100)} บาท`)
         + ck('fx-other-cost', oc.on, 'ค่าใช้จ่ายอื่นๆ', ` ${num('fx-other-cost-v', oc.amt, 100).replace('<input ', `<input data-manual="${fx.other_cost && Number(fx.other_cost.amt || 0) !== ocSum ? 1 : ''}" oninput="this.dataset.manual=1" `)} บาท`))}
       ${row('ค่าใช้จ่ายนอกสัญญา', ck('draft-off-contract', header?.has_off_contract_cost, '📄 ค่าใช้จ่ายนอกสัญญา', '', 'onchange="draftEscalateChanged();draftOffContractChanged()"')
         + '<span style="font-size:11px;color:var(--TX3)">ติ๊กแล้ว ตารางรายการสินค้าจะเปลี่ยนเป็นช่องพิมพ์รายละเอียด + แนบไฟล์</span>')}
@@ -13750,9 +13760,11 @@ function _draftReadFormExtra() {
     sale,
     ptypes: DRAFT_PRODUCT_TYPES.filter((_, i) => on(`fx-pt-${i}`)),
     ptype_other: { on: on('fx-pt-other'), text: val('fx-pt-other-v') },
+    ptype_other2: { on: on('fx-pt-other2'), text: val('fx-pt-other2-v') },
     fee_none: on('fx-fee-none'),
     fee: { on: on('fx-fee'), amt: n('fx-fee-v') },
     media: { on: on('draft-marketing-cost'), amt: n('fx-media-v') },
+    media_online: { on: on('fx-media-online'), amt: n('fx-media-online-v') },
     other_cost: { on: on('fx-other-cost'), amt: n('fx-other-cost-v') },
     off_contract_text: offContract ? val('draft-off-contract-text') : '',
     branches: offContract ? [..._draftSelectedBranches] : [],
@@ -13765,8 +13777,10 @@ function _draftSetFormExtra(raw) {
   DRAFT_SALE_PLACES.forEach(p => { setC(`fx-sale-${p.k}`, sale[p.k]?.on); setV(`fx-sale-${p.k}-v`, p.text ? sale[p.k]?.text : sale[p.k]?.n); });
   DRAFT_PRODUCT_TYPES.forEach((t, i) => setC(`fx-pt-${i}`, (fx.ptypes || []).includes(t)));
   setC('fx-pt-other', fx.ptype_other?.on); setV('fx-pt-other-v', fx.ptype_other?.text);
+  setC('fx-pt-other2', fx.ptype_other2?.on); setV('fx-pt-other2-v', fx.ptype_other2?.text);
   setC('fx-fee-none', fx.fee_none); setC('fx-fee', fx.fee?.on); setV('fx-fee-v', fx.fee?.amt); setV('fx-media-v', fx.media?.amt);
   setC('fx-other-cost', fx.other_cost?.on); setV('fx-other-cost-v', fx.other_cost?.amt);
+  setC('fx-media-online', fx.media_online?.on); setV('fx-media-online-v', fx.media_online?.amt);
   setV('draft-off-contract-text', fx.off_contract_text);
 }
 // ติ๊ก/ไม่ติ๊ก "ค่าใช้จ่ายนอกสัญญา": ซ่อน/แสดงตารางสินค้า (+ GP/ท้ายบิลค่าเริ่มต้น, คำเตือนซ้อนโปร) สลับกับ
@@ -13976,6 +13990,7 @@ function draftMsSearch(value) {
 function draftMsRefresh() {
   const list = document.getElementById('draft-ms-list'); if (list) list.innerHTML = draftMsItems();
   const label = document.getElementById('draft-ms-label'); if (label) label.textContent = draftMsLabel();
+  _draftRenderCustSummary();
   draftCheckOverlap();
   draftRefreshLineRefData();
 }
@@ -14177,7 +14192,7 @@ function draftSyncLineDates() {
   if (periodEl) periodEl.textContent = (start && due) ? `${promoFmtD(start)} – ${promoFmtD(due)}` : 'ยังไม่ระบุ — กรอกวันที่เริ่ม/สิ้นสุดโปรด้านบนก่อน';
   draftCheckOverlap();
 }
-const DRAFT_LINE_COLS = 23; // จำนวนคอลัมน์ของตารางสินค้า (ใช้กับ colspan แถวปุ่ม "+ เพิ่มรายการสินค้า")
+const DRAFT_LINE_COLS = 24; // จำนวนคอลัมน์ของตารางสินค้า (ใช้กับ colspan แถวปุ่ม "+ เพิ่มรายการสินค้า")
 function _draftIsBlank(v) { return v === '' || v == null || isNaN(parseFloat(v)); }
 // ไฮไลต์ช่อง Compensate ที่ยังว่างเมื่อเลือก "Compensate" ในลักษณะรายการ (อัปเดตทีละช่องตอนพิมพ์ ไม่ re-render ทั้งตาราง)
 function _draftMarkCompensateInput(i) {
@@ -14226,6 +14241,7 @@ function draftRenderLines() {
     <td class="r" id="draft-line-cost-promo-${i}">${fmt2(l.costPricePromo)}</td>
     <td class="r" id="draft-line-last-month-qty-${i}" title="ยอดขายจริงของสินค้านี้ ช่วง Pro Period ก่อน">—</td>
     <td class="r"><input type="number" step="0.001" min="0" value="${l.estimatedQty ?? ''}" oninput="draftLineField(${i},'estimatedQty',this.value)" style="width:92px;text-align:right" ${dis} title="จำนวนที่ Sales ประมาณการเอง"></td>
+    <td id="draft-line-verdict-${i}">${_draftVerdictCellHtml(i)}</td>
     <td>${_draftEditNo && l.sku ? `<button class="cmt-btn" onclick="draftOpenLineComments('${_promoJsKey(l.sku)}')" id="draft-cmt-btn-${i}">💬</button>` : ''}</td>
     <td>${canEdit ? `<button class="btn btn-xs" onclick="draftRemoveLine(${i})" ${_draftLines.length <= 1 ? 'disabled' : ''}>ลบ</button>` : ''}</td>
   </tr>`;
@@ -14676,7 +14692,7 @@ function _draftPlanHtml() {
         <input list="draft-plan-users" placeholder="🔍 พิมพ์ชื่อเพื่อเพิ่ม" style="width:190px;font-size:12px;padding:3px 7px" onchange="draftPlanAddByText('${_promoJsKey(lv.id)}',this)">` : ''}</div>
         <div style="font-size:10.5px;color:var(--TX3);margin-top:2px">ผู้สร้างเลือกเอง</div>`;
     } else who = esc((lv.approvers || []).map(a => a.name || uidToName(a.uid)).join(' / ') || '—');
-    rows.push(`<tr><td>${i + 2}</td><td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b></td><td class="l">${who}</td>
+    rows.push(`<tr><td>${i + 2}</td><td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b>${lv.audit_verdict ? '<div style="font-size:10.5px;color:var(--BL)">🔍 ขั้นตรวจสอบ (ขายได้/ขาดทุน รายสินค้า)</div>' : ''}</td><td class="l">${who}</td>
       <td style="white-space:nowrap;font-size:11.5px">${(lv.approvers || []).length > 1 || lv.pick_by_creator ? (lv.mode === 'all' ? 'ทุกคนต้องอนุมัติ' : 'คนใดคนหนึ่ง') : '—'}</td></tr>`);
   });
   if (!(opt?.levels || []).length) rows.push(`<tr><td>2</td><td class="l" colspan="3" style="color:var(--TX3)">ยังไม่ได้ตั้งขั้นอนุมัติ — ผู้จัดการอนุมัติได้โดยตรง</td></tr>`);
@@ -14716,6 +14732,47 @@ function _draftPlanForSave() {
   const picks = Object.fromEntries((opt?.levels || []).filter(lv => lv.pick_by_creator).map(lv => [lv.id, _draftPlan.picks[lv.id] || []]));
   return { route_id: opt?.id || '', picks, manual: !!_draftPlan.manual };
 }
+// ผลตรวจสอบ ขายได้/ขาดทุน รายบรรทัดสินค้า (2026-09-24, ผู้ใช้ยืนยัน: เลือกในตารางสินค้า แทนผลรวม) — กรอกได้เฉพาะ
+// ผู้อนุมัติของขั้นที่ตั้ง "ขั้นตรวจสอบ" (lv.audit_verdict) ตอนถึงตาตัวเอง · server เก็บลง approver entry
+// (line_verdicts: {sku: 'profit'|'loss'}) และบังคับครบทุก SKU — ดู promoApproval.validateChange
+const DRAFT_VERDICT = { profit: { t: 'ขายได้', icon: '✅', color: 'var(--G)', bg: 'var(--LG)' }, loss: { t: 'ขาดทุน', icon: '⚠️', color: 'var(--R)', bg: 'var(--LR)' } };
+let _draftLineVerdicts = {}; // sku -> 'profit' | 'loss' (ผลที่บันทึกแล้ว หรือที่ผู้ตรวจสอบกำลังเลือก)
+// ผลที่บันทึกแล้วในเอกสาร (ผู้ตรวจสอบคนล่าสุดที่มี line_verdicts)
+function _draftSavedLineVerdicts(h) {
+  const levels = [...(Array.isArray(h?.approval_history_json) ? h.approval_history_json : []), ...(Array.isArray(h?.levels_json) ? h.levels_json : [])];
+  let found = null;
+  levels.forEach(lv => (lv.approvers || []).forEach(a => { if (a.line_verdicts && typeof a.line_verdicts === 'object') found = a.line_verdicts; }));
+  return found;
+}
+// ถึงตาผู้ใช้คนนี้กรอกผลตรวจสอบหรือยัง (เอกสารรออนุมัติ + ขั้นปัจจุบันเป็นขั้นตรวจสอบ + เป็นผู้อนุมัติที่ยังไม่ตัดสินใจ)
+function _draftIsAuditTurn() {
+  const h = _draftHeader;
+  if (!h || !['pending_approval', 'pending_exec_approval'].includes(h.status)) return false;
+  const lv = (Array.isArray(h.levels_json) ? h.levels_json : [])[h.current_level || 0];
+  return !!lv?.audit_verdict && (lv.approvers || []).some(a => a.uid === UID && a.status === 'pending');
+}
+function _draftVerdictCounts(obj) { const v = Object.values(obj || {}); return { p: v.filter(x => x === 'profit').length, l: v.filter(x => x === 'loss').length, n: v.length }; }
+function _draftVerdictSummary(obj) {
+  const c = _draftVerdictCounts(obj); if (!c.n) return '';
+  return `<span style="display:inline-block;font-size:11.5px;font-weight:700;background:var(--bg2);border-radius:9px;padding:0 8px;margin-right:6px">🔍 ผลตรวจสอบ: <span style="color:var(--G)">✅ ขายได้ ${c.p}</span> · <span style="color:var(--R)">⚠️ ขาดทุน ${c.l}</span> รายการ</span>`;
+}
+function _draftVerdictCellHtml(i) {
+  const l = _draftLines[i]; if (!l?.sku) return '';
+  const v = _draftLineVerdicts[l.sku];
+  if (_draftIsAuditTurn()) {
+    const btn = (val) => { const x = DRAFT_VERDICT[val], on = v === val;
+      return `<button class="btn btn-xs" onclick="draftSetLineVerdict(${i},'${val}')" style="padding:2px 7px;${on ? `background:${x.bg};color:${x.color};border-color:${x.color};font-weight:700` : 'opacity:.75'}">${x.icon} ${x.t}</button>`; };
+    return `<div style="display:flex;gap:4px;justify-content:center;white-space:nowrap">${btn('profit')}${btn('loss')}</div>`;
+  }
+  const x = DRAFT_VERDICT[v];
+  return x ? `<span style="font-size:12px;font-weight:700;color:${x.color};white-space:nowrap">${x.icon} ${x.t}</span>` : '—';
+}
+function draftSetLineVerdict(i, v) {
+  const l = _draftLines[i]; if (!l?.sku || !_draftIsAuditTurn()) return;
+  _draftLineVerdicts[l.sku] = v;
+  // SKU เดียวกันมีได้บรรทัดเดียว แต่ re-render ทุกช่องกันกรณีบรรทัดย่อย
+  _draftLines.forEach((x, j) => { const el = document.getElementById(`draft-line-verdict-${j}`); if (el) el.innerHTML = _draftVerdictCellHtml(j); });
+}
 // ── ลำดับการอนุมัติในหน้าเอกสาร (2026-09-24) — ทุกขั้น (ผ่านแล้ว/ปัจจุบัน) พร้อมสถานะ เวลา ความเห็น
 // ให้ผู้อนุมัติขั้นถัดไปเห็นความเห็นของขั้นก่อนหน้าตั้งแต่เปิดเอกสาร
 function draftRenderApprovalTrail() {
@@ -14740,7 +14797,7 @@ function draftRenderApprovalTrail() {
       <td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b>${(lv.approvers || []).length > 1 ? `<div style="font-size:10.5px;color:var(--TX3)">(${lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง'})</div>` : ''}</td>
       <td class="l">${esc(a.name || uidToName(a.uid))}</td>
       <td style="white-space:nowrap"><span class="badge ${cls}">${t}</span>${a.ts ? ` <span style="color:var(--TX3);font-size:11px">${fmtTs(a.ts)}</span>` : ''}</td>
-      <td class="l" style="white-space:pre-wrap">${a.comment ? esc(a.comment) : ''}</td></tr>`);
+      <td class="l" style="white-space:pre-wrap">${_draftVerdictSummary(a.line_verdicts)}${a.comment ? esc(a.comment) : (lv.audit_verdict && a.status === 'pending' ? '<span style="font-size:11px;color:var(--TX3)">🔍 ขั้นตรวจสอบ — เลือกผล ขายได้/ขาดทุน ในคอลัมน์ "ผลตรวจสอบ" ของตารางสินค้า</span>' : '')}</td></tr>`);
   }));
   box.innerHTML = `${h.route_name ? `<div style="font-size:12px;color:var(--TX2);margin:6px 10px 0">เส้นทางอนุมัติ: <b>${esc(h.route_name)}</b></div>` : ''}
     <div class="tw" style="margin:6px 10px 10px"><table class="draft-trail"><thead><tr><th style="width:44px">ลำดับ</th><th style="width:210px">ขั้น</th><th style="width:180px">ผู้ลงนาม</th><th style="width:210px">สถานะ · วันเวลา</th><th>ความเห็น</th></tr></thead>
@@ -14756,13 +14813,13 @@ let _draftCmtMode = false;
 // รหัสคอลัมน์ (ตรงลำดับ DRAFT_LINE_COL_LABELS) — anchor ใหม่เก็บเป็น cell:<sku>:<รหัส> ไม่ผูกกับลำดับคอลัมน์
 // anchor เดิม (ก่อน v3) เก็บลำดับคอลัมน์ของตารางเก่า → แปลงผ่าน DRAFT_LINE_COL_KEYS_V2 ให้ปักตรงช่องเดิม
 const DRAFT_LINE_COL_KEYS = ['num', 'sku', 'name', 'set', 'pp_doc', 'pp_price', 'pp_period', 'last_doc', 'last_price', 'last_period',
-  'n_sell', 'n_gp', 'n_bill', 'n_cost', 'comp', 'p_sell', 'p_gp', 'p_bill', 'p_cost', 'qty', 'est'];
+  'n_sell', 'n_gp', 'n_bill', 'n_cost', 'comp', 'p_sell', 'p_gp', 'p_bill', 'p_cost', 'qty', 'est', 'verdict'];
 const DRAFT_LINE_COL_KEYS_V2 = ['num', 'sku', 'name', 'set', 'pp_doc', 'pp_price', 'pp_period', 'n_sell', 'n_gp', 'n_bill', 'n_cost',
   'comp', 'p_sell', 'p_gp', 'p_bill', 'p_cost', 'disc', 'qty', 'est'];
 const DRAFT_LINE_COL_LABELS = ['ลำดับ', 'รหัสสินค้า', 'ชื่อสินค้า', 'Set อุปกรณ์', 'Pro Period ก่อน · เลขที่', 'Pro Period ก่อน · ราคา', 'Pro Period ก่อน · ช่วงวันที่',
   'Pro No. ล่าสุด · เลขที่', 'Pro No. ล่าสุด · ราคา', 'Pro No. ล่าสุด · ช่วงวันที่',
   'ราคาปกติ · ราคาขาย', 'ราคาปกติ · GP%', 'ราคาปกติ · ท้ายบิล%', 'ราคาปกติ · ทุนสุทธิ', 'Compensate', 'ราคาโปร · ราคาขาย', 'ราคาโปร · GP%',
-  'ราคาโปร · ท้ายบิล%', 'ราคาโปร · ทุนสุทธิ', 'ยอดขายช่วง Pro Period ก่อน', 'ประมาณการจำนวน'];
+  'ราคาโปร · ท้ายบิล%', 'ราคาโปร · ทุนสุทธิ', 'ยอดขายช่วง Pro Period ก่อน', 'ประมาณการจำนวน', 'ผลตรวจสอบ'];
 function _draftAnchorFor(el) {
   const td = el.closest('#draft-lines-tbody td');
   if (td) {
@@ -15387,16 +15444,22 @@ function _draftNeedsEscalation(header) {
 async function draftApprove(draftNo, approved) {
   return _draftApplyApproval(draftNo, approved, false);
 }
-// หน้าต่างใส่ความเห็นก่อนอนุมัติ/ไม่อนุมัติ — resolve เป็นข้อความ (ว่างได้) หรือ null ถ้ายกเลิก
-function _draftAskApprovalComment(approved) {
+// หน้าต่างใส่ความเห็นก่อนอนุมัติ/ไม่อนุมัติ — resolve { comment } (ว่างได้) หรือ null ถ้ายกเลิก
+// verdicts = ผลตรวจสอบรายบรรทัดที่เลือกไว้ในตาราง (ขั้นตรวจสอบ) — แสดงสรุปให้ยืนยันก่อนอนุมัติ
+function _draftAskApprovalComment(approved, verdicts = null) {
   return new Promise(resolve => {
     window._draftCmtResolve = v => { window._draftCmtResolve = null; closeM(); resolve(v); };
+    window._draftCmtOk = () => window._draftCmtResolve({ comment: (document.getElementById('draft-approval-comment').value || '').trim() });
+    const vc = verdicts ? _draftVerdictCounts(verdicts) : null;
     openMod(`<div class="mh"><div class="mt2">${approved ? '✅ ยืนยันอนุมัติ' : '❌ ยืนยันไม่อนุมัติ'}</div><span class="mx" onclick="window._draftCmtResolve&&window._draftCmtResolve(null)">✕</span></div>
+      ${vc ? `<div style="background:var(--LBL);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:13px">
+        <b>🔍 ผลตรวจสอบรายสินค้า</b> (${vc.n} รายการ) — <b style="color:var(--G)">✅ ขายได้ ${vc.p}</b> · <b style="color:var(--R)">⚠️ ขาดทุน ${vc.l}</b>
+        <div style="font-size:11.5px;color:var(--TX3);margin-top:3px">แก้ผลได้ในคอลัมน์ "ผลตรวจสอบ" ของตารางสินค้าก่อนกดยืนยัน</div></div>` : ''}
       <label style="font-size:12.5px;font-weight:600">ความเห็น ${approved ? '<span style="font-weight:400;color:var(--TX3)">(ไม่บังคับ)</span>' : '<span style="font-weight:400;color:var(--TX3)">(ควรระบุเหตุผล)</span>'}</label>
       <textarea id="draft-approval-comment" maxlength="1000" placeholder="${approved ? 'ความเห็นเพิ่มเติม — ผู้อนุมัติขั้นถัดไปและผู้จัดทำจะเห็น' : 'ระบุเหตุผลที่ไม่อนุมัติ'}" style="width:100%;min-height:90px;margin-top:6px;border:1px solid var(--BD);border-radius:7px;padding:8px;font:inherit;font-size:13px;box-sizing:border-box"></textarea>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
         <button class="btn" onclick="window._draftCmtResolve(null)">ยกเลิก</button>
-        <button class="btn ${approved ? 'btn-g' : 'btn-r'}" onclick="window._draftCmtResolve((document.getElementById('draft-approval-comment').value||'').trim())">${approved ? 'ยืนยันอนุมัติ' : 'ยืนยันไม่อนุมัติ'}</button>
+        <button class="btn ${approved ? 'btn-g' : 'btn-r'}" onclick="window._draftCmtOk()">${approved ? 'ยืนยันอนุมัติ' : 'ยืนยันไม่อนุมัติ'}</button>
       </div>`);
     setTimeout(() => document.getElementById('draft-approval-comment')?.focus(), 50);
   });
@@ -15405,22 +15468,36 @@ async function _draftApplyApproval(draftNo, approved, executive) {
   const no = draftNo || _draftEditNo;
   try {
     // ความเห็นผู้อนุมัติ (2026-09-24) — ถามก่อนบันทึก, ยกเลิก = ไม่ทำอะไร; server เก็บลง approver entry
-    const comment = await _draftAskApprovalComment(approved);
-    if (comment === null) return;
-    // ต้องมีลายเซ็นก่อนกดอนุมัติ — server snapshot ลายเซ็นนี้ลงเอกสารตอนบันทึกการอนุมัติ
-    if (approved) await sigEnsureMine();
     const header = await SB.getPromoDraftHeader(no);
     if (!header) { toast('ไม่พบเอกสารนี้แล้ว', 'warn'); return; }
     const levels = Array.isArray(header.levels_json) ? header.levels_json : [];
+    // ขั้นตรวจสอบ (lv.audit_verdict): ต้องเลือกผล ขายได้/ขาดทุน ครบทุกรายการในตารางสินค้าก่อนอนุมัติ
+    const needVerdict = approved && !!levels[header.current_level || 0]?.audit_verdict;
+    let verdicts = null;
+    if (needVerdict) {
+      // เลือกผลได้ในตารางสินค้าของเอกสารเท่านั้น — กดอนุมัติจากหน้ารายการ = เปิดเอกสารให้เลือกก่อน
+      if (no !== _draftEditNo) { toast('ขั้นตรวจสอบ: เลือกผล ขายได้/ขาดทุน ในตารางสินค้าก่อน แล้วกดอนุมัติในเอกสาร', 'warn'); await showPromoDraftModal(no); return; }
+      const nums = _draftLineNumbers();
+      const lines = _draftLines.map((l, i) => ({ l, num: nums[i] })).filter(x => x.l.sku);
+      const missing = lines.filter(x => !DRAFT_VERDICT[_draftLineVerdicts[x.l.sku]]).map(x => x.num);
+      if (missing.length) { toast(`ขั้นตรวจสอบ: เลือกผล "ขายได้" หรือ "ขาดทุน" ให้ครบทุกรายการ (ยังขาดลำดับ ${missing.join(', ')})`, 'warn'); return; }
+      verdicts = Object.fromEntries(lines.map(x => [x.l.sku, _draftLineVerdicts[x.l.sku]]));
+    }
+    const ans = await _draftAskApprovalComment(approved, verdicts && Object.keys(verdicts).length ? verdicts : null);
+    if (ans === null) return;
+    const comment = ans.comment;
+    const vPatch = verdicts ? { approval_line_verdicts: verdicts } : {};
+    // ต้องมีลายเซ็นก่อนกดอนุมัติ — server snapshot ลายเซ็นนี้ลงเอกสารตอนบันทึกการอนุมัติ
+    if (approved) await sigEnsureMine();
     if (!levels.length) {
       if (executive) { toast('ยังไม่ได้ตั้งค่าเส้นทางอนุมัติผู้บริหาร กรุณาให้แอดมินตั้งค่าที่เมนูตั้งค่าเส้นทางอนุมัติ', 'warn'); return; }
       if (approved) return _draftFinishNormalRoute(no, header, comment);
       await SB.updatePromoDraftHeader(no, { status: 'rejected', updated_by: UID, approval_comment: comment });
     } else {
       const result = ApprovalWorkflow.advance(levels, header.current_level || 0, UID, approved);
-      if (result.complete && !executive) return _draftFinishNormalRoute(no, { ...header, levels_json: result.levels }, comment);
+      if (result.complete && !executive) return _draftFinishNormalRoute(no, { ...header, levels_json: result.levels }, comment, vPatch);
       await SB.updatePromoDraftHeader(no, { levels_json: result.levels, current_level: result.current,
-        status: result.rejected ? 'rejected' : result.complete ? 'approved' : header.status, updated_by: UID, approval_comment: comment });
+        status: result.rejected ? 'rejected' : result.complete ? 'approved' : header.status, updated_by: UID, approval_comment: comment, ...vPatch });
     }
     audit(executive ? 'PROMO_DRAFT_EXEC_APPROVE' : 'PROMO_DRAFT_APPROVE', no, { approved });
     toast(approved ? 'บันทึกการอนุมัติแล้ว' : 'ไม่อนุมัติแล้ว');
@@ -15428,7 +15505,7 @@ async function _draftApplyApproval(draftNo, approved, executive) {
   } catch (e) { toast('อัปเดตสถานะไม่สำเร็จ: ' + (e.message || e), 'warn'); }
 }
 // ผ่านครบ route ปกติแล้ว (หรือไม่มี route เลย) — เช็คว่าต้อง escalate ไปผู้บริหารก่อนจะปิดเป็น 'approved' จริงไหม
-async function _draftFinishNormalRoute(no, header, comment = '') {
+async function _draftFinishNormalRoute(no, header, comment = '', vPatch = {}) {
   if (_draftNeedsEscalation(header)) {
     if (!await _draftCheckExecRoute(header)) return;
     let execLevels;
@@ -15441,12 +15518,12 @@ async function _draftFinishNormalRoute(no, header, comment = '') {
     }));
     SB.updatePromoDraftHeader(no, {
       status: 'pending_exec_approval', levels_json: clonedExec, current_level: 0,
-      approvers_json: clonedExec.flatMap(lv => lv.approvers), updated_by: UID, approval_comment: comment,
+      approvers_json: clonedExec.flatMap(lv => lv.approvers), updated_by: UID, approval_comment: comment, ...vPatch,
     }).then(() => { audit('PROMO_DRAFT_ESCALATE', no, {}); toast('อนุมัติครบ route ปกติแล้ว — ส่งต่อผู้บริหารอนุมัติเพิ่ม'); _draftAfterStatusChange(no); })
       .catch(e => toast('บันทึกไม่สำเร็จ: ' + (e.message || e), 'warn'));
     return;
   }
-  SB.updatePromoDraftHeader(no, { status: 'approved', updated_by: UID, approval_comment: comment })
+  SB.updatePromoDraftHeader(no, { status: 'approved', updated_by: UID, approval_comment: comment, ...vPatch })
     .then(() => { audit('PROMO_DRAFT_APPROVE', no, { final: true }); toast('✅ อนุมัติครบทุกขั้นตอน'); _draftAfterStatusChange(no); })
     .catch(e => toast('บันทึกไม่สำเร็จ: ' + (e.message || e), 'warn'));
 }
@@ -15501,7 +15578,7 @@ function _draftRouteMatch(route, f) {
   if (types.length) { const hit = types.find(t => f.itemTypes.includes(t)); if (!hit) return null; why.push(`ลักษณะรายการ ${hit}`); }
   if (m.npd) { if (!f.npd) return null; why.push('สินค้า NPD'); }
   if (m.off_contract) { if (!f.off) return null; why.push('ค่าใช้จ่ายนอกสัญญา'); }
-  if (m.marketing) { if (!f.mkt) return null; why.push('ค่าลงสื่อ/การตลาด'); }
+  if (m.marketing) { if (!f.mkt) return null; why.push('ค่าลงสื่อ/โฆษณา'); }
   return why.length ? why.join(' · ') : null;
 }
 function _draftSuggestRoute(routes, facts) {
@@ -15553,6 +15630,7 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
         ${lv.pick_by_creator ? `<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" ${lv.default_self ? 'checked' : ''} onchange="pdWfSetField('normal','${lv.id}','default_self',this.checked)">ค่าเริ่มต้น = ผู้สร้างเอกสารเอง</label>
         <span style="color:var(--TX3)">รายชื่อด้านล่างเป็นค่าแนะนำ (ปล่อยว่างได้)</span>` : ''}
       </div>` : ''}
+      <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--TX2);margin:-2px 0 7px"><input type="checkbox" ${lv.audit_verdict ? 'checked' : ''} onchange="pdWfSetField('${kind}','${lv.id}','audit_verdict',this.checked)">🔍 ขั้นตรวจสอบ — ผู้อนุมัติขั้นนี้ต้องเลือกผล "ขายได้" หรือ "ขาดทุน" ทุกรายการสินค้าก่อนอนุมัติ</label>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">
         ${(lv.approvers || []).map(a => `<span style="font-size:11px;background:var(--LBL);color:var(--BL);border-radius:4px;padding:3px 8px;display:flex;align-items:center;gap:4px">${esc(a.name)}${a.department ? `<span style="color:var(--TX3)">· ${esc(a.department)}</span>` : ''}<button onclick="pdWfRemApprover('${kind}','${lv.id}','${_promoJsKey(a.uid)}')" style="background:none;border:none;cursor:pointer;color:var(--TX3);font-size:10px;padding:0">✕</button></span>`).join('')}
       </div>
@@ -15576,7 +15654,7 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
       <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:6px">ลักษณะรายการ:
         ${DRAFT_ITEM_TYPES.map(t => `<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" ${(m.item_types || []).includes(t) ? 'checked' : ''} onchange="pdWfRouteType('${_promoJsKey(t)}',this.checked)">${esc(t)}</label>`).join('')}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:6px">เอกสารที่ติ๊ก:
-        ${chk('npd', 'สินค้า NPD', m.npd)}${chk('off_contract', 'ค่าใช้จ่ายนอกสัญญา', m.off_contract)}${chk('marketing', 'ค่าลงสื่อ/การตลาด', m.marketing)}</div>
+        ${chk('npd', 'สินค้า NPD', m.npd)}${chk('off_contract', 'ค่าใช้จ่ายนอกสัญญา', m.off_contract)}${chk('marketing', 'ค่าลงสื่อ/โฆษณา', m.marketing)}</div>
     </div>` : `<div class="al ali" style="margin-bottom:10px;font-size:12px">⭐ เส้นทางมาตรฐาน — ใช้เมื่อเอกสารไม่ตรงเงื่อนไขของเส้นทางอื่น (ผู้สร้างเปลี่ยนเส้นทางเองได้ตอนส่งอนุมัติ)</div>`;
   document.getElementById('ct').innerHTML = `
   <div class="ch" style="margin-bottom:10px"><button class="btn btn-sm" onclick="_pdListView='list';pgPromoDrafts()">← กลับ</button></div>
@@ -15595,7 +15673,7 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
   </div>
   <div class="card" style="border:1.5px solid var(--A);background:var(--LY)">
     <div class="ch"><div class="ct2" style="color:var(--A)">⚠️ ขั้นผู้บริหาร (เมื่อ escalate)</div></div>
-    <div class="al alw" style="margin-bottom:10px">ขั้นพิเศษต่างหาก — เพิ่มเข้าไปต่อท้ายทุกเส้นทางโดยอัตโนมัติ เฉพาะเอกสารที่ติ๊ก "สินค้า NPD" / "ค่าใช้จ่ายนอกสัญญา" / "ค่าลงสื่อ/โฆษณา/การตลาด" ข้อใดข้อหนึ่ง</div>
+    <div class="al alw" style="margin-bottom:10px">ขั้นพิเศษต่างหาก — เพิ่มเข้าไปต่อท้ายทุกเส้นทางโดยอัตโนมัติ เฉพาะเอกสารที่ติ๊ก "สินค้า NPD" / "ค่าใช้จ่ายนอกสัญญา" / "ค่าลงสื่อ/โฆษณา" ข้อใดข้อหนึ่ง</div>
     ${!_pdWfExecLevels?.length ? '<div class="al alw">ยังไม่ได้ตั้งค่าผู้บริหาร: เอกสาร NPD หรือมีค่าใช้จ่ายพิเศษจะบันทึกร่างได้ แต่ยังส่งอนุมัติไม่ได้</div>' : ''}
     <div id="pdwf-exec-lvls">${lvlHtml(_pdWfExecLevels, 'exec')}</div>
     <div style="display:flex;gap:8px;margin-top:8px">
@@ -16023,6 +16101,21 @@ async function _sigLoadMap(uids) {
 // กลุ่มลูกค้าของสาขา (2026-09-23): ใช้ corp จาก "จัดการกลุ่ม" ถ้ามี — สาขาที่ยังไม่ได้ตั้งกลุ่ม (ขึ้น อื่นๆ)
 // ใช้กลุ่มที่พบบ่อยที่สุดของสาขารหัสต้นเดียวกัน (เช่น 01-L2-xxxx = โลตัส) ถ้ายังไม่มีเลยใช้คำแรกของชื่อสาขา
 const _DRAFT_NO_CORP = new Set(['', 'อื่นๆ', 'ไม่ระบุกลุ่ม', UNASSIGNED_CORP_LABEL]);
+// ห้าง/ร้านค้า + รหัสสาขา — ใช้ทั้งหัวเอกสาร PDF และสรุปใต้ปุ่มเลือกสาขาในฟอร์ม
+// "โลตัส 01-L2-0001 … 01-L2-0099, 01-L2-0101" — ชื่อห้างตามด้วยช่วงรหัสสาขาของห้างนั้น (2026-09-24 ย้ายมาจากช่อง
+// สาขา/จำนวน) หลายห้าง = คั่นด้วย " · " พร้อมจำนวนสาขา
+function _draftCustGroupsText(codes) {
+  const corpOf = _draftCorpResolver(allCustomerRows()), byG = new Map();
+  (codes || []).forEach(cc => { const g = corpOf(cc) || 'ไม่ระบุกลุ่ม'; if (!byG.has(g)) byG.set(g, []); byG.get(g).push(cc); });
+  const gs = [...byG.entries()].sort((a, b) => b[1].length - a[1].length);
+  return gs.map(([g, cs]) => `${g} ${_draftBranchRanges([...cs].sort((a, b) => a.localeCompare(b, 'th'))).join(', ')}${gs.length > 1 ? ` (${cs.length} สาขา)` : ''}`).join(' · ');
+}
+function _draftRenderCustSummary() {
+  const el = document.getElementById('draft-cust-summary');
+  if (!el) return;
+  const codes = [..._draftSelectedBranches];
+  el.innerHTML = codes.length ? `<b>ห้าง/ร้านค้า:</b> ${esc(_draftCustGroupsText(codes))}` : '';
+}
 function _draftCorpResolver(rows) {
   const byCode = new Map(rows.map(c => [c.c, c]));
   const prefixOf = code => String(code || '').split('-').slice(0, 2).join('-');
@@ -16103,8 +16196,8 @@ async function draftPreviewPDF(orient = 'landscape') {
       <div class="written">วันที่เขียนใบ Pro ${fv(writtenAt)}</div></div>
     <div class="form">
       <div class="grid2">
-        <div class="fl"><b>ห้าง/ร้านค้า</b>${fv(custGroups.map(([g, n]) => custGroups.length > 1 ? `${g} (${n})` : g).join(', '))}</div>
-        <div class="fl"><b>สาขา/จำนวน</b>${fv(branchCodes.length ? `${branchCodes.length.toLocaleString('th-TH')} สาขา · ${branchPreview.join(', ')}` : '')}</div>
+        <div class="fl"><b>ห้าง/ร้านค้า</b>${fv(_draftCustGroupsText(branchCodes))}</div>
+        <div class="fl"><b>สาขา/จำนวน</b>${fv(branchCodes.length ? `${branchCodes.length.toLocaleString('th-TH')} สาขา` : '')}</div>
         <div class="fl"><b>ชื่อรายการ</b>${fv(name)}</div>
         <div class="fl"><b>วัตถุประสงค์</b>${fv(purpose)}</div>
         <div class="fl"><b>เริ่มตั้งแต่</b>${fv(range(promoStart, promoDue))}<b class="k">รวม</b>${fv(days(promoStart, promoDue), 56)}วัน</div>
@@ -16114,14 +16207,15 @@ async function draftPreviewPDF(orient = 'landscape') {
         ${optRow('เงื่อนไข', DRAFT_CONDITION_TYPES.map(t => box(condSel === t, esc(t), t === 'อื่นๆ' ? ' ' + fv(condOther) : '')))}
         ${optRow('ลักษณะรายการ', DRAFT_ITEM_TYPES.map(t => box(itemType.includes(t), esc(t))))}
         ${optRow('ลดเป็น', [box(discountScope !== 'bill', 'รายการ'), box(discountScope === 'bill', 'ท้ายบิล')])}
-        ${optRow('สินค้า NPD', [box(flag('draft-npd'), 'สินค้า NPD'), box(fx.fee_none, 'ไม่มีค่าแรกเข้า'),
+        ${optRow('สินค้า NPD/ลงสื่อ', [box(flag('draft-npd'), 'สินค้า NPD'), box(fx.fee_none, 'ไม่มีค่าแรกเข้า'),
           box(fx.fee?.on, 'ค่าแรกเข้า', ` ${fv(fmtAmt(fx.fee?.amt), 50)} บาท`),
-          box(flag('draft-marketing-cost'), 'ค่าลงสื่อ/โฆษณา/การตลาด', ` ${fv(fmtAmt(fx.media?.amt), 44)} บาท`),
+          box(flag('draft-marketing-cost'), 'ค่าลงสื่อ/โฆษณา', ` ${fv(fmtAmt(fx.media?.amt), 44)} บาท`),
+          box(fx.media_online?.on, 'ค่าลงสื่อ online', ` ${fv(fmtAmt(fx.media_online?.amt), 44)} บาท`),
           box(fx.other_cost?.on, 'ค่าใช้จ่ายอื่นๆ', ` ${fv(fmtAmt(fx.other_cost?.amt), 44)} บาท`)], 'r5')}
-        ${optRow('ค่าใช้จ่ายนอกสัญญา', [box(offContract, 'ค่าใช้จ่ายนอกสัญญา')])}
         ${optRow('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => box(sale[p.k]?.on, p.label,
           p.text ? ' ' + fv(sale[p.k]?.text) : ` ${fv(sale[p.k]?.n ?? '', 48)} ${p.unit}`)))}
-        ${optRow('ประเภทสินค้า', [...DRAFT_PRODUCT_TYPES.map(t => box((fx.ptypes || []).includes(t), esc(t))), box(fx.ptype_other?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other?.text))])}
+        ${optRow('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? box(fx.ptype_other?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other?.text))
+          : t === 'อื่นๆ2' ? box(fx.ptype_other2?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other2?.text)) : box((fx.ptypes || []).includes(t), esc(t))))}
         <b>ส่วนลด</b><div class="disc">
           <span>GP ปกติ ${fv(gpv('draft-gp-normal-default'), 48)} %</span><span>GP โปร ${fv(gpv('draft-gp-promo-default'), 48)} %</span>
           <span>ท้ายบิล ปกติ ${fv(gpv('draft-bill-normal-default'), 48)} %</span><span>ท้ายบิล โปร ${fv(gpv('draft-bill-promo-default'), 48)} %</span>
@@ -16133,6 +16227,15 @@ async function draftPreviewPDF(orient = 'landscape') {
     </div>`;
   const draftNums = _draftLineNumbers();
   const fmt2 = v => v !== '' && v != null ? Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+  // คอลัมน์ผลตรวจสอบรายสินค้า — มีเมื่อเส้นทางของเอกสารมีขั้นตรวจสอบ (ตั้งค่า pdfAudit หลังโหลดเส้นทางด้านล่าง)
+  // มีผลแล้ว = ✅ ขายได้ / ⚠️ ขาดทุน · ยังไม่ตรวจ = ☐ ขายได้ ☐ ขาดทุน ให้ติ๊กมือได้
+  let pdfAudit = false;
+  const vCell = sku => {
+    const v = _draftLineVerdicts[sku];
+    const body = v === 'profit' ? '<b class="vd profit">✅ ขายได้</b>' : v === 'loss' ? '<b class="vd loss">⚠️ ขาดทุน</b>'
+      : '<span class="vbox"><i class="box"></i>ขายได้</span><span class="vbox"><i class="box"></i>ขาดทุน</span>';
+    return pdfAudit ? `<td class="gs vcell">${body}</td>` : '';
+  };
   const buildRows = lines => lines.map(({ l, num }) => {
     const level = l.subLevel || 0;
     const ref = _draftRefData.get(l.sku);
@@ -16147,7 +16250,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     <td class="num n">${esc(num)}</td><td class="mono n">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
     <td class="n g-norm gs">${fmt2(l.normalPrice)}</td><td class="n g-norm">${pct(l.gpPct)}</td><td class="n g-norm">${pct(l.billDiscPct)}</td><td class="n g-norm strong">${fmt2(l.costPrice)}</td>
     <td class="n g-promo gs">${fmt2(l.compensate)}</td><td class="n g-promo">${fmt2(l.unitPrice)}</td><td class="n g-promo">${pct(l.gpPctPromo)}</td><td class="n g-promo">${pct(l.billDiscPctPromo)}</td><td class="n g-promo strong">${fmt2(l.costPricePromo)}</td>
-    <td class="n gs">${prevPeriodQty}</td><td class="n">${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
+    <td class="n gs">${prevPeriodQty}</td><td class="n">${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>${vCell(l.sku)}
   </tr>`;
   }).join('');
   // แถวแบบแนวตั้ง: สินค้า (รหัส/ชื่อ/ชุด) · Pro Period ก่อน / Pro No. ล่าสุด (เลขที่/ราคา/ช่วง ช่องละกลุ่ม)
@@ -16168,7 +16271,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     <td class="g-norm gs">${kv(l.normalPrice, l.gpPct, l.billDiscPct, l.costPrice)}</td>
     <td class="g-promo gs">${fmt2(l.compensate)}</td>
     <td class="g-promo">${kv(l.unitPrice, l.gpPctPromo, l.billDiscPctPromo, l.costPricePromo)}</td>
-    <td class="gs">${prevQty}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>
+    <td class="gs">${prevQty}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>${vCell(l.sku)}
   </tr>`;
   }).join('');
   const otherCostsRows = _draftOtherCosts.filter(c => (c.item || '').trim()).map(c => `<tr>
@@ -16200,7 +16303,6 @@ async function draftPreviewPDF(orient = 'landscape') {
   try { if (_draftRefPromise) await _draftRefPromise; } catch (e) { /* ignore */ }
   if (_draftLines.some(l => l.sku && !_draftRefData.has(l.sku))) { try { await draftRefreshLineRefData(); } catch (e) { /* ignore */ } }
   const lines = _draftLines.map((l, i) => ({ l, num: draftNums[i] })).filter(x => x.l.sku);
-  const rowsHtml = portrait ? buildRowsPortrait(lines) : buildRows(lines);
   const loadTpl = entity => SB.getApprovalWorkflowTemplate(entity).then(l => Array.isArray(l) ? l : []).catch(() => []);
   const noRouteLevel = { label: 'ผู้อนุมัติ', noRoute: true, approvers: [] };
   let upcoming = [];
@@ -16233,12 +16335,16 @@ async function draftPreviewPDF(orient = 'landscape') {
     const acted = all.filter(a => a.status === 'approved' || a.status === 'rejected');
     if (!acted.length) {
       const names = lv.noRoute ? 'ผู้จัดการ (ยังไม่ได้ตั้งเส้นทางอนุมัติ)' : all.map(a => a.name).join(' / ') || '—';
-      signRows.push({ step, name: names, mode: all.length > 1 ? (lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง') : '', state: 'pending', ts: '', status: 'รออนุมัติ' });
+      signRows.push({ step, name: names, mode: all.length > 1 ? (lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง') : '', state: 'pending', ts: '', status: 'รออนุมัติ', audit: !!lv.audit_verdict });
       return;
     }
-    acted.forEach(a => signRows.push({ step, uid: a.uid, name: a.name, signature: a.signature || null, comment: a.comment || '',
+    acted.forEach(a => signRows.push({ step, uid: a.uid, name: a.name, signature: a.signature || null, comment: a.comment || '', lineVerdicts: a.line_verdicts || null,
       state: a.status === 'approved' ? 'signed' : 'rejected', ts: fmtTs(a.ts), status: a.status === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ' }));
   });
+  // ตารางสินค้าสร้างหลังรู้เส้นทาง — มีขั้นตรวจสอบในเส้นทาง = มีคอลัมน์ผลตรวจสอบรายสินค้า
+  pdfAudit = !offContract && [...history, ...current, ...upcoming].some(lv => lv.audit_verdict);
+  const rowsHtml = portrait ? buildRowsPortrait(lines) : buildRows(lines);
+  const vSumTxt = obj => { const c = _draftVerdictCounts(obj); return c.n ? `<b class="vd">ผลตรวจสอบ: <span class="profit">✅ ขายได้ ${c.p}</span> · <span class="loss">⚠️ ขาดทุน ${c.l}</span> รายการ</b> ` : ''; };
   const needSig = signRows.filter(s => s.state === 'signed' && !s.signature && s.uid).map(s => s.uid);
   if (needSig.length) {
     const sigMap = await _sigLoadMap(needSig);
@@ -16246,20 +16352,22 @@ async function draftPreviewPDF(orient = 'landscape') {
   }
   // v3 (2026-09-24, ตาม mockup ที่อนุมัติ): แถวเตี้ย, สถานะ+วันเวลาช่องเดียว, คอลัมน์ความเห็นกว้างที่สุด (~ครึ่งกระดาษ)
   const signTableHtml = `<table class="signs">
-        <colgroup><col style="width:22px"><col style="width:13%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col></colgroup>
+        <colgroup><col style="width:22px"><col style="width:13%"><col style="width:13%"><col style="width:${portrait ? 15 : 10}%"><col style="width:10%"><col></colgroup>
         <thead><tr class="cols"><th>ลำดับ</th><th>ขั้น</th><th>ผู้ลงนาม</th><th>สถานะ/เวลา</th><th>ลายเซ็น</th><th>ความเห็น</th></tr></thead>
         <tbody>${signRows.map((s, i) => `<tr class="${s.state}">
           <td>${i + 1}</td><td class="l"><b>${esc(s.step)}</b></td>
           <td class="l">${esc(s.name)}${s.mode ? `<div class="sub">(${esc(s.mode)})</div>` : ''}</td>
           <td class="stc"><span class="st ${s.state}">${esc(s.status)}</span>${s.ts ? `<br>${esc(s.ts)}` : ''}</td>
           <td class="sig">${s.state === 'signed' ? (s.signature ? `<img src="${esc(s.signature)}" alt="ลายเซ็น">` : `<span class="sigtext">${esc(s.name)}</span>`) : ''}</td>
-          <td class="cmt">${s.comment ? esc(s.comment) : (s.state === 'pending' ? '' : '—')}</td>
+          <td class="cmt">${vSumTxt(s.lineVerdicts)}${s.audit && pdfAudit ? '<span class="sub">ขั้นตรวจสอบ — ผลรายสินค้าอยู่ในคอลัมน์ "ผลตรวจสอบ" ของตาราง</span>' : ''}${s.comment ? esc(s.comment) : (s.state === 'pending' || s.lineVerdicts ? '' : '—')}</td>
         </tr>`).join('')}</tbody></table>`;
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle)} ${esc(name || _draftEditNo || '')}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Charmonman:wght@700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Charmonman:wght@700&display=swap">
   <style>
     @page{size:A4 ${portrait ? 'portrait' : 'landscape'};margin:8mm}
-    body{font-family:'TH Sarabun New','Sarabun',sans-serif;margin:0;color:#111;background:#EEF1F5;font-size:11px}
+    /* ฟอนต์ Sarabun (2026-09-24, ผู้ใช้เลือกจากตัวอย่าง 6 แบบ) — อ่านง่าย แคบ โหลดได้ทุกเครื่อง · ตัวเลขกว้างเท่ากัน */
+    body{font-family:'Sarabun',sans-serif;margin:0;color:#111;background:#EEF1F5;font-size:11px}
+    table.items td{font-variant-numeric:tabular-nums}
     .sheet{max-width:none;margin:0 auto;background:#fff}
     .letterhead{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:2px solid #D4AF37;background:linear-gradient(135deg,#1E3A5F,#28466e)}
     .letterhead img{width:42px;height:42px;border-radius:50%;background:#fff;padding:3px}
@@ -16342,7 +16450,14 @@ async function draftPreviewPDF(orient = 'landscape') {
     table.signs td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:2px 4px;text-align:center;vertical-align:middle;height:24px;line-height:1.2}
     table.signs td.l,table.signs td.cmt{text-align:left}
     table.signs td.cmt{font-size:9.8px;color:#1f2937;white-space:pre-wrap}
-    table.signs td.stc{font-size:8.6px;line-height:1.2;color:#374151}
+    table.signs td.stc{font-size:8.6px;line-height:1.2;color:#374151;white-space:nowrap}
+    table.signs .vd{font-size:9.6px;margin-right:4px}.vd.profit{color:#0A5940}.vd.loss{color:#A32D2D}
+    table.signs .vbox{display:inline-flex;align-items:center;gap:3px;margin-right:12px;font-size:9.4px;color:#374151}
+    /* คอลัมน์ผลตรวจสอบรายสินค้า (ตารางสินค้า) + สรุปผลในช่องความเห็น */
+    table.items td.vcell{font-size:9.2px;white-space:nowrap;text-align:left;padding-left:4px;padding-right:2px}
+    table.items td.vcell .vbox{display:flex;align-items:center;gap:3px;margin:1px 0;color:#374151}
+    table.items td.vcell .vd{font-size:9.6px}
+    .vd .profit{color:#0A5940}.vd .loss{color:#A32D2D}
     table.signs td .sub{font-size:8.5px;color:#8896A5;white-space:normal}
     table.signs tr.pending td{color:#8896A5}
     table.signs td.sig img{max-height:22px;max-width:100%;object-fit:contain;mix-blend-mode:multiply;display:block;margin:0 auto}
@@ -16370,22 +16485,23 @@ async function draftPreviewPDF(orient = 'landscape') {
       ${offContract ? `<div class="offbox"><h4>รายละเอียดค่าใช้จ่ายนอกสัญญา</h4><div class="txt">${esc(offText) || '—'}</div>
         ${_draftAttachments.length ? `<div class="atts"><b>ไฟล์แนบ (${_draftAttachments.length})</b>${_draftAttachments.map(a => `<div>📎 ${esc(a.filename)}</div>`).join('')}</div>` : ''}</div>`
       : portrait ? `<table class="items portrait">
-        <colgroup><col style="width:22px"><col><col style="width:84px"><col style="width:84px"><col style="width:98px"><col style="width:40px"><col style="width:98px"><col style="width:50px"><col style="width:46px"></colgroup>
+        <colgroup><col style="width:22px"><col><col style="width:80px"><col style="width:80px"><col style="width:96px"><col style="width:40px"><col style="width:96px"><col style="width:48px"><col style="width:44px">${pdfAudit ? '<col style="width:58px">' : ''}</colgroup>
         <thead><tr class="cols"><th>ลำดับ</th><th>สินค้า<small>รหัส · ชื่อ · ชุดอุปกรณ์</small></th><th class="gs">Pro Period ก่อน<small>เลขที่ · ราคา · ช่วง</small></th><th class="gs">Pro No. ล่าสุด<small>เลขที่ · ราคา · ช่วง</small></th>
           <th class="gs">ราคาปกติ<small>ขาย · GP · ท้ายบิล → ทุน</small></th><th class="gs">Comp-<br>ensate</th><th>ราคาโปรโมชั่น<small>ขาย · GP · ท้ายบิล → ทุน</small></th>
-          <th class="gs">ขายช่วง<br>Pro Period<br>ก่อน</th><th>ประมาณ<br>การ</th></tr></thead>
-        <tbody>${rowsHtml || '<tr><td colspan="9" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
+          <th class="gs">ขายช่วง<br>Pro Period<br>ก่อน</th><th>ประมาณ<br>การ</th>${pdfAudit ? '<th class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="${pdfAudit ? 10 : 9}" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>`}</tbody>
       </table>` : `<table class="items">
         <colgroup>
-          <col style="width:28px"><col style="width:64px"><col><col style="width:34px">
-          <col style="width:58px"><col style="width:48px"><col style="width:60px">
-          <col style="width:58px"><col style="width:48px"><col style="width:60px">
-          <col style="width:44px"><col style="width:36px"><col style="width:38px"><col style="width:44px">
-          <col style="width:40px"><col style="width:44px"><col style="width:36px"><col style="width:38px"><col style="width:44px">
-          <col style="width:46px"><col style="width:44px">
+          <!-- มีคอลัมน์ผลตรวจสอบ (pdfAudit) → บีบคอลัมน์อื่นเล็กน้อย ให้ชื่อสินค้ายังกว้างพอและจบ 1 หน้า -->
+          <col style="width:${pdfAudit ? 24 : 28}px"><col style="width:${pdfAudit ? 60 : 64}px"><col><col style="width:${pdfAudit ? 28 : 34}px">
+          <col style="width:${pdfAudit ? 52 : 58}px"><col style="width:${pdfAudit ? 44 : 48}px"><col style="width:${pdfAudit ? 54 : 60}px">
+          <col style="width:${pdfAudit ? 52 : 58}px"><col style="width:${pdfAudit ? 44 : 48}px"><col style="width:${pdfAudit ? 54 : 60}px">
+          <col style="width:${pdfAudit ? 42 : 44}px"><col style="width:${pdfAudit ? 34 : 36}px"><col style="width:${pdfAudit ? 36 : 38}px"><col style="width:${pdfAudit ? 42 : 44}px">
+          <col style="width:${pdfAudit ? 38 : 40}px"><col style="width:${pdfAudit ? 42 : 44}px"><col style="width:${pdfAudit ? 34 : 36}px"><col style="width:${pdfAudit ? 36 : 38}px"><col style="width:${pdfAudit ? 42 : 44}px">
+          <col style="width:${pdfAudit ? 42 : 46}px"><col style="width:${pdfAudit ? 40 : 44}px">${pdfAudit ? '<col style="width:56px">' : ''}
         </colgroup>
         <thead>
-          <tr class="grp"><th colspan="4"></th><th colspan="3">Pro Period ก่อน</th><th colspan="3">Pro No. ล่าสุด</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th colspan="2">ปริมาณ</th></tr>
+          <tr class="grp"><th colspan="4"></th><th colspan="3">Pro Period ก่อน</th><th colspan="3">Pro No. ล่าสุด</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th colspan="2">ปริมาณ</th>${pdfAudit ? '<th rowspan="2" class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr>
           <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>ชุด<br>อุปกรณ์</th>
             <th class="gs">เลขที่</th><th>ราคา</th><th>ช่วงวันที่</th>
             <th class="gs">เลขที่</th><th>ราคา</th><th>ช่วงวันที่</th>
@@ -16393,7 +16509,7 @@ async function draftPreviewPDF(orient = 'landscape') {
             <th class="gs">Compen-<br>sate</th><th>ราคาขาย</th><th>GP%</th><th>ท้ายบิล%</th><th>ทุนสุทธิ</th>
             <th class="gs">ขายช่วง Pro<br>Period ก่อน</th><th>ประมาณ<br>การ</th></tr>
         </thead>
-        <tbody>${rowsHtml || '<tr><td colspan="21" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>'}</tbody>
+        <tbody>${rowsHtml || `<tr><td colspan="${pdfAudit ? 22 : 21}" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>`}</tbody>
       </table>`}
       ${otherCostsRows ? `<table class="costs"><thead><tr class="cols"><th>ค่าใช้จ่ายอื่นๆ</th><th class="r">จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
       <tbody>${otherCostsRows}<tr><td><b>รวม</b></td><td class="r"><b>${otherCostsTotal.toLocaleString('th-TH')}</b></td><td></td></tr></tbody></table>` : ''}

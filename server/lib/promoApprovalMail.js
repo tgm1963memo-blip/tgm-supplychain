@@ -80,11 +80,14 @@ function summaryBlockHtml(header, sum, stepLabel) {
 function prevCommentsHtml(header) {
   const levels = [...parse(header.approval_history_json), ...parse(header.levels_json)];
   const rows = levels.flatMap((lv, i) => (lv.approvers || []).filter(a => a.ts && (a.status === 'approved' || a.status === 'rejected'))
-    .map(a => ({ step: `ขั้นที่ ${i + 1}${lv.label ? ' · ' + lv.label : ''}`, name: a.name || a.uid, ok: a.status === 'approved', ts: a.ts, comment: a.comment || '' })));
+    .map(a => ({ step: `ขั้นที่ ${i + 1}${lv.label ? ' · ' + lv.label : ''}`, name: a.name || a.uid, ok: a.status === 'approved', ts: a.ts, comment: a.comment || '', lv: a.line_verdicts || null })));
+  // ผลตรวจสอบรายบรรทัด → สรุปจำนวน
+  const vSum = lv => { const v = Object.values(lv || {}); return v.length ? { p: v.filter(x => x === 'profit').length, l: v.filter(x => x === 'loss').length } : null; };
   if (!rows.length) return '';
   return `<div style="margin:10px 0 4px"><div style="font-size:13px;font-weight:700;color:#1E3A5F;margin-bottom:4px">ความเห็นจากขั้นก่อนหน้า</div>
     ${rows.map(r => `<div style="border-left:3px solid ${r.ok ? '#0A5940' : '#A32D2D'};background:#F7F9FC;padding:6px 10px;margin-bottom:4px;font-size:12.5px">
       <b>${e(r.name)}</b> <span style="color:#6B7280">· ${e(r.step)} · ${r.ok ? 'อนุมัติ' : 'ไม่อนุมัติ'} · ${new Date(r.ts).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })} น.</span>
+      ${vSum(r.lv) ? `<div style="margin-top:2px;font-weight:700">ผลตรวจสอบ: <span style="color:#0A5940">✅ ขายได้ ${vSum(r.lv).p}</span> · <span style="color:#A32D2D">⚠️ ขาดทุน ${vSum(r.lv).l}</span> รายการ</div>` : ''}
       ${r.comment ? `<div style="margin-top:2px">💬 ${e(r.comment)}</div>` : ''}</div>`).join('')}</div>`;
 }
 

@@ -100,7 +100,8 @@ const SALES_ONLY = [
   '_draftCorpBase', '_draftOverlap', '_draftRenderOverlapMarks', 'draftShowOverlap', '_draftCopyHeader', '_draftCopySrcNo', '_draftLinesFromRows', 'pdWfCopyRoute',
   '_draftPlan', '_draftPlanOpts', '_draftPlanRoutes', '_draftPlanUsers', '_draftPlanLoading', '_draftPlanLoad', '_draftFormRouteFacts', '_draftPlanOpt',
   '_draftPlanFillDefaults', '_draftPlanHtml', 'draftPlanSetRoute', 'draftPlanAuto', 'draftPlanAdd', 'draftPlanAddByText', 'draftPlanRem', '_draftPlanForSave', '_draftPromoDocsCache', '_draftRefSeq', '_draftFormSeq', '_draftLoadRouteOptions',
-  '_draftRefCode', '_pdWfPrefixes', '_pdWfPrefixPrev', '_PD_PREFIX_SRC', '_pdWfPrefixHtml', '_pdWfPrefixPreview', 'pdWfPrefixTest', 'pdWfPrefixAdd', 'pdWfPrefixRem', 'pdWfPrefixField', 'pdWfPrefixSave',
+  '_draftRefCode', '_pdWfPrefixes', '_pdWfPrefixPrev', '_PD_PREFIX_SRC', '_pdWfPrefixHtml', '_pdWfPrefixPreview', 'pdWfPrefixTest', 'pdWfPrefixAdd', 'pdWfPrefixRem', 'pdWfPrefixField', 'pdWfPrefixSave', '_draftCustGroupsText', '_draftRenderCustSummary', '_draftPtypeOrder', 'DRAFT_VERDICT',
+  '_draftLineVerdicts', '_draftSavedLineVerdicts', '_draftIsAuditTurn', '_draftVerdictCounts', '_draftVerdictSummary', '_draftVerdictCellHtml', 'draftSetLineVerdict',
 
   // ข้อมูลลูกค้า (custreg — สมัคร/แก้ไขข้อมูลลูกค้าใหม่) — ไม่รวม custregSubToRow/custregRowToSub (ใช้ใน
   // SB.getCustregSubs()/upsertCustreg() ซึ่งเป็นส่วนหนึ่งของ SB object กลาง อยู่ทั้ง 2 แอปเสมอ — ย้ายไป core)

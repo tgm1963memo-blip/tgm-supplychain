@@ -63,6 +63,11 @@ function validateChange(db, old, change, user) {
   // ความเห็นผู้อนุมัติ (ไม่ใช่คอลัมน์ — เก็บลง approver entry ผ่าน workflow.advance)
   const comment = String(change.approval_comment || '').slice(0, 1000);
   delete change.approval_comment;
+  // ผลตรวจสอบ ขายได้/ขาดทุน รายบรรทัดสินค้า (2026-09-24) — กรอกได้เฉพาะผู้อนุมัติของขั้นที่ตั้ง audit_verdict
+  // (ขั้น "ตรวจสอบ") และต้องครบทุก SKU ของเอกสารเมื่ออนุมัติขั้นนั้น เก็บลง approver entry
+  // (line_verdicts: { [sku]: 'profit' | 'loss' })
+  const lineVerdicts = change.approval_line_verdicts && typeof change.approval_line_verdicts === 'object' && !Array.isArray(change.approval_line_verdicts) ? change.approval_line_verdicts : null;
+  delete change.approval_line_verdicts;
   // ผู้อนุมัติที่ผู้สร้างเลือกเองตอนส่งอนุมัติ (ไม่ใช่คอลัมน์)
   const picks = change.picked_approvers && typeof change.picked_approvers === 'object' ? change.picked_approvers : {};
   delete change.picked_approvers;
@@ -110,8 +115,22 @@ function validateChange(db, old, change, user) {
     } else {
       const error = workflow.validate(levels, db.prepare('SELECT uid,is_active FROM sc_users').all());
       if (error) throw new Error(error);
+      const curLv = levels[old.current_level] || {};
+      let verdicts = null;
+      if (lineVerdicts && Object.keys(lineVerdicts).length) {
+        if (!curLv.audit_verdict) throw new Error('ขั้นนี้ไม่ใช่ขั้นตรวจสอบ — เลือกผล ขายได้/ขาดทุน ไม่ได้');
+        if (Object.values(lineVerdicts).some(v => !['profit', 'loss'].includes(v))) throw new Error('ผลตรวจสอบไม่ถูกต้อง');
+      }
+      if (curLv.audit_verdict && status !== 'rejected') {
+        // ต้องครบทุก SKU ของเอกสาร (เอกสารนอกสัญญาไม่มีบรรทัดสินค้า = ไม่ต้องกรอก)
+        const skus = db.prepare('SELECT DISTINCT sku FROM promo_drafts WHERE draft_no = ?').all(old.draft_no).map(r => r.sku).filter(Boolean);
+        const missing = skus.filter(s => !['profit', 'loss'].includes(lineVerdicts?.[s]));
+        if (missing.length) throw new Error(`ขั้นตรวจสอบ: กรุณาเลือกผล "ขายได้" หรือ "ขาดทุน" ให้ครบทุกรายการสินค้า (ยังขาด ${missing.join(', ')})`);
+        verdicts = Object.fromEntries(skus.map(s => [s, lineVerdicts[s]]));
+      }
       result = workflow.advance(levels, old.current_level, user.uid, status !== 'rejected', comment);
       stampSignature(db, result.levels, old.current_level, user.uid);
+      if (verdicts) { const actor = result.levels[old.current_level]?.approvers?.find(a => a.uid === user.uid); if (actor) actor.line_verdicts = verdicts; }
     }
     assign(result.levels, result.current);
     if (result.rejected) change.status = 'rejected';
