@@ -77,4 +77,14 @@ test('promo draft approval routes', async t => {
   assert.ok([200, 201].includes((await saveTpl('promo_draft_routes', [{ id: 'lotus', name: 'โลตัส' }, { id: 'empty', name: 'ว่าง' }])).status));
   assert.equal((await call(route(c), 'PATCH', { status: 'pending_approval', route_id: 'empty' })).status, 400);
   assert.equal((await call(route(c))).data[0].status, 'draft');
+
+  // คัดลอกไฟล์แนบจากเอกสารต้นทาง → เอกสารใหม่ (ฝั่ง server)
+  db.prepare("INSERT INTO promo_draft_attachments (id,draft_no,filename,mime_type,content,uploaded_by) VALUES ('PDA1',?,'a.pdf','application/pdf',?, 'S')").run(a, Buffer.from('%PDF-1.4'));
+  const copy = async (to, from) => (await fetch(`${base}/promo_draft_attachments/${to}/copy-from/${from}`, { method: 'POST', headers: { Authorization: `Bearer ${tokens.S}` } }));
+  const cp = await copy(c, a);
+  assert.equal(cp.status, 201); assert.equal((await cp.json()).copied, 1);
+  const got = db.prepare('SELECT filename, content FROM promo_draft_attachments WHERE draft_no=?').all(c);
+  assert.equal(got.length, 1); assert.equal(Buffer.from(got[0].content).toString(), '%PDF-1.4');
+  // ปลายทางที่ส่งอนุมัติแล้ว (a อนุมัติแล้ว) → คัดลอกเข้าไม่ได้
+  assert.equal((await copy(a, c)).status, 400);
 });

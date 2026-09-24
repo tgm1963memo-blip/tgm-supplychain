@@ -97,6 +97,9 @@ const SALES_ONLY = [
   '_pdWfRoutes', '_pdWfRouteId', '_pdWfCorpOpts', '_pdWfCurRoute', 'pdWfSelectRoute', 'pdWfAddRoute', 'pdWfDelRoute',
   'pdWfRouteName', 'pdWfRouteMatch', 'pdWfRouteType', 'pdWfRouteCorpAdd', 'pdWfRouteCorpRem',
   '_draftEquipKeep', '_draftSyncOtherCostBox', 'DRAFT_LINE_COL_KEYS', 'DRAFT_LINE_COL_KEYS_V2', '_pdWfDirty',
+  '_draftCorpBase', '_draftOverlap', '_draftRenderOverlapMarks', 'draftShowOverlap', '_draftCopyHeader', '_draftCopySrcNo', '_draftLinesFromRows', 'pdWfCopyRoute',
+  '_draftPlan', '_draftPlanOpts', '_draftPlanRoutes', '_draftPlanUsers', '_draftPlanLoading', '_draftPlanLoad', '_draftFormRouteFacts', '_draftPlanOpt',
+  '_draftPlanFillDefaults', '_draftPlanHtml', 'draftPlanSetRoute', 'draftPlanAuto', 'draftPlanAdd', 'draftPlanAddByText', 'draftPlanRem', '_draftPlanForSave', '_draftPromoDocsCache', '_draftRefSeq', '_draftFormSeq', '_draftLoadRouteOptions',
 
   // ข้อมูลลูกค้า (custreg — สมัคร/แก้ไขข้อมูลลูกค้าใหม่) — ไม่รวม custregSubToRow/custregRowToSub (ใช้ใน
   // SB.getCustregSubs()/upsertCustreg() ซึ่งเป็นส่วนหนึ่งของ SB object กลาง อยู่ทั้ง 2 แอปเสมอ — ย้ายไป core)
