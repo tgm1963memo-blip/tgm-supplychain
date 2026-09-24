@@ -76,6 +76,10 @@ const SALES_ONLY = [
   // เรียกจากฟอร์มใบเคาะราคาเท่านั้น แต่ตัวเองเรียก draftLineField/draftGroupRefresh/draftMsRefresh (sales-only)
   'draftApplyDefaultGp', 'draftRefreshCustomerCatalog', 'draftCostSameChanged', '_draftRefreshLineRefDataNow', '_draftRefPromise',
   '_pdWfUsers', '_pdWfPickerHtml', 'pdWfPickerClose', 'pdWfPickerOpen', 'pdWfSetField',
+  'draftRenderApprovalTrail', '_draftAnchorCmts', '_draftCmtMode', 'DRAFT_LINE_COL_LABELS', '_draftAnchorFor', '_draftElForAnchor',
+  '_acmSplit', 'draftLoadAnchorComments', 'draftRenderAnchorPins', 'draftJumpToAnchor', 'draftToggleCommentMode',
+  'draftCloseAnchorPopover', 'draftOpenAnchorPopover', '_draftAskApprovalComment',
+  'pdWfTogglePick', '_draftPickUsers', '_draftPickState', '_draftAskPickApprovers', '_draftPickRender', '_draftPickToggle', '_draftPickDone',
   'draftAddLine', 'draftRemoveLine', 'draftLineField', 'draftSyncLineDates', 'draftRenderLines',
   '_draftOverlapDebounce', 'draftCheckOverlap', '_draftCheckOverlapNow', 'draftRefreshLineRefData', 'draftRenderRefCells',
   'draftRefreshCommentCounts', 'draftOpenLineComments', 'draftAddLineComment',

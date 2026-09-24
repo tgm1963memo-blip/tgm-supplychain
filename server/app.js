@@ -472,7 +472,7 @@ function buildApp(db, opts = {}) {
   // comment) ไม่มี PATCH/DELETE เหมือน audit_log (comment ที่เขียนแล้วไม่ควรแก้/ลบทีหลัง)
   const promoDraftLineCommentsRouter = makeCrudRouter(db, 'promo_draft_line_comments', {
     pk: 'id',
-    fields: ['draft_no', 'sku', 'uid', 'text'],
+    fields: ['draft_no', 'sku', 'anchor', 'uid', 'text'],
     touch: [],
     orderBy: 'created_at',
     readOnly: true,
@@ -481,11 +481,21 @@ function buildApp(db, opts = {}) {
   // user of any role, including one with no access to promo drafts whatsoever, could write a comment
   // onto any draft_no/sku. Every sibling promo-draft mount (headers/attachments/lines) already gates
   // writes to PROMO_DRAFT_ROLES; this one must too.
-  promoDraftLineCommentsRouter.post('/', requireRole(...PROMO_DRAFT_ROLES), (req, res) => {
-    const { draft_no, sku, text } = req.body || {};
-    if (!draft_no || !sku || !text) return res.status(400).json({ error: 'draft_no, sku and text are required' });
-    const info = db.prepare('INSERT INTO promo_draft_line_comments (draft_no, sku, uid, text) VALUES (?, ?, ?, ?)')
-      .run(String(draft_no), String(sku), req.user.uid, String(text));
+  // (2026-09-24) นอกจาก role ฝ่ายขาย ผู้จัดทำและผู้อนุมัติทุกขั้นของเอกสารนั้นคอมเมนต์ได้ด้วย (ผู้อนุมัติต่างแผนก)
+  // รับได้ทั้งคอมเมนต์รายบรรทัด (sku) และคอมเมนต์ลอยปักตำแหน่ง (anchor)
+  const isDraftParticipant = (draftNo, uid) => {
+    const h = db.prepare('SELECT created_by, levels_json, approval_history_json FROM promo_draft_headers WHERE draft_no = ?').get(draftNo);
+    if (!h) return false;
+    if (h.created_by === uid) return true;
+    const levels = [h.levels_json, h.approval_history_json].flatMap(v => { try { return JSON.parse(v || '[]'); } catch { return []; } });
+    return levels.some(lv => (lv.approvers || []).some(a => a.uid === uid));
+  };
+  promoDraftLineCommentsRouter.post('/', (req, res) => {
+    const { draft_no, sku, anchor, text } = req.body || {};
+    if (!draft_no || (!sku && !anchor) || !String(text || '').trim()) return res.status(400).json({ error: 'draft_no, sku หรือ anchor และ text จำเป็น' });
+    if (!PROMO_DRAFT_ROLES.includes(req.user.role) && !isDraftParticipant(String(draft_no), req.user.uid)) return res.status(403).json({ error: 'ไม่มีสิทธิ์คอมเมนต์เอกสารนี้' });
+    const info = db.prepare('INSERT INTO promo_draft_line_comments (draft_no, sku, anchor, uid, text) VALUES (?, ?, ?, ?, ?)')
+      .run(String(draft_no), anchor ? '' : String(sku), anchor ? String(anchor).slice(0, 300) : null, req.user.uid, String(text).slice(0, 2000));
     const saved = db.prepare('SELECT * FROM promo_draft_line_comments WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json(saved);
   });

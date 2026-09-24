@@ -175,6 +175,21 @@ tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
 #draft-lines-table tbody td:nth-child(7){white-space:nowrap;min-width:170px}
 #draft-lines-table tfoot td{text-align:left;border-right:none}
 /* ช่องวันที่แบบ พ.ศ. (draftRefreshBeDates) — ข้อความจริงของ input โปร่งใส, ข้อความ พ.ศ. วางทับ ไม่รับคลิก */
+/* คอมเมนต์ลอยในเอกสาร (draftToggleCommentMode) */
+#draft-fp.acm-mode .cr-fullpage-content{cursor:crosshair}
+/* ช่องที่ disabled (เอกสารรออนุมัติ) ไม่ส่ง click — ให้คลิกทะลุไปถึงช่อง/เซลล์ด้านหลังเพื่อปักคอมเมนต์ได้ */
+#draft-fp.acm-mode .cr-fullpage-content :is(input,select,textarea,button):disabled{pointer-events:none}
+#draft-fp.acm-mode .cr-fullpage-content .field:hover,#draft-fp.acm-mode #draft-lines-tbody td:hover,#draft-fp.acm-mode .esc-row:hover{outline:2px dashed var(--N2);outline-offset:1px}
+.acm-host{position:relative}
+.acm-pin{position:absolute;top:-8px;right:-6px;z-index:4;background:#FDF2C4;border:1px solid var(--N2);color:#5A4300;border-radius:10px;font-size:10.5px;font-weight:700;padding:0 6px;line-height:17px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.12);white-space:nowrap}
+.acm-flash{animation:acmFlash 1.6s ease}
+@keyframes acmFlash{0%,60%{box-shadow:0 0 0 3px var(--N2)}100%{box-shadow:none}}
+.acm-pop{position:fixed;z-index:9999;width:320px;background:var(--W);border:1px solid var(--BD);border-top:3px solid var(--N2);border-radius:9px;box-shadow:0 10px 28px rgba(13,17,23,.18);padding:10px 12px;font-size:12.5px}
+.acm-pop-h{display:flex;justify-content:space-between;gap:8px;font-weight:700;color:var(--TX);margin-bottom:6px}
+.acm-pop-list{max-height:200px;overflow:auto;margin-bottom:6px}
+.acm-pop-item{background:var(--bg2);border-radius:6px;padding:5px 8px;margin-bottom:5px}
+.acm-pop-item span{color:var(--TX3);font-size:11px}
+.acm-pop textarea{width:100%;min-height:62px;box-sizing:border-box;border:1px solid var(--BD);border-radius:6px;padding:6px;font:inherit;font-size:12.5px}
 .be-date{position:relative;display:block}
 .be-date input[type=date]{width:100%}
 .be-date input[type=date]::-webkit-datetime-edit{color:transparent}
@@ -1010,6 +1025,11 @@ const SB = {
     const { data, error } = await q.order('created_at');
     if (error) throw error;
     return data || [];
+  },
+  async addPromoDraftAnchorComment(draftNo, anchor, text) {
+    const { data } = await sbThrow(getSupabaseClient().from('promo_draft_line_comments')
+      .insert({ draft_no: draftNo, anchor, text }), 'addPromoDraftAnchorComment');
+    return Array.isArray(data) ? data[0] : data;
   },
   async addPromoDraftLineComment(draftNo, sku, text) {
     const { data } = await sbThrow(getSupabaseClient().from('promo_draft_line_comments')
@@ -13517,6 +13537,7 @@ async function showPromoDraftModal(draftNo = '') {
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-sm" onclick="draftOpenCopyPicker()">📋 คัดลอกจากเอกสารเดิม</button>
+      ${draftNo ? '<button class="btn btn-sm" id="draft-cmt-mode-btn" onclick="draftToggleCommentMode()">💬 คอมเมนต์ในเอกสาร</button>' : ''}
       <button class="btn btn-sm" onclick="draftPreviewPDF()">🖨️ ดูตัวอย่าง PDF</button>
       <span class="mx" style="color:#fff" onclick="draftClose()">✕</span>
     </div>
@@ -13595,6 +13616,14 @@ async function showPromoDraftModal(draftNo = '') {
     <div id="draft-overlap-warning"></div>
 
     <div class="card" style="margin-top:16px">
+      <div class="ch"><div class="ct2">🧭 ลำดับการอนุมัติ</div></div>
+      <div id="draft-approval-trail"></div>
+    </div>
+    ${draftNo ? `<div class="card" style="margin-top:16px">
+      <div class="ch"><div class="ct2">💬 คอมเมนต์ในเอกสาร <span id="draft-anchor-count" style="font-weight:400;color:var(--TX3)"></span></div></div>
+      <div id="draft-anchor-list"></div>
+    </div>` : ''}
+    <div class="card" style="margin-top:16px">
       <div class="ch"><div class="ct2">📎 ไฟล์แนบ</div></div>
       ${draftNo ? `<div class="upz" onclick="document.getElementById('draft-file-inp').click()"><b>คลิกเพื่อเลือกไฟล์</b>รูปภาพ (JPG/PNG) หรือ PDF — ไม่เกิน 15MB ต่อไฟล์</div>
       <input type="file" id="draft-file-inp" accept="image/*,.pdf" style="display:none" onchange="draftUploadAttachment(event)">`
@@ -13629,6 +13658,9 @@ async function showPromoDraftModal(draftNo = '') {
   draftCheckOverlap();
   draftRefreshLineRefData();
   draftRenderAuditTrail(draftNo);
+  draftRenderApprovalTrail();
+  _draftCmtMode = false;
+  draftLoadAnchorComments();
   draftRenderAttachments();
   draftRenderOtherCosts();
   draftEscalateChanged();
@@ -14145,6 +14177,7 @@ function draftRenderLines() {
   if (dl) dl.innerHTML = SKUS.map(s => `<option value="${esc(s.code)}">${esc(s.name || '')}</option>`).join('');
   draftRenderRefCells();
   if (_draftEditNo) draftRefreshCommentCounts();
+  if (typeof draftRenderAnchorPins === 'function' && _draftAnchorCmts.length) draftRenderAnchorPins();
 }
 
 // ── เตือนช่วงเวลาซ้อนทับ (ไม่บล็อกการบันทึก — แจ้งเตือนเฉยๆ ตามที่ขอ) — เทียบทั้งเอกสารจริง (promo_docs)
@@ -14431,6 +14464,141 @@ function draftAddLineComment(sku) {
   SB.addPromoDraftLineComment(_draftEditNo, sku, text)
     .then(() => { toast('บันทึกความคิดเห็นแล้ว'); closeM(); draftRefreshCommentCounts(); })
     .catch(e => toast('บันทึกไม่สำเร็จ: ' + (e.message || e), 'warn'));
+}
+
+// ── ลำดับการอนุมัติในหน้าเอกสาร (2026-09-24) — ทุกขั้น (ผ่านแล้ว/ปัจจุบัน) พร้อมสถานะ เวลา ความเห็น
+// ให้ผู้อนุมัติขั้นถัดไปเห็นความเห็นของขั้นก่อนหน้าตั้งแต่เปิดเอกสาร
+function draftRenderApprovalTrail() {
+  const box = document.getElementById('draft-approval-trail');
+  if (!box) return;
+  const h = _draftHeader;
+  const levels = [...(Array.isArray(h?.approval_history_json) ? h.approval_history_json : []), ...(h && h.status !== 'draft' && Array.isArray(h?.levels_json) ? h.levels_json : [])];
+  if (!levels.length) { box.innerHTML = `<div class="al ali" style="font-size:12px;margin:10px">${h && h.status !== 'draft' ? 'เอกสารนี้ไม่มีเส้นทางอนุมัติ — ผู้จัดการอนุมัติได้โดยตรง' : 'ยังไม่ได้ส่งอนุมัติ'}</div>`; return; }
+  const st = { approved: ['อนุมัติ', 'bbg'], rejected: ['ไม่อนุมัติ', 'bbr'], pending: ['รออนุมัติ', 'bbgr'] };
+  const cur = (Array.isArray(h.approval_history_json) ? h.approval_history_json.length : 0) + (h.current_level || 0);
+  box.innerHTML = `<div style="padding:6px 10px">${levels.map((lv, i) => `<div style="border-left:3px solid ${i === cur && ['pending_approval', 'pending_exec_approval'].includes(h.status) ? 'var(--N2)' : 'var(--BD)'};padding:4px 10px;margin:6px 0">
+    <div style="font-size:12px;font-weight:700;color:var(--TX2)">ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}${(lv.approvers || []).length > 1 ? ` <span style="font-weight:400;color:var(--TX3)">(${lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง'})</span>` : ''}</div>
+    ${(lv.approvers || []).map(a => { const [t, cls] = st[a.status] || st.pending; return `<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;margin-top:3px">
+      <b>${esc(a.name || uidToName(a.uid))}</b><span class="badge ${cls}">${t}</span>${a.ts ? `<span style="color:var(--TX3);font-size:11.5px">${new Date(a.ts).toLocaleString('th-TH')}</span>` : ''}
+      ${a.comment ? `<div style="flex-basis:100%;background:var(--bg2);border-radius:6px;padding:5px 9px;margin-top:2px">💬 ${esc(a.comment)}</div>` : ''}</div>`; }).join('')}
+  </div>`).join('')}</div>`;
+}
+
+// ── คอมเมนต์ลอยปักตำแหน่งในเอกสาร (2026-09-24) ──────────────────────────────────
+// เปิด "💬 คอมเมนต์ในเอกสาร" แล้วคลิกช่อง/เซลล์ตาราง/หัวข้อใดก็ได้ → ปักคอมเมนต์ไว้ตรงนั้น (หมุด 💬n)
+// เก็บใน promo_draft_line_comments.anchor = "<key>|<ป้ายชื่อ>" — key: field:<input id> · cell:<sku>:<คอลัมน์>
+// · section:<ชื่อการ์ด> — ทุกคนที่เปิดเอกสาร (รวมผู้อนุมัติขั้นถัดไป) เห็นหมุดและรายการทั้งหมด
+let _draftAnchorCmts = [];
+let _draftCmtMode = false;
+const DRAFT_LINE_COL_LABELS = ['ลำดับ', 'รหัสสินค้า', 'ชื่อสินค้า', 'Set อุปกรณ์', 'โปรสุดท้าย · เลขที่', 'โปรสุดท้าย · ราคา', 'โปรสุดท้าย · ช่วงวันที่',
+  'ราคาปกติ · ราคาขาย', 'ราคาปกติ · GP%', 'ราคาปกติ · ท้ายบิล%', 'ราคาปกติ · ทุนสุทธิ', 'Compensate', 'ราคาโปร · ราคาขาย', 'ราคาโปร · GP%',
+  'ราคาโปร · ท้ายบิล%', 'ราคาโปร · ทุนสุทธิ', 'ส่วนลด%', 'ยอดขายช่วงโปรสุดท้าย', 'ประมาณการจำนวน'];
+function _draftAnchorFor(el) {
+  const td = el.closest('#draft-lines-tbody td');
+  if (td) {
+    const tr = td.parentElement, i = [...tr.parentElement.children].indexOf(tr), col = [...tr.children].indexOf(td);
+    const sku = _draftLines[i]?.sku;
+    if (!sku || col >= DRAFT_LINE_COL_LABELS.length) return null;
+    return { key: `cell:${sku}:${col}`, label: `${sku} · ${DRAFT_LINE_COL_LABELS[col]}` };
+  }
+  const field = el.closest('#draft-fp .field');
+  if (field) {
+    const inp = field.querySelector('input[id],select[id],textarea[id],[id^="draft-promo-days"],[id^="draft-cost-days"]');
+    const lbl = (field.querySelector('label')?.firstChild?.textContent || field.querySelector('label')?.textContent || '').trim();
+    if (inp) return { key: `field:${inp.id}`, label: lbl || inp.id };
+  }
+  if (el.closest('#draft-fp .esc-row')) return { key: 'section:เงื่อนไขพิเศษ', label: 'เงื่อนไขพิเศษ' };
+  const card = el.closest('#draft-fp .card');
+  const t = card?.querySelector('.ct2')?.textContent.trim();
+  return t ? { key: `section:${t}`, label: t } : null;
+}
+function _draftElForAnchor(key) {
+  const [kind, ...rest] = String(key).split(':');
+  if (kind === 'cell') {
+    const col = Number(rest.pop()), sku = rest.join(':');
+    const i = _draftLines.findIndex(l => l.sku === sku);
+    return document.getElementById('draft-lines-tbody')?.children[i]?.children[col] || null;
+  }
+  if (kind === 'field') return document.getElementById(rest.join(':'))?.closest('.field') || null;
+  const t = rest.join(':');
+  if (t === 'เงื่อนไขพิเศษ') return document.querySelector('#draft-fp .esc-row');
+  return [...document.querySelectorAll('#draft-fp .card')].find(c => c.querySelector('.ct2')?.textContent.trim() === t) || null;
+}
+const _acmSplit = a => { const s = String(a || ''); const i = s.indexOf('|'); return i < 0 ? { key: s, label: s } : { key: s.slice(0, i), label: s.slice(i + 1) }; };
+async function draftLoadAnchorComments() {
+  if (!_draftEditNo) { _draftAnchorCmts = []; draftRenderAnchorPins(); return; }
+  try { _draftAnchorCmts = (await SB.getPromoDraftLineComments(_draftEditNo)).filter(r => r.anchor); }
+  catch (e) { console.warn('anchor comments:', e.message || e); _draftAnchorCmts = []; }
+  draftRenderAnchorPins();
+}
+function draftRenderAnchorPins() {
+  document.querySelectorAll('#draft-fp .acm-pin').forEach(p => p.remove());
+  const byKey = new Map();
+  _draftAnchorCmts.forEach(r => { const { key } = _acmSplit(r.anchor); if (!byKey.has(key)) byKey.set(key, []); byKey.get(key).push(r); });
+  byKey.forEach((rows, key) => {
+    const el = _draftElForAnchor(key); if (!el) return;
+    el.classList.add('acm-host');
+    const pin = document.createElement('span');
+    pin.className = 'acm-pin'; pin.textContent = `💬${rows.length}`; pin.title = 'ดูความเห็นตรงนี้';
+    pin.onclick = ev => { ev.stopPropagation(); ev.preventDefault(); const r = pin.getBoundingClientRect(); draftOpenAnchorPopover(key, _acmSplit(rows[0].anchor).label, r.left, r.bottom + 4); };
+    el.appendChild(pin);
+  });
+  const list = document.getElementById('draft-anchor-list');
+  if (list) list.innerHTML = _draftAnchorCmts.length ? _draftAnchorCmts.map(r => { const a = _acmSplit(r.anchor); return `<div class="cmt-item">
+      <div class="cmt-ava">${esc((uidToName(r.uid) || r.uid || '?').slice(0, 2))}</div>
+      <div class="cmt-body"><span class="cmt-who">${esc(uidToName(r.uid))}</span><span class="cmt-when">${new Date(r.created_at).toLocaleString('th-TH')}</span>
+        <div><a href="javascript:void(0)" class="doc-link" style="font-size:11.5px" onclick="draftJumpToAnchor('${_promoJsKey(a.key)}')">📍 ${esc(a.label)}</a></div>
+        <div class="cmt-txt">${esc(r.text)}</div></div></div>`; }).join('')
+    : `<div class="al ali" style="font-size:12px;margin:10px">ยังไม่มีคอมเมนต์ในเอกสาร — กด "💬 คอมเมนต์ในเอกสาร" ด้านบน แล้วคลิกตรงที่ต้องการ</div>`;
+  const cnt = document.getElementById('draft-anchor-count'); if (cnt) cnt.textContent = _draftAnchorCmts.length ? `(${_draftAnchorCmts.length})` : '';
+}
+function draftJumpToAnchor(key) {
+  const el = _draftElForAnchor(key); if (!el) { toast('ตำแหน่งนี้ไม่มีในเอกสารแล้ว', 'warn'); return; }
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.add('acm-flash'); setTimeout(() => el.classList.remove('acm-flash'), 1600);
+}
+function draftToggleCommentMode(force) {
+  _draftCmtMode = typeof force === 'boolean' ? force : !_draftCmtMode;
+  const fp = document.getElementById('draft-fp'); if (!fp) return;
+  fp.classList.toggle('acm-mode', _draftCmtMode);
+  const btn = document.getElementById('draft-cmt-mode-btn');
+  if (btn) btn.textContent = _draftCmtMode ? '✕ ออกจากโหมดคอมเมนต์' : '💬 คอมเมนต์ในเอกสาร';
+  if (_draftCmtMode && !fp._acmBound) {
+    fp._acmBound = true;
+    fp.addEventListener('click', ev => {
+      if (!_draftCmtMode || ev.target.closest('.cr-fullpage-header,.acm-pop,.acm-pin,.draft-fp-footer')) return;
+      const a = _draftAnchorFor(ev.target); if (!a) return;
+      ev.preventDefault(); ev.stopPropagation();
+      draftOpenAnchorPopover(a.key, a.label, ev.clientX, ev.clientY + 8);
+    }, true);
+  }
+  if (_draftCmtMode) toast('คลิกช่อง เซลล์ในตาราง หรือหัวข้อ เพื่อปักคอมเมนต์');
+}
+function draftCloseAnchorPopover() { document.querySelectorAll('.acm-pop').forEach(p => p.remove()); }
+function draftOpenAnchorPopover(key, label, x, y) {
+  draftCloseAnchorPopover();
+  const rows = _draftAnchorCmts.filter(r => _acmSplit(r.anchor).key === key);
+  const pop = document.createElement('div');
+  pop.className = 'acm-pop';
+  pop.innerHTML = `<div class="acm-pop-h"><span>📍 ${esc(label)}</span><span class="mx" onclick="draftCloseAnchorPopover()">✕</span></div>
+    <div class="acm-pop-list">${rows.length ? rows.map(r => `<div class="acm-pop-item"><b>${esc(uidToName(r.uid))}</b> <span>${new Date(r.created_at).toLocaleString('th-TH')}</span><div>${esc(r.text)}</div></div>`).join('') : '<div style="color:var(--TX3);font-size:12px">ยังไม่มีความเห็นตรงนี้</div>'}</div>
+    <textarea id="acm-text" maxlength="2000" placeholder="พิมพ์ความเห็นตรงตำแหน่งนี้..."></textarea>
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px"><button class="btn btn-xs" onclick="draftCloseAnchorPopover()">ปิด</button><button class="btn btn-xs btn-p" id="acm-send">ส่ง</button></div>`;
+  document.body.appendChild(pop);
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, x)) + 'px';
+  pop.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, y)) + 'px';
+  pop.querySelector('#acm-send').onclick = async () => {
+    const text = (pop.querySelector('#acm-text').value || '').trim();
+    if (!text) return;
+    try {
+      await SB.addPromoDraftAnchorComment(_draftEditNo, `${key}|${label}`, text);
+      draftCloseAnchorPopover();
+      toast('ปักคอมเมนต์แล้ว');
+      await draftLoadAnchorComments();
+    } catch (e) { toast('บันทึกไม่สำเร็จ: ' + (e.message || e), 'warn'); }
+  };
+  setTimeout(() => pop.querySelector('#acm-text')?.focus(), 30);
 }
 
 // ── ไฟล์แนบ (ข้อ 9) — อัปโหลดทันทีเมื่อเลือกไฟล์ (ใช้ได้เฉพาะเอกสารที่บันทึกแล้ว มี draft_no จริง)
@@ -14792,6 +14960,57 @@ async function _draftCheckExecRoute(header) {
     return true;
   } catch (e) { toast('ตรวจเส้นทางผู้บริหารไม่สำเร็จ: ' + e.message, 'warn'); return false; }
 }
+// หน้าต่างเลือกผู้อนุมัติของขั้น "ผู้สร้างเลือกเอง" — resolve { [levelId]: [uid] } หรือ null ถ้ายกเลิก
+let _draftPickUsers = [];
+let _draftPickState = null;
+async function _draftAskPickApprovers(levels) {
+  try { _draftPickUsers = (await CACHE.get('users', () => SB.getUsers())).filter(u => u.is_active !== 0 && u.is_active !== false && u.active !== false); }
+  catch (e) { _draftPickUsers = DB.get('users') || []; }
+  const pickLevels = levels.map((lv, i) => ({ lv, i })).filter(x => x.lv.pick_by_creator);
+  return new Promise(resolve => {
+    _draftPickState = {
+      resolve, q: {},
+      levels: pickLevels.map(({ lv, i }) => ({ id: lv.id, label: lv.label || `ขั้น ${i + 1}`, step: i + 1, mode: lv.mode,
+        sel: new Set([...(lv.default_self ? [UID] : []), ...(lv.approvers || []).map(a => a.uid)]) })),
+    };
+    _draftPickRender();
+  });
+}
+function _draftPickRender(focusIdx) {
+  const st = _draftPickState; if (!st) return;
+  const nameOf = uid => (_draftPickUsers.find(u => u.uid === uid)?.name) || uidToName(uid) || uid;
+  const lvHtml = st.levels.map((L, li) => {
+    const q = _msSearchText(st.q[L.id] || '').trim();
+    const cand = _draftPickUsers.filter(u => !L.sel.has(u.uid) && (!q || _msSearchText([u.name, u.uid, u.department, u.position].join(' ')).includes(q)));
+    const byDept = new Map(); cand.forEach(u => { const d = (u.department || '').trim() || 'ไม่ระบุแผนก'; if (!byDept.has(d)) byDept.set(d, []); byDept.get(d).push(u); });
+    const groups = [...byDept.entries()].sort((a, b) => a[0].localeCompare(b[0], 'th'));
+    return `<div class="card" style="padding:10px 12px;margin-bottom:8px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:6px">ขั้นที่ ${L.step} · ${esc(L.label)} <span style="font-weight:400;color:var(--TX3);font-size:11.5px">(${L.mode === 'all' ? 'ทุกคนต้องอนุมัติ' : 'คนใดคนหนึ่งอนุมัติ'})</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">${[...L.sel].map(uid => `<span class="pick-chip" style="font-size:11.5px;background:var(--LBL);color:var(--BL);border-radius:4px;padding:3px 8px;display:inline-flex;gap:5px;align-items:center">${esc(nameOf(uid))}${uid === UID ? ' (ฉัน)' : ''}<button onclick="_draftPickToggle(${li},'${_promoJsKey(uid)}')" style="background:none;border:0;cursor:pointer;color:var(--TX3);padding:0">✕</button></span>`).join('') || '<span style="color:var(--R);font-size:12px">ยังไม่ได้เลือก</span>'}</div>
+      <div style="display:flex;gap:6px;margin-bottom:5px">${!L.sel.has(UID) ? `<button class="btn btn-xs" onclick="_draftPickToggle(${li},'${_promoJsKey(UID)}')">👤 เลือกตัวเอง</button>` : ''}
+        <input type="text" id="pick-q-${li}" placeholder="🔍 พิมพ์ชื่อเพื่อค้นหา" value="${esc(st.q[L.id] || '')}" oninput="_draftPickState.q['${L.id}']=this.value;_draftPickRender(${li})" style="flex:1;font-size:12px;padding:4px 8px"></div>
+      <div style="max-height:150px;overflow:auto;border:1px solid var(--BD);border-radius:6px">${groups.map(([d, us]) => `<div style="background:var(--bg2);font-size:11px;font-weight:700;color:var(--TX2);padding:3px 10px">${esc(d)}</div>` +
+        us.map(u => `<div class="ms-item pick-opt" style="padding:5px 12px;font-size:12px;cursor:pointer" onclick="_draftPickToggle(${li},'${_promoJsKey(u.uid)}')"><b>${esc(u.name)}</b> <span style="color:var(--TX3)">${esc([u.position, userRoleLabel(u.role)].filter(Boolean).join(' · '))}</span></div>`).join('')).join('') || '<div style="padding:8px;color:var(--TX3);font-size:12px">ไม่พบผู้ใช้</div>'}</div>
+    </div>`;
+  }).join('');
+  const ready = st.levels.every(L => L.sel.size);
+  openMod(`<div class="mh"><div class="mt2">เลือกผู้อนุมัติก่อนส่ง</div><span class="mx" onclick="_draftPickDone(false)">✕</span></div>
+    <div style="font-size:12px;color:var(--TX3);margin-bottom:8px">ขั้นเหล่านี้ตั้งค่าให้ผู้สร้างเอกสารเลือกผู้อนุมัติเอง (เลือกตัวเองได้)</div>
+    <div style="max-height:62vh;overflow:auto">${lvHtml}</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn" onclick="_draftPickDone(false)">ยกเลิก</button>
+      <button class="btn btn-p" id="pick-go" onclick="_draftPickDone(true)" ${ready ? '' : 'disabled'}>ส่งอนุมัติ</button></div>`);
+  if (focusIdx != null) { const el = document.getElementById('pick-q-' + focusIdx); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+}
+function _draftPickToggle(li, uid) {
+  const L = _draftPickState?.levels[li]; if (!L) return;
+  if (L.sel.has(uid)) L.sel.delete(uid); else L.sel.add(uid);
+  _draftPickRender();
+}
+function _draftPickDone(ok) {
+  const st = _draftPickState; _draftPickState = null; closeM();
+  if (!st) return;
+  st.resolve(ok ? Object.fromEntries(st.levels.map(L => [L.id, [...L.sel]])) : null);
+}
 async function draftSubmitForApproval(draftNo) {
   const no = draftNo || _draftEditNo;
   if (!no) { toast('กรุณาบันทึกร่างก่อนส่งอนุมัติ', 'warn'); return; }
@@ -14800,16 +15019,23 @@ async function draftSubmitForApproval(draftNo) {
     const header = await SB.getPromoDraftHeader(no);
     if (!header || !await _draftCheckExecRoute(header)) return;
     levels = await SB.getApprovalWorkflowTemplate(PROMO_DRAFT_WF_ENTITY);
-    const routeError = ApprovalWorkflow.validate(levels || [], null, true);
-    if (routeError) { toast(routeError, 'warn'); return; }
   }
   catch (e) { toast('โหลด route อนุมัติไม่สำเร็จ: ' + (e.message || e), 'warn'); return; }
+  // ขั้นที่ให้ผู้สร้างเลือกผู้อนุมัติเอง (2026-09-24) — ถามก่อนส่ง, ยกเลิก = ไม่ส่ง
+  let picks = {};
+  if ((levels || []).some(lv => lv.pick_by_creator)) {
+    picks = await _draftAskPickApprovers(levels);
+    if (!picks) return;
+    levels = levels.map(lv => lv.pick_by_creator ? { ...lv, approvers: picks[lv.id].map(uid => { const u = _draftPickUsers.find(x => x.uid === uid) || {}; return { uid, name: u.name || uid, role: u.role || '' }; }) } : lv);
+  }
+  const routeError = ApprovalWorkflow.validate(levels || [], null, true);
+  if (routeError) { toast(routeError, 'warn'); return; }
   await sigEnsureMine(); // ผู้จัดทำลงนามในเอกสารด้วยลายเซ็นประจำตัว (ไม่มีก็สร้างเริ่มต้นจากชื่อ)
   const clonedLevels = (levels || []).map((lv, i) => ({
     id: lv.id, label: lv.label || `ขั้น ${i + 1}`, mode: lv.mode || 'any',
     approvers: (lv.approvers || []).map(a => ({ uid: a.uid, name: a.name, role: a.role, status: 'pending', comment: '', ts: null })),
   }));
-  const patch = { status: 'pending_approval', updated_by: UID };
+  const patch = { status: 'pending_approval', updated_by: UID, picked_approvers: picks };
   if (clonedLevels.length) { patch.levels_json = clonedLevels; patch.current_level = 0; patch.approvers_json = clonedLevels.flatMap(lv => lv.approvers); }
   SB.updatePromoDraftHeader(no, patch)
     .then(() => { audit('PROMO_DRAFT_SUBMIT', no, { levels: clonedLevels.length }); toast('ส่งอนุมัติแล้ว' + (clonedLevels.length ? ` (${clonedLevels.length} ขั้นตอน)` : '')); _draftAfterStatusChange(no); })
@@ -14822,9 +15048,26 @@ function _draftNeedsEscalation(header) {
 async function draftApprove(draftNo, approved) {
   return _draftApplyApproval(draftNo, approved, false);
 }
+// หน้าต่างใส่ความเห็นก่อนอนุมัติ/ไม่อนุมัติ — resolve เป็นข้อความ (ว่างได้) หรือ null ถ้ายกเลิก
+function _draftAskApprovalComment(approved) {
+  return new Promise(resolve => {
+    window._draftCmtResolve = v => { window._draftCmtResolve = null; closeM(); resolve(v); };
+    openMod(`<div class="mh"><div class="mt2">${approved ? '✅ ยืนยันอนุมัติ' : '❌ ยืนยันไม่อนุมัติ'}</div><span class="mx" onclick="window._draftCmtResolve&&window._draftCmtResolve(null)">✕</span></div>
+      <label style="font-size:12.5px;font-weight:600">ความเห็น ${approved ? '<span style="font-weight:400;color:var(--TX3)">(ไม่บังคับ)</span>' : '<span style="font-weight:400;color:var(--TX3)">(ควรระบุเหตุผล)</span>'}</label>
+      <textarea id="draft-approval-comment" maxlength="1000" placeholder="${approved ? 'ความเห็นเพิ่มเติม — ผู้อนุมัติขั้นถัดไปและผู้จัดทำจะเห็น' : 'ระบุเหตุผลที่ไม่อนุมัติ'}" style="width:100%;min-height:90px;margin-top:6px;border:1px solid var(--BD);border-radius:7px;padding:8px;font:inherit;font-size:13px;box-sizing:border-box"></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button class="btn" onclick="window._draftCmtResolve(null)">ยกเลิก</button>
+        <button class="btn ${approved ? 'btn-g' : 'btn-r'}" onclick="window._draftCmtResolve((document.getElementById('draft-approval-comment').value||'').trim())">${approved ? 'ยืนยันอนุมัติ' : 'ยืนยันไม่อนุมัติ'}</button>
+      </div>`);
+    setTimeout(() => document.getElementById('draft-approval-comment')?.focus(), 50);
+  });
+}
 async function _draftApplyApproval(draftNo, approved, executive) {
   const no = draftNo || _draftEditNo;
   try {
+    // ความเห็นผู้อนุมัติ (2026-09-24) — ถามก่อนบันทึก, ยกเลิก = ไม่ทำอะไร; server เก็บลง approver entry
+    const comment = await _draftAskApprovalComment(approved);
+    if (comment === null) return;
     // ต้องมีลายเซ็นก่อนกดอนุมัติ — server snapshot ลายเซ็นนี้ลงเอกสารตอนบันทึกการอนุมัติ
     if (approved) await sigEnsureMine();
     const header = await SB.getPromoDraftHeader(no);
@@ -14832,13 +15075,13 @@ async function _draftApplyApproval(draftNo, approved, executive) {
     const levels = Array.isArray(header.levels_json) ? header.levels_json : [];
     if (!levels.length) {
       if (executive) { toast('ยังไม่ได้ตั้งค่าเส้นทางอนุมัติผู้บริหาร กรุณาให้แอดมินตั้งค่าที่เมนูตั้งค่าเส้นทางอนุมัติ', 'warn'); return; }
-      if (approved) return _draftFinishNormalRoute(no, header);
-      await SB.updatePromoDraftHeader(no, { status: 'rejected', updated_by: UID });
+      if (approved) return _draftFinishNormalRoute(no, header, comment);
+      await SB.updatePromoDraftHeader(no, { status: 'rejected', updated_by: UID, approval_comment: comment });
     } else {
       const result = ApprovalWorkflow.advance(levels, header.current_level || 0, UID, approved);
-      if (result.complete && !executive) return _draftFinishNormalRoute(no, { ...header, levels_json: result.levels });
+      if (result.complete && !executive) return _draftFinishNormalRoute(no, { ...header, levels_json: result.levels }, comment);
       await SB.updatePromoDraftHeader(no, { levels_json: result.levels, current_level: result.current,
-        status: result.rejected ? 'rejected' : result.complete ? 'approved' : header.status, updated_by: UID });
+        status: result.rejected ? 'rejected' : result.complete ? 'approved' : header.status, updated_by: UID, approval_comment: comment });
     }
     audit(executive ? 'PROMO_DRAFT_EXEC_APPROVE' : 'PROMO_DRAFT_APPROVE', no, { approved });
     toast(approved ? 'บันทึกการอนุมัติแล้ว' : 'ไม่อนุมัติแล้ว');
@@ -14846,7 +15089,7 @@ async function _draftApplyApproval(draftNo, approved, executive) {
   } catch (e) { toast('อัปเดตสถานะไม่สำเร็จ: ' + (e.message || e), 'warn'); }
 }
 // ผ่านครบ route ปกติแล้ว (หรือไม่มี route เลย) — เช็คว่าต้อง escalate ไปผู้บริหารก่อนจะปิดเป็น 'approved' จริงไหม
-async function _draftFinishNormalRoute(no, header) {
+async function _draftFinishNormalRoute(no, header, comment = '') {
   if (_draftNeedsEscalation(header)) {
     if (!await _draftCheckExecRoute(header)) return;
     let execLevels;
@@ -14859,12 +15102,12 @@ async function _draftFinishNormalRoute(no, header) {
     }));
     SB.updatePromoDraftHeader(no, {
       status: 'pending_exec_approval', levels_json: clonedExec, current_level: 0,
-      approvers_json: clonedExec.flatMap(lv => lv.approvers), updated_by: UID,
+      approvers_json: clonedExec.flatMap(lv => lv.approvers), updated_by: UID, approval_comment: comment,
     }).then(() => { audit('PROMO_DRAFT_ESCALATE', no, {}); toast('อนุมัติครบ route ปกติแล้ว — ส่งต่อผู้บริหารอนุมัติเพิ่ม'); _draftAfterStatusChange(no); })
       .catch(e => toast('บันทึกไม่สำเร็จ: ' + (e.message || e), 'warn'));
     return;
   }
-  SB.updatePromoDraftHeader(no, { status: 'approved', updated_by: UID })
+  SB.updatePromoDraftHeader(no, { status: 'approved', updated_by: UID, approval_comment: comment })
     .then(() => { audit('PROMO_DRAFT_APPROVE', no, { final: true }); toast('✅ อนุมัติครบทุกขั้นตอน'); _draftAfterStatusChange(no); })
     .catch(e => toast('บันทึกไม่สำเร็จ: ' + (e.message || e), 'warn'));
 }
@@ -14911,6 +15154,11 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
         <input id="pdwf-${kind}-lbl-${lv.id}" oninput="pdWfSetField('${kind}','${lv.id}','label',this.value)" style="flex:1;padding:4px 8px;border:1px solid var(--BD);border-radius:5px;font-size:12px" value="${esc(lv.label || '')}" placeholder="ชื่อขั้นตอน (ไม่บังคับ)">
         <button class="btn btn-xs btn-r" onclick="pdWfRemLevel('${kind}','${lv.id}')">✕ ลบ</button>
       </div>
+      ${kind === 'normal' ? `<div style="display:flex;gap:16px;flex-wrap:wrap;margin:-2px 0 7px;font-size:12px;color:var(--TX2)">
+        <label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" ${lv.pick_by_creator ? 'checked' : ''} onchange="pdWfTogglePick('${lv.id}',this.checked)">ให้ผู้สร้างเอกสารเลือกผู้อนุมัติเองตอนส่งอนุมัติ</label>
+        ${lv.pick_by_creator ? `<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" ${lv.default_self ? 'checked' : ''} onchange="pdWfSetField('normal','${lv.id}','default_self',this.checked)">ค่าเริ่มต้น = ผู้สร้างเอกสารเอง</label>
+        <span style="color:var(--TX3)">รายชื่อด้านล่างเป็นค่าแนะนำ (ปล่อยว่างได้)</span>` : ''}
+      </div>` : ''}
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">
         ${(lv.approvers || []).map(a => `<span style="font-size:11px;background:var(--LBL);color:var(--BL);border-radius:4px;padding:3px 8px;display:flex;align-items:center;gap:4px">${esc(a.name)}${a.department ? `<span style="color:var(--TX3)">· ${esc(a.department)}</span>` : ''}<button onclick="pdWfRemApprover('${kind}','${lv.id}','${_promoJsKey(a.uid)}')" style="background:none;border:none;cursor:pointer;color:var(--TX3);font-size:10px;padding:0">✕</button></span>`).join('')}
       </div>
@@ -14970,6 +15218,14 @@ function pdWfPickerOpen(input, kind, lvId) {
 function _pdWfLevelsFor(kind) { return kind === 'exec' ? _pdWfExecLevels : _pdWfNormalLevels; }
 // เก็บค่าที่พิมพ์ลง state ทันที — เดิมอ่านจาก DOM เฉพาะตอนกดบันทึก ทำให้ชื่อขั้น/เงื่อนไขที่พิมพ์ไว้หายทุกครั้ง
 // ที่กดเพิ่ม/ลบขั้นหรือผู้อนุมัติ (หน้าวาดใหม่ทั้งหมดจาก state)
+// ขั้นที่ให้ผู้สร้างเลือกเอง — เปิดครั้งแรกบนขั้นที่ 1 ตั้งค่าเริ่มต้นเป็น "ผู้สร้างเอกสารเอง" ให้เลย
+function pdWfTogglePick(lvId, on) {
+  const levels = _pdWfLevelsFor('normal');
+  const lv = levels.find(l => l.id === lvId); if (!lv) return;
+  lv.pick_by_creator = !!on;
+  if (on && levels.indexOf(lv) === 0 && lv.default_self === undefined) lv.default_self = true;
+  pgPromoDraftWorkflowSettings(true);
+}
 function pdWfSetField(kind, lvId, field, value) {
   const lv = _pdWfLevelsFor(kind).find(l => l.id === lvId);
   if (lv) lv[field] = value;
@@ -15002,7 +15258,10 @@ function pdWfSave(kind) {
     if (mSel) lv.mode = mSel.value;
     if (lSel) lv.label = lSel.value;
   });
-  const error = ApprovalWorkflow.validate(levels, DB.get('users') || [], kind !== 'exec');
+  // ขั้น "ผู้สร้างเลือกเอง" ปล่อยรายชื่อว่างได้ — ตรวจเฉพาะขั้นที่มีรายชื่อ + ทุกขั้นต้องเลือกเงื่อนไข any/all
+  if (levels.some(lv => !['any', 'all'].includes(lv.mode))) { toast('แต่ละขั้นต้องเลือกเงื่อนไข any/all', 'warn'); return; }
+  const fixed = levels.filter(lv => !(kind === 'normal' && lv.pick_by_creator && !(lv.approvers || []).length));
+  const error = ApprovalWorkflow.validate(fixed, DB.get('users') || [], kind !== 'exec' || fixed.length > 0);
   if (error) { toast(error, 'warn'); return; }
   const entityType = kind === 'exec' ? PROMO_DRAFT_EXEC_WF_ENTITY : PROMO_DRAFT_WF_ENTITY;
   SB.saveApprovalWorkflowTemplate(entityType, levels).then(ok => {
@@ -15480,10 +15739,10 @@ async function draftPreviewPDF() {
     .ck.on{font-weight:700;color:#1E3A5F}
     .disc{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact} /* พิมพ์พื้นหัวตาราง/แรเงาออกมาด้วย */
-    table{width:100%;border-collapse:collapse;margin-top:7px;font-size:8.5px;table-layout:fixed}
-    thead tr.grp th{background:#16304d;color:#fff;font-size:8.4px;font-weight:700;text-align:center;padding:6px 3px;border-left:1px solid rgba(255,255,255,.35)}
+    table{width:100%;border-collapse:collapse;margin-top:7px;font-size:11.2px;table-layout:fixed} /* +2pt (2026-09-24) */
+    thead tr.grp th{background:#16304d;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:6px 3px;border-left:1px solid rgba(255,255,255,.35)}
     thead tr.grp th:first-child{border-left:none}
-    thead tr.cols th{background:#1E3A5F;color:#fff;font-size:8.2px;font-weight:600;padding:7px 2px;text-align:center;vertical-align:middle;line-height:1.15;border-left:1px solid rgba(255,255,255,.18)}
+    thead tr.cols th{background:#1E3A5F;color:#fff;font-size:10.8px;font-weight:600;padding:7px 2px;text-align:center;vertical-align:middle;line-height:1.15;border-left:1px solid rgba(255,255,255,.18)}
     thead tr.cols th.gs{border-left:1.5px solid rgba(255,255,255,.55)}
     .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
     /* ตารางสินค้า: ทุกคอลัมน์กึ่งกลาง ยกเว้นชื่อสินค้า, เส้นแบ่งคอลัมน์สีอ่อน, เส้นหนาขึ้นที่ต้นกลุ่ม, แรเงาแยกกลุ่ม */
@@ -15495,9 +15754,9 @@ async function draftPreviewPDF() {
     table.items td.g-norm{background:#EFF5F7}
     table.items td.g-promo{background:#FBF6E6}
     table.items td.strong{font-weight:700;color:#1E3A5F}
-    table.items td.period{white-space:nowrap;font-size:8px}
+    table.items td.period{white-space:nowrap;font-size:10.6px}
     table.items tr.subrow td.num,table.items tr.subrow td.sku-name{color:#4A5568}
-    td .sub{font-size:7.2px;color:#8896A5;white-space:nowrap}
+    td .sub{font-size:9.8px;color:#8896A5;white-space:nowrap}
     table.costs td{border-bottom:1px solid #E3E8EF;padding:4px 6px}
     .branches{font-size:10px;margin:6px 0 8px;line-height:1.25;background:#FBFCFE;border:1px solid #E3E8EF;border-radius:6px;padding:6px 8px}
     .branch-codes{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9.6px;color:#1E3A5F}

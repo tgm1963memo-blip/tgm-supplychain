@@ -872,6 +872,7 @@ CREATE TABLE IF NOT EXISTS promo_draft_line_comments (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   draft_no      TEXT NOT NULL,
   sku           TEXT NOT NULL,
+  anchor        TEXT, -- คอมเมนต์ลอย: "<key>|<ป้ายชื่อ>" (sku = '')
   uid           TEXT NOT NULL,
   text          TEXT NOT NULL,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))

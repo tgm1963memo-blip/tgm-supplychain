@@ -1,10 +1,22 @@
 const workflow = require('../../shared/approval-workflow');
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const needsExec = row => ['is_npd', 'has_off_contract_cost', 'has_marketing_cost'].some(k => Number(row[k]) === 1 || row[k] === true);
-function template(db, entity, allowEmpty = false) {
+// picks (2026-09-24): ขั้นที่ตั้งค่า pick_by_creator = ผู้สร้างเอกสารเลือกผู้อนุมัติเองตอนส่งอนุมัติ
+// { [levelId]: [uid,...] } — แทนที่รายชื่อ (ค่าแนะนำ) ในเทมเพลตของขั้นนั้น แล้วค่อย validate ทั้งเส้นทาง
+function template(db, entity, allowEmpty = false, picks = null) {
   const row = db.prepare('SELECT levels_json FROM approval_workflow_templates WHERE entity_type=?').get(entity);
-  const levels = row ? parse(row.levels_json) : [];
-  const error = workflow.validate(levels, db.prepare('SELECT uid,is_active FROM sc_users').all(), allowEmpty);
+  const users = db.prepare('SELECT uid,name,role,is_active FROM sc_users').all();
+  const levels = (row ? parse(row.levels_json) : []).map(lv => {
+    if (!lv.pick_by_creator) return lv;
+    const chosen = picks && Array.isArray(picks[lv.id]) ? [...new Set(picks[lv.id].map(String))] : null;
+    if (!chosen || !chosen.length) {
+      // ไม่ได้เลือก: ใช้รายชื่อแนะนำในเทมเพลตถ้ามี ไม่มีเลย = ต้องเลือกก่อนส่ง
+      if (picks && !(lv.approvers || []).length) throw new Error(`กรุณาเลือกผู้อนุมัติของขั้น "${lv.label || lv.id}"`);
+      return lv;
+    }
+    return { ...lv, approvers: chosen.map(uid => { const u = users.find(x => x.uid === uid); return { uid, name: u?.name || uid, role: u?.role || '' }; }) };
+  });
+  const error = workflow.validate(levels, users, allowEmpty);
   if (error) throw new Error(error + ' กรุณาให้แอดมินตั้งค่าที่เมนูตั้งค่าเส้นทางอนุมัติ');
   return levels.map(lv => ({ ...lv, approvers: lv.approvers.map(a => ({ ...a, status: 'pending', comment: '', ts: null })) }));
 }
@@ -26,6 +38,9 @@ function validateChange(db, old, change, user) {
   // ความเห็นผู้อนุมัติ (ไม่ใช่คอลัมน์ — เก็บลง approver entry ผ่าน workflow.advance)
   const comment = String(change.approval_comment || '').slice(0, 1000);
   delete change.approval_comment;
+  // ผู้อนุมัติที่ผู้สร้างเลือกเองตอนส่งอนุมัติ (ไม่ใช่คอลัมน์)
+  const picks = change.picked_approvers && typeof change.picked_approvers === 'object' ? change.picked_approvers : {};
+  delete change.picked_approvers;
   const next = { ...old, ...change };
   const assign = (levels, current = 0) => Object.assign(change, { levels_json: JSON.stringify(levels), current_level: current, approvers_json: JSON.stringify(levels.flatMap(l => l.approvers)) });
   if (!old) {
@@ -38,7 +53,7 @@ function validateChange(db, old, change, user) {
   if (active && ['is_npd','has_off_contract_cost','has_marketing_cost'].some(k => change[k] !== undefined && Number(change[k]) !== Number(old[k]))) throw new Error('ไม่สามารถเปลี่ยนเงื่อนไขระหว่างรออนุมัติ');
   if (status === 'pending_approval' && ['draft', 'rejected'].includes(old.status)) {
     if (needsExec(next)) template(db, 'promo_draft_exec');
-    assign(template(db, 'promo_draft', true));
+    assign(template(db, 'promo_draft', true, picks));
     change.approval_history_json = '[]'; // ส่งอนุมัติรอบใหม่ เริ่มประวัติใหม่
     return;
   }
