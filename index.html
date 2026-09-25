@@ -5237,7 +5237,14 @@ async function syncPermsFromServer(){
       apiFetch('/api/perms/roles'),
       apiFetch('/api/perms/feature-flags'),
     ]);
-    if(deptRes.data && !deptRes.error) DB.set('nav_perms_deptpos',deptRes.data);
+    // FIXED (2026-09-25): server ส่ง { "แผนก|ตำแหน่ง": [page ids] } แต่ buildSB()/pgPerms() อ่านเป็น
+    // { "แผนก|ตำแหน่ง": { pages:[...] } } — ค่าที่บันทึกไว้จึงไม่ถูกใช้เลย (เข้าได้ทุกหน้าตาม role เดิม และหน้า
+    // ตั้งค่าแสดงเหมือนไม่ได้บันทึก) แปลงให้เป็นรูปเดียวกันก่อนเก็บ
+    if(deptRes.data && !deptRes.error){
+      const norm={};
+      Object.entries(deptRes.data).forEach(([k,v])=>{norm[k]={pages:_permPagesOf(v)};});
+      DB.set('nav_perms_deptpos',norm);
+    }
     if(rolesRes.data && !rolesRes.error){
       const custom={};
       rolesRes.data.forEach(r=>{custom[r.role_id]={label:r.label,pages:r.pages};});
@@ -5249,12 +5256,17 @@ async function syncPermsFromServer(){
   }
 }
 
+// รายการหน้าของกลุ่มแผนก+ตำแหน่ง — รับได้ทั้งรูป { pages:[...] } และ [...] (ค่าจาก server / cache เก่า)
+function _permPagesOf(v){return Array.isArray(v)?v:(Array.isArray(v?.pages)?v.pages:[]);}
+// คีย์กลุ่มแผนก+ตำแหน่ง — ต้องตรงกับ _permGroups() ในหน้าตั้งค่าสิทธิ์ (ว่าง = Unassigned ...)
+function _permGroupKey(u){return `${u?.department||'Unassigned department'}|${u?.position||'Unassigned position'}`;}
 function buildSB(){
   const customPerms=DB.get('nav_perms')||{};
   const deptPerms=DB.get('nav_perms_deptpos')||{};
   const me=(DB.get('users')||[]).find(u=>u.uid===UID)||CURRENT_USER||{};
   const dept=(me.department||CURRENT_USER?.department||'').toLowerCase();
-  const dkey=`${me.department||''}|${me.position||''}`;
+  const dkey=_permGroupKey(me);
+  const deptPages=_permPagesOf(deptPerms[dkey]);
 
   // ── รวม lookup ไอคอนจากทุก RNAV ────────────────────────────────────────
   const lookup={};
@@ -5263,8 +5275,8 @@ function buildSB(){
   let navItems=[];
 
   // 1. ถ้ามี dept+position override จาก IT → ใช้ก่อนเสมอ (ยกเว้น superadmin)
-  if(ROLE!=='superadmin' && deptPerms[dkey]?.pages?.length){
-    navItems=deptPerms[dkey].pages.map(id=>lookup[id]).filter(Boolean);
+  if(ROLE!=='superadmin' && deptPages.length){
+    navItems=deptPages.map(id=>lookup[id]).filter(Boolean);
   }
   // 2. ถ้าไม่มี override → เลือก RNAV ตาม role × dept
   else if(ROLE==='superadmin'){
@@ -11729,7 +11741,7 @@ function _permGroups(){
   users.forEach(u=>{
     const dept=u.department||'Unassigned department';
     const pos=u.position||'Unassigned position';
-    const key=`${dept}|${pos}`;
+    const key=_permGroupKey(u);
     if(!map[key])map[key]={key,dept,pos,users:0,role:u.role};
     map[key].users++;
   });
@@ -11760,7 +11772,10 @@ function _getRoles(){
   const custom=DB.get('nav_roles')||{};
   return {...DEFAULT_ROLES,...custom};
 }
-function pgPerms(){
+function pgPerms(skipSync){
+  // แสดงจาก cache ก่อน แล้วโหลดค่าล่าสุดจาก server มาแสดงทับ (2026-09-25) — เดิมใช้ cache ในเครื่องอย่างเดียว
+  // เครื่องที่ไม่ได้เป็นคนบันทึกจึงเห็นค่าเก่า เหมือนระบบไม่บันทึก
+  if(!skipSync) syncPermsFromServer().then(()=>{ if(document.getElementById('perm-body')) pgPerms(true); });
   const perms=DB.get('nav_perms_deptpos')||{};
   const groups=_permGroups();
   const roles=_getRoles();
@@ -11812,7 +11827,7 @@ function pgPerms(){
     </thead>
     <tbody>${ALL_NAV_PAGES.map(pg=>`<tr>
       <td style="font-size:12.5px">${pg.lbl}</td>
-      ${groups.map(g=>{const has=(perms[g.key]?.pages||[]).includes(pg.id);
+      ${groups.map(g=>{const has=_permPagesOf(perms[g.key]).includes(pg.id);
         return `<td style="text-align:center"><input type="checkbox" data-pkey="${esc(g.key)}" data-page="${pg.id}" ${has?'checked':''} style="width:15px;height:15px;accent-color:var(--BL);cursor:pointer"></td>`;
       }).join('')}
     </tr>`).join('')}</tbody></table></div>
@@ -11910,7 +11925,7 @@ async function savePerms(){
 }
 async function resetPerms(){
   DB.set('nav_perms_deptpos',{});
-  pgPerms();
+  pgPerms(true); // ไม่โหลดจาก server ทับ — ค่าตั้งต้นยังไม่ได้บันทึกจนกว่าจะกด Save
   toast('Permission defaults restored (ในเครื่องนี้ — กด Save เพื่อบันทึกขึ้น server)');
 }
 async function toggleFeatureFlag(pageId,enabled){
