@@ -1,0 +1,8078 @@
+{
+ "generatedAt": "2026-09-28T08:17:32.823Z",
+ "source": "supabase qncfkletcnncutyhjjfb",
+ "tables": {
+  "adjust_requests": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lot_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "location_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_system",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "qty_actual",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "reason_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "reason_note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "PENDING"
+     },
+     "array": false
+    },
+    {
+     "name": "requested_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "supervisor_note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_adjust_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "audit_log": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "serial"
+     },
+     "array": false
+    },
+    {
+     "name": "ts",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "uid",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "role",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "action",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "target",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "detail",
+     "type": "json",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ip_addr",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_audit_uid",
+     "columns": [
+      "uid"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_audit_action",
+     "columns": [
+      "action"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_audit_ts",
+     "columns": [
+      "ts"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "audit_logs": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "actor_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "actor_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "action",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "entity_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "entity_id",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "before_data",
+     "type": "json",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "after_data",
+     "type": "json",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ip_address",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_audit_logs_created",
+     "columns": [
+      "created_at"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "billing_invoices": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "invoice_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "customer_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "invoice_date",
+     "type": "date",
+     "nullable": false,
+     "default": {
+      "kind": "today"
+     },
+     "array": false
+    },
+    {
+     "name": "period_from",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "period_to",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "draft"
+     },
+     "array": false
+    },
+    {
+     "name": "subtotal",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "tax",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "total",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "invoice_no"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "customer_id"
+     ],
+     "refTable": "customers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_billing_customer",
+     "columns": [
+      "customer_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "billing_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "invoice_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "pricing_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "description",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "unit_price",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "amount",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "pricing_id"
+     ],
+     "refTable": "storage_pricing",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    },
+    {
+     "columns": [
+      "invoice_id"
+     ],
+     "refTable": "billing_invoices",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": []
+  },
+  "bookings": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "prefixed_id",
+      "prefix": "BK"
+     },
+     "array": false
+    },
+    {
+     "name": "type",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "SO"
+     },
+     "array": false
+    },
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "cust_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "receive_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "stock_status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "stock"
+     },
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "so_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "so_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_bookings_sku",
+     "columns": [
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_bookings_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_bookings_date",
+     "columns": [
+      "receive_date"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_bookings_so_no",
+     "columns": [
+      "so_no"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_bookings_so_date",
+     "columns": [
+      "so_date"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_bookings_sku_status_receive_date",
+     "columns": [
+      "sku",
+      "status",
+      "receive_date"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "count_summary_notes": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note_date",
+     "type": "date",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "sku_id",
+     "note_date"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "sku_id"
+     ],
+     "refTable": "skus",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": []
+  },
+  "customer_delivery_points": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "serial"
+     },
+     "array": false
+    },
+    {
+     "name": "cust_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "location_name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "ship_to_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "route_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "route_status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "fixed"
+     },
+     "array": false
+    },
+    {
+     "name": "candidate_routes",
+     "type": "json",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": []
+     },
+     "array": true
+    },
+    {
+     "name": "is_default",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lat",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lng",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "geofence_m",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 300
+     },
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "cust_code",
+     "location_name"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "customer_delivery_points_cust_idx",
+     "columns": [
+      "cust_code"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "customer_profiles": {
+   "columns": [
+    {
+     "name": "code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "corporate",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "category",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "slm",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "edited_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "code"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "customers": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "contact_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "phone",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "email",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "address",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "customer_type",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_group",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "slm_id",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "code"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_customers_code",
+     "columns": [
+      "code"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_customers_slm",
+     "columns": [
+      "slm_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_customers_group",
+     "columns": [
+      "cust_group"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "delivery_photos": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "stop_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "kind",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "goods"
+     },
+     "array": false
+    },
+    {
+     "name": "storage_path",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "taken_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "lat",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lng",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "stop_id"
+     ],
+     "refTable": "delivery_stops",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "delivery_photos_stop_idx",
+     "columns": [
+      "stop_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "delivery_stops": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "trip_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "seq",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "cust_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "location_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "delivery_point_id",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "doc_nums",
+     "type": "json",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": []
+     },
+     "array": true
+    },
+    {
+     "name": "amount",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "point_lat",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "point_lng",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "geofence_m",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "check_in_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "check_in_lat",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "check_in_lng",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "check_in_accuracy",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "check_in_distance_m",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "out_of_range_reason",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "check_out_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "check_out_lat",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "check_out_lng",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "check_out_distance_m",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "result",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "trip_id"
+     ],
+     "refTable": "delivery_trips",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "delivery_stops_trip_idx",
+     "columns": [
+      "trip_id",
+      "seq"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "delivery_trips": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "trip_date",
+     "type": "date",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "route_name",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "round_no",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 1
+     },
+     "array": false
+    },
+    {
+     "name": "driver_user_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "driver_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "vehicle_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "planned"
+     },
+     "array": false
+    },
+    {
+     "name": "started_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "finished_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "trip_date",
+     "route_name",
+     "round_no"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "delivery_trips_driver_idx",
+     "columns": [
+      "driver_user_id",
+      "trip_date"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "forecasts": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "prefixed_id",
+      "prefix": "FC"
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "slm_id",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "deliv_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_approved",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "approved_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "edited_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "sku"
+     ],
+     "refTable": "products",
+     "refColumns": [
+      "code"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_forecasts_slm",
+     "columns": [
+      "slm_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_forecasts_sku",
+     "columns": [
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_forecasts_date",
+     "columns": [
+      "deliv_date"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_forecasts_approved",
+     "columns": [
+      "is_approved"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "locations": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "barcode_loc",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "zone",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "rack",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "bin",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "loc_type",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "rack"
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "code"
+    ]
+   ],
+   "fks": [],
+   "indexes": []
+  },
+  "lots": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "lot_number",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "barcode_lot",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "manufacture_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "expire_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "is_advance_receipt",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "is_clearance",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "note_warehouse",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note_planner",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note_qc",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_memo_sent",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "note_warehouse_updated_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note_qc_updated_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note_planner_updated_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ememo_id",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ememo_doc_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_lots_sku_id",
+     "columns": [
+      "sku_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "outbound_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "order_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lot_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "location_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_planned",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "qty_actual",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "order_id"
+     ],
+     "refTable": "outbound_orders",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_outbound_lines_ord",
+     "columns": [
+      "order_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "outbound_orders": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "order_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "customer",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "PENDING"
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_outbound_orders_status_date",
+     "columns": [
+      "status",
+      "created_at"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_outbound_orders_order_no",
+     "columns": [
+      "order_no"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_outbound_orders_created_at_desc",
+     "columns": [
+      "created_at"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "plan_receiving": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "plan_date",
+     "type": "date",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "sku_code",
+     "plan_date"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "created_by"
+     ],
+     "refTable": "users",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_plan_receiving_sku_date",
+     "columns": [
+      "sku_code",
+      "plan_date"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "po_document_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "po_document_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "external_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "expected_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "confirmed_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "confirmed_by",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "confirmed_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "po_document_id"
+     ],
+     "refTable": "po_documents",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    },
+    {
+     "columns": [
+      "confirmed_by"
+     ],
+     "refTable": "users",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_po_document_lines_doc",
+     "columns": [
+      "po_document_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_po_document_lines_sku",
+     "columns": [
+      "sku_code"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "po_documents": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "po_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "supplier_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "source",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "attachment_url",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "draft"
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "confirmed_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "supplier_id"
+     ],
+     "refTable": "suppliers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    },
+    {
+     "columns": [
+      "created_by"
+     ],
+     "refTable": "users",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_po_documents_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "po_plans": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "deliv_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "customer",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "branch",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "so_ref",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "version",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 1
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "edited_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_po_plans_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_po_plans_sku_status",
+     "columns": [
+      "sku",
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "po_templates": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "supplier_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "rules",
+     "type": "json",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": {}
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "supplier_id"
+     ],
+     "refTable": "suppliers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": []
+  },
+  "prod_orders": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "plan_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "receive_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "line",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "edited_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "prod_orders_sku_idx",
+     "columns": [
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "prod_orders_plan_date_idx",
+     "columns": [
+      "plan_date"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "prod_orders_receive_date_idx",
+     "columns": [
+      "receive_date"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "prod_orders_status_idx",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "products": {
+   "columns": [
+    {
+     "name": "code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "group_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "min_stock",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "shelf_life",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 30
+     },
+     "array": false
+    },
+    {
+     "name": "lead_time",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 7
+     },
+     "array": false
+    },
+    {
+     "name": "moq",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "plant",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "TSS"
+     },
+     "array": false
+    },
+    {
+     "name": "company",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "TSS"
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "code"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_products_group",
+     "columns": [
+      "group_name"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_products_active",
+     "columns": [
+      "is_active"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_products_company_code",
+     "columns": [
+      "company",
+      "code"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "purchase_order_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "po_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_ordered",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "qty_received",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "unit_price",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "po_id"
+     ],
+     "refTable": "purchase_orders",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_po_lines_po",
+     "columns": [
+      "po_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "purchase_orders": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "po_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "supplier_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "po_date",
+     "type": "date",
+     "nullable": false,
+     "default": {
+      "kind": "today"
+     },
+     "array": false
+    },
+    {
+     "name": "expected_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "draft"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "po_no"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "supplier_id"
+     ],
+     "refTable": "suppliers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_purchase_orders_supplier",
+     "columns": [
+      "supplier_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "putaway_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "task_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lot_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "from_location_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "target_location_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "task_id"
+     ],
+     "refTable": "putaway_tasks",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_putaway_lines_task",
+     "columns": [
+      "task_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "putaway_tasks": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "task_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ref_doc",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "assigned_to",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "completed_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "task_no"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_putaway_tasks_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "recount_flags": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "PENDING"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "flagged_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "resolved_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "resolved_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "sku_id"
+     ],
+     "refTable": "skus",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "recount_flags_one_pending_per_sku",
+     "columns": [
+      "sku_id"
+     ],
+     "unique": true,
+     "where": "status = 'PENDING'"
+    },
+    {
+     "name": "recount_flags_sku_id_idx",
+     "columns": [
+      "sku_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "reservations": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_requested",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "qty_approved",
+     "type": "num",
+     "nullable": true,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "cust_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "need_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "requested_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ref_forecast_id",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ref_po_id",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_reservations_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_reservations_sku_status",
+     "columns": [
+      "sku",
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "role_permissions": {
+   "columns": [
+    {
+     "name": "role",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "perms",
+     "type": "json",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "role"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "route_bill_overrides": {
+   "columns": [
+    {
+     "name": "doc_num",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "route_name",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "doc_num"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "route_bill_returns": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "serial"
+     },
+     "array": false
+    },
+    {
+     "name": "doc_num",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "received",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "received_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "doc_num"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "route_bill_returns_doc_num_idx",
+     "columns": [
+      "doc_num"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "sales_history": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "serial"
+     },
+     "array": false
+    },
+    {
+     "name": "slm_id",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ym",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "year",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "month",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "amount",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "company",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "TSS"
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "slm_id",
+     "sku",
+     "ym"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "sku"
+     ],
+     "refTable": "products",
+     "refColumns": [
+      "code"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_sales_hist_slm",
+     "columns": [
+      "slm_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_hist_sku",
+     "columns": [
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_hist_ym",
+     "columns": [
+      "ym"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_history_year_month",
+     "columns": [
+      "year",
+      "month"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_history_sku_year_month",
+     "columns": [
+      "sku",
+      "year",
+      "month"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_history_company_ym_sku",
+     "columns": [
+      "company",
+      "ym",
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_history_ym_slm_sku",
+     "columns": [
+      "ym",
+      "slm_id",
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_history_ym_amount",
+     "columns": [
+      "ym",
+      "amount"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "sales_overview_monthly": {
+   "columns": [
+    {
+     "name": "ym",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "company",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "slm_id",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "slm_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "slm_owner",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_group",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "corporate",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "category",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "prod_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "prod_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "prod_group",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "amount",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "invoice_count",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "ym",
+    "company",
+    "slm_id",
+    "cust_code",
+    "prod_code"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_sales_overview_monthly_ym",
+     "columns": [
+      "ym"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_overview_monthly_customer",
+     "columns": [
+      "cust_code",
+      "ym"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_overview_monthly_sales",
+     "columns": [
+      "slm_owner",
+      "ym"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_overview_monthly_product_group",
+     "columns": [
+      "prod_group",
+      "ym"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "sales_transactions": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "slm_id",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "doc_date",
+     "type": "date",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ym",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "doc_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "line_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "doc_type",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "so_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cust_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "amount",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "company",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "TSS"
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "slm_id",
+     "sku",
+     "doc_date",
+     "doc_no",
+     "line_no"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_sales_transactions_doc_date",
+     "columns": [
+      "doc_date"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_transactions_company_doc_sku",
+     "columns": [
+      "company",
+      "doc_date",
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_transactions_slm_doc",
+     "columns": [
+      "slm_id",
+      "doc_date"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_sales_transactions_doc_slm_sku",
+     "columns": [
+      "doc_date",
+      "slm_id",
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "sc_users": {
+   "columns": [
+    {
+     "name": "uid",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "role",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "slm_id",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "email",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "pwd_hash",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "1234"
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "active",
+     "type": "bool",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "uid"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "shipment_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "shipment_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lot_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "shipment_id"
+     ],
+     "refTable": "shipments",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_shipment_lines_ship",
+     "columns": [
+      "shipment_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "shipments": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "shipment_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "order_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "customer_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ship_date",
+     "type": "date",
+     "nullable": false,
+     "default": {
+      "kind": "today"
+     },
+     "array": false
+    },
+    {
+     "name": "carrier",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "vehicle_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "driver_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "tracking_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "planned"
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "shipment_no"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "order_id"
+     ],
+     "refTable": "outbound_orders",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    },
+    {
+     "columns": [
+      "customer_id"
+     ],
+     "refTable": "customers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_shipments_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "sku_groups": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name_th",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "planner_user_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "code"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "planner_user_id"
+     ],
+     "refTable": "users",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": []
+  },
+  "sku_settings": {
+   "columns": [
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "min_stock",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 30
+     },
+     "array": false
+    },
+    {
+     "name": "shelf_life",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 30
+     },
+     "array": false
+    },
+    {
+     "name": "lead_time",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 7
+     },
+     "array": false
+    },
+    {
+     "name": "moq",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "sku"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "skus": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "barcode",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "bc2",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "bc3",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "bc4",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "group_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name_th",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "unit",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "กก."
+     },
+     "array": false
+    },
+    {
+     "name": "min_stock",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "shelf_life",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lead_time",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "moq",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "max_stock",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "shelf_life_days",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "max_warehouse_days",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "weight_per_unit",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "sku_code"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_skus_group_id",
+     "columns": [
+      "group_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "stock": {
+   "columns": [
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "unit",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "กก."
+     },
+     "array": false
+    },
+    {
+     "name": "last_updated",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "sku"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "stock_count_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "count_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lot_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "location_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_system",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "qty_counted",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "variance_qty",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "reason",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "count_id"
+     ],
+     "refTable": "stock_counts",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_stock_count_lines_count",
+     "columns": [
+      "count_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "stock_counts": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "count_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "count_date",
+     "type": "date",
+     "nullable": false,
+     "default": {
+      "kind": "today"
+     },
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "draft"
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "count_no"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_stock_counts_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "stock_ledger": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lot_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "location_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_change",
+     "type": "num",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "txn_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ref_doc",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_ledger_sku_id",
+     "columns": [
+      "sku_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_ledger_lot_id",
+     "columns": [
+      "lot_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_ledger_created_at",
+     "columns": [
+      "created_at"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "stock_lots": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lot_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "exp_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "sku",
+     "lot_no"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_stock_lots_sku",
+     "columns": [
+      "sku"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "storage_pricing": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "charge_type",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "storage"
+     },
+     "array": false
+    },
+    {
+     "name": "unit",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "unit"
+     },
+     "array": false
+    },
+    {
+     "name": "rate",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "currency",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "THB"
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "code"
+    ]
+   ],
+   "fks": [],
+   "indexes": []
+  },
+  "supplier_sku_map": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "supplier_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "external_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "external_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "supplier_id",
+     "external_code"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "supplier_id"
+     ],
+     "refTable": "suppliers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_supplier_sku_map_supplier",
+     "columns": [
+      "supplier_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "suppliers": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "contact_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "phone",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "email",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "address",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lead_time",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "rating",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "code"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_suppliers_code",
+     "columns": [
+      "code"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "supply_network_links": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "from_node_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "to_node_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "link_type",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "flow"
+     },
+     "array": false
+    },
+    {
+     "name": "lead_time",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "cost",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "metadata",
+     "type": "json",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": {}
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "from_node_id"
+     ],
+     "refTable": "supply_network_nodes",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    },
+    {
+     "columns": [
+      "to_node_id"
+     ],
+     "refTable": "supply_network_nodes",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": []
+  },
+  "supply_network_nodes": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "node_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "ref_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "metadata",
+     "type": "json",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": {}
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_supply_nodes_type",
+     "columns": [
+      "node_type"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "transport_routes": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "route_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "route_name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "vehicle_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "driver_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "planned"
+     },
+     "array": false
+    },
+    {
+     "name": "start_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "completed_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "driver_user_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "route_no"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_transport_routes_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "transport_stops": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "route_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "shipment_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "stop_seq",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 1
+     },
+     "array": false
+    },
+    {
+     "name": "customer_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "address",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "arrived_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "completed_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "route_id"
+     ],
+     "refTable": "transport_routes",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    },
+    {
+     "columns": [
+      "shipment_id"
+     ],
+     "refTable": "shipments",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    },
+    {
+     "columns": [
+      "customer_id"
+     ],
+     "refTable": "customers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_transport_stops_route",
+     "columns": [
+      "route_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "users": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "role",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "WORKER"
+     },
+     "array": false
+    },
+    {
+     "name": "dept",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "avatar",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "👤"
+     },
+     "array": false
+    },
+    {
+     "name": "email",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "wms_conversion_bom_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "bom_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "line_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "sort_order",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "bom_id"
+     ],
+     "refTable": "wms_conversion_boms",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_wms_conv_bom_lines_bom",
+     "columns": [
+      "bom_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "wms_conversion_boms": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "wms_conversion_doc_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "doc_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "line_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "lot_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "location_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "unit_cost",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sort_order",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "bom_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "bom_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "doc_id"
+     ],
+     "refTable": "wms_conversion_docs",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_wms_conv_doc_lines_doc",
+     "columns": [
+      "doc_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "wms_conversion_docs": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "doc_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "bom_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "bom_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "doc_date",
+     "type": "date",
+     "nullable": false,
+     "default": {
+      "kind": "today"
+     },
+     "array": false
+    },
+    {
+     "name": "total_material_cost",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "total_output_value",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "requires_second_approval",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "PENDING"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "approved_by_1",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_at_1",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_by_2",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "approved_at_2",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "rejected_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "rejected_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "reject_reason",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "doc_no"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "bom_id"
+     ],
+     "refTable": "wms_conversion_boms",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": null
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_wms_conv_docs_status",
+     "columns": [
+      "status"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_wms_conv_docs_created",
+     "columns": [
+      "created_at"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "wms_internal_transfer_docs": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "doc_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "doc_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "doc_date",
+     "type": "date",
+     "nullable": false,
+     "default": {
+      "kind": "today"
+     },
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "POSTED"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "doc_no"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_wms_internal_transfer_docs_created",
+     "columns": [
+      "created_at"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "wms_internal_transfer_lines": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "doc_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "source_sku_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "source_sku_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "source_lot_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "source_location_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "source_qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "target_sku_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "target_sku_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "target_lot_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "target_location_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "target_qty",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "source_unit",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "target_unit",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "doc_id"
+     ],
+     "refTable": "wms_internal_transfer_docs",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_wms_internal_transfer_lines_doc",
+     "columns": [
+      "doc_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_wms_internal_transfer_lines_source",
+     "columns": [
+      "source_sku_id",
+      "source_lot_id",
+      "source_location_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_wms_internal_transfer_lines_target",
+     "columns": [
+      "target_sku_id",
+      "target_lot_id",
+      "target_location_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "wms_internal_transfer_logs": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "doc_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "action",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "message",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "before_data",
+     "type": "json",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "after_data",
+     "type": "json",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "changed_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "doc_id"
+     ],
+     "refTable": "wms_internal_transfer_docs",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_wms_internal_transfer_logs_doc",
+     "columns": [
+      "doc_id",
+      "created_at"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "wms_order_process_requirements": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "order_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "line_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "process_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "required",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "source",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "manual"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "pending"
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "order_id",
+     "line_id",
+     "process_code"
+    ]
+   ],
+   "fks": [
+    {
+     "columns": [
+      "order_id"
+     ],
+     "refTable": "outbound_orders",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_wms_req_order",
+     "columns": [
+      "order_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_wms_req_line",
+     "columns": [
+      "line_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "wms_pick_actuals": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "order_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "line_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "bag_no",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 1
+     },
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lot_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "location_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_plan",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "qty_picked",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "actual_weight",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "unit",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "requires_weight",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "requires_slice",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "picked_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "picked_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "order_id"
+     ],
+     "refTable": "outbound_orders",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "idx_wms_actuals_order",
+     "columns": [
+      "order_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_wms_actuals_line",
+     "columns": [
+      "line_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "wms_product_process_rules": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "match_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "match_id",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "process_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "process_name",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_required",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "match_type",
+     "match_id",
+     "process_code"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_wms_rules_match",
+     "columns": [
+      "match_type",
+      "match_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
+  "demand_food_trends": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "category",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "period",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "trend_index",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "source",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [],
+   "notInSupabase": true
+  },
+  "demand_economic_indicators": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "indicator",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "period",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "value",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "source",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "manual"
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "indicator",
+     "period",
+     "source"
+    ]
+   ],
+   "fks": [],
+   "indexes": [],
+   "notInSupabase": true
+  },
+  "demand_competitor_activity": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "competitor_name",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_category",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "activity_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "period_start",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "period_end",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "description",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "estimated_intensity",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": "medium"
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [],
+   "notInSupabase": true
+  },
+  "demand_promotions": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "sku_code",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "promo_type",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "discount_pct",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "start_date",
+     "type": "date",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "end_date",
+     "type": "date",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "expected_uplift_pct",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "channel",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [],
+   "notInSupabase": true
+  },
+  "demand_forecast_runs": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "run_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "scope_note",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "input_json",
+     "type": "json",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "output_json",
+     "type": "json",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [],
+   "notInSupabase": true
+  },
+  "wms_order_qty_cuts": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "order_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "order_no",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "line_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "sku_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "customer",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "order_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_before",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "qty_after",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "qty_cut",
+     "type": "num",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": 0
+     },
+     "array": false
+    },
+    {
+     "name": "reason",
+     "type": "text",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": ""
+     },
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "idx_wms_qty_cuts_order",
+     "columns": [
+      "order_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_wms_qty_cuts_sku",
+     "columns": [
+      "sku_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ],
+   "notInSupabase": true
+  }
+ }
+}

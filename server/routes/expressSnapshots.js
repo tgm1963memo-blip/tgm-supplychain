@@ -35,6 +35,14 @@ async function verifyWmsToken(token) {
 function requireWmsUser(req, res, next) {
   const token = req.headers['x-wms-token'];
   if (!token) return res.status(401).json({ error: 'missing X-WMS-Token' });
+  // tss-wms running on the local backend (wms/): its tokens are verified here, no Supabase round trip
+  const local = req.app.locals.wms;
+  const claims = local?.auth.verifyAccess(token);
+  if (claims) {
+    const p = local.auth.profile(claims.sub);
+    if (p.is_active && p.role !== 'DRIVER') { req.wmsRole = p.role; return next(); }
+    return res.status(403).json({ error: 'forbidden' });
+  }
   verifyWmsToken(token)
     .then((v) => (v.ok ? (req.wmsRole = v.role, next()) : res.status(403).json({ error: 'forbidden' })))
     .catch((e) => res.status(503).json({ error: e.message }));
@@ -42,8 +50,9 @@ function requireWmsUser(req, res, next) {
 
 const SOURCES = new Set(['auto', 'manual', 'csv']);
 
-module.exports = function expressSnapshotsRouter(db) {
+module.exports = function expressSnapshotsRouter(db, wms) {
   const router = express.Router();
+  router.use((req, res, next) => { req.app.locals.wms = wms; next(); });
 
   // GET ?date=YYYY-MM-DD&kind=net_no10[&userSet=1]  -> [{sku_code, qty, unit, source}]
   router.get('/', (req, res) => {

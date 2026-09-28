@@ -72,6 +72,9 @@ function buildApp(db, opts = {}) {
   app.use(compression({ threshold: 1024, level: 6 }));
   app.use(express.json({ limit: '5mb' }));
 
+  // tss-wms local backend (Supabase-compatible, /wms/*) — off until WMS_DB_PATH/WMS_JWT_SECRET are set. See wms/index.js.
+  const wms = require('./wms').mountWms(app);
+
   // Serves only this one file (never a directory listing) so index.html can be opened through the
   // same tunnel/port as the API — do not switch this to express.static() on the repo root, which
   // would also expose server/.env, server/db/tgm.db, and the rest of the source tree over HTTP.
@@ -99,7 +102,7 @@ function buildApp(db, opts = {}) {
   // reuse the same Planner-facing role list tgm-wms's PO review flow already implies.
   app.use('/api/po_emails', require('./routes/poEmails')(db, MASTER_DATA_ROLES));
   // ยอด Express ที่ tgm-wms freeze ไว้รายวัน (ย้ายมาจาก Supabase 2026-09-28) — เขียน/ลบต้องมี token ผู้ใช้ tgm-wms ด้วย
-  app.use('/api/express_stock_snapshots', authed, require('./routes/expressSnapshots')(db));
+  app.use('/api/express_stock_snapshots', authed, require('./routes/expressSnapshots')(db, wms));
   app.use('/api/invoice_detail', authed, require('./routes/invoiceDetail')(db));
   // สิทธิ์เขียนใบโปรร่าง (promo_drafts, 2026-09-03) — ให้ตรงกับ role ที่เข้าหน้า promo_history ได้อยู่แล้ว
   // (MASTER_DATA_ROLES ด้านบนไม่มี role ฝ่ายขายเลย ใช้ไม่ได้กับฟีเจอร์นี้)
