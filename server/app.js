@@ -100,6 +100,7 @@ function buildApp(db, opts = {}) {
   app.use('/api/po_emails', require('./routes/poEmails')(db, MASTER_DATA_ROLES));
   // ยอด Express ที่ tgm-wms freeze ไว้รายวัน (ย้ายมาจาก Supabase 2026-09-28) — เขียน/ลบต้องมี token ผู้ใช้ tgm-wms ด้วย
   app.use('/api/express_stock_snapshots', authed, require('./routes/expressSnapshots')(db));
+  app.use('/api/invoice_detail', authed, require('./routes/invoiceDetail')(db));
   // สิทธิ์เขียนใบโปรร่าง (promo_drafts, 2026-09-03) — ให้ตรงกับ role ที่เข้าหน้า promo_history ได้อยู่แล้ว
   // (MASTER_DATA_ROLES ด้านบนไม่มี role ฝ่ายขายเลย ใช้ไม่ได้กับฟีเจอร์นี้)
   const PROMO_DRAFT_ROLES = ['superadmin', 'admin', 'sales_manager', 'sales_officer', 'sales_worker', 'sales'];

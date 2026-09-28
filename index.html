@@ -259,6 +259,8 @@ table.draft-trail td.l{text-align:left}
 .c2{grid-template-columns:1fr 1fr} .c3{grid-template-columns:1fr 1fr 1fr}
 .mb{position:fixed;inset:0;background:rgba(0,0,0,.44);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
 .mbox{background:var(--W);border-radius:12px;padding:24px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.mbox:has(#sd-inv-modal){max-width:980px}
+#sd-inv-modal table td,#sd-inv-modal table th{padding:6px 8px}
 .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .mt2{font-size:16px;font-weight:700;color:var(--N)}
 .mx{cursor:pointer;font-size:20px;color:var(--TX3);line-height:1}
@@ -7940,6 +7942,95 @@ function _custsByItemGrouped(itCode,T,wi){
   return byGrp;
 }
 
+// ── รายละเอียดใบกำกับรายสาขา (2026-09-28) ─────────────────────────────────────────────
+// ยอดแบบใบกำกับ (invoice_sales_monthly) ไม่มีมิติสินค้า — กดเปิดสาขาแล้วดึงรายการสินค้าจริงจาก invoice_lines
+// ผ่าน /api/invoice_detail (ผูกหัวใบกำกับด้วย doc_num) + ปุ่มดูรายการใบกำกับ/บรรทัดของแต่ละใบ
+const _sdInvDet={};
+function _sdInvPeriod(){
+  if(_sd.pt==='year'){const y=_sdApiYear();return{from:`${y}-01-01`,to:`${y}-12-31`};}
+  const ym=_sdApi.month||_sdApiMonth();
+  return{from:`${ym}-01`,to:_ymLastDate(ym)};
+}
+function _sdInvDetGet(cust,slm){
+  const p=_sdInvPeriod();const key=[cust,p.from,p.to,slm||''].join('|');
+  let e=_sdInvDet[key];
+  if(!e){
+    e=_sdInvDet[key]={loading:true};
+    const qs=new URLSearchParams({cust,from:p.from,to:p.to});if(slm) qs.set('slm',slm);
+    apiFetch('/api/invoice_detail?'+qs.toString()).then(r=>{
+      if(r.error) throw new Error(r.error.message||'invoice_detail failed');
+      e.data=r.data;
+    }).catch(err=>{e.error=err.message||String(err);}).finally(()=>{
+      e.loading=false;
+      if(document.getElementById('sd-ta')) sdRender();
+      if(document.getElementById('sd-inv-modal')&&window._sdInvModal?.key===key) sdShowInvoices(window._sdInvModal.cust,window._sdInvModal.slm,window._sdInvModal.name);
+    });
+  }
+  return e;
+}
+// แถวสินค้าใต้สาขา: กลุ่มสินค้า → สินค้า (+ แถวส่วนต่างลดหนี้/ไม่มีบรรทัด) · cells(v,parent) = คอลัมน์ตัวเลขของตารางนั้น
+function _sdInvBranchHtml(b,slm,bk,pad,cols,cells){
+  const note=(t,c='var(--TX3)')=>`<tr style="background:var(--bg)"><td style="padding-left:${pad}px;font-size:11px;color:${c}" colspan="${cols}">${t}</td></tr>`;
+  const d=_sdInvDetGet(b.c,slm);
+  if(d.loading) return note('⏳ กำลังโหลดรายการสินค้าจากใบกำกับ…');
+  if(d.error) return note('⚠️ โหลดรายละเอียดใบกำกับไม่ได้: '+esc(d.error),'var(--R)');
+  const data=d.data||{},p=_sdInvPeriod();
+  const btn=`<button class="btn btn-xs" style="margin-left:6px" onclick="event.stopPropagation();sdShowInvoicesAt(${_sdInvReg(b.c,slm,b.n)})">📄 ดูใบกำกับ ${(data.invoices||[]).filter(x=>x.rectyp!=='5').length} ใบ</button>`;
+  if(data.coverage_from&&p.to<data.coverage_from) return note(`ไม่มีรายละเอียดใบกำกับก่อน ${_dateToDisplayTh(data.coverage_from)} (ระบบเริ่มเก็บหัวใบกำกับตั้งแต่วันนั้น)`);
+  const prods=data.products||[];
+  if(!prods.length) return note('ไม่พบบรรทัดสินค้าในใบกำกับของสาขานี้ในช่วงที่เลือก'+btn);
+  const grp={};
+  prods.forEach(x=>{const g=expressGroupLabel(x.group_name)||'อื่นๆ';(grp[g]=grp[g]||{n:g,tot:0,it:[]}).it.push(x);grp[g].tot+=Number(x.amount)||0;});
+  const partial=data.coverage_from&&p.from<data.coverage_from?` · รายละเอียดมีตั้งแต่ ${_dateToDisplayTh(data.coverage_from)}`:'';
+  let h=`<tr style="background:var(--bg)"><td style="padding-left:${pad}px;font-size:11px;color:var(--BL)" colspan="${cols}">🧾 รายการสินค้าจากใบกำกับจริง${partial}${btn}</td></tr>`;
+  Object.values(grp).sort((a,b2)=>b2.tot-a.tot).forEach((g,gi)=>{
+    const gk=bk+'_ig'+gi,og=_sd.op[gk];
+    h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg)">
+      <td style="padding-left:${pad}px">${_xa(og)}<span style="font-size:12px">${esc(g.n)}</span></td>${cells(g.tot,b._tot)}</tr>`;
+    if(og) g.it.forEach(it=>{
+      h+=`<tr style="background:var(--bg2);font-size:12px">
+        <td style="padding-left:${pad+20}px"><span class="mono">${esc(it.sku)}</span> — ${esc(it.sku_name||it.sku)} <span style="color:var(--TX3);font-size:11px">· ${(Number(it.qty)||0).toLocaleString()} ${esc(it.unit||'')} · ${it.invoices} ใบ</span></td>${cells(Number(it.amount)||0,g.tot)}</tr>`;
+    });
+  });
+  const diff=(Number(b._tot)||0)-prods.reduce((a,x)=>a+(Number(x.amount)||0),0);
+  if(Math.abs(diff)>=1) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td style="padding-left:${pad}px">↩️ ลดหนี้/รับคืน และยอดที่ไม่มีบรรทัดสินค้า${partial?' (รวมช่วงก่อนมีรายละเอียด)':''}</td>${cells(diff,b._tot)}</tr>`;
+  return h;
+}
+const _sdInvRegList=[];
+function _sdInvReg(cust,slm,name){const k=cust+'|'+(slm||'');let i=_sdInvRegList.findIndex(x=>x.k===k);if(i<0){_sdInvRegList.push({k,cust,slm:slm||'',name});i=_sdInvRegList.length-1;}return i;}
+function sdShowInvoicesAt(i){const r=_sdInvRegList[i];if(r) sdShowInvoices(r.cust,r.slm,r.name);}
+const _SD_RECTYP={'0':'ใบกำกับ','1':'ขายสด','3':'ขายเชื่อ','4':'เพิ่มหนี้','5':'ลดหนี้'};
+function sdShowInvoices(cust,slm,name){
+  const d=_sdInvDetGet(cust,slm);const p=_sdInvPeriod();
+  window._sdInvModal={cust,slm,name,key:[cust,p.from,p.to,slm||''].join('|')};
+  const list=d.data?.invoices||[];
+  const body=d.loading?'<div style="padding:20px;text-align:center;color:var(--TX3)">⏳ กำลังโหลด…</div>'
+    :d.error?`<div class="al ald">${esc(d.error)}</div>`
+    :!list.length?'<div style="padding:20px;text-align:center;color:var(--TX3)">ไม่มีใบกำกับในช่วงนี้</div>'
+    :`<div class="tw tw-scroll" style="max-height:60vh"><table><thead><tr><th>วันที่</th><th>เลขที่</th><th>ประเภท</th><th>Sales</th><th class="r">รายการ</th><th class="r">ยอดเงิน</th></tr></thead><tbody>${list.map((x,i)=>`
+      <tr onclick="sdInvToggleLines('${esc(x.doc_num)}',${i})" style="cursor:pointer${x.rectyp==='5'?';color:var(--R)':''}">
+        <td>${_dateToDisplayTh(x.doc_date)}</td><td class="mono">${_xa(false)}${esc(x.doc_num)}</td><td>${esc(_SD_RECTYP[x.rectyp]||x.rectyp||'')}</td>
+        <td class="mono">${esc(x.slm_code||'—')}</td><td class="r">${x.line_count||0}</td><td class="r">${_sdF(x.total)}</td></tr>
+      <tr id="sd-invl-${i}" style="display:none"><td colspan="6" style="padding:0 0 6px 24px;background:var(--bg2)"></td></tr>`).join('')}</tbody></table></div>`;
+  const tot=list.reduce((a,x)=>a+(Number(x.total)||0),0);
+  openMod(`<div id="sd-inv-modal"><div class="mh"><div class="mt2">📄 ใบกำกับ — ${esc(name||cust)} <span class="badge bbgr" style="font-size:11px">${esc(cust)}</span></div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="font-size:12px;color:var(--TX2);margin-bottom:8px">${_dateToDisplayTh(p.from)} – ${_dateToDisplayTh(p.to)}${slm?' · Sales '+esc(slmKeyName(slm)):''}${list.length?` · ${list.length} ใบ · รวม ${_sdF(tot)} (ยอดรวมภาษีตามหัวใบ)`:''} — กดที่ใบเพื่อดูรายการสินค้า</div>${body}</div>`);
+}
+async function sdInvToggleLines(doc,i){
+  const tr=document.getElementById('sd-invl-'+i);if(!tr) return;
+  if(tr.style.display!=='none'){tr.style.display='none';return;}
+  tr.style.display='';
+  const td=tr.firstElementChild;
+  if(td.dataset.loaded) return;
+  td.innerHTML='<div style="padding:6px;color:var(--TX3);font-size:12px">⏳ กำลังโหลด…</div>';
+  const r=await apiFetch('/api/invoice_detail/lines?doc='+encodeURIComponent(doc));
+  if(r.error){td.innerHTML=`<div class="al ald">${esc(r.error.message||'โหลดไม่ได้')}</div>`;return;}
+  const lines=r.data?.lines||[],hd=r.data?.head||{};
+  td.dataset.loaded='1';
+  td.innerHTML=(hd.route_name||hd.so_num?`<div style="font-size:11px;color:var(--TX3);padding:4px 0">${hd.so_num?'SO '+esc(hd.so_num)+' · ':''}${hd.route_name?esc(hd.route_name):''}</div>`:'')+
+    (lines.length?`<table style="font-size:12px"><thead><tr><th>#</th><th>รหัส</th><th>สินค้า</th><th class="r">จำนวน</th><th class="r">มูลค่า</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.seq_num)}</td><td class="mono">${esc(l.sku)}</td><td>${esc(l.sku_name||'')}</td><td class="r">${(Number(l.qty)||0).toLocaleString()} ${esc(l.unit_code||'')}</td><td class="r">${_sdF(l.line_value)}</td></tr>`).join('')}</tbody></table>`
+    :'<div style="padding:6px;color:var(--TX3);font-size:12px">ไม่มีบรรทัดสินค้า (เช่น ใบลดหนี้)</div>');
+}
 function sdCust(){
   if(!document.getElementById('sd-ta')) return; // page navigated away while an async load was in flight
   const isAll=isManager()&&_sd.mgrView;
@@ -7988,7 +8079,9 @@ function sdCust(){
         h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:20px">${_xa(ob)}<span style="font-size:12px">${b.n}</span> <span class="badge bbgr" style="font-size:10px">${b.c}</span></td>
           <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(bv))}</td><td class="r">${_sdBar(bv,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
-        if(ob&&!(b.g&&b.g.length)) h+=`<tr style="background:var(--bg)"><td style="padding-left:40px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า) — ดูสินค้าที่แท็บ รายสินค้า</td></tr>`;
+        if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased
+          ?_sdInvBranchHtml(b,F?F.slm:'',bk,40,_sd.showYoY?5:4,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
+          :`<tr style="background:var(--bg)"><td style="padding-left:40px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า) — ดูสินค้าที่แท็บ รายสินค้า</td></tr>`;
         if(ob) (b.g||[]).forEach((g,gi)=>{
           const gv=g._tot;const gk=bk+'_g'+gi;const og=_sd.op[gk];
           h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg)">
@@ -8166,7 +8259,9 @@ function sdSlm(){
               <td style="padding-left:42px;font-size:12px">${_xa(ob)}<span class="badge bbgr" style="font-size:10px">${b.c}</span> ${b.n}</td>
               <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(b._tot))}</td>
               <td class="r"></td><td class="r">${_sdBar(b._tot,c._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
-            if(ob&&!(b.g&&b.g.length)) h+=`<tr style="background:var(--bg2)"><td style="padding-left:62px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า)</td></tr>`;
+            if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased
+              ?_sdInvBranchHtml(b,s.code,bk,62,_sd.showYoY?6:5,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`)
+              :`<tr style="background:var(--bg2)"><td style="padding-left:62px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า)</td></tr>`;
             if(ob) (b.g||[]).forEach((g,gi)=>{
               const pgk=bk+'_g'+gi;const opg=_sd.op[pgk];
               h+=`<tr onclick="sdTogOp('${pgk}')" style="cursor:pointer;background:var(--bg2);font-size:12px">
