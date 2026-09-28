@@ -44,7 +44,7 @@ function requireAuth(db) {
     }
 
     const user = db.prepare(
-      'SELECT uid, name, role, department, position, slm_id, is_active FROM sc_users WHERE uid = ?'
+      'SELECT uid, name, role, department, position, slm_id, slm_codes, is_active FROM sc_users WHERE uid = ?'
     ).get(session.uid);
     if (!user || !user.is_active) return res.status(401).json({ error: 'account disabled' });
 

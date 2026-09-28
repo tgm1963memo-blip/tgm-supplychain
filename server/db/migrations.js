@@ -366,6 +366,10 @@ function runMigrations(db) {
     );
   `);
 
+  // sc_users.slm_codes (2026-09-28): รหัสพนักงานขายใน Express (SLMCOD เช่น 101,110-1) ที่ผูกกับผู้ใช้ — คั่นด้วย ,
+  // เดิม slm_id เก็บชื่อบัญชี (piyaporn ฯลฯ) ซึ่งไม่ตรงกับรหัสในข้อมูลขาย จึงกรองยอดของเซลส์ไม่ได้
+  addColumnIfMissing(db, 'sc_users', 'slm_codes', 'slm_codes TEXT');
+
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 }
 

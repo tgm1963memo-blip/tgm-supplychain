@@ -580,8 +580,10 @@ function buildApp(db, opts = {}) {
     const where = ['ym >= ?', 'ym <= ?'];
     const params = [startYm, endYm];
     if (slmId) {
-      where.push('slm_owner = ?');
-      params.push(slmId);
+      // ผู้ใช้หนึ่งคนผูกได้หลายรหัส Express (sc_users.slm_codes) — client ส่งมาเป็น "101,110-1"
+      const codes = [...new Set(slmId.split(',').map(s => s.trim()).filter(Boolean))];
+      where.push(`slm_owner IN (${codes.map(() => '?').join(',')})`);
+      params.push(...codes);
     }
     const whereSql = `WHERE ${where.join(' AND ')}`;
     const archiveListSql = `'TSS-67','TSS-68','TSSN-67','TSSN-68','CONSI-67'`;

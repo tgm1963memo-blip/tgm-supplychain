@@ -3,7 +3,14 @@ const bcrypt = require('bcryptjs');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 
-const SAFE_FIELDS = ['uid', 'name', 'role', 'department', 'position', 'slm_id', 'email', 'is_active', 'created_at'];
+const SAFE_FIELDS = ['uid', 'name', 'role', 'department', 'position', 'slm_id', 'slm_codes', 'email', 'is_active', 'created_at'];
+
+// "101, 110-1,,101" → "101,110-1" (ตัดช่องว่าง/ซ้ำ) · undefined = ไม่แก้ · ว่าง = null
+function normSlmCodes(v) {
+  if (v === undefined) return undefined;
+  const list = [...new Set((Array.isArray(v) ? v : String(v ?? '').split(',')).map(x => String(x).trim()).filter(Boolean))];
+  return list.length ? list.join(',') : null;
+}
 
 // sc_users needs bcrypt-on-write and must never leak pwd_hash — handled by hand instead of the
 // generic CRUD router. Mounted at /api/sc_users (write) and /api/v_sc_users_safe (read) to match
@@ -28,7 +35,7 @@ function usersRoutes(db) {
           const params = [];
           for (const [col, val] of Object.entries({
             name: r.name, role: r.role, department: r.department, position: r.position,
-            slm_id: r.slm_id, email: r.email, is_active: r.is_active,
+            slm_id: r.slm_id, slm_codes: normSlmCodes(r.slm_codes), email: r.email, is_active: r.is_active,
           })) {
             if (val === undefined) continue;
             fields.push(`${col} = ?`);
@@ -41,9 +48,9 @@ function usersRoutes(db) {
         } else {
           if (!pwd_hash) return res.status(400).json({ error: 'pwd_hash is required for a new user' });
           db.prepare(`
-            INSERT INTO sc_users (uid, name, role, department, position, slm_id, email, pwd_hash, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(uid, r.name, r.role, r.department || null, r.position || null, r.slm_id || null, r.email || null, pwd_hash, req.user.uid);
+            INSERT INTO sc_users (uid, name, role, department, position, slm_id, slm_codes, email, pwd_hash, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(uid, r.name, r.role, r.department || null, r.position || null, r.slm_id || null, normSlmCodes(r.slm_codes) || null, r.email || null, pwd_hash, req.user.uid);
         }
         db.prepare('INSERT INTO audit_log (uid, role, action, target) VALUES (?, ?, ?, ?)')
           .run(req.user.uid, req.user.role, existing ? 'EDIT_USER' : 'ADD_USER', uid);
@@ -66,7 +73,7 @@ function usersRoutes(db) {
     const upd = [];
     for (const [col, val] of Object.entries({
       name: body.name, role: body.role, department: body.department, position: body.position,
-      slm_id: body.slm_id, email: body.email, is_active: body.is_active,
+      slm_id: body.slm_id, slm_codes: normSlmCodes(body.slm_codes), email: body.email, is_active: body.is_active,
     })) {
       if (val === undefined) continue;
       fields.push(`${col} = ?`);

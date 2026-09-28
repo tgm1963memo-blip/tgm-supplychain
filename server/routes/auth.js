@@ -75,6 +75,7 @@ module.exports = function authRoutes(db) {
         department: user.department,
         position: user.position,
         slm_id: user.slm_id,
+        slm_codes: user.slm_codes,
       },
     });
   });
