@@ -350,6 +350,22 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_sales_ov_cust ON v_sales_overview_sales_monthly(cust_code);
   `);
 
+  // express_stock_snapshots (2026-09-28): ยอด Express ที่ tgm-wms freeze ไว้รายวัน ย้ายมาจาก Supabase ของ
+  // tgm-wms — ดู routes/expressSnapshots.js. source = auto (ระบบคำนวณ) / manual (กรอกเอง) / csv (นำเข้าไฟล์)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS express_stock_snapshots (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      sku_code      TEXT NOT NULL,
+      snapshot_date TEXT NOT NULL,
+      kind          TEXT NOT NULL,
+      qty           REAL NOT NULL DEFAULT 0,
+      unit          TEXT,
+      source        TEXT NOT NULL DEFAULT 'auto',
+      created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(snapshot_date, kind, sku_code)
+    );
+  `);
+
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 }
 
