@@ -6605,6 +6605,47 @@ function _sdResetBuildCache(){
   _sdApi.custs=[];
   _sdApi.prods=[];
   _sdApi.slms=[];
+  _sdApi._filt=null;
+}
+// ตัวกรอง Sales / มุมมอง (2026-09-28): เดิมกรองแค่แท็บรายลูกค้า/รายเซลส์ — KPI และแท็บรายสินค้ายังเป็นยอดทั้งบริษัท
+// รหัส Sales ที่มีผล: เลือกจาก dropdown ก่อน · ผู้จัดการสลับเป็นมุมมอง "Sales" (ไม่ได้เลือก) = รหัส Sales ของบัญชีตัวเอง
+function _sdEffSlm(){
+  if(isSales()&&!isManager()) return ''; // เซลส์: server กรองตามรหัสตัวเองมาแล้ว
+  if(_sd.slmF) return String(_sd.slmF);
+  if(isManager()&&!_sd.mgrView){const me=(DB.get('users')||[]).find(x=>x.uid===UID);return String(me?.slm_id||'')||'(ไม่มีรหัส)';}
+  return '';
+}
+function _sdRowSlmMatch(r,s){return String(r.slm_id||'')===s||String(r.slm_key||'')===s||String(r.slm_key||'').endsWith(':'+s);}
+// ยอด/โครงสร้างหลังกรอง Sales — null = ไม่กรอง (หรือข้อมูลโหลดมาเฉพาะ Sales คนนั้นจาก server แล้ว)
+function _sdFiltered(){
+  const s=_sdEffSlm();
+  if(!s||!_sdApi.loaded||s===String(_sdApi._slmId||'')||!Array.isArray(_sdApi._rows)) return null;
+  const key=[s,_sdApi._buildCacheKey,_sdApi.invoiceBased?1:0,_sdApi._rows.length,(_sdApi._invRows||[]).length,_sdApi.yoy?(_sdApi.yoy._rows||[]).length:-1].join('|');
+  if(_sdApi._filt&&_sdApi._filt.key===key) return _sdApi._filt;
+  const rows=_sdApi._rows.filter(r=>_sdRowSlmMatch(r,s));
+  const sum=(a,k)=>a.reduce((t,r)=>t+(Number(r[k])||0),0);
+  let total=sum(rows,'amount'),invoices=rows.length,custs,slms,prods=_sdBuildProds(rows);
+  const inv=_sdApi.invoiceBased&&Array.isArray(_sdApi._invRows)?_sdApi._invRows.filter(r=>String(r.slm_code||'').trim()===s):null;
+  if(inv){
+    total=sum(inv,'amount');const ic=sum(inv,'invoice_count');if(ic) invoices=ic;
+    custs=_sdBuildCustsFromInvoice(inv);slms=_sdBuildSlmsFromInvoice(inv);prods=_sdScaleProdsToTotal(prods,total);
+  }else{custs=_sdBuildCusts(rows);slms=_sdBuildSlms(rows,_sdApi.slmList||[]);}
+  // กราฟแท่ง/เทียบเดือนก่อน: ใช้ข้อมูลหลายเดือนในเครื่อง (มีเฉพาะโหมดรายเดือน) — ไม่มีเดือนก่อน = แสดง "—"
+  const multi=(_sd.pt==='month'||_sd.pt==='week')&&_sdApi.rangeMode==='monthly'&&Array.isArray(window._salesRows2Y)?window._salesRows2Y:_sdApi._rows;
+  const monthly=_sdKpiFromRows(multi.filter(r=>_sdRowSlmMatch(r,s)));
+  let vs=null;
+  if(_sd.pt==='month'||_sd.pt==='week'){
+    const cur=monthly.find(m=>m.ym===_sdApi.month),prev=monthly.find(m=>m.ym===_ymAdd(_sdApi.month||_sdApiMonth(),-1));
+    if(cur&&prev&&prev.total) vs=Math.round((cur.total/prev.total-1)*100);
+  }
+  let yoy=null;
+  if(_sdApi.yoy&&Array.isArray(_sdApi.yoy._rows)){
+    const yr=_sdApi.yoy._rows.filter(r=>_sdRowSlmMatch(r,s));
+    yoy={total:sum(yr,'amount'),qty:sum(yr,'qty'),invoices:yr.length,custs:_sdBuildCusts(yr),prods:_sdBuildProds(yr),slms:_sdBuildSlms(yr,_sdApi.slmList||[])};
+  }
+  const name=(_sdApi.slmList||[]).find(x=>String(x.code)===s)?.name||salesNameFor(s)||s;
+  _sdApi._filt={key,slm:s,name,total,qty:sum(rows,'qty'),invoices,vs,monthly,custs,prods,slms:slms.filter(x=>String(x.code)===s),yoy};
+  return _sdApi._filt;
 }
 
 function _ymAdd(ym,delta){
@@ -6895,7 +6936,8 @@ function _sdSalesListFromRows(rows){
   return [...m.entries()].map(([code,name])=>({code,name}));
 }
 function _sdBuildKey(rows,month,slmId){
-  return [_sd.pt||'',_sd.at||'',month||'',slmId||'',_sd.dateFrom||'',_sd.dateTo||'',rows?.length||0,rows?.[0]?.ym||'',rows?.at?.(-1)?.ym||''].join('|');
+  // ไม่ใส่ _sd.at (แท็บ) ในคีย์ — เดิมสลับแท็บแล้ว cache ถูกล้าง ยอดรายลูกค้า/รายเซลส์แบบใบกำกับ (invoice) ถูกสร้างใหม่จากออเดอร์ ยอดรวมไม่ตรง KPI
+  return [_sd.pt||'',month||'',slmId||'',_sd.dateFrom||'',_sd.dateTo||'',rows?.length||0,rows?.[0]?.ym||'',rows?.at?.(-1)?.ym||''].join('|');
 }
 function _sdEnsureBuilt(kind){
   if(!_sdApi.loaded || !_sdApi._rows) return;
@@ -6934,6 +6976,7 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
   const prev=prevYm?monthly.find(m=>m.ym===prevYm):null;
   _sdApi.vs=prev&&prev.total?Math.round((_sdApi.total/prev.total-1)*100):0;
   _sdApi._rows=monthRows;
+  _sdApi._invRows=null;
   _sdApi._slmId=slmId||'';
   _sdResetBuildCache();
   _sdApi.slmList=_sdSalesListFromRows(monthRows);
@@ -6996,6 +7039,7 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
         if(invCount) _sdApi.invoices=invCount;
         _sdApi.vs=prevTotal?Math.round((invTotal/prevTotal-1)*100):_sdApi.vs;
         _sdApi.invoiceBased=true;
+        _sdApi._invRows=invRows;
         const invCusts=_sdBuildCustsFromInvoice(invRows);
         const invSlms=_sdBuildSlmsFromInvoice(invRows);
         _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
@@ -7140,6 +7184,7 @@ async function sdLoadYear(){
   const yearCached=DB.get(yearCacheKey);
   if(yearCached){
     Object.assign(_sdApi,yearCached);
+    _sdApi._rows=null;_sdApi._invRows=null;_sdApi._filt=null; // snapshot ไม่มีข้อมูลรายแถว — กรอง Sales ได้หลังโหลดสดจบ
     _sdApi.loaded=true;
     sdRender();
   }
@@ -7147,6 +7192,7 @@ async function sdLoadYear(){
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='Loading yearly sales...';document.body.appendChild(badge);
   _sdApi.invoiceBased=false; // was left stale from whatever view loaded before this one
+  _sdApi._invRows=null;
   try{
     const start=`${gy}-01`,end=`${gy}-12`;
     // current year and prior year are independent — prevRows only feeds the YoY % below — so fetch
@@ -7189,6 +7235,7 @@ async function sdLoadYear(){
           if(invCount) _sdApi.invoices=invCount;
           _sdApi.vs=prevInvTotal?Math.round((invTotal/prevInvTotal-1)*100):_sdApi.vs;
           _sdApi.invoiceBased=true;
+          _sdApi._invRows=invRows;
           const invCusts=_sdBuildCustsFromInvoice(invRows);
           const invSlms=_sdBuildSlmsFromInvoice(invRows);
           _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
@@ -7521,11 +7568,12 @@ function _yoyPct(cur,prev){
   return`<span style="color:${c};font-size:11px">${p>=0?'▲':'▼'} ${Math.abs(p)}%</span>`;
 }
 function _sdYoYMaps(){
-  if(!_sdApi.yoy)return{cust:{},prod:{},grp:{},slm:{},cat:{}};
+  const F=_sdFiltered(),Y=F?F.yoy:_sdApi.yoy;
+  if(!Y)return{cust:{},prod:{},grp:{},slm:{},cat:{}};
   const cm={},pm={},gm={},sm={},catm={};
-  for(const c of _sdApi.yoy.custs||[]){cm[c.grp||c.c]=c._tot;const cat=c.ty||'อื่นๆ';catm[cat]=(catm[cat]||0)+c._tot;}
-  for(const g of _sdApi.yoy.prods||[]){gm[g.n]=g._tot;for(const it of g.it||[])pm[it.c]=it._tot;}
-  for(const s of _sdApi.yoy.slms||[])sm[s.code]=s._tot;
+  for(const c of Y.custs||[]){cm[c.grp||c.c]=c._tot;const cat=c.ty||'อื่นๆ';catm[cat]=(catm[cat]||0)+c._tot;}
+  for(const g of Y.prods||[]){gm[g.n]=g._tot;for(const it of g.it||[])pm[it.c]=it._tot;}
+  for(const s of Y.slms||[])sm[s.code]=s._tot;
   return{cust:cm,prod:pm,grp:gm,slm:sm,cat:catm};
 }
 function _sdYoYHead(){return _sd.showYoY?'<th class="r" style="width:120px">ปีที่แล้ว</th>':'';}
@@ -7557,7 +7605,7 @@ async function _sdLoadYoY(){
   _sdApi.yoy={
     total:rows.reduce((a,r)=>a+(Number(r.amount)||0),0),
     qty:rows.reduce((a,r)=>a+(Number(r.qty)||0),0),
-    invoices:rows.length,
+    invoices:rows.length,_rows:rows,
     custs:_sdBuildCusts(rows),prods:_sdBuildProds(rows),slms:_sdBuildSlms(rows,_sdApi.slmList||[])
   };
 }
@@ -7618,7 +7666,7 @@ async function sdLoadCustom(){
   try{
     const rows=await _sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,dateFrom:_sd.dateFrom,dateTo:_sd.dateTo});
     const monthly=_sdKpiFromRows(rows);
-    _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;
+    _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;_sdApi.invoiceBased=false;_sdApi._invRows=null;
     _sdApi.rangeMode=rows.some(r=>r.doc_date)?'daily':'monthly';
     _sdApi.monthly=monthly;
     _sdApi.total=rows.reduce((a,r)=>a+(Number(r.amount)||0),0);
@@ -7698,7 +7746,7 @@ function pgMySales(){
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
     <input id="sd-q" type="text" placeholder="🔍 ค้นหา..." oninput="sdSetQ(this.value)" style="padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font);color:var(--TX);outline:none;min-width:180px;flex:1;max-width:280px">
-    ${isAll?`<select id="sd-slm-f" class="btn btn-sm" onchange="_sd.slmF=this.value;sdRender()"><option value="">ทุก Sales</option></select>`:''}
+    ${isAll?`<select id="sd-slm-f" class="btn btn-sm" onchange="_sd.slmF=this.value;_sd.op={};sdRender()"><option value="">ทุก Sales</option></select>`:''}
     <button class="btn btn-sm" onclick="sdClear()" style="color:var(--TX3)">ล้าง</button>
   </div>
   <div id="sd-wbar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
@@ -7766,9 +7814,11 @@ function sdUpdateLabel(){
 function sdKPI(){
   const kr=document.getElementById('sd-krow'); if(!kr) return;
   let total,qty,inv,ar,vs,sparks,lbl2;
+  const F=_sdFiltered();
   if(_sdApi.loaded){
-    total=_sdV(_sdApi.total);qty=_sdV(_sdApi.qty);inv=Math.max(1,_sdV(_sdApi.invoices));ar=_sdApi.ar;vs=_sdApi.vs;
-    const ms=_sdApi.monthly;
+    const B=F||_sdApi;
+    total=_sdV(B.total);qty=_sdV(B.qty);inv=Math.max(1,_sdV(B.invoices));ar=_sdApi.ar;vs=B.vs;
+    const ms=B.monthly||[];
     const maxT=Math.max(...ms.map(m=>m.total),1);
     const curM=_sd.pt==='year'?String(_sdApiYear()):_sdApiMonth();
     const customFrom=_sd.pt==='custom'?_dateToYm(_sd.dateFrom):'';
@@ -7785,14 +7835,15 @@ function sdKPI(){
     lbl2=_sd.pt==='week'?'สัปดาห์ที่ '+_sd.cw:SD_MTH[_sd.cm];
   }
   const vsLbl=_sd.pt==='year'?'vs ปีก่อน':'vs เดือนก่อน';
-  const vsC=vs>=0?'var(--G)':'var(--R)';
+  const vsC=vs==null?'var(--TX3)':vs>=0?'var(--G)':'var(--R)';
   const avg=inv?_sdF(Math.round(total/inv)):'—';
-  const yoy=_sdApi.yoy;
+  const yoy=F?F.yoy:_sdApi.yoy;
   const isCustom=_sd.pt==='custom';
   const customRangeLbl=isCustom&&_sd.dateFrom&&_sd.dateTo?`${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}`:'';
   const customGranularityNote=isCustom&&_sdApi.loaded&&_sdApi.rangeMode==='monthly'
     ? '<div class="kh" style="color:var(--A)">ยังไม่มีข้อมูลรายวันใน Supabase — แสดงยอดรวมรายเดือน</div>'
     : '';
+  const slmNote=F?`<div class="kh" style="color:var(--BL);font-weight:600">👤 เฉพาะ Sales: ${esc(F.name)}${F.name!==F.slm?' ('+esc(F.slm)+')':''}</div>${!F.total&&!_sd.slmF?'<div class="kh" style="color:var(--A)">บัญชีนี้ไม่มีรหัส Sales ที่ตรงกับข้อมูลขาย — เลือกรหัส Sales จากตัวกรองด้านล่าง</div>':''}`:'';
   const invoiceBasedNote=_sdApi.invoiceBased
     ? '<div class="kh" style="color:var(--TX3)">ยอดจากใบกำกับภาษีจริง (TSS) — รายละเอียดสินค้า/ลูกค้าด้านล่างยังอ้างอิงข้อมูลออเดอร์ อาจไม่รวมเท่ายอดนี้</div>'
     : '';
@@ -7800,7 +7851,8 @@ function sdKPI(){
   const _yoyLineNum=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${Math.round(prev).toLocaleString()} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳':'')}</div>`:'';
   kr.innerHTML=`
     <div class="kpi b"><div class="kl">ยอดขายรวม (มูลค่า)</div><div class="kv">${_sdFmtTotal(total)}</div>
-      ${isCustom?`<div class="kh" style="color:var(--TX2)">${customRangeLbl||'ช่วงที่เลือก'}</div>`:`<div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>`}
+      ${isCustom?`<div class="kh" style="color:var(--TX2)">${customRangeLbl||'ช่วงที่เลือก'}</div>`:vs==null?`<div class="kh" style="color:${vsC}">— ${vsLbl}</div>`:`<div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>`}
+      ${slmNote}
       ${customGranularityNote}
       ${invoiceBasedNote}
       <div style="display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:8px">${sparks}</div>
@@ -7853,13 +7905,13 @@ function sdCust(){
   if(_sdApi.loaded){
     _sdEnsureBuilt('cust');
     // ─── API data: Category(ty) → Customer → ProdGroup → Product ───
-    const T=_sdApi.total||1;
+    const F=_sdFiltered();
+    const T=(F?F.total:_sdApi.total)||1;
     const yoyM=_sdYoYMaps();
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
     // corp groups can span >1 customer code/salesperson, so filter by membership (_slms) rather
     // than equality on the single .slm field left over from whichever row was merged in last
-    let custs=isAll?_sdApi.custs:_sdApi.custs.filter(c=>c._slms?c._slms.has(slmId):c.slm===slmId);
-    if(_sd.slmF) custs=custs.filter(c=>c._slms?c._slms.has(_sd.slmF):c.slm===_sd.slmF);
+    let custs=F?F.custs:(isAll?_sdApi.custs:_sdApi.custs.filter(c=>c._slms?c._slms.has(slmId):c.slm===slmId));
     if(q) custs=custs.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)
       ||(c.branches||[]).some(b=>b.n.toLowerCase().includes(q)||b.c.toLowerCase().includes(q)||(b.g||[]).some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))));
     let sorted=_sd.sort.col==='val'?_sdByValue(custs):[...custs];
@@ -7938,10 +7990,11 @@ function sdProd(){
 
   if(_sdApi.loaded){
     _sdEnsureBuilt('prod');
-    const T=_sdApi.total||1;
+    const F=_sdFiltered();
+    const T=(F?F.total:_sdApi.total)||1;
     const yoyM=_sdYoYMaps();
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
-    let prods=[..._sdApi.prods];
+    let prods=[...(F?F.prods:_sdApi.prods)];
     if(q) prods=prods.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)));
     if(_sd.sort.col==='val') prods=_sdByValue(prods);
     // Express's AR ledger (ARTRN — the source for the invoice-based total above) has no SKU/product
@@ -8028,11 +8081,12 @@ function sdSlm(){
     _sdEnsureBuilt('slm');
     const yoyM=_sdYoYMaps();
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
-    let slms=[..._sdApi.slms];
+    const F=_sdFiltered();
+    let slms=[...(F?F.slms:_sdApi.slms)];
     if(q) slms=slms.filter(s=>s.name.toLowerCase().includes(q)||s.code.toLowerCase().includes(q));
-    if(sf) slms=slms.filter(s=>s.code===sf);
+    if(sf&&!F) slms=slms.filter(s=>s.code===sf);
     if(_sd.sort.col==='val') slms=_sdByValue(slms);
-    const T=_sdApi.total||1;
+    const T=(F?F.total:_sdApi.total)||1;
     slms.forEach(s=>{
       const sk='s'+s.code;const os=_sd.op[sk];
       h+=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer">
@@ -8171,9 +8225,8 @@ function sdGoNow(){
 }
 function sdTab(el,t){
   document.querySelectorAll('#sd-root .tab').forEach(e=>e.classList.remove('act'));
-  el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.slmF='';_sd.sort={col:'val',dir:1};
+  el.classList.add('act');_sd.at=t;_sd.op={};_sd.q='';_sd.sort={col:'val',dir:1}; // ตัวกรอง Sales คงไว้ข้ามแท็บ
   const qi=document.getElementById('sd-q');if(qi)qi.value='';
-  const si=document.getElementById('sd-slm-f');if(si)si.value='';
   const needsDaily=t==='cust'||t==='slm';
   const hasDetailMode=_sdApi.rangeMode==='daily'||_sdApi.rangeMode==='aggregate';
   if(_sd.pt!=='year' && _sdApi.loaded && needsDaily && !hasDetailMode){
@@ -8215,14 +8268,14 @@ function sdExport(){
     if(_sdApi.loaded){
       _sdEnsureBuilt('cust');
       cols=['บริษัท / สาขา / กลุ่มสินค้า / สินค้า','รหัส','Category','ยอดขาย/จำนวน','สัดส่วน%'];
-      const T2=_sdApi.total||1;
+      const F=_sdFiltered();
+      const T2=(F?F.total:_sdApi.total)||1;
       const q=(_sd.q||'').toLowerCase();
       const me=(DB.get('users')||[]).find(x=>x.uid===UID);
       const slmId=me?.slm_id||'';
       // corp groups can span >1 customer code/salesperson, so filter by membership (_slms) rather
       // than equality on the single .slm field — see the matching note in sdCust().
-      let custs=(isManager()&&_sd.mgrView)?[...(_sdApi.custs||[])]:(_sdApi.custs||[]).filter(c=>c._slms?c._slms.has(slmId):c.slm===slmId);
-      if(_sd.slmF) custs=custs.filter(c=>c._slms?c._slms.has(_sd.slmF):c.slm===_sd.slmF);
+      let custs=F?[...F.custs]:(isManager()&&_sd.mgrView)?[...(_sdApi.custs||[])]:(_sdApi.custs||[]).filter(c=>c._slms?c._slms.has(slmId):c.slm===slmId);
       if(q) custs=custs.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)
         ||(c.branches||[]).some(b=>b.n.toLowerCase().includes(q)||b.c.toLowerCase().includes(q)||(b.g||[]).some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))));
       if(_sd.sort.col==='val') custs=_sdByValue(custs);
@@ -8262,8 +8315,9 @@ function sdExport(){
     if(_sdApi.loaded){
       _sdEnsureBuilt('prod');
       cols=['กลุ่มสินค้า / สินค้า','ยอดขาย/จำนวน','สัด่วน%','ลูกค้าที่ซื้อ'];
-      const T2=_sdApi.total||1;
-      let prods=[...(_sdApi.prods||[])];
+      const F=_sdFiltered();
+      const T2=(F?F.total:_sdApi.total)||1;
+      let prods=[...((F?F.prods:_sdApi.prods)||[])];
       if(q) prods = prods.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)));
       if(_sd.sort.col==='val') prods=_sdByValue(prods);
       else if(_sd.sort.col==='vs') prods.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
@@ -8288,9 +8342,10 @@ function sdExport(){
     if(_sdApi.loaded){
       _sdEnsureBuilt('slm');
       cols=['เซลส์','รหัส','ยอดขาย/จำนวน','ลูกค้า'];
-      let slms=[...(_sdApi.slms||[])];
+      const F=_sdFiltered();
+      let slms=[...((F?F.slms:_sdApi.slms)||[])];
       if(q) slms = slms.filter(s=>s.name.toLowerCase().includes(q)||s.code.toLowerCase().includes(q));
-      if(sf) slms = slms.filter(s=>s.code===sf);
+      if(sf&&!F) slms = slms.filter(s=>s.code===sf);
       if(_sd.sort.col==='val') slms=_sdByValue(slms);
       else if(_sd.sort.col==='vs') slms.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
       slms.forEach(s=>rows.push([s.name,s.code,_sdV(s._tot),(s.custs||[]).length]));
