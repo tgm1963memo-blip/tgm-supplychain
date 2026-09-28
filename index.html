@@ -7945,6 +7945,50 @@ function _custsByItemGrouped(itCode,T,wi){
 // ── รายละเอียดใบกำกับรายสาขา (2026-09-28) ─────────────────────────────────────────────
 // ยอดแบบใบกำกับ (invoice_sales_monthly) ไม่มีมิติสินค้า — กดเปิดสาขาแล้วดึงรายการสินค้าจริงจาก invoice_lines
 // ผ่าน /api/invoice_detail (ผูกหัวใบกำกับด้วย doc_num) + ปุ่มดูรายการใบกำกับ/บรรทัดของแต่ละใบ
+// ── ชื่อสาขาในแถวสาขา (2026-09-28): ลูกค้าหลายรหัสใช้ชื่อบริษัทเดียวกัน (เช่น "ซีพี แอ็กซ์ตร้า" 22 รหัส) ──
+// ลำดับ: ชื่อสาขาที่ตั้งใน จัดการกลุ่ม (customer_profiles.branch) → ชื่อสาขาจากที่อยู่จัดส่งในใบกำกับ → ชื่อเดิม
+let _sdShipBranch=null,_sdShipBranchLoading=false;
+function _sdLoadShipBranch(){
+  if(_sdShipBranch||_sdShipBranchLoading) return;
+  _sdShipBranchLoading=true;
+  CACHE.get('ship_branch_names',async()=>{const r=await apiFetch('/api/invoice_detail/branch_names');if(r.error) throw new Error(r.error.message);return r.data||{};},{ttl:60*60*1000})
+    .then(m=>{_sdShipBranch=m||{};if(document.getElementById('sd-ta')) sdRender();})
+    .catch(e=>{console.warn('branch names',e.message||e);_sdShipBranch={};})
+    .finally(()=>{_sdShipBranchLoading=false;});
+}
+function _sdBranchLabel(code,fallback){
+  const p=customerProfiles()[code]||{};
+  if(p.branch) return p.branch;
+  _sdLoadShipBranch();
+  return (_sdShipBranch&&_sdShipBranch[code])||fallback||code;
+}
+function _sdBranchCell(b){
+  const lbl=_sdBranchLabel(b.c,b.n);
+  const edit=canEditMasterData()?` <span title="ตั้งชื่อสาขา" onclick="event.stopPropagation();sdEditBranch(${_sdInvReg(b.c,'',b.n)})" style="cursor:pointer;opacity:.55;font-size:11px">✏️</span>`:'';
+  return `<span style="font-size:12px">${esc(lbl)}</span>${lbl!==b.n?` <span style="font-size:10px;color:var(--TX3)">${esc(b.n)}</span>`:''} <span class="badge bbgr" style="font-size:10px">${esc(b.c)}</span>${edit}`;
+}
+function sdEditBranch(i){
+  const r=_sdInvRegList[i];if(!r) return;
+  const code=r.cust,cur=(customerProfiles()[code]||{}).branch||'';
+  openMod(`<div class="mh"><div class="mt2">ตั้งชื่อสาขา <span class="badge bbgr" style="font-size:11px">${esc(code)}</span></div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="font-size:12px;color:var(--TX2);margin-bottom:8px">${esc(r.name||'')} — บันทึกลงช่อง "สาขา" ของหน้า จัดการกลุ่ม (ใช้ทุกหน้าที่แสดงสาขา)</div>
+    <div class="field"><label>ชื่อสาขา</label><input type="text" id="sd-br-name" value="${esc(cur)}" placeholder="${esc((_sdShipBranch||{})[code]||'เช่น ราไวย์ 2')}" onkeydown="if(event.key==='Enter')sdSaveBranch('${esc(code)}')"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ยกเลิก</button><button class="btn btn-p" onclick="sdSaveBranch('${esc(code)}')">บันทึก</button></div>`);
+  setTimeout(()=>document.getElementById('sd-br-name')?.focus(),50);
+}
+async function sdSaveBranch(code){
+  const v=(document.getElementById('sd-br-name')?.value||'').trim();
+  const profs=DB.get('customer_profiles')||{};const p=profs[code];
+  const now=new Date().toISOString();
+  // แก้เฉพาะช่อง branch (ไม่ทับกลุ่ม/หมวด/Sales ที่ตั้งไว้) — ยังไม่มี profile = สร้างใหม่ที่มีแค่ชื่อสาขา
+  const r=p&&p.code
+    ?await apiFetch('/api/customer_profiles?code=eq.'+encodeURIComponent(code),{method:'PATCH',body:JSON.stringify({branch:v||null,edited_by:UID,updated_at:now})})
+    :await apiFetch('/api/customer_profiles?upsert=true&onConflict=code',{method:'POST',body:JSON.stringify({code,branch:v||null,edited_by:UID,updated_at:now})});
+  if(r.error){toast('บันทึกชื่อสาขาไม่สำเร็จ: '+(r.error.message||''),'warn');return;}
+  profs[code]={...(p||{code}),code,branch:v};DB.set('customer_profiles',profs);refreshCustomerProfilesMemo();
+  closeM();toast('บันทึกชื่อสาขา '+code+(v?' = '+v:' (ล้างค่า)'));
+  sdRender();
+}
 const _sdInvDet={};
 function _sdInvPeriod(){
   if(_sd.pt==='year'){const y=_sdApiYear();return{from:`${y}-01-01`,to:`${y}-12-31`};}
@@ -8121,7 +8165,7 @@ function sdCust(){
       if(oc) (c.branches||[]).forEach((b,bi)=>{
         const bv=b._tot;const bk=ck+'_b'+bi;const ob=_sd.op[bk];
         h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg2)">
-          <td style="padding-left:20px">${_xa(ob)}<span style="font-size:12px">${b.n}</span> <span class="badge bbgr" style="font-size:10px">${b.c}</span></td>
+          <td style="padding-left:20px">${_xa(ob)}${_sdBranchCell(b)}</td>
           <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(bv))}</td><td class="r">${_sdBar(bv,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
         if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased
           ?_sdInvBranchHtml(b,F?F.slm:'',bk,40,_sd.showYoY?5:4,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
@@ -8301,7 +8345,7 @@ function sdSlm(){
           if(oc) (c.branches||[]).forEach((b,bi)=>{
             const bk=ck+'_b'+bi;const ob=_sd.op[bk];
             h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg)">
-              <td style="padding-left:42px;font-size:12px">${_xa(ob)}<span class="badge bbgr" style="font-size:10px">${b.c}</span> ${b.n}</td>
+              <td style="padding-left:42px;font-size:12px">${_xa(ob)}${_sdBranchCell(b)}</td>
               <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(b._tot))}</td>
               <td class="r"></td><td class="r">${_sdBar(b._tot,c._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
             if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased

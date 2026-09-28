@@ -51,6 +51,13 @@ test('invoice detail per branch: products, invoice list, lines', async t => {
   assert.deepEqual(post.products.map(p => [p.sku, p.amount, p.custs]), [['P1', 260, 2], ['P2', 120, 1]]);
   assert.equal(post.lines.filter(l => l.sku === 'P1').length, 3);
   assert.ok(post.lines.every(l => l.cust_code && l.doc_date));
+  // ชื่อสาขาจากที่อยู่จัดส่ง: ใบล่าสุดก่อน, ตัดจุดท้าย, ข้ามตัวเลขล้วน
+  db.prepare('UPDATE invoices SET ship_to_address=? WHERE doc_num=?').run('บมจ.ซีพี แอ็กซ์ตร้า (สาขา ราไวย์ 2) เลขที่ 1', 'A2');
+  db.prepare('UPDATE invoices SET ship_to_address=? WHERE doc_num=?').run('สาขา เก่า เลขที่ 9', 'A1');
+  db.prepare('UPDATE invoices SET ship_to_address=? WHERE doc_num=?').run('บริษัท ก สาขา เอฟดีซี. เลขที่ 8', 'B1');
+  db.prepare('UPDATE invoices SET ship_to_address=? WHERE doc_num=?').run('สาขา 00001', 'X1');
+  const bn = await get('/branch_names');
+  assert.deepEqual(bn.data, { C1: 'ราไวย์ 2', C2: 'เอฟดีซี' });
   const lines = await get('/lines?doc=A1');
   assert.deepEqual(lines.data.lines.map(l => l.sku), ['P1', 'P2']);
   assert.equal(lines.data.head.cust_code, 'C1');

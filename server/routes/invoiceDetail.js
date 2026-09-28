@@ -73,6 +73,25 @@ function invoiceDetailRoutes(db) {
   router.get('/', (req, res) => detail(req.query, res));
   router.post('/', (req, res) => detail(req.body || {}, res));
 
+  // ชื่อสาขาจากที่อยู่จัดส่งของใบกำกับ (ARSHIP) เช่น "บมจ.ซีพี แอ็กซ์ตร้า (สาขา ราไวย์ 2) ..." → "ราไวย์ 2"
+  // ใช้แสดงแทนชื่อบริษัทซ้ำๆ ในแถวสาขาของ Sales Overview (ชื่อที่ตั้งใน customer_profiles.branch มาก่อนเสมอ — ทำที่ client)
+  router.get('/branch_names', (req, res) => {
+    const rows = db.prepare(`
+      SELECT cust_code, ship_to_address FROM invoices
+      WHERE ship_to_address IS NOT NULL AND ship_to_address LIKE '%สาขา%'
+      ORDER BY doc_date DESC
+    `).all();
+    const re = /\(\s*สาขา\s*([^)]+?)\s*\)|สาขา\s*([^\s,()]+(?:\s+\d+)?)/;
+    const out = {};
+    for (const r of rows) {
+      if (out[r.cust_code]) continue; // ใบล่าสุดก่อน
+      const m = String(r.ship_to_address).match(re);
+      const name = m && String(m[1] || m[2] || '').trim().replace(/[.,:;\s-]+$/, '');
+      if (name && !/^\d+$/.test(name) && !/^(ที่|เลขที่)$/.test(name)) out[r.cust_code] = name;
+    }
+    res.json(out);
+  });
+
   // บรรทัดสินค้าของใบกำกับ 1 ใบ
   router.get('/lines', (req, res) => {
     const doc = String(req.query.doc || '').trim();
