@@ -7951,70 +7951,113 @@ function _sdInvPeriod(){
   const ym=_sdApi.month||_sdApiMonth();
   return{from:`${ym}-01`,to:_ymLastDate(ym)};
 }
-function _sdInvDetGet(cust,slm){
-  const p=_sdInvPeriod();const key=[cust,p.from,p.to,slm||''].join('|');
+const _sdInvCusts=c=>(Array.isArray(c)?c:String(c||'').split(',')).map(x=>String(x).trim()).filter(Boolean);
+function _sdInvKey(cust,slm,lines){const p=_sdInvPeriod();return[_sdInvCusts(cust).join(','),p.from,p.to,slm||'',lines?'L':''].join('|');}
+// cust = รหัสสาขาเดียว หรือ array/รายการคั่น , (สรุปทั้งกลุ่มลูกค้า) · lines = ขอบรรทัดสินค้าของทุกใบด้วย (หน้าต่างดูใบกำกับ มุมมองรายสินค้า)
+function _sdInvDetGet(cust,slm,lines){
+  const p=_sdInvPeriod();const key=_sdInvKey(cust,slm,lines);
   let e=_sdInvDet[key];
   if(!e){
     e=_sdInvDet[key]={loading:true};
-    const qs=new URLSearchParams({cust,from:p.from,to:p.to});if(slm) qs.set('slm',slm);
-    apiFetch('/api/invoice_detail?'+qs.toString()).then(r=>{
+    const body={cust:_sdInvCusts(cust),from:p.from,to:p.to};if(slm) body.slm=slm;if(lines) body.lines=1;
+    apiFetch('/api/invoice_detail',{method:'POST',body:JSON.stringify(body)}).then(r=>{
       if(r.error) throw new Error(r.error.message||'invoice_detail failed');
       e.data=r.data;
     }).catch(err=>{e.error=err.message||String(err);}).finally(()=>{
       e.loading=false;
       if(document.getElementById('sd-ta')) sdRender();
-      if(document.getElementById('sd-inv-modal')&&window._sdInvModal?.key===key) sdShowInvoices(window._sdInvModal.cust,window._sdInvModal.slm,window._sdInvModal.name);
+      const m=window._sdInvModal;
+      if(m&&document.getElementById('sd-inv-modal')&&(_sdInvKey(m.cust,m.slm,false)===key||_sdInvKey(m.cust,m.slm,true)===key)) sdShowInvoices(m.cust,m.slm,m.name);
     });
   }
   return e;
 }
-// แถวสินค้าใต้สาขา: กลุ่มสินค้า → สินค้า (+ แถวส่วนต่างลดหนี้/ไม่มีบรรทัด) · cells(v,parent) = คอลัมน์ตัวเลขของตารางนั้น
+// แถวสินค้า: กลุ่มสินค้า → สินค้า (+ แถวส่วนต่างลดหนี้/ไม่มีบรรทัด) · b={c:รหัส|รายการรหัส,n,_tot} · cells(v,parent) = คอลัมน์ตัวเลขของตารางนั้น
 function _sdInvBranchHtml(b,slm,bk,pad,cols,cells){
   const note=(t,c='var(--TX3)')=>`<tr style="background:var(--bg)"><td style="padding-left:${pad}px;font-size:11px;color:${c}" colspan="${cols}">${t}</td></tr>`;
-  const d=_sdInvDetGet(b.c,slm);
-  if(d.loading) return note('⏳ กำลังโหลดรายการสินค้าจากใบกำกับ…');
+  const custs=_sdInvCusts(b.c),multi=custs.length>1;
+  const d=_sdInvDetGet(custs,slm);
+  if(d.loading) return note(`⏳ กำลังโหลดรายการสินค้าจากใบกำกับ${multi?` (${custs.length} สาขา)`:''}…`);
   if(d.error) return note('⚠️ โหลดรายละเอียดใบกำกับไม่ได้: '+esc(d.error),'var(--R)');
   const data=d.data||{},p=_sdInvPeriod();
-  const btn=`<button class="btn btn-xs" style="margin-left:6px" onclick="event.stopPropagation();sdShowInvoicesAt(${_sdInvReg(b.c,slm,b.n)})">📄 ดูใบกำกับ ${(data.invoices||[]).filter(x=>x.rectyp!=='5').length} ใบ</button>`;
+  const nInv=(data.invoices||[]).filter(x=>x.rectyp!=='5').length;
+  const btn=`<button class="btn btn-xs" style="margin-left:6px" onclick="event.stopPropagation();sdShowInvoicesAt(${_sdInvReg(custs.join(','),slm,b.n)})">📄 ดูใบกำกับ ${nInv.toLocaleString()} ใบ</button>`;
   if(data.coverage_from&&p.to<data.coverage_from) return note(`ไม่มีรายละเอียดใบกำกับก่อน ${_dateToDisplayTh(data.coverage_from)} (ระบบเริ่มเก็บหัวใบกำกับตั้งแต่วันนั้น)`);
   const prods=data.products||[];
-  if(!prods.length) return note('ไม่พบบรรทัดสินค้าในใบกำกับของสาขานี้ในช่วงที่เลือก'+btn);
+  if(!prods.length) return note('ไม่พบบรรทัดสินค้าในใบกำกับช่วงที่เลือก'+btn);
   const grp={};
   prods.forEach(x=>{const g=expressGroupLabel(x.group_name)||'อื่นๆ';(grp[g]=grp[g]||{n:g,tot:0,it:[]}).it.push(x);grp[g].tot+=Number(x.amount)||0;});
   const partial=data.coverage_from&&p.from<data.coverage_from?` · รายละเอียดมีตั้งแต่ ${_dateToDisplayTh(data.coverage_from)}`:'';
-  let h=`<tr style="background:var(--bg)"><td style="padding-left:${pad}px;font-size:11px;color:var(--BL)" colspan="${cols}">🧾 รายการสินค้าจากใบกำกับจริง${partial}${btn}</td></tr>`;
+  let h=`<tr style="background:var(--bg)"><td style="padding-left:${pad}px;font-size:11px;color:var(--BL)" colspan="${cols}">🧾 รายการสินค้าจากใบกำกับจริง${multi?` รวม ${custs.length} สาขา`:''}${partial}${btn}</td></tr>`;
   Object.values(grp).sort((a,b2)=>b2.tot-a.tot).forEach((g,gi)=>{
     const gk=bk+'_ig'+gi,og=_sd.op[gk];
     h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg)">
-      <td style="padding-left:${pad}px">${_xa(og)}<span style="font-size:12px">${esc(g.n)}</span></td>${cells(g.tot,b._tot)}</tr>`;
+      <td style="padding-left:${pad}px">${_xa(og)}<span style="font-size:12px">${esc(g.n)}</span> <span style="color:var(--TX3);font-size:11px">${g.it.length} รายการ</span></td>${cells(g.tot,b._tot)}</tr>`;
     if(og) g.it.forEach(it=>{
       h+=`<tr style="background:var(--bg2);font-size:12px">
-        <td style="padding-left:${pad+20}px"><span class="mono">${esc(it.sku)}</span> — ${esc(it.sku_name||it.sku)} <span style="color:var(--TX3);font-size:11px">· ${(Number(it.qty)||0).toLocaleString()} ${esc(it.unit||'')} · ${it.invoices} ใบ</span></td>${cells(Number(it.amount)||0,g.tot)}</tr>`;
+        <td style="padding-left:${pad+20}px"><span class="mono">${esc(it.sku)}</span> — ${esc(it.sku_name||it.sku)} <span style="color:var(--TX3);font-size:11px">· ${(Number(it.qty)||0).toLocaleString()} ${esc(it.unit||'')} · ${it.invoices} ใบ${multi?` · ${it.custs} สาขา`:''}</span></td>${cells(Number(it.amount)||0,g.tot)}</tr>`;
     });
   });
   const diff=(Number(b._tot)||0)-prods.reduce((a,x)=>a+(Number(x.amount)||0),0);
   if(Math.abs(diff)>=1) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td style="padding-left:${pad}px">↩️ ลดหนี้/รับคืน และยอดที่ไม่มีบรรทัดสินค้า${partial?' (รวมช่วงก่อนมีรายละเอียด)':''}</td>${cells(diff,b._tot)}</tr>`;
   return h;
 }
+// แถว "สรุปทั้งกลุ่มลูกค้า" ใต้แถวบริษัท (เปิด/ปิดได้) — รวมทุกสาขาของกลุ่ม
+function _sdInvGroupHtml(c,slm,ck,pad,cols,cells){
+  const codes=(c.branches||[]).map(b=>b.c).filter(Boolean);
+  if(!codes.length) return '';
+  const sk=ck+'_sum',os=_sd.op[sk];
+  let h=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer;background:var(--LBL)">
+    <td style="padding-left:${pad}px;font-size:12px;color:var(--BL);font-weight:600" colspan="${cols}">${_xa(os)}📦 สรุปรายกลุ่มสินค้า / รายสินค้า ทั้งกลุ่ม (${codes.length} สาขา)</td></tr>`;
+  if(os) h+=_sdInvBranchHtml({c:codes,n:c.n,_tot:c._tot},slm,sk,pad+20,cols,cells);
+  return h;
+}
 const _sdInvRegList=[];
 function _sdInvReg(cust,slm,name){const k=cust+'|'+(slm||'');let i=_sdInvRegList.findIndex(x=>x.k===k);if(i<0){_sdInvRegList.push({k,cust,slm:slm||'',name});i=_sdInvRegList.length-1;}return i;}
-function sdShowInvoicesAt(i){const r=_sdInvRegList[i];if(r) sdShowInvoices(r.cust,r.slm,r.name);}
+function sdShowInvoicesAt(i){const r=_sdInvRegList[i];if(r){window._sdInvView='doc';window._sdInvOpen={};sdShowInvoices(r.cust,r.slm,r.name);}}
 const _SD_RECTYP={'0':'ใบกำกับ','1':'ขายสด','3':'ขายเชื่อ','4':'เพิ่มหนี้','5':'ลดหนี้'};
+function sdInvSetView(v){window._sdInvView=v;const m=window._sdInvModal;if(m) sdShowInvoices(m.cust,m.slm,m.name);}
+function sdInvTogProd(k){const o=window._sdInvOpen=window._sdInvOpen||{};o[k]=!o[k];const m=window._sdInvModal;if(m) sdShowInvoices(m.cust,m.slm,m.name);}
 function sdShowInvoices(cust,slm,name){
-  const d=_sdInvDetGet(cust,slm);const p=_sdInvPeriod();
-  window._sdInvModal={cust,slm,name,key:[cust,p.from,p.to,slm||''].join('|')};
+  const custs=_sdInvCusts(cust),multi=custs.length>1,p=_sdInvPeriod();
+  const view=window._sdInvView||'doc',open=window._sdInvOpen||{};
+  window._sdInvModal={cust:custs.join(','),slm,name};
+  const d=_sdInvDetGet(custs,slm,view==='prod');
   const list=d.data?.invoices||[];
-  const body=d.loading?'<div style="padding:20px;text-align:center;color:var(--TX3)">⏳ กำลังโหลด…</div>'
-    :d.error?`<div class="al ald">${esc(d.error)}</div>`
-    :!list.length?'<div style="padding:20px;text-align:center;color:var(--TX3)">ไม่มีใบกำกับในช่วงนี้</div>'
-    :`<div class="tw tw-scroll" style="max-height:60vh"><table><thead><tr><th>วันที่</th><th>เลขที่</th><th>ประเภท</th><th>Sales</th><th class="r">รายการ</th><th class="r">ยอดเงิน</th></tr></thead><tbody>${list.map((x,i)=>`
+  const wait=d.loading?'<div style="padding:20px;text-align:center;color:var(--TX3)">⏳ กำลังโหลด…</div>':d.error?`<div class="al ald">${esc(d.error)}</div>`:'';
+  let body=wait;
+  if(!wait&&view==='doc'){
+    body=!list.length?'<div style="padding:20px;text-align:center;color:var(--TX3)">ไม่มีใบกำกับในช่วงนี้</div>'
+    :`<div class="tw tw-scroll" style="max-height:60vh"><table><thead><tr><th>วันที่</th><th>เลขที่</th>${multi?'<th>สาขา</th>':''}<th>ประเภท</th><th>Sales</th><th class="r">รายการ</th><th class="r">ยอดเงิน</th></tr></thead><tbody>${list.map((x,i)=>`
       <tr onclick="sdInvToggleLines('${esc(x.doc_num)}',${i})" style="cursor:pointer${x.rectyp==='5'?';color:var(--R)':''}">
-        <td>${_dateToDisplayTh(x.doc_date)}</td><td class="mono">${_xa(false)}${esc(x.doc_num)}</td><td>${esc(_SD_RECTYP[x.rectyp]||x.rectyp||'')}</td>
+        <td>${_dateToDisplayTh(x.doc_date)}</td><td class="mono">${_xa(false)}${esc(x.doc_num)}</td>${multi?`<td class="mono" style="font-size:11px">${esc(x.cust_code)}</td>`:''}<td>${esc(_SD_RECTYP[x.rectyp]||x.rectyp||'')}</td>
         <td class="mono">${esc(x.slm_code||'—')}</td><td class="r">${x.line_count||0}</td><td class="r">${_sdF(x.total)}</td></tr>
-      <tr id="sd-invl-${i}" style="display:none"><td colspan="6" style="padding:0 0 6px 24px;background:var(--bg2)"></td></tr>`).join('')}</tbody></table></div>`;
+      <tr id="sd-invl-${i}" style="display:none"><td colspan="${multi?7:6}" style="padding:0 0 6px 24px;background:var(--bg2)"></td></tr>`).join('')}</tbody></table></div>`;
+  }else if(!wait){
+    // กลุ่มสินค้า → สินค้า → ใบกำกับที่มีสินค้านั้น
+    const lines=d.data?.lines||[],prods=d.data?.products||[];
+    const byProd={};lines.forEach(l=>{(byProd[l.sku]=byProd[l.sku]||[]).push(l);});
+    const grp={};prods.forEach(x=>{const g=expressGroupLabel(x.group_name)||'อื่นๆ';(grp[g]=grp[g]||{n:g,tot:0,it:[]}).it.push(x);grp[g].tot+=Number(x.amount)||0;});
+    const cols=multi?5:4;
+    let rows='';
+    Object.values(grp).sort((a,b)=>b.tot-a.tot).forEach((g,gi)=>{
+      const gk='g'+gi,og=open[gk]!==false; // กลุ่มเปิดไว้ก่อน
+      rows+=`<tr onclick="sdInvTogProd('${gk}');" style="cursor:pointer;background:var(--LN);font-weight:600"><td colspan="${cols-1}">${_xa(og)}${esc(g.n)} <span style="font-weight:400;color:var(--TX3);font-size:11px">${g.it.length} รายการ</span></td><td class="r">${_sdF(g.tot)}</td></tr>`;
+      if(og) g.it.forEach((it,ii)=>{
+        const pk='p'+gi+'_'+ii,op=!!open[pk];const ls=byProd[it.sku]||[];
+        rows+=`<tr onclick="sdInvTogProd('${pk}')" style="cursor:pointer"><td colspan="${cols-2}" style="padding-left:22px">${_xa(op)}<span class="mono">${esc(it.sku)}</span> — ${esc(it.sku_name||it.sku)} <span style="color:var(--TX3);font-size:11px">· ${it.invoices} ใบ</span></td><td class="r">${(Number(it.qty)||0).toLocaleString()} ${esc(it.unit||'')}</td><td class="r">${_sdF(it.amount)}</td></tr>`;
+        if(op) rows+=ls.map(l=>`<tr style="background:var(--bg2);font-size:12px"><td style="padding-left:44px">${_dateToDisplayTh(l.doc_date)}</td><td class="mono">${esc(l.doc_num)}</td>${multi?`<td class="mono" style="font-size:11px">${esc(l.cust_code)}</td>`:''}<td class="r">${(Number(l.qty)||0).toLocaleString()} ${esc(l.unit_code||'')}</td><td class="r">${_sdF(l.line_value)}</td></tr>`).join('');
+      });
+    });
+    body=!prods.length?'<div style="padding:20px;text-align:center;color:var(--TX3)">ไม่มีรายการสินค้าในช่วงนี้</div>'
+      :`<div class="tw tw-scroll" style="max-height:60vh"><table><thead><tr><th colspan="${cols-2}">กลุ่มสินค้า / สินค้า / ใบกำกับ</th><th class="r">จำนวน</th><th class="r">มูลค่า</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
   const tot=list.reduce((a,x)=>a+(Number(x.total)||0),0);
-  openMod(`<div id="sd-inv-modal"><div class="mh"><div class="mt2">📄 ใบกำกับ — ${esc(name||cust)} <span class="badge bbgr" style="font-size:11px">${esc(cust)}</span></div><span class="mx" onclick="closeM()">✕</span></div>
-    <div style="font-size:12px;color:var(--TX2);margin-bottom:8px">${_dateToDisplayTh(p.from)} – ${_dateToDisplayTh(p.to)}${slm?' · Sales '+esc(slmKeyName(slm)):''}${list.length?` · ${list.length} ใบ · รวม ${_sdF(tot)} (ยอดรวมภาษีตามหัวใบ)`:''} — กดที่ใบเพื่อดูรายการสินค้า</div>${body}</div>`);
+  const tb=(v,l)=>`<button class="btn btn-sm" onclick="sdInvSetView('${v}')" style="${view===v?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">${l}</button>`;
+  openMod(`<div id="sd-inv-modal"><div class="mh"><div class="mt2">📄 ใบกำกับ — ${esc(name||custs[0])} ${multi?`<span class="badge bbgr" style="font-size:11px">${custs.length} สาขา</span>`:`<span class="badge bbgr" style="font-size:11px">${esc(custs[0])}</span>`}</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">${tb('doc','รายใบกำกับ')}${tb('prod','รายกลุ่มสินค้า / รายสินค้า')}
+      <span style="font-size:12px;color:var(--TX2)">${_dateToDisplayTh(p.from)} – ${_dateToDisplayTh(p.to)}${slm?' · Sales '+esc(slmKeyName(slm)):''}${list.length?` · ${list.length} ใบ · รวม ${_sdF(tot)} (ยอดตามหัวใบ)`:''}</span></div>
+    <div style="font-size:11px;color:var(--TX3);margin-bottom:6px">${view==='doc'?'กดที่ใบเพื่อดูรายการสินค้า':'กดที่สินค้าเพื่อดูว่าอยู่ในใบกำกับใดบ้าง'}</div>${body}</div>`);
 }
 async function sdInvToggleLines(doc,i){
   const tr=document.getElementById('sd-invl-'+i);if(!tr) return;
@@ -8074,6 +8117,7 @@ function sdCust(){
       h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--LN)">
         <td style="font-weight:700">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span> <button class="btn btn-xs btn-g" onclick="event.stopPropagation();nav('groups')">ไปตั้งค่ากลุ่ม →</button>`:`<strong>${c.n}</strong>`} ${c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:''} <span style="font-size:11px;color:var(--TX3)">${(c.branches||[]).length} สาขา</span></td>
         <td class="r"><strong>${_sdFmtTotal(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${_vc(cv,cvYoY)}</td></tr>`;
+      if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,F?F.slm:'',ck,20,_sd.showYoY?5:4,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`);
       if(oc) (c.branches||[]).forEach((b,bi)=>{
         const bv=b._tot;const bk=ck+'_b'+bi;const ob=_sd.op[bk];
         h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg2)">
@@ -8253,6 +8297,7 @@ function sdSlm(){
             <td style="padding-left:22px;font-size:12px">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span>`:c.n} ${c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:''}</td>
             <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(c._tot))}</td>
             <td class="r"></td><td class="r">${_sdBar(c._tot,s._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
+          if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,s.code,ck,42,_sd.showYoY?6:5,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`);
           if(oc) (c.branches||[]).forEach((b,bi)=>{
             const bk=ck+'_b'+bi;const ob=_sd.op[bk];
             h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg)">

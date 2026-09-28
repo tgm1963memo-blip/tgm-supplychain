@@ -21,7 +21,7 @@ const SALES_ONLY = [
   // (ใช้ใน mpoSelect ของ Planning ด้วย), refreshSalesOverviewGrouping (เรียกจาก saveCustomerGroup/
   // confirmCustomerGroup ฝั่ง admin ที่ใช้ทั้ง 2 แอป)
   'SD_MTH', 'SD_MD', 'SD_WM', 'SD_PRODS', 'SD_VS',
-  '_sd', '_sdApi', '_SD_CACHE_TTL', '_sdNum', '_sdCmp', '_sdByValue', '_sdResetBuildCache', '_sdEffSlm', '_sdRowSlmMatch', '_sdFiltered', '_sdInvDet', '_sdInvPeriod', '_sdInvDetGet', '_sdInvBranchHtml', '_sdInvRegList', '_sdInvReg', 'sdShowInvoicesAt', '_SD_RECTYP', 'sdShowInvoices', 'sdInvToggleLines',
+  '_sd', '_sdApi', '_SD_CACHE_TTL', '_sdNum', '_sdCmp', '_sdByValue', '_sdResetBuildCache', '_sdEffSlm', '_sdRowSlmMatch', '_sdFiltered', '_sdInvDet', '_sdInvPeriod', '_sdInvDetGet', '_sdInvBranchHtml', '_sdInvCusts', '_sdInvKey', '_sdInvGroupHtml', 'sdInvSetView', 'sdInvTogProd', '_sdInvRegList', '_sdInvReg', 'sdShowInvoicesAt', '_SD_RECTYP', 'sdShowInvoices', 'sdInvToggleLines',
   '_sdMonthRange', '_companyFromExpressSlm',
   '_sdKpiFromRows', '_sdSalesListFromRows', '_sdBuildKey', '_sdEnsureBuilt', '_applySalesRowsToSd',
   '_loadSalesFromSupabase', '_loadSalesSummaryFromSupabase', '_sdFmtTotal', '_sdUseLatestMonthIfEmpty',

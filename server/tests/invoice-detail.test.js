@@ -44,6 +44,13 @@ test('invoice detail per branch: products, invoice list, lines', async t => {
   assert.equal(multi.data.products.find(p => p.sku === 'P1').amount, 250);
   const none = await get('?cust=C1&from=2026-09-01&to=2026-09-30&slm=' + encodeURIComponent('(ไม่ระบุ)'));
   assert.deepEqual(none.data.products.map(p => [p.sku, p.amount]), [['P2', 20]]);
+  // หลายสาขา (สรุปทั้งกลุ่ม) ผ่าน POST + บรรทัดสินค้าของทุกใบ
+  inv.run('B1', '2026-09-10', 'C2', '106', 10, '3');
+  ln.run('TSS', 'B1', '1', '2026-09-10', 'P1', 'Ham', 1, 'กก', 10);
+  const post = await fetch(base, { method: 'POST', headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cust: ['C1', 'C2'], from: '2026-09-01', to: '2026-09-30', lines: 1 }) }).then(r => r.json());
+  assert.deepEqual(post.products.map(p => [p.sku, p.amount, p.custs]), [['P1', 260, 2], ['P2', 120, 1]]);
+  assert.equal(post.lines.filter(l => l.sku === 'P1').length, 3);
+  assert.ok(post.lines.every(l => l.cust_code && l.doc_date));
   const lines = await get('/lines?doc=A1');
   assert.deepEqual(lines.data.lines.map(l => l.sku), ['P1', 'P2']);
   assert.equal(lines.data.head.cust_code, 'C1');
