@@ -166,6 +166,24 @@ function parseSalesLineComponentRemark(raw) {
   if (qtyMatch) childName = childName.replace(/\s*\d+(?:\.\d+)?\s*(?:[pP]\.?|\u0e0a\u0e38\u0e14|\u0e41\u0e1e\u0e04|pack|packs|\u0e01\u0e04|\u0e01\u0e01|kg|kgs)\s*$/i, '').trim();
   return { childCode, childName: childName || null, childQty, note };
 }
+// item ย่อยของสินค้าชุด (2026-09-29, เฉพาะ sales_line_components — invoice_line_components คง 90022 เดิม): เดิมเก็บเฉพาะ parent 90022 — ขยายให้ทุกสินค้าที่มีหมายเหตุ item ย่อย
+// (เช่น 90021/90023 ไส้กรอกราคาพิเศษ ที่ Express มีหมายเหตุครบแต่ไม่เคยถูกดึง)
+// 90022 คงกติกาเดิมทุกอย่าง (tgm-wms ใช้คำนวณน้ำหนักสายรถ) · parent อื่นนับเฉพาะหมายเหตุที่รหัสแรกเป็นรหัสสินค้าจริง
+// ใน products — กันหมายเหตุทั่วไป/บาร์โค้ด (TSS มีบาร์โค้ด 885... ในหมายเหตุจำนวนมาก) ไม่ให้ถูกนับเป็น item ย่อย
+const LEGACY_COMPONENT_PARENT = /^90022(?:-|$)/;
+function loadKnownSkuSet(db) {
+  try {
+    return new Set(db.prepare('SELECT code FROM products').all().map((r) => String(r.code || '').trim().toUpperCase()));
+  } catch (_) {
+    return new Set();
+  }
+}
+function acceptsComponent(parentSku, childCode, knownSkus) {
+  if (!parentSku || !childCode) return false;
+  if (LEGACY_COMPONENT_PARENT.test(parentSku)) return true;
+  const child = String(childCode).toUpperCase();
+  return child !== String(parentSku).toUpperCase() && knownSkus.has(child);
+}
 // Unit code -> full Thai name, from the same generic code-table file/mechanism syncWarehouses() already
 // uses for warehouse names (see UNIT_TABTYP comment above). Small, stable reference table (~60 rows) —
 // read fresh each sync rather than cached, matching syncWarehouses()'s own plain-upsert-by-code pattern.
@@ -797,6 +815,7 @@ function passesCompanyDateCutoff(company, dateValue) {
 }
 
 async function syncSales(db) {
+  const knownSkus = loadKnownSkuSet(db);
   // dlv_date (DLVDAT) added 2026-08-27 — see schema.sql's comment on outbound_orders.dlv_date
   const insertOrder = db.prepare(`
     INSERT INTO outbound_orders (id, company, order_no, order_date, dlv_date, cust_code, slm_id, doc_status, total)
@@ -898,9 +917,9 @@ async function syncSales(db) {
         if (!byOrder.has(orderNo)) continue;
         const seqNum = cleanText(rm.SEQNUM);
         const parent = lineByOrderSeq.get(`${orderNo}|${seqNum}`);
-        if (!parent?.parentSku || !/^90022(?:-|$)/.test(parent.parentSku)) continue;
+        if (!parent?.parentSku) continue;
         const component = parseSalesLineComponentRemark(rm.REMARK);
-        if (!component?.childCode) continue;
+        if (!acceptsComponent(parent.parentSku, component?.childCode, knownSkus)) continue;
         insertComponent.run(company, parent.orderId, parent.orderNo, seqNum, parent.parentSku, component.childCode, component.childName, component.childQty, component.note);
         componentsImported++;
       }
