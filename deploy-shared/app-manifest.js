@@ -47,7 +47,7 @@ const SALES_ONLY = [
 
   // ฝากขาย CONSI
   '_consiRows', '_consiCustF', '_consiProdF', '_consiBranchF', '_consiStartF', '_consiEndF',
-  '_consiLoaded', '_consiErr', '_consiOp', 'consiTogOp', 'pgConsignment', '_sbConsiRows', 'consiRender', 'expConsi',
+  '_consiLoaded', '_consiErr', '_consiOp', 'consiTogOp', 'pgConsignment', '_sbConsiRows', 'consiRender', '_consiCorpOf', 'expConsi',
 
   // เอกสารโปรโมชัน (ประวัติ, mirror จาก Express) — ไม่รวม _promoJsKey/promoFmtD (ใช้ใน mpoSelect ของ
   // Planning ด้วย ยืนยันจาก safety-net check จริง — ย้ายไป core)

@@ -2441,7 +2441,17 @@ const SB = {
       });
     };
     const PAGE = 20000;
-    try {
+    const addRow = r => {
+      const code = String(r.cust_code || '').trim();
+      if (!code || code === '(none)') return;
+      const existing = byCode.get(code);
+      add(code, r.cust_name || existing?.name || code);
+      if (r.slm_owner && byCode.has(code)) byCode.get(code).slm_id = String(r.slm_owner).trim();
+    };
+    // /api/consi_customers (2026-09-29): server สรุปแถวละลูกค้า — เดิมดึงทั้งตาราง v_sc_consi_monthly ทุกคอลัมน์
+    const summary = await apiFetch('/api/consi_customers');
+    if (!summary.error && Array.isArray(summary.data)) summary.data.forEach(addRow);
+    else try {
       let from = 0;
       while (true) {
         const { data, error } = await getSupabaseClient()
@@ -2449,13 +2459,7 @@ const SB = {
           .select('cust_code,cust_name,slm_owner')
           .range(from, from + PAGE - 1);
         if (error) throw error;
-        (data || []).forEach(r => {
-          const code = String(r.cust_code || '').trim();
-          if (!code || code === '(none)') return;
-          const existing = byCode.get(code);
-          add(code, r.cust_name || existing?.name || code);
-          if (r.slm_owner && byCode.has(code)) byCode.get(code).slm_id = String(r.slm_owner).trim();
-        });
+        (data || []).forEach(addRow);
         if (!data || data.length < PAGE) break;
         from += PAGE;
       }
@@ -5554,10 +5558,15 @@ function saveSalesMasterRow(code,patch){
   const base=salesMaster().find(s=>s.code===code)||{code,source:'Manual',active:true};
   overrides[code]={...base,...(overrides[code]||{}),...patch,code,edited_by:UID,edited_at:new Date().toISOString()};
   DB.set('sales_master',overrides);
+  _salesNameMemo=null;
 }
+// FIXED (2026-09-29, หน้า CONSI โหลดช้า): เดิม salesMaster() ถูกสร้างใหม่ทุกครั้งที่เรียก (วนผู้ใช้/cache/sort) และ
+// ฟังก์ชันนี้ถูกเรียกต่อแถวข้อมูลขาย (CONSI ~52,000 แถว, Sales Overview หลายแสนแถว) — ใช้แผนที่ชื่อที่จำไว้ 5 วินาที
+let _salesNameMemo=null,_salesNameMemoAt=0;
 function salesNameFor(code){
-  const s=salesMaster().find(x=>x.code===String(code||''));
-  return s?.name||code||'';
+  if(!_salesNameMemo||Date.now()-_salesNameMemoAt>5000){_salesNameMemo=new Map(salesMaster().map(x=>[x.code,x.name]));_salesNameMemoAt=Date.now();}
+  const k=String(code||'');
+  return _salesNameMemo.get(k)||code||'';
 }
 // รหัส Sales ใน Express ที่ผูกกับผู้ใช้ (2026-09-28): sc_users.slm_codes "101,110-1" — ยังไม่ผูก = ใช้ slm_id เดิม
 // ค่า "key" ที่ส่งต่อให้ตัวดึง/กรองยอดขาย = รหัสคั่นด้วย , (คนเดียวมีได้หลายรหัส)
@@ -8766,6 +8775,11 @@ async function _sbConsiRows(startYm,endYm){
   });
   return mapped.filter(r=>_isConsignmentRow(r));
 }
+// กลุ่มลูกค้า (จัดการกลุ่ม) ของแถว CONSI — ค่าจาก customer_profiles ในเครื่องก่อน แล้วค่าที่ server join มา
+function _consiCorpOf(r){
+  const p=customerProfiles()[r.cust_code]||{};
+  return p.corporate||p.corp||r.cust_group||UNASSIGNED_CORP_LABEL;
+}
 function consiRender(){
   const rangeRows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
   const allBranches=[...new Set(_consiRows.map(r=>r.branch||'').filter(Boolean))].sort();
@@ -8780,13 +8794,17 @@ function consiRender(){
   const custs=Object.entries(custF2).sort((a,b)=>a[1].localeCompare(b[1],'th'));
   const prodF2={};rangeRows.forEach(r=>{if(!prodF2[r.prod_code])prodF2[r.prod_code]=r.prod_name||r.prod_code;});
   const prods=Object.entries(prodF2).sort((a,b)=>a[0].localeCompare(b[0]));
-  // build grouped: cust → prod_group → prod
-  const grouped={};
+  // build grouped: กลุ่มลูกค้า → cust → prod_group → prod (2026-09-29: ผู้ใช้ขอ "รวมเป็นกลุ่มลูกค้าก่อน")
+  const grouped={},corps={};
   rows.forEach(r=>{
     const cc=r.cust_code||'—';
-    if(!grouped[cc])grouped[cc]={name:r.cust_name||cc,branch:r.branch||'',qty:0,amount:0,groups:{}};
+    if(!grouped[cc]){
+      grouped[cc]={name:r.cust_name||cc,branch:r.branch||'',qty:0,amount:0,groups:{},corp:_consiCorpOf(r)};
+      (corps[grouped[cc].corp]=corps[grouped[cc].corp]||{qty:0,amount:0,custs:[]}).custs.push(cc);
+    }
+    corps[grouped[cc].corp].qty+=(r.qty||0);corps[grouped[cc].corp].amount+=(r.amount||0);
     grouped[cc].qty+=(r.qty||0);grouped[cc].amount+=(r.amount||0);
-    const gn=r.prod_group||'อื่นๆ';
+    const gn=expressGroupLabel(r.prod_group)||'อื่นๆ';
     if(!grouped[cc].groups[gn])grouped[cc].groups[gn]={qty:0,amount:0,prods:{}};
     grouped[cc].groups[gn].qty+=(r.qty||0);grouped[cc].groups[gn].amount+=(r.amount||0);
     const pc=r.prod_code||'?';
@@ -8794,17 +8812,22 @@ function consiRender(){
     grouped[cc].groups[gn].prods[pc].qty+=(r.qty||0);grouped[cc].groups[gn].prods[pc].amount+=(r.amount||0);
   });
   const custEntries=Object.entries(grouped).sort((a,b)=>b[1].qty-a[1].qty);
+  const corpEntries=Object.entries(corps).sort((a,b)=>b[1].qty-a[1].qty);
   let tbl='';
   if(custEntries.length){
-    tbl='<div class="card" style="margin-bottom:0"><div class="ch"><div class="ct2">รายฝากขาย CONSI ('+rows.length+' รายการ)</div><button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button></div><div class="tw"><table><thead><tr><th>กลุ่มลูกค้า / กลุ่มสินค้า / สินค้า</th><th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th></tr></thead><tbody>';
-    custEntries.forEach(([cc,cust],ci)=>{
-      const oc=_consiOp['c'+ci];
-      tbl+=`<tr onclick="consiTogOp('c${ci}')" style="cursor:pointer;background:var(--LN)"><td>${_xa(oc)}<strong>${esc(cust.name)}</strong>${cust.branch&&cust.branch!=='CONSI'?` <span class="badge bbp" style="font-size:10px">${esc(cust.branch)}</span>`:''}</td><td class="r"><strong>${fmt(cust.qty)}</strong></td><td class="r"><strong>${cust.amount?fmt(cust.amount):'—'}</strong></td></tr>`;
-      if(oc) Object.entries(cust.groups).sort((a,b)=>b[1].qty-a[1].qty).forEach(([gn,grp],gi)=>{
-        const gk='g'+ci+'_'+gi;const og=_consiOp[gk];
-        tbl+=`<tr onclick="consiTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)"><td style="padding-left:20px">${_xa(og)}<span style="font-size:12px">${esc(gn)}</span></td><td class="r" style="font-size:12px">${fmt(grp.qty)}</td><td class="r" style="font-size:12px">${grp.amount?fmt(grp.amount):'—'}</td></tr>`;
-        if(og) Object.entries(grp.prods).sort((a,b)=>b[1].qty-a[1].qty).forEach(([pc,p])=>{
-          tbl+=`<tr style="background:var(--bg);font-size:12px"><td style="padding-left:40px"><span class="mono">${esc(pc)}</span> — ${esc(p.name)}</td><td class="r">${fmt(p.qty)}</td><td class="r">${p.amount?fmt(p.amount):'—'}</td></tr>`;
+    tbl='<div class="card" style="margin-bottom:0"><div class="ch"><div class="ct2">รายฝากขาย CONSI ('+rows.length+' รายการ)</div><button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button></div><div class="tw"><table><thead><tr><th>กลุ่มลูกค้า / ลูกค้า / กลุ่มสินค้า / สินค้า</th><th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th></tr></thead><tbody>';
+    corpEntries.forEach(([corp,cg],ki)=>{
+      const ok=_consiOp['k'+ki];
+      tbl+=`<tr onclick="consiTogOp('k${ki}')" style="cursor:pointer;background:var(--LN)"><td>${_xa(ok)}<strong>${esc(corp)}</strong> <span style="font-size:11px;color:var(--TX3)">${cg.custs.length} สาขา</span></td><td class="r"><strong>${fmt(cg.qty)}</strong></td><td class="r"><strong>${cg.amount?fmt(cg.amount):'—'}</strong></td></tr>`;
+      if(ok) cg.custs.map(cc=>[cc,grouped[cc]]).sort((a,b)=>b[1].qty-a[1].qty).forEach(([cc,cust],ci)=>{
+        const ck='c'+ki+'_'+ci,oc=_consiOp[ck];
+        tbl+=`<tr onclick="consiTogOp('${ck}')" style="cursor:pointer;background:var(--bg2)"><td style="padding-left:20px">${_xa(oc)}<span style="font-size:12px">${esc(cust.name)}</span> <span class="badge bbgr" style="font-size:10px">${esc(cc)}</span>${cust.branch&&cust.branch!=='CONSI'?` <span class="badge bbp" style="font-size:10px">${esc(cust.branch)}</span>`:''}</td><td class="r" style="font-size:12px">${fmt(cust.qty)}</td><td class="r" style="font-size:12px">${cust.amount?fmt(cust.amount):'—'}</td></tr>`;
+        if(oc) Object.entries(cust.groups).sort((a,b)=>b[1].qty-a[1].qty).forEach(([gn,grp],gi)=>{
+          const gk='g'+ki+'_'+ci+'_'+gi;const og=_consiOp[gk];
+          tbl+=`<tr onclick="consiTogOp('${gk}')" style="cursor:pointer;background:var(--bg)"><td style="padding-left:40px">${_xa(og)}<span style="font-size:12px">${esc(gn)}</span></td><td class="r" style="font-size:12px">${fmt(grp.qty)}</td><td class="r" style="font-size:12px">${grp.amount?fmt(grp.amount):'—'}</td></tr>`;
+          if(og) Object.entries(grp.prods).sort((a,b)=>b[1].qty-a[1].qty).forEach(([pc,p])=>{
+            tbl+=`<tr style="background:var(--bg2);font-size:12px"><td style="padding-left:60px"><span class="mono">${esc(pc)}</span> — ${esc(p.name)}</td><td class="r">${fmt(p.qty)}</td><td class="r">${p.amount?fmt(p.amount):'—'}</td></tr>`;
+          });
         });
       });
     });
@@ -8836,7 +8859,7 @@ function consiRender(){
     <div class="kpi p"><div class="kl">ยอดฝากขาย CONSI</div><div class="kv">${fmt(totalQty)}</div><div class="kh">กก.</div></div>
     <div class="kpi b"><div class="kl">มูลค่ารวม</div><div class="kv">${totalAmt?'฿'+fmt(totalAmt):'—'}</div><div class="kh">บาท</div></div>
     <div class="kpi g"><div class="kl">จำนวนสินค้า</div><div class="kv">${prods.length}</div><div class="kh">รายการ</div></div>
-    <div class="kpi o"><div class="kl">จำนวนลูกค้า</div><div class="kv">${custs.length}</div><div class="kh">บัญชี</div></div>
+    <div class="kpi o"><div class="kl">จำนวนลูกค้า</div><div class="kv">${custs.length}</div><div class="kh">บัญชี · ${corpEntries.length} กลุ่มลูกค้า</div></div>
   </div>
   ${!rows.length?`<div class="al alw">ไม่มีข้อมูล CONSI ในช่วงนี้${_consiLoaded?' — ตรวจสอบ filter ด้านบน':''}</div>`:tbl}`;
 }
@@ -8846,8 +8869,8 @@ function expConsi(){
   if(_consiCustF) rows=rows.filter(r=>r.cust_code===_consiCustF);
   if(_consiProdF) rows=rows.filter(r=>r.prod_code===_consiProdF);
   if(_consiBranchF) rows=rows.filter(r=>(r.branch||'')===_consiBranchF);
-  const cols=['เดือน','รหัสลูกค้า','ชื่อลูกค้า','สาขา/กลุ่ม','รหัสสินค้า','ชื่อสินค้า','จำนวน (กก.)'];
-  const data=rows.map(r=>[r.ym,r.cust_code||'',r.cust_name||'',r.branch||r.cust_group||'',r.prod_code||'',r.prod_name||'',r.qty||0]);
+  const cols=['เดือน','กลุ่มลูกค้า','รหัสลูกค้า','ชื่อลูกค้า','สาขา/กลุ่ม','รหัสสินค้า','ชื่อสินค้า','จำนวน (กก.)','มูลค่า (฿)'];
+  const data=rows.map(r=>[r.ym,_consiCorpOf(r),r.cust_code||'',r.cust_name||'',r.branch||r.cust_group||'',r.prod_code||'',r.prod_name||'',r.qty||0,r.amount||0]);
   toXLSX([['CONSI',cols,data]],'CONSI_Export.xlsx');
 }
 

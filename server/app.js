@@ -690,6 +690,17 @@ function buildApp(db, opts = {}) {
     readOnly: true,
   }));
 
+  // รายชื่อลูกค้า CONSI (2026-09-29): getConsiCustomerRows() เดิมดึง v_sc_consi_monthly ทั้งตาราง (select ถูกละเลย
+  // → ทุกคอลัมน์ ~9MB ต่อหน้า × หลายหน้า) แค่เพื่อเอารหัส/ชื่อลูกค้า — สรุปที่ server ให้เหลือแถวละลูกค้า
+  app.get('/api/consi_customers', authed, (req, res) => {
+    res.json(db.prepare(`
+      SELECT cust_code, MAX(cust_name) AS cust_name, MAX(slm_owner) AS slm_owner
+      FROM v_sales_overview_sales_monthly
+      WHERE company = 'CONSI' AND cust_code IS NOT NULL AND cust_code <> '' AND cust_code <> '(none)'
+      GROUP BY cust_code
+    `).all());
+  });
+
   app.use('/api/v_sc_consi_monthly', authed, makeCrudRouter(db, 'v_sc_consi_monthly', {
     pk: 'prod_code',
     fields: ['ym', 'company', 'slm_owner', 'category', 'corporate', 'cust_code', 'cust_name',
