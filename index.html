@@ -8775,12 +8775,39 @@ async function _sbConsiRows(startYm,endYm){
   });
   return mapped.filter(r=>_isConsignmentRow(r));
 }
+// item ย่อยของสินค้าชุด (2026-09-29) — รายการ parent ที่มี item ย่อย + ผลรวม item ย่อยต่อ (สินค้า, สาขา, ช่วงเดือน)
+let _consiCompParents=null;const _consiComp={};
+function _consiLoadCompParents(){
+  if(_consiCompParents) return;
+  _consiCompParents=new Set();
+  apiFetch('/api/consi_components/parents').then(r=>{if(!r.error&&Array.isArray(r.data)){_consiCompParents=new Set(r.data);if(_isActivePage('consi')) consiRender();}});
+}
+function _consiCompGet(parent,cust){
+  const key=[parent,cust,_consiStartF,_consiEndF].join('|');
+  let e=_consiComp[key];
+  if(!e){
+    e=_consiComp[key]={loading:true};
+    const qs=new URLSearchParams({parent,cust,from:_consiStartF,to:_consiEndF});
+    apiFetch('/api/consi_components?'+qs.toString()).then(r=>{if(r.error) throw new Error(r.error.message);e.data=r.data||[];})
+      .catch(err=>{e.error=err.message||String(err);}).finally(()=>{e.loading=false;if(_isActivePage('consi')) consiRender();});
+  }
+  return e;
+}
+function _consiCompRows(parent,cust,pad){
+  const d=_consiCompGet(parent,cust);
+  const note=t=>`<tr style="background:var(--bg);font-size:11px;color:var(--TX3)"><td style="padding-left:${pad}px" colspan="3">${t}</td></tr>`;
+  if(d.loading) return note('⏳ กำลังโหลด item ย่อย…');
+  if(d.error) return note('⚠️ โหลด item ย่อยไม่ได้: '+esc(d.error));
+  if(!d.data.length) return note('ไม่มีข้อมูล item ย่อยในช่วงนี้');
+  return d.data.map(c=>`<tr style="background:var(--bg);font-size:11.5px;color:var(--TX2)"><td style="padding-left:${pad}px">↳ <span class="mono">${esc(c.child_code)}</span> — ${esc(c.child_name||'(อ่านชื่อจากหมายเหตุออเดอร์ไม่ได้)')} <span style="color:var(--TX3)">· ${c.orders} ออเดอร์</span></td><td class="r">${fmt(c.qty)} <span style="color:var(--TX3)">แพ็ค</span></td><td class="r"></td></tr>`).join('');
+}
 // กลุ่มลูกค้า (จัดการกลุ่ม) ของแถว CONSI — ค่าจาก customer_profiles ในเครื่องก่อน แล้วค่าที่ server join มา
 function _consiCorpOf(r){
   const p=customerProfiles()[r.cust_code]||{};
   return p.corporate||p.corp||r.cust_group||UNASSIGNED_CORP_LABEL;
 }
 function consiRender(){
+  _consiLoadCompParents();
   const rangeRows=_consiRows.filter(r=>(!_consiStartF||r.ym>=_consiStartF)&&(!_consiEndF||r.ym<=_consiEndF));
   const allBranches=[...new Set(_consiRows.map(r=>r.branch||'').filter(Boolean))].sort();
   let rows=[...rangeRows];
@@ -8825,8 +8852,11 @@ function consiRender(){
         if(oc) Object.entries(cust.groups).sort((a,b)=>b[1].qty-a[1].qty).forEach(([gn,grp],gi)=>{
           const gk='g'+ki+'_'+ci+'_'+gi;const og=_consiOp[gk];
           tbl+=`<tr onclick="consiTogOp('${gk}')" style="cursor:pointer;background:var(--bg)"><td style="padding-left:40px">${_xa(og)}<span style="font-size:12px">${esc(gn)}</span></td><td class="r" style="font-size:12px">${fmt(grp.qty)}</td><td class="r" style="font-size:12px">${grp.amount?fmt(grp.amount):'—'}</td></tr>`;
-          if(og) Object.entries(grp.prods).sort((a,b)=>b[1].qty-a[1].qty).forEach(([pc,p])=>{
-            tbl+=`<tr style="background:var(--bg2);font-size:12px"><td style="padding-left:60px"><span class="mono">${esc(pc)}</span> — ${esc(p.name)}</td><td class="r">${fmt(p.qty)}</td><td class="r">${p.amount?fmt(p.amount):'—'}</td></tr>`;
+          if(og) Object.entries(grp.prods).sort((a,b)=>b[1].qty-a[1].qty).forEach(([pc,p],pi)=>{
+            const hasComp=_consiCompParents&&_consiCompParents.has(pc);
+            const pk='p'+ki+'_'+ci+'_'+gi+'_'+pi,op=hasComp&&_consiOp[pk];
+            tbl+=`<tr ${hasComp?`onclick="consiTogOp('${pk}')" `:''}style="background:var(--bg2);font-size:12px${hasComp?';cursor:pointer':''}"><td style="padding-left:60px">${hasComp?_xa(op):''}<span class="mono">${esc(pc)}</span> — ${esc(p.name)}${hasComp?' <span class="badge bbl" style="font-size:10px">มี item ย่อย</span>':''}</td><td class="r">${fmt(p.qty)}</td><td class="r">${p.amount?fmt(p.amount):'—'}</td></tr>`;
+            if(op) tbl+=_consiCompRows(pc,cc,84);
           });
         });
       });

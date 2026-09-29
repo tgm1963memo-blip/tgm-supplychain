@@ -701,6 +701,30 @@ function buildApp(db, opts = {}) {
     `).all());
   });
 
+  // item ย่อยของสินค้าชุด CONSI (2026-09-29, เช่น 90022-x "กิจเอ็มอาหารพร้อมทาน") — จาก sales_line_components
+  // (Express OESO remark ต่อบรรทัดออเดอร์) ผูกลูกค้า/วันที่ผ่าน outbound_orders; from/to = YYYY-MM ตรงกับหน้า CONSI
+  app.get('/api/consi_components/parents', authed, (req, res) => {
+    res.json(db.prepare("SELECT DISTINCT parent_sku FROM sales_line_components WHERE company = 'CONSI'").all().map(r => r.parent_sku));
+  });
+  app.get('/api/consi_components', authed, (req, res) => {
+    const parent = String(req.query.parent || '').trim();
+    const custs = [...new Set(String(req.query.cust || '').split(',').map(s => s.trim()).filter(Boolean))];
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (!parent || !/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to)) {
+      return res.status(400).json({ error: 'parent, from, to (YYYY-MM) are required' });
+    }
+    const where = ["c.company = 'CONSI'", 'c.parent_sku = ?', 'substr(o.order_date, 1, 7) >= ?', 'substr(o.order_date, 1, 7) <= ?'];
+    const params = [parent, from, to];
+    if (custs.length) { where.push(`o.cust_code IN (${custs.map(() => '?').join(',')})`); params.push(...custs); }
+    res.json(db.prepare(`
+      SELECT c.child_code, MAX(c.child_name) AS child_name, SUM(c.child_qty) AS qty, COUNT(DISTINCT c.order_id) AS orders
+      FROM sales_line_components c JOIN outbound_orders o ON o.id = c.order_id
+      WHERE ${where.join(' AND ')}
+      GROUP BY c.child_code
+      ORDER BY qty DESC
+    `).all(...params));
+  });
+
   app.use('/api/v_sc_consi_monthly', authed, makeCrudRouter(db, 'v_sc_consi_monthly', {
     pk: 'prod_code',
     fields: ['ym', 'company', 'slm_owner', 'category', 'corporate', 'cust_code', 'cust_name',
