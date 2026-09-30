@@ -21,7 +21,7 @@ const SALES_ONLY = [
   // (ใช้ใน mpoSelect ของ Planning ด้วย), refreshSalesOverviewGrouping (เรียกจาก saveCustomerGroup/
   // confirmCustomerGroup ฝั่ง admin ที่ใช้ทั้ง 2 แอป)
   'SD_MTH', 'SD_MD', 'SD_WM', 'SD_PRODS', 'SD_VS',
-  '_sd', '_sdApi', '_SD_CACHE_TTL', '_sdNum', '_sdCmp', '_sdByValue', '_sdResetBuildCache', '_sdInvExtras', '_sdTargetFor', '_sdEffSlm', '_sdRowSlmMatch', '_sdFiltered', '_sdInvDet', '_sdInvPeriod', '_sdInvDetGet', '_sdInvBranchHtml', '_sdInvCusts', '_sdInvKey', '_sdInvGroupHtml', '_sdShipBranch', '_sdShipBranchLoading', '_sdLoadShipBranch', '_sdBranchLabel', '_sdBranchCell', 'sdEditBranch', 'sdSaveBranch', 'sdInvSetView', 'sdInvTogProd', '_sdInvRegList', '_sdInvReg', 'sdShowInvoicesAt', '_SD_RECTYP', 'sdShowInvoices', 'sdInvToggleLines',
+  '_sd', '_sdApi', '_SD_CACHE_TTL', '_sdNum', '_sdCmp', '_sdByValue', '_sdResetBuildCache', '_sdInvExtras', '_sdXAdd', '_sdXOf', '_sdSplitOn', '_sdValCols', '_sdVatR', '_sdValHead', '_sdVT', '_sdProdX', '_sdTargetFor', '_sdEffSlm', '_sdRowSlmMatch', '_sdFiltered', '_sdInvDet', '_sdInvPeriod', '_sdInvDetGet', '_sdInvBranchHtml', '_sdInvCusts', '_sdInvKey', '_sdInvGroupHtml', '_sdShipBranch', '_sdShipBranchLoading', '_sdLoadShipBranch', '_sdBranchLabel', '_sdBranchCell', 'sdEditBranch', 'sdSaveBranch', 'sdInvSetView', 'sdInvTogProd', '_sdInvRegList', '_sdInvReg', 'sdShowInvoicesAt', '_SD_RECTYP', 'sdShowInvoices', 'sdInvToggleLines',
   '_sdMonthRange', '_companyFromExpressSlm',
   '_sdKpiFromRows', '_sdSalesListFromRows', '_sdBuildKey', '_sdEnsureBuilt', '_applySalesRowsToSd',
   '_loadSalesFromSupabase', '_loadSalesSummaryFromSupabase', '_sdFmtTotal', '_sdUseLatestMonthIfEmpty',
@@ -47,7 +47,7 @@ const SALES_ONLY = [
 
   // ฝากขาย CONSI
   '_consiRows', '_consiCustF', '_consiProdF', '_consiBranchF', '_consiStartF', '_consiEndF',
-  '_consiLoaded', '_consiErr', '_consiOp', 'consiTogOp', 'pgConsignment', '_sbConsiRows', 'consiRender', '_consiCorpOf', '_consiCompParents', '_consiComp', '_consiLoadCompParents', '_consiCompGet', '_consiCompRows', 'expConsi',
+  '_consiLoaded', '_consiErr', '_consiOp', 'consiTogOp', 'pgConsignment', '_sbConsiRows', 'consiRender', '_consiCorpOf', '_consiCompParents', '_consiComp', '_consiLoadCompParents', '_consiCompGet', '_consiCompRows', '_consiDocRegs', '_consiDocReg', 'consiShowCompDocs', '_consiView', '_consiExplode', '_consiExplodeGet', 'consiSetView', 'expConsi',
 
   // เอกสารโปรโมชัน (ประวัติ, mirror จาก Express) — ไม่รวม _promoJsKey/promoFmtD (ใช้ใน mpoSelect ของ
   // Planning ด้วย ยืนยันจาก safety-net check จริง — ย้ายไป core)

@@ -6713,12 +6713,12 @@ function _sdFiltered(){
   if(_sdApi._filt&&_sdApi._filt.key===key) return _sdApi._filt;
   const rows=_sdApi._rows.filter(r=>_sdRowSlmMatch(r,s));
   const sum=(a,k)=>a.reduce((t,r)=>t+(Number(r[k])||0),0);
-  let total=sum(rows,'amount'),invoices=rows.length,custs,slms,prods=_sdBuildProds(rows),extras=null;
+  let total=sum(rows,'amount'),invoices=rows.length,custs,slms,prods=_sdBuildProds(rows),extras=null,x=null;
   const inv=_sdApi.invoiceBased&&Array.isArray(_sdApi._invRows)?_sdApi._invRows.filter(r=>slmKeySet(s).has(String(r.slm_code||'').trim())):null;
   if(inv){
     total=sum(inv,'amount');const ic=sum(inv,'invoice_count');if(ic) invoices=ic;
     custs=_sdBuildCustsFromInvoice(inv);slms=_sdBuildSlmsFromInvoice(inv);prods=_sdScaleProdsToTotal(prods,total);
-    extras=_sdInvExtras(inv);
+    extras=_sdInvExtras(inv);x=_sdXOf(inv);
   }else{custs=_sdBuildCusts(rows);slms=_sdBuildSlms(rows,_sdApi.slmList||[]);}
   // กราฟแท่ง/เทียบเดือนก่อน: ใช้ข้อมูลหลายเดือนในเครื่อง (มีเฉพาะโหมดรายเดือน) — ไม่มีเดือนก่อน = แสดง "—"
   const multi=(_sd.pt==='month'||_sd.pt==='week')&&_sdApi.rangeMode==='monthly'&&Array.isArray(window._salesRows2Y)?window._salesRows2Y:_sdApi._rows;
@@ -6734,7 +6734,7 @@ function _sdFiltered(){
     yoy={total:sum(yr,'amount'),qty:sum(yr,'qty'),invoices:yr.length,custs:_sdBuildCusts(yr),prods:_sdBuildProds(yr),slms:_sdBuildSlms(yr,_sdApi.slmList||[])};
   }
   const name=slmKeySet(s).size>1?slmKeyName(s):((_sdApi.slmList||[]).find(x=>String(x.code)===s)?.name||salesNameFor(s)||s);
-  _sdApi._filt={key,slm:s,name,total,qty:sum(rows,'qty'),invoices,vs,monthly,custs,prods,extras,slms:slms.filter(x=>slmKeySet(s).has(String(x.code))),yoy};
+  _sdApi._filt={key,slm:s,name,total,qty:sum(rows,'qty'),invoices,vs,monthly,custs,prods,extras,x,slms:slms.filter(x=>slmKeySet(s).has(String(x.code))),yoy};
   return _sdApi._filt;
 }
 
@@ -7131,7 +7131,7 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
         _sdApi.vs=prevTotal?Math.round((invTotal/prevTotal-1)*100):_sdApi.vs;
         _sdApi.invoiceBased=true;
         _sdApi._invRows=invRows;
-        _sdApi.extras=_sdInvExtras(invRows);
+        _sdApi.extras=_sdInvExtras(invRows);_sdApi.x=_sdXOf(invRows);
         const invCusts=_sdBuildCustsFromInvoice(invRows);
         const invSlms=_sdBuildSlmsFromInvoice(invRows);
         _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
@@ -7328,7 +7328,7 @@ async function sdLoadYear(){
           _sdApi.vs=prevInvTotal?Math.round((invTotal/prevInvTotal-1)*100):_sdApi.vs;
           _sdApi.invoiceBased=true;
           _sdApi._invRows=invRows;
-          _sdApi.extras=_sdInvExtras(invRows);
+          _sdApi.extras=_sdInvExtras(invRows);_sdApi.x=_sdXOf(invRows);
           const invCusts=_sdBuildCustsFromInvoice(invRows);
           const invSlms=_sdBuildSlmsFromInvoice(invRows);
           _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
@@ -7490,7 +7490,7 @@ async function _sbInvoiceSalesRows(ym,company='TSS'){
   while(true){
     const{data,error}=await getSupabaseClient()
       .from('invoice_sales_monthly')
-      .select('cust_code,slm_code,amount,invoice_count,cn_count,cn_amount,vat_amount,gross_amount')
+      .select('cust_code,slm_code,amount,invoice_count,cn_count,cn_amount,vat_amount,gross_amount,cn_vat')
       .eq('company',company).eq('ym',ym)
       .range(from,from+PAGE-1);
     if(error) throw error;
@@ -7542,7 +7542,7 @@ async function _sbInvoiceSalesRowsRange(startYm,endYm,company='TSS'){
   while(true){
     const{data,error}=await getSupabaseClient()
       .from('invoice_sales_monthly')
-      .select('cust_code,slm_code,amount,invoice_count,cn_count,cn_amount,vat_amount,gross_amount')
+      .select('cust_code,slm_code,amount,invoice_count,cn_count,cn_amount,vat_amount,gross_amount,cn_vat')
       .eq('company',company).gte('ym',startYm).lte('ym',endYm)
       .range(from,from+PAGE-1);
     if(error) throw error;
@@ -7553,10 +7553,10 @@ async function _sbInvoiceSalesRowsRange(startYm,endYm,company='TSS'){
   const m={};
   for(const r of rows){
     const key=`${r.cust_code}|${r.slm_code}`;
-    if(!m[key])m[key]={cust_code:r.cust_code,slm_code:r.slm_code,amount:0,invoice_count:0,cn_count:0,cn_amount:0,vat_amount:0,gross_amount:0};
+    if(!m[key])m[key]={cust_code:r.cust_code,slm_code:r.slm_code,amount:0,invoice_count:0,cn_count:0,cn_amount:0,vat_amount:0,gross_amount:0,cn_vat:0};
     m[key].amount+=Number(r.amount)||0;
     m[key].invoice_count+=Number(r.invoice_count)||0;
-    for(const k of ['cn_count','cn_amount','vat_amount','gross_amount']) m[key][k]+=Number(r[k])||0;
+    for(const k of ['cn_count','cn_amount','vat_amount','gross_amount','cn_vat']) m[key][k]+=Number(r[k])||0;
   }
   return Object.values(m);
 }
@@ -7570,6 +7570,45 @@ function _sdInvExtras(inv){
   if(!Array.isArray(inv)) return null;
   const sum=k=>inv.reduce((a,r)=>a+(Number(r[k])||0),0);
   return {vat:sum('vat_amount'),gross:sum('gross_amount'),cnCount:sum('cn_count'),cnAmount:sum('cn_amount')};
+}
+// ขายได้ / CN × ก่อน VAT / รวม VAT (2026-09-30, ผู้ใช้ขอ) — จากแถว invoice_sales_monthly
+// amount = สุทธิหลังหัก CN (ก่อน VAT), gross_amount = สุทธิรวม VAT, cn_amount/cn_vat = ลดหนี้ (ค่าบวก)
+// → ขายได้ก่อน VAT = amount + cn_amount · ขายได้รวม VAT = gross + cn_amount + cn_vat
+function _sdXAdd(n,r){
+  const x=n._x=n._x||{sb:0,sg:0,cb:0,cg:0};
+  const N=Number(r.amount)||0,C=Number(r.cn_amount)||0,G=Number(r.gross_amount)||0,CV=Number(r.cn_vat)||0;
+  x.sb+=N+C;x.sg+=G+C+CV;x.cb+=C;x.cg+=C+CV;
+}
+function _sdXOf(rows){const n={};(rows||[]).forEach(r=>_sdXAdd(n,r));return n._x||{sb:0,sg:0,cb:0,cg:0};}
+function _sdSplitOn(){return !!(_sdApi.loaded&&_sdApi.invoiceBased);}
+function _sdValCols(){return _sdSplitOn()?4:1;}
+function _sdVatR(x){
+  if(x&&x.sb) return x.sg/x.sb;
+  const F=_sdFiltered(),X=F?F.x:_sdApi.x;
+  return X&&X.sb?X.sg/X.sb:1.07;
+}
+function _sdValHead(sDn){
+  const sort=`class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')"`;
+  if(!_sdSplitOn()) return `<th ${sort}>ยอดขาย ${sDn}</th>`;
+  const sub=t=>`<div style="font-size:10px;font-weight:400;color:var(--TX3)">${t}</div>`;
+  return `<th ${sort}>ขายได้ ${sDn}${sub('ก่อน VAT')}</th><th class="r">ขายได้${sub('รวม VAT')}</th><th class="r" style="color:var(--R)">CN${sub('ก่อน VAT')}</th><th class="r" style="color:var(--R)">CN${sub('รวม VAT')}</th>`;
+}
+// v = ยอดสุทธิ (ใช้เมื่อไม่มีข้อมูลใบกำกับ) · x = {sb,sg,cb,cg} (null ที่ช่องไหน = "—") · ไม่มี x → ขายได้ = v, รวม VAT = v × r
+function _sdVT(v,x,r,o){
+  o=o||{};const fs=o.fs?'font-size:12px;':'',w=s=>o.b?`<strong>${s}</strong>`:s;
+  if(!_sdSplitOn()) return `<td class="r"${fs?` style="${fs}"`:''}>${w(_sdFmtTotal(_sdV(v)))}</td>`;
+  if(!x) x={sb:v,sg:v*(r||_sdVatR(null)),cb:null,cg:null};
+  const dash=`<td class="r" style="${fs}color:var(--TX3)">—</td>`;
+  const sale=(n,c2)=>n==null?dash:`<td class="r" style="${fs}${c2||''}">${w(_sdFmtTotal(_sdV(n)))}</td>`;
+  const cn=n=>n==null||!Math.round(n)?dash:`<td class="r" style="${fs}color:var(--R)">${w('−'+_sdFmtTotal(_sdV(n)))}</td>`;
+  return sale(x.sb)+sale(x.sg,'color:var(--TX2);')+cn(x.cb)+cn(x.cg);
+}
+// รายสินค้า: ยอดสินค้าถูกปรับให้รวมเท่ายอดสุทธิ → แปลงเป็น "ขายได้" ด้วยสัดส่วน ขายได้/สุทธิ (CN ไม่ผูกกับสินค้า)
+function _sdProdX(v){
+  if(!_sdSplitOn()) return null;
+  const F=_sdFiltered(),X=F?F.x:_sdApi.x,N=F?F.total:_sdApi.total;
+  if(!X||!N) return null;
+  const s=v*X.sb/N;return {sb:s,sg:s*_sdVatR(X),cb:null,cg:null};
 }
 function _sdScaleProdsToTotal(prods,targetTotal){
   const current=(prods||[]).reduce((a,p)=>a+p._tot,0);
@@ -7594,13 +7633,13 @@ function _sdBuildCustsFromInvoice(invRows){
     // FIXED (code review 2026-09-15): same corp-group/category bug as _sdBuildCusts — see that
     // function's note. Track per-branch, derive corp-level category from the top branch below.
     if(!m[grp])m[grp]={n:grp,corp:grp,grp,_tot:0,_qty:0,_branches:{},_slms:new Set()};
-    const c=m[grp];c._tot+=Number(r.amount)||0;
+    const c=m[grp];c._tot+=Number(r.amount)||0;_sdXAdd(c,r);
     if(rec.slm_id)c._slms.add(rec.slm_id);
     if(r.slm_code&&r.slm_code!=='(none)')c._slms.add(r.slm_code);
     // No product dimension exists at invoice level (ARTRN has no SKU field) — branches here never
     // get a g[] populated; sdCust() shows the "no product data" note instead of an empty toggle.
     if(!c._branches[custCode])c._branches[custCode]={n:prof.branch||prof.n||rec.name||custCode,c:custCode,cat,_tot:0,g:[]};
-    c._branches[custCode]._tot+=Number(r.amount)||0;
+    c._branches[custCode]._tot+=Number(r.amount)||0;_sdXAdd(c._branches[custCode],r);
   }
   return Object.values(m).map(c=>{
     const branches=Object.values(c._branches).sort((a,b)=>b._tot-a._tot);
@@ -7618,15 +7657,15 @@ function _sdBuildSlmsFromInvoice(invRows){
     const rawSid=String(r.slm_code||'').trim();
     const sid=(!rawSid||rawSid==='(none)')?'(ไม่ระบุ)':rawSid;
     if(!m[sid])m[sid]={code:sid,name:sid==='(ไม่ระบุ)'?'ไม่ระบุพนักงานขาย':(salesNameFor(sid)||sid),_tot:0,custs:{}};
-    m[sid]._tot+=Number(r.amount)||0;
+    m[sid]._tot+=Number(r.amount)||0;_sdXAdd(m[sid],r);
     const custCode=r.cust_code||'(ไม่ระบุ)';
     const rec=custCache[custCode]||{};
     const prof=getCustomerProfile({c:custCode,n:rec.name||custCode,ty:rec.cust_group||'ขายจริง',grp:rec.cust_group||'อื่นๆ',slm:rec.slm_id||''});
     const grp=customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
     if(!m[sid].custs[grp])m[sid].custs[grp]={n:grp,ty:prof.category||'ขายจริง',category:prof.category||'ขายจริง',grp,_tot:0,_branches:{}};
-    const c=m[sid].custs[grp];c._tot+=Number(r.amount)||0;
+    const c=m[sid].custs[grp];c._tot+=Number(r.amount)||0;_sdXAdd(c,r);
     if(!c._branches[custCode])c._branches[custCode]={n:prof.branch||prof.n||rec.name||custCode,c:custCode,_tot:0,g:[]};
-    c._branches[custCode]._tot+=Number(r.amount)||0;
+    c._branches[custCode]._tot+=Number(r.amount)||0;_sdXAdd(c._branches[custCode],r);
   }
   // no >0 filter here (unlike the order-based build above) — a salesperson whose month nets to
   // zero/negative from a credit note must still appear, or the rows stop summing to the total
@@ -8095,7 +8134,14 @@ function _sdInvBranchHtml(b,slm,bk,pad,cols,cells){
         <td style="padding-left:${pad+20}px"><span class="mono">${esc(it.sku)}</span> — ${esc(it.sku_name||it.sku)} <span style="color:var(--TX3);font-size:11px">· ${(Number(it.qty)||0).toLocaleString()} ${esc(it.unit||'')} · ${it.invoices} ใบ${multi?` · ${it.custs} สาขา`:''}</span></td>${cells(Number(it.amount)||0,g.tot)}</tr>`;
     });
   });
-  const diff=(Number(b._tot)||0)-prods.reduce((a,x)=>a+(Number(x.amount)||0),0);
+  const psum=prods.reduce((a,x)=>a+(Number(x.amount)||0),0);
+  if(_sdSplitOn()&&b._x){
+    const nl=b._x.sb-psum;
+    if(Math.abs(nl)>=1) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td style="padding-left:${pad}px">ยอดขายที่ไม่มีบรรทัดสินค้า${partial?' (รวมช่วงก่อนมีรายละเอียด)':''}</td>${cells(nl,b._tot)}</tr>`;
+    if(Math.round(b._x.cb)) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td style="padding-left:${pad}px">↩️ ลดหนี้ (CN)</td>${cells(-b._x.cb,b._tot,{sb:null,sg:null,cb:b._x.cb,cg:b._x.cg})}</tr>`;
+    return h;
+  }
+  const diff=(Number(b._tot)||0)-psum;
   if(Math.abs(diff)>=1) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td style="padding-left:${pad}px">↩️ ลดหนี้/รับคืน และยอดที่ไม่มีบรรทัดสินค้า${partial?' (รวมช่วงก่อนมีรายละเอียด)':''}</td>${cells(diff,b._tot)}</tr>`;
   return h;
 }
@@ -8106,7 +8152,7 @@ function _sdInvGroupHtml(c,slm,ck,pad,cols,cells){
   const sk=ck+'_sum',os=_sd.op[sk];
   let h=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer;background:var(--LBL)">
     <td style="padding-left:${pad}px;font-size:12px;color:var(--BL);font-weight:600" colspan="${cols}">${_xa(os)}📦 สรุปรายกลุ่มสินค้า / รายสินค้า ทั้งกลุ่ม (${codes.length} สาขา)</td></tr>`;
-  if(os) h+=_sdInvBranchHtml({c:codes,n:c.n,_tot:c._tot},slm,sk,pad+20,cols,cells);
+  if(os) h+=_sdInvBranchHtml({c:codes,n:c.n,_tot:c._tot,_x:c._x},slm,sk,pad+20,cols,cells);
   return h;
 }
 const _sdInvRegList=[];
@@ -8182,7 +8228,7 @@ function sdCust(){
   const hHdr=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:42%">ชื่อบริษัท / สาขา / กลุ่มสินค้า / สินค้า</th>
-      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
+      ${_sdValHead(sDn)}
       <th class="r" style="width:110px">สัดส่วน</th>${_sdYoYHead()}<th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
 
@@ -8213,15 +8259,15 @@ function sdCust(){
       const unassigned=c.grp===UNASSIGNED_CORP_LABEL;
       h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--LN)">
         <td style="font-weight:700">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span> <button class="btn btn-xs btn-g" onclick="event.stopPropagation();nav('groups')">ไปตั้งค่ากลุ่ม →</button>`:`<strong>${c.n}</strong>`} ${c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:''} <span style="font-size:11px;color:var(--TX3)">${(c.branches||[]).length} สาขา</span></td>
-        <td class="r"><strong>${_sdFmtTotal(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${_vc(cv,cvYoY)}</td></tr>`;
-      if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,F?F.slm:'',ck,20,_sd.showYoY?5:4,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`);
+        ${_sdVT(cv,c._x,null,{b:1})}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${_vc(cv,cvYoY)}</td></tr>`;
+      if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,F?F.slm:'',ck,20,(_sd.showYoY?5:4)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`);
       if(oc) (c.branches||[]).forEach((b,bi)=>{
         const bv=b._tot;const bk=ck+'_b'+bi;const ob=_sd.op[bk];
         h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:20px">${_xa(ob)}${_sdBranchCell(b)}</td>
-          <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(bv))}</td><td class="r">${_sdBar(bv,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+          ${_sdVT(bv,b._x,null,{fs:1})}<td class="r">${_sdBar(bv,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
         if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased
-          ?_sdInvBranchHtml(b,F?F.slm:'',bk,40,_sd.showYoY?5:4,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
+          ?_sdInvBranchHtml(b,F?F.slm:'',bk,40,(_sd.showYoY?5:4)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(b._x),{fs:1})}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
           :`<tr style="background:var(--bg)"><td style="padding-left:40px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า) — ดูสินค้าที่แท็บ รายสินค้า</td></tr>`;
         if(ob) (b.g||[]).forEach((g,gi)=>{
           const gv=g._tot;const gk=bk+'_g'+gi;const og=_sd.op[gk];
@@ -8251,7 +8297,7 @@ function sdCust(){
     const cv=c._cv;const oc=_sd.op['c'+c.c];
     h+=`<tr onclick="sdTogOp('c${c.c}')" style="cursor:pointer">
       <td>${_xa(oc)}<strong>${c.n}</strong> <span class="badge bbgr" style="font-size:10px">${c.c}</span> <span class="badge bbg" style="font-size:10px">${c.ty||''}</span></td>
-      <td class="r"><strong>${_sdFmtTotal(_sdV(cv))}</strong></td><td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(0)}<td class="r">${_sdVs(SD_VS[ri%8])}</td></tr>`;
+      ${_sdVT(cv,c._x,null,{b:1})}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(0)}<td class="r">${_sdVs(SD_VS[ri%8])}</td></tr>`;
     if(oc) c.g.forEach((g,gi)=>{
       const gv=Math.round(cv*(g.w[wi]||g.w[0]));const gk='g'+c.c+'_'+gi;const og=_sd.op[gk];
       h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg2)">
@@ -8275,7 +8321,7 @@ function sdProd(){
   const hHdr=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:42%">กลุ่มสินค้า / สินค้า / ประเภทลูกค้า / ลูกค้า</th>
-      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
+      ${_sdValHead(sDn)}
       <th class="r" style="width:110px">สัดส่วน</th>${_sdYoYHead()}<th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
   const q=(_sd.q||'').toLowerCase();
@@ -8303,25 +8349,30 @@ function sdProd(){
       const ok='p'+p.n;const oo=_sd.op[ok];
       h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
         <td>${_xa(oo)}<strong>${p.n}</strong></td>
-        <td class="r"><strong>${_sdFmtTotal(_sdV(p._tot))}</strong></td><td class="r">${_sdBar(p._tot,T)}</td>${_sdYoYCell(yoyM.grp[p.n]||0)}<td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
+        ${_sdVT(p._tot,_sdProdX(p._tot),null,{b:1})}<td class="r">${_sdBar(p._tot,T)}</td>${_sdYoYCell(yoyM.grp[p.n]||0)}<td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
       if(oo) p.it.forEach(it=>{
         const ik='pi'+it.c;const oi=_sd.op[ik];
         h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
-          <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r">${_sdBar(it._tot,p._tot)}</td>${_sdYoYCell(yoyM.prod[it.c]||0)}<td class="r">${_vc(it._tot,yoyM.prod[it.c]||0)}</td></tr>`;
+          ${_sdVT(it._tot,_sdProdX(it._tot))}<td class="r">${_sdBar(it._tot,p._tot)}</td>${_sdYoYCell(yoyM.prod[it.c]||0)}<td class="r">${_vc(it._tot,yoyM.prod[it.c]||0)}</td></tr>`;
         if(oi) it.custs.forEach(ty=>{
           const tyk='pit'+it.c+'_'+ty.n;const ot=_sd.op[tyk];
           h+=`<tr onclick="sdTogOp('${tyk}')" style="cursor:pointer;background:var(--LN)">
             <td style="padding-left:44px;font-size:12px">${_xa(ot)}<span class="badge bbl" style="font-size:10px">${ty.n}</span></td>
-            <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(ty._tot))}</td><td class="r">${_sdBar(ty._tot,it._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+            ${_sdVT(ty._tot,_sdProdX(ty._tot),null,{fs:1})}<td class="r">${_sdBar(ty._tot,it._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
           if(ot) ty.cs.forEach(cu=>{
             h+=`<tr style="background:var(--bg);font-size:12px">
               <td style="padding-left:64px"><span class="badge bbgr" style="font-size:10px">${cu.c}</span> ${cu.n}</td>
-              <td class="r">${_sdFmtTotal(_sdV(cu._tot))}</td><td class="r">${_sdBar(cu._tot,ty._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+              ${_sdVT(cu._tot,_sdProdX(cu._tot))}<td class="r">${_sdBar(cu._tot,ty._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
           });
         });
       });
     });
+    if(_sdSplitOn()){
+      // ลดหนี้ไม่มีรหัสสินค้าใน Express (ARTRN ไม่มี SKU) — แสดงเป็นแถวรวมแยกท้ายตาราง
+      const X=F?F.x:_sdApi.x;
+      if(X&&Math.round(X.cb)) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td>↩️ ลดหนี้ (CN) — ไม่ผูกกับสินค้า</td>${_sdVT(0,{sb:null,sg:null,cb:X.cb,cg:X.cg})}<td class="r"></td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+    }
     document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
     return;
   }
@@ -8373,7 +8424,7 @@ function sdSlm(){
   let h=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:35%">เซลส์ / ชื่อบริษัท / สาขา / กลุ่มสินค้า / สินค้า</th>
-      <th class="r" style="cursor:pointer;user-select:none" onclick="sdSort('val')">ยอดขาย ${sDn}</th>
+      ${_sdValHead(sDn)}
       <th class="r">เป้า</th><th class="r">% บรรลุ</th>${_sdYoYHead()}<th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
 
@@ -8391,7 +8442,7 @@ function sdSlm(){
       const sk='s'+s.code;const os=_sd.op[sk];
       h+=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer">
         <td>${_xa(os)}<strong>${s.name}</strong> <span class="badge bbgr" style="font-size:10px">${s.code}</span></td>
-        <td class="r"><strong>${_sdFmtTotal(_sdV(s._tot))}</strong></td>
+        ${_sdVT(s._tot,s._x,null,{b:1})}
         ${(()=>{const tg=_sdTargetFor(s.code);if(tg==null)return `<td class="r" style="color:var(--TX3)">—</td><td class="r">${_sdBar(s._tot,T)}</td>`;const p=tg?Math.round(_sdV(s._tot)/tg*100):0;const col=p>=100?'var(--G)':p>=80?'var(--A)':'var(--R)';return `<td class="r">${_sdF(tg)}</td><td class="r" style="color:${col};font-weight:700">${p}%</td>`;})()}${_sdYoYCell(yoyM.slm[s.code]||0)}<td class="r">${_vc(s._tot,yoyM.slm[s.code]||0)}</td></tr>`;
       if(os){
         _sdByValue(s.custs).forEach(c=>{
@@ -8400,17 +8451,17 @@ function sdSlm(){
           const unassigned=c.grp===UNASSIGNED_CORP_LABEL;
           h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--bg2)">
             <td style="padding-left:22px;font-size:12px">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span>`:c.n} ${c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:''}</td>
-            <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(c._tot))}</td>
+            ${_sdVT(c._tot,c._x,null,{fs:1})}
             <td class="r"></td><td class="r">${_sdBar(c._tot,s._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
-          if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,s.code,ck,42,_sd.showYoY?6:5,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`);
+          if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,s.code,ck,42,(_sd.showYoY?6:5)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}<td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`);
           if(oc) (c.branches||[]).forEach((b,bi)=>{
             const bk=ck+'_b'+bi;const ob=_sd.op[bk];
             h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg)">
               <td style="padding-left:42px;font-size:12px">${_xa(ob)}${_sdBranchCell(b)}</td>
-              <td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(b._tot))}</td>
+              ${_sdVT(b._tot,b._x,null,{fs:1})}
               <td class="r"></td><td class="r">${_sdBar(b._tot,c._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
             if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased
-              ?_sdInvBranchHtml(b,s.code,bk,62,_sd.showYoY?6:5,(v,par)=>`<td class="r" style="font-size:12px">${_sdFmtTotal(_sdV(v))}</td><td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`)
+              ?_sdInvBranchHtml(b,s.code,bk,62,(_sd.showYoY?6:5)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(b._x),{fs:1})}<td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`)
               :`<tr style="background:var(--bg2)"><td style="padding-left:62px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า)</td></tr>`;
             if(ob) (b.g||[]).forEach((g,gi)=>{
               const pgk=bk+'_g'+gi;const opg=_sd.op[pgk];
@@ -8851,8 +8902,45 @@ function _consiCompRows(parent,cust,pad){
   if(d.loading) return note('⏳ กำลังโหลด item ย่อย…');
   if(d.error) return note('⚠️ โหลด item ย่อยไม่ได้: '+esc(d.error));
   if(!d.data.length) return note('ไม่มีข้อมูล item ย่อยในช่วงนี้');
-  return d.data.map(c=>`<tr style="background:var(--bg);font-size:11.5px;color:var(--TX2)"><td style="padding-left:${pad}px">↳ <span class="mono">${esc(c.child_code)}</span> — ${esc(c.child_name||'(อ่านชื่อจากหมายเหตุออเดอร์ไม่ได้)')} <span style="color:var(--TX3)">· ${c.orders} ออเดอร์</span></td><td class="r">${fmt(c.qty)} <span style="color:var(--TX3)">แพ็ค</span></td><td class="r"></td></tr>`).join('');
+  // (2026-09-30) แบ่งตามหมวดสินค้าของสินค้าย่อย (products.group_name) · กดที่รายการเพื่อดูเอกสารที่มีสินค้าย่อยนี้
+  const byG={};
+  d.data.forEach(c=>{const g=expressGroupLabel(c.group_name)||'อื่นๆ (ไม่พบในรายการสินค้า)';(byG[g]=byG[g]||{qty:0,it:[]}).it.push(c);byG[g].qty+=Number(c.qty)||0;});
+  const reg=_consiDocReg(parent,cust);
+  return Object.entries(byG).sort((a,b)=>b[1].qty-a[1].qty).map(([g,x])=>`<tr style="background:var(--LBL);font-size:11.5px"><td style="padding-left:${pad}px;color:var(--BL);font-weight:600">${esc(g)} <span style="font-weight:400;color:var(--TX3)">${x.it.length} รายการ</span></td><td class="r" style="color:var(--BL)">${fmt(x.qty)} แพ็ค</td><td></td></tr>`
+    +x.it.map(c=>`<tr onclick="consiShowCompDocs(${reg},'${esc(c.child_code)}')" title="กดเพื่อดูเอกสาร" style="background:var(--bg);font-size:11.5px;color:var(--TX2);cursor:pointer"><td style="padding-left:${pad+14}px">↳ <span class="mono">${esc(c.child_code)}</span> — ${esc(c.product_name||c.child_name||'(อ่านชื่อจากหมายเหตุออเดอร์ไม่ได้)')} <span style="color:var(--TX3)">· ${c.orders} ออเดอร์ · 📄</span></td><td class="r">${fmt(c.qty)} <span style="color:var(--TX3)">แพ็ค</span></td><td class="r"></td></tr>`).join('')).join('');
 }
+// เอกสารที่มีสินค้าย่อย (ใบสั่งขายฝากขาย CONSI จาก Express) — registry เก็บ parent/cust ไม่ต้องฝังข้อความใน onclick
+const _consiDocRegs=[];
+function _consiDocReg(parent,cust){const k=parent+'|'+cust;let i=_consiDocRegs.findIndex(x=>x.k===k);if(i<0){_consiDocRegs.push({k,parent,cust});i=_consiDocRegs.length-1;}return i;}
+async function consiShowCompDocs(i,child){
+  const r0=_consiDocRegs[i];if(!r0)return;
+  openMod(`<div class="mh"><div class="mt2">📄 เอกสารที่มี <span class="mono">${esc(child)}</span> ใน <span class="mono">${esc(r0.parent)}</span></div><span class="mx" onclick="closeM()">✕</span></div><div id="cdoc-body">⏳ กำลังโหลด…</div>`);
+  const qs=new URLSearchParams({parent:r0.parent,child,cust:r0.cust,from:_consiStartF,to:_consiEndF});
+  const r=await apiFetch('/api/consi_components/docs?'+qs.toString());
+  const el=document.getElementById('cdoc-body');if(!el)return;
+  if(r.error){el.innerHTML=`<div class="al alw">${esc(r.error.message)}</div>`;return;}
+  const rows=r.data||[];
+  const multi=new Set(rows.map(x=>x.cust_code)).size>1;
+  el.innerHTML=`<div style="font-size:12px;color:var(--TX2);margin-bottom:6px">ใบสั่งขายฝากขาย (SO) จาก Express · ${esc(_consiStartF)} – ${esc(_consiEndF)} · ${rows.length} ใบ · รวม ${fmt(rows.reduce((a,x)=>a+(Number(x.child_qty)||0),0))} แพ็ค</div>
+    <div class="tw" style="max-height:60vh;overflow:auto"><table><thead><tr><th>วันที่</th><th>เลขที่เอกสาร</th>${multi?'<th>สาขา</th>':''}<th class="r">${esc(child)} (แพ็ค)</th><th class="r">จำนวนชุด</th><th class="r">มูลค่าชุด</th><th>หมายเหตุในเอกสาร</th></tr></thead><tbody>${rows.map(x=>`<tr>
+      <td>${esc(promoFmtD(x.order_date))}</td><td class="mono">${esc(x.order_no)}</td>${multi?`<td class="mono" style="font-size:11px">${esc(x.cust_code)}</td>`:''}
+      <td class="r">${fmt(x.child_qty)}</td><td class="r">${x.parent_qty!=null?fmt(x.parent_qty):'—'}</td><td class="r">${x.parent_value!=null?fmt(x.parent_value):'—'}</td><td style="font-size:11.5px;color:var(--TX2)">${esc(x.note||'')}</td></tr>`).join('')||'<tr><td colspan="7" style="color:var(--TX3)">ไม่พบเอกสาร</td></tr>'}</tbody></table></div>`;
+}
+// มุมมอง "แตกสินค้าชุดเข้าหมวดสินค้า" (2026-09-30): ย้ายสินค้าย่อยไปอยู่ในหมวดของตัวเอง ต่อท้ายชื่อด้วย (ราคาพิเศษ <รหัสชุด>)
+// จำนวนสินค้าย่อยเป็น "แพ็ค" (แยกจาก กก.) · มูลค่ากระจายตามสัดส่วนแพ็คในบรรทัดชุด · รหัสชุดถูกหักยอดส่วนที่แตกแล้วออก
+let _consiView='sold';const _consiExplode={};
+function _consiExplodeGet(){
+  const key=_consiStartF+'|'+_consiEndF;
+  let e=_consiExplode[key];
+  if(!e){
+    e=_consiExplode[key]={loading:true};
+    apiFetch(`/api/consi_components/explode?from=${encodeURIComponent(_consiStartF)}&to=${encodeURIComponent(_consiEndF)}`)
+      .then(r=>{if(r.error)throw new Error(r.error.message);e.data=r.data;}).catch(err=>{e.error=err.message||String(err);})
+      .finally(()=>{e.loading=false;if(_isActivePage('consi'))consiRender();});
+  }
+  return e;
+}
+function consiSetView(v){_consiView=v;_consiOp={};consiRender();}
 // กลุ่มลูกค้า (จัดการกลุ่ม) ของแถว CONSI — ค่าจาก customer_profiles ในเครื่องก่อน แล้วค่าที่ server join มา
 function _consiCorpOf(r){
   const p=customerProfiles()[r.cust_code]||{};
@@ -8890,24 +8978,62 @@ function consiRender(){
     if(!grouped[cc].groups[gn].prods[pc])grouped[cc].groups[gn].prods[pc]={name:r.prod_name||pc,qty:0,amount:0};
     grouped[cc].groups[gn].prods[pc].qty+=(r.qty||0);grouped[cc].groups[gn].prods[pc].amount+=(r.amount||0);
   });
+  let explodeNote='';
+  if(_consiView==='explode'){
+    const ex=_consiExplodeGet();
+    if(ex.loading) explodeNote='<div class="al ali" style="margin:6px 0">⏳ กำลังแตกสินค้าชุดเป็นสินค้าย่อย…</div>';
+    else if(ex.error) explodeNote=`<div class="al alw" style="margin:6px 0">แตกสินค้าชุดไม่สำเร็จ: ${esc(ex.error)}</div>`;
+    else if(ex.data){
+      const pname=code=>prodF2[code]||code;
+      (ex.data.parents||[]).forEach(p=>{
+        const cust=grouped[p.cust_code];if(!cust)return;
+        for(const g of Object.values(cust.groups)){
+          const pr=g.prods[p.parent_sku];if(!pr)continue;
+          // แตกหมดจำนวน → ตัดแถวรหัสชุดทิ้งทั้งแถว (มูลค่าใบสั่งกับมูลค่าในรายงาน CONSI ต่างกันเล็กน้อย ไม่ให้เหลือยอดติดลบ)
+          const dq=Math.min(pr.qty,Number(p.qty)||0),all=pr.qty-dq<0.01,da=all?pr.amount:Math.min(pr.amount,Number(p.amount)||0);
+          pr.qty-=dq;pr.amount-=da;g.qty-=dq;g.amount-=da;cust.qty-=dq;cust.amount-=da;
+          if(all) delete g.prods[p.parent_sku]; else pr.residual=true;
+          break;
+        }
+      });
+      (ex.data.children||[]).forEach(c=>{
+        if(_consiProdF&&_consiProdF!==c.child_code&&_consiProdF!==c.parent_sku)return;
+        const cust=grouped[c.cust_code];if(!cust)return;
+        const gn=expressGroupLabel(c.group_name)||'อื่นๆ (ไม่พบในรายการสินค้า)';
+        const g=cust.groups[gn]=cust.groups[gn]||{qty:0,amount:0,prods:{}};
+        const key=c.child_code+'|'+c.parent_sku;
+        const pr=g.prods[key]=g.prods[key]||{name:`${c.product_name||c.child_name||c.child_code} (ราคาพิเศษ ${c.parent_sku} ${pname(c.parent_sku)})`,qty:0,amount:0,packs:0,child:c.child_code,parent:c.parent_sku};
+        const pk=Number(c.packs)||0,am=Number(c.amount)||0;
+        pr.packs+=pk;pr.amount+=am;g.packs=(g.packs||0)+pk;g.amount+=am;cust.packs=(cust.packs||0)+pk;cust.amount+=am;
+      });
+      Object.values(grouped).forEach(cust=>Object.keys(cust.groups).forEach(gn=>{if(!Object.keys(cust.groups[gn].prods).length)delete cust.groups[gn];}));
+      Object.values(corps).forEach(cg=>{cg.qty=0;cg.amount=0;cg.packs=0;cg.custs.forEach(cc=>{const x=grouped[cc];cg.qty+=x.qty;cg.amount+=x.amount;cg.packs+=(x.packs||0);});});
+    }
+  }
+  const qtyCell=(q,packs)=>`${fmt(q)}${packs?`<div style="font-size:10.5px;color:var(--BL)">+ ${fmt(packs)} แพ็ค</div>`:''}`;
   const custEntries=Object.entries(grouped).sort((a,b)=>b[1].qty-a[1].qty);
   const corpEntries=Object.entries(corps).sort((a,b)=>b[1].qty-a[1].qty);
   let tbl='';
   if(custEntries.length){
-    tbl='<div class="card" style="margin-bottom:0"><div class="ch"><div class="ct2">รายฝากขาย CONSI ('+rows.length+' รายการ)</div><button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button></div><div class="tw"><table><thead><tr><th>กลุ่มลูกค้า / ลูกค้า / กลุ่มสินค้า / สินค้า</th><th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th></tr></thead><tbody>';
+    const vb=(v,l)=>`<button class="btn btn-sm" onclick="consiSetView('${v}')" style="${_consiView===v?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">${l}</button>`;
+    tbl='<div class="card" style="margin-bottom:0"><div class="ch"><div class="ct2">รายฝากขาย CONSI ('+rows.length+' รายการ)</div><div style="display:flex;gap:6px;align-items:center">'+vb('sold','ตามรหัสที่ขาย')+vb('explode','แตกสินค้าชุดเข้าหมวดสินค้า')+'<button class="btn btn-sm btn-g" onclick="expConsi()">⬇ Export Excel</button></div></div>'+(_consiView==='explode'?'<div style="font-size:11.5px;color:var(--TX3);margin:-4px 0 6px">สินค้าในสินค้าชุด (ราคาพิเศษ) ย้ายไปรวมในหมวดของตัวเอง ต่อท้ายชื่อด้วยรหัสชุด · จำนวนเป็นแพ็ค · มูลค่ากระจายตามสัดส่วนแพ็คในชุด</div>':'')+explodeNote+'<div class="tw"><table><thead><tr><th>กลุ่มลูกค้า / ลูกค้า / กลุ่มสินค้า / สินค้า</th><th class="r">จำนวน (กก.)</th><th class="r">มูลค่า (฿)</th></tr></thead><tbody>';
     corpEntries.forEach(([corp,cg],ki)=>{
       const ok=_consiOp['k'+ki];
-      tbl+=`<tr onclick="consiTogOp('k${ki}')" style="cursor:pointer;background:var(--LN)"><td>${_xa(ok)}<strong>${esc(corp)}</strong> <span style="font-size:11px;color:var(--TX3)">${cg.custs.length} สาขา</span></td><td class="r"><strong>${fmt(cg.qty)}</strong></td><td class="r"><strong>${cg.amount?fmt(cg.amount):'—'}</strong></td></tr>`;
+      tbl+=`<tr onclick="consiTogOp('k${ki}')" style="cursor:pointer;background:var(--LN)"><td>${_xa(ok)}<strong>${esc(corp)}</strong> <span style="font-size:11px;color:var(--TX3)">${cg.custs.length} สาขา</span></td><td class="r"><strong>${qtyCell(cg.qty,cg.packs)}</strong></td><td class="r"><strong>${cg.amount?fmt(cg.amount):'—'}</strong></td></tr>`;
       if(ok) cg.custs.map(cc=>[cc,grouped[cc]]).sort((a,b)=>b[1].qty-a[1].qty).forEach(([cc,cust],ci)=>{
         const ck='c'+ki+'_'+ci,oc=_consiOp[ck];
-        tbl+=`<tr onclick="consiTogOp('${ck}')" style="cursor:pointer;background:var(--bg2)"><td style="padding-left:20px">${_xa(oc)}<span style="font-size:12px">${esc(cust.name)}</span> <span class="badge bbgr" style="font-size:10px">${esc(cc)}</span>${cust.branch&&cust.branch!=='CONSI'?` <span class="badge bbp" style="font-size:10px">${esc(cust.branch)}</span>`:''}</td><td class="r" style="font-size:12px">${fmt(cust.qty)}</td><td class="r" style="font-size:12px">${cust.amount?fmt(cust.amount):'—'}</td></tr>`;
+        tbl+=`<tr onclick="consiTogOp('${ck}')" style="cursor:pointer;background:var(--bg2)"><td style="padding-left:20px">${_xa(oc)}<span style="font-size:12px">${esc(cust.name)}</span> <span class="badge bbgr" style="font-size:10px">${esc(cc)}</span>${cust.branch&&cust.branch!=='CONSI'?` <span class="badge bbp" style="font-size:10px">${esc(cust.branch)}</span>`:''}</td><td class="r" style="font-size:12px">${qtyCell(cust.qty,cust.packs)}</td><td class="r" style="font-size:12px">${cust.amount?fmt(cust.amount):'—'}</td></tr>`;
         if(oc) Object.entries(cust.groups).sort((a,b)=>b[1].qty-a[1].qty).forEach(([gn,grp],gi)=>{
           const gk='g'+ki+'_'+ci+'_'+gi;const og=_consiOp[gk];
-          tbl+=`<tr onclick="consiTogOp('${gk}')" style="cursor:pointer;background:var(--bg)"><td style="padding-left:40px">${_xa(og)}<span style="font-size:12px">${esc(gn)}</span></td><td class="r" style="font-size:12px">${fmt(grp.qty)}</td><td class="r" style="font-size:12px">${grp.amount?fmt(grp.amount):'—'}</td></tr>`;
-          if(og) Object.entries(grp.prods).sort((a,b)=>b[1].qty-a[1].qty).forEach(([pc,p],pi)=>{
-            const hasComp=_consiCompParents&&_consiCompParents.has(pc);
+          tbl+=`<tr onclick="consiTogOp('${gk}')" style="cursor:pointer;background:var(--bg)"><td style="padding-left:40px">${_xa(og)}<span style="font-size:12px">${esc(gn)}</span></td><td class="r" style="font-size:12px">${qtyCell(grp.qty,grp.packs)}</td><td class="r" style="font-size:12px">${grp.amount?fmt(grp.amount):'—'}</td></tr>`;
+          if(og) Object.entries(grp.prods).sort((a,b)=>(b[1].qty+(b[1].packs||0))-(a[1].qty+(a[1].packs||0))).forEach(([pc,p],pi)=>{
+            if(p.child){ // สินค้าย่อยจากสินค้าชุด (มุมมองแตกชุด) — กดดูเอกสาร
+              tbl+=`<tr onclick="consiShowCompDocs(${_consiDocReg(p.parent,cc)},'${esc(p.child)}')" title="กดเพื่อดูเอกสาร" style="background:var(--bg2);font-size:12px;cursor:pointer"><td style="padding-left:60px"><span class="mono">${esc(p.child)}</span> — ${esc(p.name)} <span style="color:var(--TX3)">📄</span></td><td class="r">${fmt(p.packs)} <span style="color:var(--TX3)">แพ็ค</span></td><td class="r">${p.amount?fmt(p.amount):'—'}</td></tr>`;
+              return;
+            }
+            const hasComp=_consiView==='sold'&&_consiCompParents&&_consiCompParents.has(pc);
             const pk='p'+ki+'_'+ci+'_'+gi+'_'+pi,op=hasComp&&_consiOp[pk];
-            tbl+=`<tr ${hasComp?`onclick="consiTogOp('${pk}')" `:''}style="background:var(--bg2);font-size:12px${hasComp?';cursor:pointer':''}"><td style="padding-left:60px">${hasComp?_xa(op):''}<span class="mono">${esc(pc)}</span> — ${esc(p.name)}${hasComp?' <span class="badge bbl" style="font-size:10px">มี item ย่อย</span>':''}</td><td class="r">${fmt(p.qty)}</td><td class="r">${p.amount?fmt(p.amount):'—'}</td></tr>`;
+            tbl+=`<tr ${hasComp?`onclick="consiTogOp('${pk}')" `:''}style="background:var(--bg2);font-size:12px${hasComp?';cursor:pointer':''}"><td style="padding-left:60px">${hasComp?_xa(op):''}<span class="mono">${esc(pc)}</span> — ${esc(p.name)}${hasComp?' <span class="badge bbl" style="font-size:10px">มี item ย่อย</span>':''}${p.residual?' <span style="font-size:10.5px;color:var(--TX3)">(ส่วนที่ไม่มีรายการสินค้าย่อย)</span>':''}</td><td class="r">${fmt(p.qty)}</td><td class="r">${p.amount?fmt(p.amount):'—'}</td></tr>`;
             if(op) tbl+=_consiCompRows(pc,cc,84);
           });
         });

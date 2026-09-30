@@ -564,7 +564,7 @@ function buildApp(db, opts = {}) {
   // comment. No SKU/product dimension exists on this table, only company+month+customer.
   app.use('/api/invoice_sales_monthly', authed, makeCrudRouter(db, 'invoice_sales_monthly', {
     pk: 'cust_code',
-    fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count', 'cn_count', 'cn_amount', 'vat_amount', 'gross_amount'],
+    fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count', 'cn_count', 'cn_amount', 'vat_amount', 'gross_amount', 'cn_vat'],
     readOnly: true,
   }));
 
@@ -740,6 +740,40 @@ function buildApp(db, opts = {}) {
   app.get('/api/consi_components/parents', authed, (req, res) => {
     res.json(db.prepare("SELECT DISTINCT parent_sku FROM sales_line_components WHERE company = 'CONSI'").all().map(r => r.parent_sku));
   });
+  // มุมมอง "แตกสินค้าชุดเข้าหมวดสินค้า" (2026-09-30) — ต่อ (สาขา × สินค้าชุด × สินค้าย่อย): จำนวนแพ็ค + มูลค่ากระจายตาม
+  // สัดส่วนแพ็ค (line_value × child_qty / รวมแพ็คของบรรทัด) และยอดรวมของบรรทัดสินค้าชุดที่ถูกแตก (ไว้หักออกจากรหัสชุด)
+  app.get('/api/consi_components/explode', authed, (req, res) => {
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (!/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to)) return res.status(400).json({ error: 'from, to (YYYY-MM) are required' });
+    const cte = `WITH cl AS (SELECT order_id, seq_num, SUM(child_qty) AS tq FROM sales_line_components WHERE company = 'CONSI' GROUP BY order_id, seq_num HAVING tq > 0),
+      ln AS (SELECT l.order_id, l.seq_num, l.sku, l.qty, l.line_value, o.cust_code FROM cl
+        JOIN outbound_lines l ON l.order_id = cl.order_id AND l.seq_num = cl.seq_num
+        JOIN outbound_orders o ON o.id = l.order_id
+        WHERE o.company = 'CONSI' AND substr(o.order_date, 1, 7) >= ? AND substr(o.order_date, 1, 7) <= ?)`;
+    const children = db.prepare(`${cte}
+      SELECT ln.cust_code, ln.sku AS parent_sku, c.child_code, MAX(c.child_name) AS child_name, MAX(p.name) AS product_name, MAX(p.group_name) AS group_name,
+             SUM(c.child_qty) AS packs, SUM(ln.line_value * c.child_qty / cl.tq) AS amount
+      FROM ln JOIN sales_line_components c ON c.order_id = ln.order_id AND c.seq_num = ln.seq_num
+      JOIN cl ON cl.order_id = ln.order_id AND cl.seq_num = ln.seq_num
+      LEFT JOIN products p ON p.code = c.child_code
+      GROUP BY ln.cust_code, ln.sku, c.child_code`).all(from, to);
+    const parents = db.prepare(`${cte} SELECT cust_code, sku AS parent_sku, SUM(qty) AS qty, SUM(line_value) AS amount FROM ln GROUP BY cust_code, sku`).all(from, to);
+    res.json({ children, parents });
+  });
+  // เอกสาร (ใบสั่งขายฝากขาย CONSI) ที่มีสินค้าย่อยนี้ในสินค้าชุด — ?parent&child&cust&from&to
+  app.get('/api/consi_components/docs', authed, (req, res) => {
+    const { parent = '', child = '', cust = '', from = '', to = '' } = req.query;
+    if (!parent || !child || !/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to)) return res.status(400).json({ error: 'parent, child, from, to are required' });
+    const custs = String(cust).split(',').map(s => s.trim()).filter(Boolean);
+    res.json(db.prepare(`
+      SELECT o.order_no, o.order_date, o.dlv_date, o.cust_code, o.doc_status, c.child_qty, c.note, l.qty AS parent_qty, l.line_value AS parent_value
+      FROM sales_line_components c JOIN outbound_orders o ON o.id = c.order_id
+      LEFT JOIN outbound_lines l ON l.order_id = c.order_id AND l.seq_num = c.seq_num
+      WHERE c.company = 'CONSI' AND c.parent_sku = ? AND c.child_code = ?
+        AND substr(o.order_date, 1, 7) >= ? AND substr(o.order_date, 1, 7) <= ?
+        ${custs.length ? `AND o.cust_code IN (${custs.map(() => '?').join(',')})` : ''}
+      ORDER BY o.order_date DESC, o.order_no DESC LIMIT 2000`).all(String(parent), String(child), from, to, ...custs));
+  });
   app.get('/api/consi_components', authed, (req, res) => {
     const parent = String(req.query.parent || '').trim();
     const custs = [...new Set(String(req.query.cust || '').split(',').map(s => s.trim()).filter(Boolean))];
@@ -751,8 +785,9 @@ function buildApp(db, opts = {}) {
     const params = [parent, from, to];
     if (custs.length) { where.push(`o.cust_code IN (${custs.map(() => '?').join(',')})`); params.push(...custs); }
     res.json(db.prepare(`
-      SELECT c.child_code, MAX(c.child_name) AS child_name, SUM(c.child_qty) AS qty, COUNT(DISTINCT c.order_id) AS orders
+      SELECT c.child_code, MAX(c.child_name) AS child_name, MAX(p.name) AS product_name, MAX(p.group_name) AS group_name, SUM(c.child_qty) AS qty, COUNT(DISTINCT c.order_id) AS orders
       FROM sales_line_components c JOIN outbound_orders o ON o.id = c.order_id
+      LEFT JOIN products p ON p.code = c.child_code
       WHERE ${where.join(' AND ')}
       GROUP BY c.child_code
       ORDER BY qty DESC

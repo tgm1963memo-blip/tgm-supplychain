@@ -392,6 +392,8 @@ function runMigrations(db) {
   addColumnIfMissing(db, 'invoice_sales_monthly', 'cn_amount', 'cn_amount REAL NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'invoice_sales_monthly', 'vat_amount', 'vat_amount REAL NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'invoice_sales_monthly', 'gross_amount', 'gross_amount REAL NOT NULL DEFAULT 0');
+  // VAT ของใบลดหนี้ (ค่าบวก) — แยก ขายได้/CN แบบรวม VAT ใน Sales Overview
+  addColumnIfMissing(db, 'invoice_sales_monthly', 'cn_vat', 'cn_vat REAL NOT NULL DEFAULT 0');
   // ยกเลิกใบเคาะ/ใบโปร (2026-09-30): คำขอที่รออยู่ / ประวัติคำขอ / SKU ที่ยกเลิกแล้ว (ยกเลิกทั้งใบ = status 'cancelled')
   addColumnIfMissing(db, 'promo_draft_headers', 'cancel_request_json', 'cancel_request_json TEXT');
   addColumnIfMissing(db, 'promo_draft_headers', 'cancel_history_json', 'cancel_history_json TEXT');
