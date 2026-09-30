@@ -21,7 +21,9 @@ const DRIVER_RULES = {
   vehicles: { select: true },
   helpers: { select: true },
   driver_profiles: { select: (u) => ({ sql: 'user_id = ?', params: [u.id] }) }, // มีเบอร์/รหัสพนักงาน — เห็นเฉพาะของตัวเอง
-  customer_delivery_points: { select: true, update: true },
+  // insert: คนขับเพิ่มจุดส่งใหม่ด้วย GPS ได้ แต่ต้องเป็น needs_review + created_by_driver (ดู checkRows)
+  customer_delivery_points: { select: true, update: true, insert: true },
+  thai_addresses: { select: true },
   users: { select: (u) => ({ sql: 'id = ?', params: [u.id] }) },
   role_permissions: { select: true },
 };
@@ -60,6 +62,11 @@ function checkRows(ctx, db, table, op, rows) {
     if (table === 'delivery_photos' && (op === 'insert' || 'stop_id' in r || 'trip_id' in r)
       && !(r.stop_id ? ownsStop(r.stop_id) && (!r.trip_id || ownsTrip(r.trip_id)) : ownsTrip(r.trip_id))) throw denied(table);
     if (table === 'delivery_fuel_logs' && (op === 'insert' || 'trip_id' in r) && !ownsTrip(r.trip_id)) throw denied(table);
+    if (table === 'customer_delivery_points' && op === 'insert' && !(r.route_status === 'needs_review' && r.created_by_driver
+      && !r.is_default && r.ship_to_code == null && r.route_name == null)) throw denied(table);
+    // แก้จุดส่งได้เฉพาะพิกัด (ตรงกับ trigger cdp_driver_update_guard ฝั่ง Supabase)
+    if (table === 'customer_delivery_points' && op === 'update'
+      && Object.keys(r).some(k => !['lat', 'lng', 'updated_by', 'updated_at'].includes(k))) throw denied(table);
     // รูปใบเสร็จที่แนบต้องเป็นรูปของกะตัวเอง (ตรงกับ photo_in_trip() ฝั่ง Supabase)
     if (table === 'delivery_fuel_logs' && r.photo_id) {
       const ph = db.prepare('SELECT trip_id FROM delivery_photos WHERE id = ?').get(r.photo_id);
