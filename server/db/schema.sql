@@ -185,6 +185,10 @@ CREATE TABLE IF NOT EXISTS stock_movements_daily (
   converted_qty    REAL NOT NULL DEFAULT 0,
   transferred_qty  REAL NOT NULL DEFAULT 0,
   other_qty        REAL NOT NULL DEFAULT 0,
+  -- the PM (customer return) share of received_qty, already included in it — see migrations.js
+  pm_qty           REAL NOT NULL DEFAULT 0,
+  -- WMS "รับเข้า" prefixes only (RH/RS/CP/JX/JT) — see migrations.js
+  wms_received_qty REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (sku, warehouse, day)
 );
 CREATE INDEX IF NOT EXISTS idx_stock_mov_day ON stock_movements_daily(day);

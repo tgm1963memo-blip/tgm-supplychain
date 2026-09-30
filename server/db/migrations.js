@@ -99,6 +99,19 @@ function runMigrations(db) {
   addColumnIfMissing(db, 'stock_movements_wms_daily', 'return_qty', 'return_qty REAL NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'stock_movements_wms_daily', 'writeoff_qty', 'writeoff_qty REAL NOT NULL DEFAULT 0');
 
+  // stock_movements_daily.pm_qty: added 2026-09-30 — the PM (customer return) part of received_qty,
+  // per warehouse (received_qty itself still includes it, unchanged for every existing reader).
+  // tgm-wms's StockCountSummaryPage backs out same-day receipts from the Express figure but counts PM
+  // as belonging to that day ("เอกสารหัว PM นับเข้าเป็นของวันนั้นๆ ด้วย"), so it subtracts
+  // received_qty - pm_qty instead.
+  addColumnIfMissing(db, 'stock_movements_daily', 'pm_qty', 'pm_qty REAL NOT NULL DEFAULT 0');
+  // stock_movements_daily.wms_received_qty: added 2026-09-30 — the WMS "รับเข้า" prefixes only
+  // (WMS_RECEIVED_PREFIXES: RH/RS/CP/JX/JT), per warehouse. received_qty is Express's broader bucket
+  // (also RC/RR/RN/RI/JU/JW/PM and POSOPR-fallback prefixes — a paired JU+CP receipt lands there
+  // twice), so backing it out over-subtracted on StockCountSummaryPage; this is the exact figure the
+  // company-wide "net" path already backs out via stock_movements_wms_daily.received_qty.
+  addColumnIfMissing(db, 'stock_movements_daily', 'wms_received_qty', 'wms_received_qty REAL NOT NULL DEFAULT 0');
+
   // stock_movements_wms_daily.received_value: added 2026-08-18 — TRNVAL summed from RH/RS receiving
   // rows, purchase-cost basis for tgm-wms's conversion-BOM average-cost feature. See
   // importFromExpress.js's RH_RS_PREFIXES for the sync side.

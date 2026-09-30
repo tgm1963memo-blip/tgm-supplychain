@@ -166,6 +166,7 @@ function parseSalesLineComponentRemark(raw) {
   if (qtyMatch) childName = childName.replace(/\s*\d+(?:\.\d+)?\s*(?:[pP]\.?|\u0e0a\u0e38\u0e14|\u0e41\u0e1e\u0e04|pack|packs|\u0e01\u0e04|\u0e01\u0e01|kg|kgs)\s*$/i, '').trim();
   return { childCode, childName: childName || null, childQty, note };
 }
+
 // item ย่อยของสินค้าชุด (2026-09-29, เฉพาะ sales_line_components — invoice_line_components คง 90022 เดิม): เดิมเก็บเฉพาะ parent 90022 — ขยายให้ทุกสินค้าที่มีหมายเหตุ item ย่อย
 // (เช่น 90021/90023 ไส้กรอกราคาพิเศษ ที่ Express มีหมายเหตุครบแต่ไม่เคยถูกดึง)
 // 90022 คงกติกาเดิมทุกอย่าง (tgm-wms ใช้คำนวณน้ำหนักสายรถ) · parent อื่นนับเฉพาะหมายเหตุที่รหัสแรกเป็นรหัสสินค้าจริง
@@ -436,6 +437,21 @@ const STCRD_CATEGORY = {
   CN: 'other', XV: 'other', SR: 'other', XZ: 'other', HN: 'other', HI: 'other', SS: 'other', GR: 'other', XX: 'other', TK: 'other', PI: 'other', KA: 'other', KB: 'other',
 };
 
+// STCRD.POSOPR = the line's stock direction, as observed on real data (2026-09-23):
+//   0 RH/RS receipt, 1 PM return / JT advance receipt / FF output, 3 transfer destination  -> into stock
+//   4 transfer source, 6 KA/KB/KM/XX issue, 8 FF raw material, 9 every sale prefix         -> out of stock
+// Anything else (e.g. OE with POSOPR ">") keeps TRNQTY's own sign, as before.
+const STCRD_POSOPR_IN = new Set(['0', '1', '3']);
+const STCRD_POSOPR_OUT = new Set(['4', '6', '8', '9']);
+function stcrdSignedQty(posopr, qty) {
+  const pos = String(posopr || '').trim();
+  if (STCRD_POSOPR_IN.has(pos)) return Math.abs(qty);
+  if (STCRD_POSOPR_OUT.has(pos)) return -Math.abs(qty);
+  return qty;
+}
+// Bucket for prefixes STCRD_CATEGORY doesn't list, so they are still counted instead of dropped.
+const STCRD_CATEGORY_BY_POSOPR = { '0': 'received', '1': 'received', '3': 'transferred', '4': 'transferred', '9': 'sold', '6': 'other', '8': 'other' };
+
 // WMS report's own category scheme (confirmed with the user 2026-07-24/27) — see the
 // stock_movements_wms_daily comment in db/schema.sql for the full rationale. Narrower/differently
 // sliced than STCRD_CATEGORY above, so kept as separate constants rather than reusing it.
@@ -618,6 +634,17 @@ async function syncStockMovements(db) {
   const daily = new Map(); // `${sku}|${warehouse}|${day}` -> {received,sold,converted,transferred,other}
   const wmsDaily = new Map(); // `${sku}|${day}` -> {received,general_sale,consi,transfer,converted,reserved,return,writeoff,received_value}
   const invoiceLines = new Map(); // `${doc}|${seq}|${sku}|${warehouse}` -> invoice item line from STCRD
+  // Bundle/promo codes (e.g. 20284-A = "1 แถม 1" of 20284-5) get a header line on every document plus
+  // component lines carrying PSTKCOD = the bundle code. Express moves stock only on the components, so
+  // the header line must not count as a stock movement for the bundle code.
+  const bundleParentsByDoc = new Map();
+  for (const r of rows) {
+    const parent = (r.PSTKCOD || '').trim();
+    if (!parent) continue;
+    const doc = (r.DOCNUM || '').trim();
+    if (!bundleParentsByDoc.has(doc)) bundleParentsByDoc.set(doc, new Set());
+    bundleParentsByDoc.get(doc).add(parent);
+  }
   for (const r of rows) {
     if (!r.STKCOD || !r.LOCCOD) continue;
     const day = toIsoDate(r.DOCDAT);
@@ -643,16 +670,24 @@ async function syncStockMovements(db) {
 
     addInvoiceLine(invoiceLines, STOCK_COMPANY, r, day);
 
-    const category = STCRD_CATEGORY[prefix];
-    if (category) {
+    // FIXED (2026-09-23, verified against Express's own "สินค้าคงเหลือ แยกตามคลังสินค้า" report for
+    // 2026-09-22: report + these movements now reproduces live STLOC for all but 10 of ~3,255 SKUs, down
+    // from 205). The per-warehouse ledger used to (a) drop any prefix missing from STCRD_CATEGORY —
+    // BA/IE/IT/IV/FB/CK/CJ/AY/LE/KM sales and issues were never counted — (b) take sign from the prefix,
+    // adding KA/KB/XX issues to stock instead of subtracting them, and assuming warehouse 01 is always a
+    // transfer's source, and (c) count bundle header lines. POSOPR already records each line's real
+    // direction, so use it; the category only decides which bucket the signed amount lands in.
+    const isBundleHeader = bundleParentsByDoc.get((r.DOCNUM || '').trim())?.has(sku);
+    const signed = stcrdSignedQty(r.POSOPR, qty);
+    if (!isBundleHeader && signed !== 0) {
+      const category = STCRD_CATEGORY[prefix] || STCRD_CATEGORY_BY_POSOPR[String(r.POSOPR || '').trim()] || 'other';
       const key = `${sku}|${warehouse}|${day}`;
-      if (!daily.has(key)) daily.set(key, { received: 0, sold: 0, converted: 0, transferred: 0, other: 0 });
-      const d = daily.get(key);
-      if (category === 'received') d.received += qty;
-      else if (category === 'sold') d.sold -= qty;
-      else if (category === 'converted') d.converted += qty; // already signed in TRNQTY
-      else if (category === 'transferred') d.transferred += (warehouse === '01' ? -qty : qty);
-      else d.other += qty;
+      if (!daily.has(key)) daily.set(key, { received: 0, sold: 0, converted: 0, transferred: 0, other: 0, pm: 0, wmsReceived: 0 });
+      daily.get(key)[category] += signed;
+      if (prefix === 'PM' && category === 'received') daily.get(key).pm += signed;
+      // the WMS "รับเข้า" definition (RH/RS/CP/JX/JT), per warehouse — what tgm-wms backs out of the
+      // count day's Express figure, see migrations.js's wms_received_qty comment
+      if (WMS_RECEIVED_PREFIXES.has(prefix)) daily.get(key).wmsReceived += signed;
     }
 
     // WMS report's own categorization, computed in the same pass to avoid a second DBF read/parse.
@@ -706,13 +741,13 @@ async function syncStockMovements(db) {
   try {
     db.exec('DELETE FROM stock_movements_daily');
     const insert = db.prepare(`
-      INSERT INTO stock_movements_daily (sku, warehouse, day, received_qty, sold_qty, converted_qty, transferred_qty, other_qty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO stock_movements_daily (sku, warehouse, day, received_qty, sold_qty, converted_qty, transferred_qty, other_qty, pm_qty, wms_received_qty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     let n = 0;
     for (const [key, d] of daily) {
       const [sku, warehouse, day] = key.split('|');
-      insert.run(sku, warehouse, day, d.received, d.sold, d.converted, d.transferred, d.other);
+      insert.run(sku, warehouse, day, d.received, d.sold, d.converted, d.transferred, d.other, d.pm, d.wmsReceived);
       n++;
     }
 

@@ -217,7 +217,7 @@ function buildApp(db, opts = {}) {
   // syncStockMovements() in importFromExpress.js for the category/sign mapping.
   app.use('/api/stock_movements_daily', authed, makeCrudRouter(db, 'stock_movements_daily', {
     pk: 'sku',
-    fields: ['sku', 'warehouse', 'day', 'received_qty', 'sold_qty', 'converted_qty', 'transferred_qty', 'other_qty'],
+    fields: ['sku', 'warehouse', 'day', 'received_qty', 'sold_qty', 'converted_qty', 'transferred_qty', 'other_qty', 'pm_qty', 'wms_received_qty'],
     readOnly: true,
   }));
 
