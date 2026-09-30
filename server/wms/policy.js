@@ -3,7 +3,7 @@
 // what Supabase enforced, with one tightening: every request must be signed in (Supabase let the anon key
 // read and write most tables).
 //   service key  → everything (express_sync.py, migration tools)
-//   DRIVER       → only their own trips/stops/photos, delivery points, their own users row, role_permissions
+//   DRIVER       → only their own trips/stops/photos/fuel logs, delivery points, fleet master (read), their own users row, role_permissions
 //   other users  → every table; users/role_permissions writes need a managing role
 const { pgError } = require('./store');
 
@@ -15,7 +15,12 @@ const OWN_STOPS = `SELECT id FROM delivery_stops WHERE trip_id IN (${OWN_TRIPS})
 const DRIVER_RULES = {
   delivery_trips: { select: (u) => ({ sql: 'driver_user_id = ?', params: [u.id] }), update: (u) => ({ sql: 'driver_user_id = ?', params: [u.id] }) },
   delivery_stops: { select: (u) => ({ sql: `trip_id IN (${OWN_TRIPS})`, params: [u.id] }), update: (u) => ({ sql: `trip_id IN (${OWN_TRIPS})`, params: [u.id] }) },
-  delivery_photos: { select: (u) => ({ sql: `stop_id IN (${OWN_STOPS})`, params: [u.id] }), insert: true },
+  // stop_id null = รูประดับกะ (เลขไมล์ / ใบเสร็จน้ำมัน) — ePOD v2.0 (supabase/add_fleet_shift.sql)
+  delivery_photos: { select: (u) => ({ sql: `(stop_id IN (${OWN_STOPS}) OR (stop_id IS NULL AND trip_id IN (${OWN_TRIPS})))`, params: [u.id, u.id] }), insert: true },
+  delivery_fuel_logs: { select: (u) => ({ sql: `trip_id IN (${OWN_TRIPS})`, params: [u.id] }), insert: true, update: (u) => ({ sql: `trip_id IN (${OWN_TRIPS})`, params: [u.id] }) },
+  vehicles: { select: true },
+  helpers: { select: true },
+  driver_profiles: { select: (u) => ({ sql: 'user_id = ?', params: [u.id] }) }, // มีเบอร์/รหัสพนักงาน — เห็นเฉพาะของตัวเอง
   customer_delivery_points: { select: true, update: true },
   users: { select: (u) => ({ sql: 'id = ?', params: [u.id] }) },
   role_permissions: { select: true },
@@ -52,7 +57,14 @@ function checkRows(ctx, db, table, op, rows) {
   for (const r of rows) {
     if (table === 'delivery_trips' && 'driver_user_id' in r && r.driver_user_id !== u.id) throw denied(table);
     if (table === 'delivery_stops' && 'trip_id' in r && !ownsTrip(r.trip_id)) throw denied(table);
-    if (table === 'delivery_photos' && (op === 'insert' || 'stop_id' in r) && !ownsStop(r.stop_id)) throw denied(table);
+    if (table === 'delivery_photos' && (op === 'insert' || 'stop_id' in r || 'trip_id' in r)
+      && !(r.stop_id ? ownsStop(r.stop_id) && (!r.trip_id || ownsTrip(r.trip_id)) : ownsTrip(r.trip_id))) throw denied(table);
+    if (table === 'delivery_fuel_logs' && (op === 'insert' || 'trip_id' in r) && !ownsTrip(r.trip_id)) throw denied(table);
+    // รูปใบเสร็จที่แนบต้องเป็นรูปของกะตัวเอง (ตรงกับ photo_in_trip() ฝั่ง Supabase)
+    if (table === 'delivery_fuel_logs' && r.photo_id) {
+      const ph = db.prepare('SELECT trip_id FROM delivery_photos WHERE id = ?').get(r.photo_id);
+      if (!ph || !ownsTrip(ph.trip_id) || ('trip_id' in r && ph.trip_id !== r.trip_id)) throw denied(table);
+    }
   }
 }
 
