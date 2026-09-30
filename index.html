@@ -6189,7 +6189,9 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
     acc[k]={...order,amount:Number(inv.amount)||0,count:Number(inv.count)||order.count||0,invoiceBased:true};
     return acc;
   },{}):orderCompanySales;
-  const yearSalesValue=invoiceSummary?Number(invoiceSummary.totalAmount)||0:dashboardRows.reduce((a,r)=>a+(Number(r.amount)||0),0);
+  // (2026-09-30, ผู้ใช้ขอ) ยอดขายปีปัจจุบันไม่นับฝากขาย CONSI — รวม TSS + TSSNV + TGM
+  const yearSalesValue=invoiceSummary?['TSS','TSSNV','TGM'].reduce((a,k)=>a+(Number(invoiceSummary.companySales?.[k]?.amount)||0),0)
+    :dashboardRows.filter(r=>_rowCompany(r)!=='CONSI').reduce((a,r)=>a+(Number(r.amount)||0),0);
   const yearSalesQty=dashboardRows.reduce((a,r)=>a+(Number(r.qty)||0),0) || Object.values(hist).reduce((a,h)=>a+Object.values(h.monthly||{}).reduce((s,v)=>s+(Number(v)||0),0),0);
   const yearSales=yearSalesValue || yearSalesQty;
   const tssSales=companySales.TSS||{qty:0,amount:0,count:0};
@@ -6221,7 +6223,7 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
   document.getElementById('ct').innerHTML=`
   ${slmDropHtml}
   <div class="krow">
-    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">${slmF?`ยอดขายของ ${esc(slmName)}`:'รวม TSS + CONSI + TSSNV + TGM'}</div></div>
+    <div class="kpi b"><div class="kl">ยอดขายปีปัจจุบัน${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(yearSales)}</div><div class="kh">${slmF?`ยอดขายของ ${esc(slmName)} · `:''}รวม TSS + TSSNV + TGM (ไม่รวม CONSI)</div></div>
     <div class="kpi g"><div class="kl">ยอดขาย TSS${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(tssSales.amount || tssSales.qty)}</div><div class="kh">${invoiceSummary?`${fmt(tssSales.count||tssSales.invoices||0)} ใบกำกับ`:`${fmt(tssSales.qty)} กก.`}</div></div>
     <div class="kpi p"><div class="kl">ยอดขาย TSSNV${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(tssnvSales.amount || tssnvSales.qty)}</div><div class="kh">${invoiceSummary?`${fmt(tssnvSales.count||tssnvSales.invoices||0)} ใบกำกับ`:`${fmt(tssnvSales.qty)} กก.`}</div></div>
     <div class="kpi a"><div class="kl">ยอดขาย TGM${invoiceSummary?' (ใบกำกับ)':''}</div><div class="kv">฿${fmt(tgmSales.amount || tgmSales.qty)}</div><div class="kh">${invoiceSummary?`${fmt(tgmSales.count||tgmSales.invoices||0)} ใบกำกับ`:`${fmt(tgmSales.qty)} กก.`}</div></div>
@@ -6290,14 +6292,14 @@ function dashTopTables(){
   const custBox=document.getElementById('dash-top-cust');
   if(!prodBox||!custBox)return;
   const allProds=(summary?.topProducts?.length && summary.deduped===true
-    ? summary.topProducts.map(p=>({c:p.code,n:p.name,_tot:Number(p.amount)||Number(p.qty)||0}))
+    ? summary.topProducts.map(p=>({c:p.code,n:p.name,_tot:Number(p.amount)||Number(p.qty)||0,fromSets:Number(p.from_sets)||0}))
     : _sdBuildProds(rows).flatMap(g=>g.it).sort((a,b)=>b._tot-a._tot).slice(0,10));
   const maxProd=Math.max(...allProds.map(p=>p._tot),1);
   prodBox.innerHTML=!allProds.length?`<div style="padding:16px;text-align:center;color:var(--TX3);font-size:12.5px">ไม่มีข้อมูล</div>`:`<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr><th style="text-align:left;padding:0 6px 8px;color:var(--TX3);font-size:11px">#</th><th style="text-align:left;padding:0 6px 8px;color:var(--TX3);font-size:11px">สินค้า</th><th style="text-align:right;padding:0 6px 8px;color:var(--TX3);font-size:11px">ยอดขาย</th></tr></thead>
     <tbody>${allProds.map((p,i)=>`<tr>
       <td style="padding:8px 6px;border-bottom:1px solid var(--bg2)"><span class="badge ${i<3?'bbl':'bbgr'}">${i+1}</span></td>
-      <td style="padding:8px 6px;border-bottom:1px solid var(--bg2)"><div style="font-weight:600">${esc(p.n||p.c)}</div><div class="mono" style="font-size:11px;color:var(--TX3)">${esc(p.c)}</div></td>
+      <td style="padding:8px 6px;border-bottom:1px solid var(--bg2)"><div style="font-weight:600">${esc(p.n||p.c)}</div><div class="mono" style="font-size:11px;color:var(--TX3)">${esc(p.c)}${p.fromSets?` <span style="font-family:var(--font);color:var(--BL)">· รวมจากสินค้าชุด ${_sdFmtTotal(p.fromSets)}</span>`:''}</div></td>
       <td style="padding:8px 6px;border-bottom:1px solid var(--bg2);text-align:right">${_sdFmtTotal(p._tot)}${_sdBar(p._tot,maxProd)}</td>
     </tr>`).join('')}</tbody></table>`;
 

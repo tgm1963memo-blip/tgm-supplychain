@@ -637,9 +637,41 @@ function buildApp(db, opts = {}) {
       WHERE COALESCE(prod_code,'') <> ''
       GROUP BY prod_code
       HAVING amount <> 0 OR qty <> 0
-      ORDER BY amount DESC, qty DESC
-      LIMIT 10
     `).all(...params);
+    // Top 10 สินค้า (2026-09-30, ผู้ใช้ขอ "คำนวณจากสินค้าย่อยทั้งหมด"): บรรทัดออเดอร์ของสินค้าชุด (มี item ย่อยใน
+    // sales_line_components เช่น 90022-x / 90021-x) → หักยอดออกจากรหัสชุด แล้วกระจายให้สินค้าย่อยตามสัดส่วนจำนวนแพ็ค
+    // (ราคาต่อหน่วยของสินค้าย่อยใน Express มีไม่ครบ จึงแบ่งตามจำนวน) · ช่วงเดือน/Sales/บริษัท ตามเงื่อนไขเดียวกับด้านบน
+    const slmList = slmId ? [...new Set(slmId.split(',').map(s => s.trim()).filter(Boolean))] : [];
+    let setRows = [];
+    try {
+      setRows = db.prepare(`
+        WITH cl AS (SELECT order_id, seq_num, SUM(child_qty) AS tq FROM sales_line_components GROUP BY order_id, seq_num HAVING tq > 0),
+        ln AS (
+          SELECT l.order_id, l.seq_num, l.sku, l.line_value
+          FROM cl JOIN outbound_lines l ON l.order_id = cl.order_id AND l.seq_num = cl.seq_num
+          JOIN outbound_orders o ON o.id = l.order_id
+          WHERE substr(o.order_date, 1, 7) >= ? AND substr(o.order_date, 1, 7) <= ?
+            AND UPPER(TRIM(o.company)) NOT IN (${archiveListSql})
+            ${slmList.length ? `AND o.slm_id IN (${slmList.map(() => '?').join(',')})` : ''}
+        )
+        SELECT 'p' AS k, ln.sku AS code, NULL AS name, SUM(ln.line_value) AS amt FROM ln GROUP BY ln.sku
+        UNION ALL
+        SELECT 'c', c.child_code, MAX(c.child_name), SUM(ln.line_value * c.child_qty / cl.tq)
+        FROM ln JOIN sales_line_components c ON c.order_id = ln.order_id AND c.seq_num = ln.seq_num
+        JOIN cl ON cl.order_id = ln.order_id AND cl.seq_num = ln.seq_num
+        GROUP BY c.child_code
+      `).all(startYm, endYm, ...slmList);
+    } catch (e) { console.warn('[dashboard] set explode:', e.message); }
+    const prodMap = new Map(topProducts.map(r => [r.prod_code, { ...r, from_sets: 0 }]));
+    for (const r of setRows) {
+      const amt = Number(r.amt) || 0;
+      if (r.k === 'p') { const cur = prodMap.get(r.code); if (cur) cur.amount -= amt; continue; }
+      const cur = prodMap.get(r.code) || { prod_code: r.code, prod_name: null, qty: 0, amount: 0, from_sets: 0 };
+      if (!cur.prod_name) cur.prod_name = db.prepare('SELECT name FROM products WHERE code = ?').get(r.code)?.name || r.name || r.code;
+      cur.amount += amt; cur.from_sets += amt;
+      prodMap.set(r.code, cur);
+    }
+    const topProductsOut = [...prodMap.values()].filter(r => r.amount > 0.5).sort((a, b) => b.amount - a.amount).slice(0, 10);
     const topCustomers = db.prepare(`
       ${baseCte}
       SELECT COALESCE(NULLIF(corporate,''), NULLIF(cust_name,''), NULLIF(cust_code,''), 'ไม่ระบุ') AS name,
@@ -669,11 +701,12 @@ function buildApp(db, opts = {}) {
       companySales,
       totalAmount: companyRows.reduce((a, r) => a + (Number(r.amount) || 0), 0),
       totalQty: companyRows.reduce((a, r) => a + (Number(r.qty) || 0), 0),
-      topProducts: topProducts.map((r) => ({
+      topProducts: topProductsOut.map((r) => ({
         code: r.prod_code,
         name: r.prod_name || r.prod_code,
         qty: Number(r.qty) || 0,
         amount: Number(r.amount) || 0,
+        from_sets: Number(r.from_sets) || 0,
       })),
       topCustomers: topCustomers.map((r) => ({
         name: r.name || 'ไม่ระบุ',
