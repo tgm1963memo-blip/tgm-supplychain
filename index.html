@@ -260,6 +260,7 @@ table.draft-trail td.l{text-align:left}
 .mb{position:fixed;inset:0;background:rgba(0,0,0,.44);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
 .mbox{background:var(--W);border-radius:12px;padding:24px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
 .mbox:has(#sd-inv-modal){max-width:980px}
+.mbox:has(#dlog-body){max-width:980px}
 #sd-inv-modal table td,#sd-inv-modal table th{padding:6px 8px}
 .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .mt2{font-size:16px;font-weight:700;color:var(--N)}
@@ -759,6 +760,7 @@ function custregSubToRow(sub) {
     date: sub.date, note: sub.note, final_note: sub.finalNote,
     levels_json: sub.levels || [], current_level: sub.currentLevel || 0, approvers_json: sub.approvers || [],
     status: sub.status || 'pending', custcode: sub.custcode || '', ts: sub.ts || Date.now(),
+    billing_json: sub.billing || null,
   };
 }
 function custregRowToSub(row) {
@@ -771,6 +773,7 @@ function custregRowToSub(row) {
     date: row.date, note: row.note, finalNote: row.final_note,
     levels: row.levels_json || [], currentLevel: row.current_level || 0, approvers: row.approvers_json || [],
     status: row.status, custcode: row.custcode, ts: row.ts,
+    billing: row.billing_json || null,
   };
 }
 // ════════════════════════════════════════════════
@@ -6127,12 +6130,12 @@ async function loadDashboardInvoiceSummary(){
   const range=_twoYearWindow();
   const me=(DB.get('users')||[]).find(x=>x.uid===UID);
   const slmId=window._dashSlmF||(isSales()?mySlmKey():'');
-  if(slmId){
-    window._dashInvoiceSummary=null;
-    return null;
-  }
+  // (2026-09-30) เลือกพนักงานขายแล้ว → ยอดใบกำกับรายเดือนของ Sales นั้น (เดิมคืน null → กราฟรายเดือนเป็น 0)
   const defs=[['TSS','TSS'],['CONSI','CONSI'],['TSS-NV','TSSNV'],['TGM','TGM']];
-  const chunks=await Promise.all(defs.map(([company])=>_sbInvoiceSalesMonthlyRowsRange(range.currentStart,range.currentEnd,company)));
+  const chunks=await Promise.all(defs.map(([company])=>_sbInvoiceSalesMonthlyRowsRange(range.currentStart,range.currentEnd,company,slmId)));
+  if(!slmId) window._dashSlmCodes=[...new Set(chunks.flatMap(c=>c.slmCodes||[]))];
+  const bySlm={};
+  chunks.forEach(c=>Object.entries(c.bySlm||{}).forEach(([code,m])=>Object.entries(m).forEach(([ym,a])=>{(bySlm[code]=bySlm[code]||{})[ym]=(bySlm[code][ym]||0)+a;})));
   const companySales={},amountMonthly={},invoiceMonthly={},amountMonthlyByCompany={},invoiceMonthlyByCompany={};
   let totalAmount=0,totalInvoices=0;
   defs.forEach(([,key],i)=>{
@@ -6153,7 +6156,7 @@ async function loadDashboardInvoiceSummary(){
     }
     companySales[key]={amount,count,qty:0};
   });
-  window._dashInvoiceSummary={companySales,amountMonthly,invoiceMonthly,amountMonthlyByCompany,invoiceMonthlyByCompany,totalAmount,totalInvoices};
+  window._dashInvoiceSummary={companySales,amountMonthly,invoiceMonthly,amountMonthlyByCompany,invoiceMonthlyByCompany,totalAmount,totalInvoices,bySlm};
   return window._dashInvoiceSummary;
 }
 // Builds everything the dashboard shows from whatever 6 data parts are handed to it — cached/peeked
@@ -6176,9 +6179,9 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
   const summary=window._dashSummary||null;
   const dashboardRows=window._dashSalesRows||[];
   const slmF=window._dashSlmF||'';
-  const slmName=slmF?(salesNameFor(slmF)||slmF):'';
+  const slmName=slmF?(slmF===window._dashSlmOtherKey?'อื่นๆ':slmKeyName(slmF)):'';
   const rowCompanySales=_companyTotals(dashboardRows);
-  const invoiceSummary=(!slmF && window._dashInvoiceSummary) ? window._dashInvoiceSummary : null;
+  const invoiceSummary=window._dashInvoiceSummary||null;
   const orderCompanySales=Object.keys(rowCompanySales).length?rowCompanySales:(summary?.companySales||{});
   const companySales=invoiceSummary?['TSS','CONSI','TSSNV','TGM'].reduce((acc,k)=>{
     const order=orderCompanySales[k]||{qty:0,amount:0,count:0};
@@ -6232,10 +6235,12 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
     <div class="card"><div class="ch"><div class="ct2">👥 Top 10 ลูกค้า</div><span style="font-size:11px;color:var(--TX3);font-weight:400">${slmF?`ยอดขายทั้งปีของ ${esc(slmName)}`:'ยอดขายทั้งปี'} — ไม่กรองตามตัวกรองด้านล่าง</span></div><div class="tw" id="dash-top-cust"></div></div>
   </div>`:''}
   <div class="cgrid">
+    <div class="card"><div class="ch"><div class="ct2">🎯 ยอดขาย vs เป้า${slmF?' — '+esc(slmName):''}</div><span style="font-size:11px;color:var(--TX3);font-weight:400">ยอดใบกำกับ (ก่อน VAT) รวมทุกบริษัท · เป้าจาก จัดการกลุ่ม → 🎯 เป้าการขาย</span></div><div id="dash-target"><div style="padding:10px;font-size:12px;color:var(--TX3)">⏳ กำลังโหลด…</div></div></div>
     <div class="card"><div class="ch"><div class="ct2">สรุปมูลค่าการขาย (฿)</div><span style="font-size:11px;color:var(--TX3);font-weight:400">Sales value รายเดือน</span></div><div id="dash-val-tbl"></div></div>
   </div>`;
   dashRemoveQtySummaryCard();
   dashUpdateSummaryTables();
+  dashRenderTargets();
   // extract.js's safety net (deploy-shared/extract.js) only recognizes a guard when the `if` TEST
   // itself is a literal `typeof <name> === 'function'` chain (walked via && on both sides) — an
   // indirection variable like `if(_dashHasSalesCluster)` does NOT satisfy it, even though it's
@@ -6245,14 +6250,18 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
     dashTopTables();
     const slmSel=document.getElementById('dash-slm-f');
     if(slmSel){
-      const slmList=dashVisibleSalesList();
-      slmSel.innerHTML='<option value="">ทั้งหมด (ภาพรวมบริษัท)</option>'+slmList.map(s=>`<option value="${esc(s.code)}"${s.code===slmF?' selected':''}>${esc(s.name)}</option>`).join('');
+      dashFillSlmSelect();
     }
   }
 }
 // เรียก pgDash() ใหม่ทั้งฟังก์ชัน (ไม่ใช่แค่ dashRenderBody) เพราะ window._dashSalesRows/hist ต้อง
 // คำนวณใหม่ผ่าน loadDashboardSalesHist()/myHist() ที่อ่านค่า window._dashSlmF — ส่วน PO/Stock/
 // Forecast/SKU settings ที่ cache ไว้แล้วจะไม่ยิงซ้ำ (CACHE.get คืนค่าที่ cache ไว้ทันที)
+function dashFillSlmSelect(){
+  const slmSel=document.getElementById('dash-slm-f');if(!slmSel)return;
+  const slmF=window._dashSlmF||'';
+  slmSel.innerHTML='<option value="">ทั้งหมด (ภาพรวมบริษัท)</option>'+dashVisibleSalesList().map(s=>`<option value="${esc(s.code)}"${s.code===slmF?' selected':''}>${esc(s.name)}</option>`).join('');
+}
 function dashSetSlmFilter(v){
   window._dashSlmF=v||'';
   pgDash();
@@ -6474,19 +6483,28 @@ function dashToggleValueColumn(col,checked){
   try{localStorage.setItem('dash_value_columns',JSON.stringify(cfg));}catch(_){ }
   dashUpdateSummaryTables();
 }
+// รายชื่อพนักงานขาย (2026-09-30, ผู้ใช้ขอให้เหมือน Sales Overview): รหัสที่มียอดขายปีนี้ + มีชื่อจริงใน Express
+// รหัสชื่อ "***" / (none) / ไม่มีชื่อ รวมเป็นตัวเลือก "อื่นๆ" (ค่า = รายการรหัสคั่น , → กรองแบบหลายรหัสได้)
+// ชื่อ "***" (ปิดใช้งานใน Express) / (none) = อื่นๆ · ยังไม่รู้ชื่อ (cache ยังไม่โหลด) ถือเป็นรหัสจริงไว้ก่อน
+function _isRealSalesName(code,name){return code!=='(none)'&&!/^\*+$/.test(String(name||'').trim());}
 function dashVisibleSalesList(){
-  const m=new Map();
-  const add=(code,name='')=>{
-    code=String(code||'').trim();
-    if(!code || code.toUpperCase()==='ALL') return;
-    if(!m.has(code)) m.set(code, salesNameFor(code)||name||code);
-  };
-  (window._dashCustRows||[]).forEach(r=>add(r.slm_id||r.slm_key||r.slm_owner,r.slm_name));
-  (window._dashSalesRows||[]).forEach(r=>add(r.slm_id||r.slm_key,r.slm_name));
-  if(!m.size){
-    salesMaster().filter(s=>s.active!==false).forEach(s=>add(s.code,s.name));
+  // รายชื่อ Sales จาก Express ยังไม่อยู่ในเครื่อง → โหลดแล้วเติม dropdown ใหม่ (ครั้งเดียว)
+  if(!(DB.get('remote_salesmen_cache')||[]).length&&!window._dashSmLoading&&SB?.getSalesmen){
+    window._dashSmLoading=true;
+    SB.getSalesmen().then(()=>{_salesNameMemo=null;dashFillSlmSelect();}).catch(()=>{});
   }
-  return [...m.entries()].map(([code,name])=>({code,name:`${code} - ${name||code}`})).sort((a,b)=>String(a.code).localeCompare(String(b.code),'th',{numeric:true}));
+  const codes=new Set();
+  const add=code=>{code=String(code||'').trim();if(code&&code.toUpperCase()!=='ALL')codes.add(code);};
+  (window._dashSlmCodes||[]).forEach(add);
+  (window._dashCustRows||[]).forEach(r=>add(r.slm_id||r.slm_key||r.slm_owner));
+  (window._dashSalesRows||[]).forEach(r=>add(r.slm_id||r.slm_key));
+  const real=[],other=[];
+  [...codes].forEach(c=>{const n=salesNameFor(c);(_isRealSalesName(c,n)?real:other).push({code:c,name:n});});
+  real.sort((a,b)=>String(a.code).localeCompare(String(b.code),'th',{numeric:true}));
+  const list=real.map(s=>({code:s.code,name:`${s.code} - ${s.name}`}));
+  window._dashSlmOtherKey=other.map(s=>s.code).sort().join(',');
+  if(other.length) list.push({code:window._dashSlmOtherKey,name:`อื่นๆ (${other.length} รหัส)`,other:true});
+  return list;
 }
 function dashSalesValue(m){
   // ใช้เฉพาะ _dashSalesRows — ไม่ fallback ไป _sdApi เพราะอาจคนละ scope
@@ -6693,11 +6711,12 @@ function _sdFiltered(){
   if(_sdApi._filt&&_sdApi._filt.key===key) return _sdApi._filt;
   const rows=_sdApi._rows.filter(r=>_sdRowSlmMatch(r,s));
   const sum=(a,k)=>a.reduce((t,r)=>t+(Number(r[k])||0),0);
-  let total=sum(rows,'amount'),invoices=rows.length,custs,slms,prods=_sdBuildProds(rows);
+  let total=sum(rows,'amount'),invoices=rows.length,custs,slms,prods=_sdBuildProds(rows),extras=null;
   const inv=_sdApi.invoiceBased&&Array.isArray(_sdApi._invRows)?_sdApi._invRows.filter(r=>slmKeySet(s).has(String(r.slm_code||'').trim())):null;
   if(inv){
     total=sum(inv,'amount');const ic=sum(inv,'invoice_count');if(ic) invoices=ic;
     custs=_sdBuildCustsFromInvoice(inv);slms=_sdBuildSlmsFromInvoice(inv);prods=_sdScaleProdsToTotal(prods,total);
+    extras=_sdInvExtras(inv);
   }else{custs=_sdBuildCusts(rows);slms=_sdBuildSlms(rows,_sdApi.slmList||[]);}
   // กราฟแท่ง/เทียบเดือนก่อน: ใช้ข้อมูลหลายเดือนในเครื่อง (มีเฉพาะโหมดรายเดือน) — ไม่มีเดือนก่อน = แสดง "—"
   const multi=(_sd.pt==='month'||_sd.pt==='week')&&_sdApi.rangeMode==='monthly'&&Array.isArray(window._salesRows2Y)?window._salesRows2Y:_sdApi._rows;
@@ -6713,7 +6732,7 @@ function _sdFiltered(){
     yoy={total:sum(yr,'amount'),qty:sum(yr,'qty'),invoices:yr.length,custs:_sdBuildCusts(yr),prods:_sdBuildProds(yr),slms:_sdBuildSlms(yr,_sdApi.slmList||[])};
   }
   const name=slmKeySet(s).size>1?slmKeyName(s):((_sdApi.slmList||[]).find(x=>String(x.code)===s)?.name||salesNameFor(s)||s);
-  _sdApi._filt={key,slm:s,name,total,qty:sum(rows,'qty'),invoices,vs,monthly,custs,prods,slms:slms.filter(x=>slmKeySet(s).has(String(x.code))),yoy};
+  _sdApi._filt={key,slm:s,name,total,qty:sum(rows,'qty'),invoices,vs,monthly,custs,prods,extras,slms:slms.filter(x=>slmKeySet(s).has(String(x.code))),yoy};
   return _sdApi._filt;
 }
 
@@ -7088,6 +7107,7 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
   _sdApi.rangeMode=opts.daily?'aggregate':'monthly';
 
   _sdApi.invoiceBased=false;
+  _sdApi.extras=null;
   if(!slmId && _sd.pt!=='year' && activeMonth){
     try{
       // FIXED (code review 2026-09-15): these two queries are independent (prevInv only needs
@@ -7109,6 +7129,7 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
         _sdApi.vs=prevTotal?Math.round((invTotal/prevTotal-1)*100):_sdApi.vs;
         _sdApi.invoiceBased=true;
         _sdApi._invRows=invRows;
+        _sdApi.extras=_sdInvExtras(invRows);
         const invCusts=_sdBuildCustsFromInvoice(invRows);
         const invSlms=_sdBuildSlmsFromInvoice(invRows);
         _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
@@ -7261,7 +7282,7 @@ async function sdLoadYear(){
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='Loading yearly sales...';document.body.appendChild(badge);
   _sdApi.invoiceBased=false; // was left stale from whatever view loaded before this one
-  _sdApi._invRows=null;
+  _sdApi._invRows=null;_sdApi.extras=null;
   try{
     const start=`${gy}-01`,end=`${gy}-12`;
     // current year and prior year are independent — prevRows only feeds the YoY % below — so fetch
@@ -7305,6 +7326,7 @@ async function sdLoadYear(){
           _sdApi.vs=prevInvTotal?Math.round((invTotal/prevInvTotal-1)*100):_sdApi.vs;
           _sdApi.invoiceBased=true;
           _sdApi._invRows=invRows;
+          _sdApi.extras=_sdInvExtras(invRows);
           const invCusts=_sdBuildCustsFromInvoice(invRows);
           const invSlms=_sdBuildSlmsFromInvoice(invRows);
           _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
@@ -7466,7 +7488,7 @@ async function _sbInvoiceSalesRows(ym,company='TSS'){
   while(true){
     const{data,error}=await getSupabaseClient()
       .from('invoice_sales_monthly')
-      .select('cust_code,slm_code,amount,invoice_count')
+      .select('cust_code,slm_code,amount,invoice_count,cn_count,cn_amount,vat_amount,gross_amount')
       .eq('company',company).eq('ym',ym)
       .range(from,from+PAGE-1);
     if(error) throw error;
@@ -7476,15 +7498,19 @@ async function _sbInvoiceSalesRows(ym,company='TSS'){
   }
   return rows;
 }
-async function _sbInvoiceSalesMonthlyRowsRange(startYm,endYm,company='TSS'){
+// slmKey (2026-09-30): รหัส Sales คั่น , — กรองยอดใบกำกับของ Sales นั้น (Dashboard เลือกพนักงานขาย)
+// ผลลัพธ์มี .slmCodes = รหัส Sales ที่มียอดในช่วงนี้ (ใช้ทำรายชื่อ dropdown)
+async function _sbInvoiceSalesMonthlyRowsRange(startYm,endYm,company='TSS',slmKey=''){
   const PAGE=20000;
   let rows=[],from=0;
+  const codes=slmKey?[...slmKeySet(slmKey)]:[];
   while(true){
-    const{data,error}=await getSupabaseClient()
+    let q=getSupabaseClient()
       .from('invoice_sales_monthly')
-      .select('ym,amount,invoice_count')
-      .eq('company',company).gte('ym',startYm).lte('ym',endYm)
-      .range(from,from+PAGE-1);
+      .select('ym,amount,invoice_count,slm_code')
+      .eq('company',company).gte('ym',startYm).lte('ym',endYm);
+    if(codes.length) q=codes.length>1?q.in('slm_code',codes):q.eq('slm_code',codes[0]);
+    const{data,error}=await q.range(from,from+PAGE-1);
     if(error) throw error;
     rows=rows.concat(data||[]);
     if(!data||data.length<PAGE)break;
@@ -7498,7 +7524,12 @@ async function _sbInvoiceSalesMonthlyRowsRange(startYm,endYm,company='TSS'){
     monthly[ym].amount+=Number(r.amount)||0;
     monthly[ym].invoice_count+=Number(r.invoice_count)||0;
   }
-  return Object.values(monthly).sort((a,b)=>a.ym.localeCompare(b.ym));
+  const out=Object.values(monthly).sort((a,b)=>a.ym.localeCompare(b.ym));
+  out.slmCodes=[...new Set(rows.map(r=>String(r.slm_code||'').trim()).filter(Boolean))];
+  // bySlm: { [slm_code]: { [ym]: amount } } — Dashboard "ยอดขาย vs เป้า"
+  out.bySlm={};
+  for(const r of rows){const c=String(r.slm_code||'').trim(),ym=String(r.ym||'');if(!c||!ym)continue;(out.bySlm[c]=out.bySlm[c]||{})[ym]=(out.bySlm[c][ym]||0)+(Number(r.amount)||0);}
+  return out;
 }
 // Year view: sum across all 12 months instead of one — same table, just a wider ym range. Collapses
 // the ym dimension by summing amount/invoice_count per (cust_code,slm_code) so the caller can feed
@@ -7509,7 +7540,7 @@ async function _sbInvoiceSalesRowsRange(startYm,endYm,company='TSS'){
   while(true){
     const{data,error}=await getSupabaseClient()
       .from('invoice_sales_monthly')
-      .select('cust_code,slm_code,amount,invoice_count')
+      .select('cust_code,slm_code,amount,invoice_count,cn_count,cn_amount,vat_amount,gross_amount')
       .eq('company',company).gte('ym',startYm).lte('ym',endYm)
       .range(from,from+PAGE-1);
     if(error) throw error;
@@ -7520,9 +7551,10 @@ async function _sbInvoiceSalesRowsRange(startYm,endYm,company='TSS'){
   const m={};
   for(const r of rows){
     const key=`${r.cust_code}|${r.slm_code}`;
-    if(!m[key])m[key]={cust_code:r.cust_code,slm_code:r.slm_code,amount:0,invoice_count:0};
+    if(!m[key])m[key]={cust_code:r.cust_code,slm_code:r.slm_code,amount:0,invoice_count:0,cn_count:0,cn_amount:0,vat_amount:0,gross_amount:0};
     m[key].amount+=Number(r.amount)||0;
     m[key].invoice_count+=Number(r.invoice_count)||0;
+    for(const k of ['cn_count','cn_amount','vat_amount','gross_amount']) m[key][k]+=Number(r[k])||0;
   }
   return Object.values(m);
 }
@@ -7531,6 +7563,12 @@ async function _sbInvoiceSalesRowsRange(startYm,endYm,company='TSS'){
 // order-based product amount by the same ratio (invoice total ÷ order-based total), preserving the
 // real relative mix between products while making the total exact. This is an ALLOCATION, not a
 // measurement — sdProd() labels it as such rather than presenting it as real per-SKU invoice data.
+// CN + VAT (2026-09-30) จากแถว invoice_sales_monthly — null = ไม่มีข้อมูล (ยอดแบบออเดอร์)
+function _sdInvExtras(inv){
+  if(!Array.isArray(inv)) return null;
+  const sum=k=>inv.reduce((a,r)=>a+(Number(r[k])||0),0);
+  return {vat:sum('vat_amount'),gross:sum('gross_amount'),cnCount:sum('cn_count'),cnAmount:sum('cn_amount')};
+}
 function _sdScaleProdsToTotal(prods,targetTotal){
   const current=(prods||[]).reduce((a,p)=>a+p._tot,0);
   if(!current) return prods;
@@ -7919,7 +7957,7 @@ function sdKPI(){
   const _yoyLine=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${_sdFmtTotal(prev)} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳ กำลังโหลดข้อมูลปีที่แล้ว…':'')}</div>`:'';
   const _yoyLineNum=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${Math.round(prev).toLocaleString()} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳':'')}</div>`:'';
   kr.innerHTML=`
-    <div class="kpi b"><div class="kl">ยอดขายรวม (มูลค่า)</div><div class="kv">${_sdFmtTotal(total)}</div>
+    <div class="kpi b"><div class="kl">ยอดขายรวม (มูลค่า${(F||_sdApi).extras?' ก่อน VAT':''})</div><div class="kv">${_sdFmtTotal(total)}</div>
       ${isCustom?`<div class="kh" style="color:var(--TX2)">${customRangeLbl||'ช่วงที่เลือก'}</div>`:vs==null?`<div class="kh" style="color:${vsC}">— ${vsLbl}</div>`:`<div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>`}
       ${slmNote}
       ${customGranularityNote}
@@ -7930,8 +7968,12 @@ function sdKPI(){
       <div class="kh">Invoice ${inv} ใบ</div>${_yoyLineNum(qty,yoy?.qty||0,'ปีที่แล้ว')}</div>
     <div class="kpi t"><div class="kl">เฉลี่ย / Invoice</div><div class="kv">${avg}</div>
       <div class="kh">${lbl2}</div>${_yoyLineNum(inv,yoy?.invoices||0,'Invoice ปีที่แล้ว')}</div>
-    <div class="kpi r"><div class="kl">ยอดค้างชำระ</div><div class="kv" style="font-size:20px">${_sdF(ar)}</div>
-      <div class="kh">รอดำเนินการ</div></div>`;
+    ${(()=>{const x=(F||_sdApi).extras;
+      return x?`<div class="kpi r"><div class="kl">VAT / ลดหนี้ (CN)</div>
+        <div class="kv" style="font-size:18px">VAT ${_sdF(_sdV(x.vat))}</div>
+        <div class="kh">รวม VAT ${_sdF(_sdV(x.gross))}</div>
+        <div class="kh" style="color:var(--R)">CN ${Math.round(_sdV(x.cnCount)).toLocaleString()} ใบ · ${_sdF(_sdV(x.cnAmount))} <span style="color:var(--TX3)">(หักแล้วในยอดขาย)</span></div></div>`
+      :`<div class="kpi r"><div class="kl">VAT / ลดหนี้ (CN)</div><div class="kv" style="font-size:18px">—</div><div class="kh">มีเฉพาะยอดแบบใบกำกับ (ทุก Sales / เดือน / ปี)</div></div>`;})()}`;
 }
 
 function _xa(o){return`<span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:3px;border:1px solid var(--BD);margin-right:5px;font-size:9px;color:var(--TX3);flex-shrink:0;transition:.15s;transform:rotate(${o?90:0}deg)">▶</span>`;}
@@ -8312,6 +8354,14 @@ function sdProd(){
   document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
 }
 
+// เป้าของรหัส Sales ในช่วงที่ดูอยู่ (เดือน / ปี) — โหลดเป้าครั้งแรกแล้ววาดใหม่ · null = ยังไม่มีเป้า (แสดง "—")
+function _sdTargetFor(code){
+  const y=_sd.pt==='year'?_sdApiYear():Number(String(_sdApi.month||_sdApiMonth()).slice(0,4));
+  if(!_stCache[y]){salesTargetsLoad(y).then(()=>{if(_sd.at==='slm'&&document.getElementById('sd-ta'))sdRender();}).catch(()=>{_stCache[y]={};});return null;}
+  const from=_sd.pt==='year'?`${y}-01`:(_sdApi.month||_sdApiMonth()),to=_sd.pt==='year'?`${y}-12`:from;
+  const t=salesTargetSum(_stCache[y],code,from,to);
+  return t==null?null:(_sd.pt==='week'?Math.round(t*_sdWeekFactor()):t);
+}
 function sdSlm(){
   if(!document.getElementById('sd-ta')) return; // page navigated away while an async load was in flight
   const q=(_sd.q||'').toLowerCase();
@@ -8340,7 +8390,7 @@ function sdSlm(){
       h+=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer">
         <td>${_xa(os)}<strong>${s.name}</strong> <span class="badge bbgr" style="font-size:10px">${s.code}</span></td>
         <td class="r"><strong>${_sdFmtTotal(_sdV(s._tot))}</strong></td>
-        <td class="r" style="color:var(--TX3)">—</td><td class="r">${_sdBar(s._tot,T)}</td>${_sdYoYCell(yoyM.slm[s.code]||0)}<td class="r">${_vc(s._tot,yoyM.slm[s.code]||0)}</td></tr>`;
+        ${(()=>{const tg=_sdTargetFor(s.code);if(tg==null)return `<td class="r" style="color:var(--TX3)">—</td><td class="r">${_sdBar(s._tot,T)}</td>`;const p=tg?Math.round(_sdV(s._tot)/tg*100):0;const col=p>=100?'var(--G)':p>=80?'var(--A)':'var(--R)';return `<td class="r">${_sdF(tg)}</td><td class="r" style="color:${col};font-weight:700">${p}%</td>`;})()}${_sdYoYCell(yoyM.slm[s.code]||0)}<td class="r">${_vc(s._tot,yoyM.slm[s.code]||0)}</td></tr>`;
       if(os){
         _sdByValue(s.custs).forEach(c=>{
           // keyed by c.grp (corp group name, stable/unique) not c.c (now "N สาขา" or one code)
@@ -10024,7 +10074,7 @@ function _crInitIfNeeded(){
 function _crSave(){
   const flds=['cr-shopname','cr-contact','cr-position','cr-phone','cr-email','cr-taxid','cr-branch','cr-addr','cr-zip',
     'cr-delplace','cr-receiver','cr-delphone','cr-deladdr','cr-route-bkk','cr-route-upc',
-    'cr-disc','cr-crdays','cr-billdate','cr-detail','cr-cashday','cr-creditday','cr-sign-sales','cr-sign-mgr','cr-final-note',
+    'cr-disc','cr-crdays','cr-billdate','cr-bill-addr','cr-bill-zip','cr-bill-shift','cr-detail','cr-cashday','cr-creditday','cr-sign-sales','cr-sign-mgr','cr-final-note',
     'cr-inv-email-addr','cr-inv-post-addr','cr-inv-other-docs','cr-existing-cust','cr-sales-owner','cr-drive-link','cr-external-emails','cr-tax-addr','cr-tax-zip','cr-vat-reg-date','cr-change-creditday'];
   flds.forEach(id=>{const e=document.getElementById(id);if(e)_cr.data[id]=e.value;});
   const cbs=['cr-c-new','cr-c-branch','cr-c-contact','cr-c-cash','cr-c-credit','cr-c-change-existing','cr-c-change-cust-addr','cr-c-change-credit','cr-c-change-tax-addr','cr-c-change-info',
@@ -10032,7 +10082,7 @@ function _crSave(){
     'cr-tr-bkk','cr-tr-upc','cr-del-near','cr-del-far','cr-del-box','cr-del-dry',
     'cr-pr-c','cr-pr-d','cr-pr-e','cr-pr-f','cr-pr-g','cr-pr-z','cr-pr-special','cr-pr-disc',
     'cr-bill-tax','cr-bill-cash','cr-pay-cod','cr-pay-chq','cr-pay-prepay','cr-inv-none','cr-inv-man','cr-inv-fax',
-    'cr-inv-email','cr-inv-post',
+    'cr-inv-email','cr-inv-post','cr-bill-same',
     'cr-doc-receipt','cr-doc-taxinv','cr-doc-billform','cr-doc-po','cr-doc-other'];
   cbs.forEach(id=>{const e=document.getElementById(id);if(e)_cr.data[id]=e.checked;});
   document.querySelectorAll('[name="cr-purpose"]').forEach(e=>{if(e.checked)_cr.data['cr-purpose']=e.value;});
@@ -10423,12 +10473,18 @@ function crSec3(){return`
   </div>
   <div class="cr-r2" style="margin-top:8px">
     <div class="field" style="margin-bottom:0"><label>เครดิต (วัน)</label><input type="number" id="cr-crdays" placeholder="30" value="${_crV('cr-crdays')}"></div>
-    <div class="field" style="margin-bottom:0"><label>วางบิลวันที่</label><input type="text" id="cr-billdate" placeholder="เช่น 25 ของเดือน" value="${_crV('cr-billdate')}"></div>
+    <div class="field" style="margin-bottom:0"><label>หมายเหตุการวางบิล</label><input type="text" id="cr-billdate" placeholder="เช่น วางบิลก่อน 10 โมง, ต้องมี PO แนบ" value="${_crV('cr-billdate')}"></div>
   </div>
+  <div style="font-size:12px;font-weight:700;color:var(--TX);margin:12px 0 6px">📅 วันรับวางบิล <span style="font-weight:400;color:var(--TX3)">(เพิ่มได้หลายแบบ ระบบคำนวณวันวางบิลถัดไปให้)</span></div>
+  <div id="cr-bill-rules-box">${crBillRulesHtml()}</div>
 </div>
 
 <div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📨 การวางบิล</div>
+  <div class="field" style="margin-bottom:6px"><label>ที่อยู่วางบิล${_cr.data['cr-c-new'] ? ' <span style="color:var(--R);font-size:11px">* (ลูกค้าใหม่)</span>' : ''}</label>
+    <label class="cr-cbi" style="margin-bottom:6px"><input type="checkbox" id="cr-bill-same" ${_crCk('cr-bill-same')} onchange="crBillSameChanged()"> ใช้ที่อยู่เดียวกับที่อยู่จัดส่งสินค้า</label>
+    <textarea id="cr-bill-addr" placeholder="บ้านเลขที่ ถนน ซอย แขวง เขต จังหวัด" ${_crCk('cr-bill-same') ? 'readonly style="background:var(--bg2)"' : ''}>${_crV('cr-bill-addr')}</textarea></div>
+  <div class="field" style="margin-bottom:10px;max-width:200px"><label>รหัสไปรษณีย์ (วางบิล)</label><input type="text" id="cr-bill-zip" maxlength="5" placeholder="10xxx" value="${_crV('cr-bill-zip')}" ${_crCk('cr-bill-same') ? 'readonly style="background:var(--bg2)"' : ''}></div>
   <div style="font-size:12px;color:var(--TX2);margin-bottom:8px">ช่องทางการวางบิล (เลือกได้หลายช่องทาง)</div>
   <div class="cr-cb" style="margin-bottom:10px">
     <label class="cr-cbi"><input type="checkbox" id="cr-inv-none" ${_crCk('cr-inv-none')}> ไม่วางบิล</label>
@@ -10461,6 +10517,102 @@ function crSec3(){return`
   <button class="btn btn-sm" onclick="crBack()" style="padding:10px 16px">← ก่อนหน้า</button>
   <button class="btn btn-g" style="flex:1;padding:10px;justify-content:center" onclick="crNext()">ถัดไป →</button>
 </div>`;}
+// ── ที่อยู่วางบิล + กฎวันรับวางบิล (2026-09-30) ─────────────────────────────────────────────────────
+// กฎเก็บใน _cr.data['cr-bill-rules'] = [{type:'weekly',days:[3]} | {type:'monthday',days:[25,'last']} | {type:'nth_weekday',n:2|'last',weekday:5}]
+// + _cr.data['cr-bill-shift'] = '' | 'next' | 'prev' (ตรงเสาร์-อาทิตย์ เลื่อนไปวันทำการถัดไป/ก่อนหน้า)
+const CR_WD=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+function crBillSameChanged(){
+  const on=!!document.getElementById('cr-bill-same')?.checked;
+  const a=document.getElementById('cr-bill-addr'),z=document.getElementById('cr-bill-zip');
+  if(on){
+    // ที่อยู่จัดส่ง (cr-deladdr) ไม่มีก็ใช้ที่อยู่หลัก — รหัสไปรษณีย์ใช้ของที่อยู่หลัก (ขั้นส่งสินค้าไม่มีช่องรหัสไปรษณีย์แยก)
+    if(a) a.value=_cr.data['cr-deladdr']||_cr.data['cr-addr']||'';
+    if(z) z.value=_cr.data['cr-zip']||'';
+  }
+  [a,z].forEach(el=>{if(!el)return;el.readOnly=on;el.style.background=on?'var(--bg2)':'';});
+}
+function crBillRules(){const r=_cr.data['cr-bill-rules'];return Array.isArray(r)?r:[];}
+function crBillMatch(rules,d){
+  const wd=d.getDay(),dom=d.getDate(),last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+  return (rules||[]).some(r=>r.type==='weekly'?(r.days||[]).map(Number).includes(wd)
+    :r.type==='monthday'?(r.days||[]).some(x=>x==='last'?dom===last:(Number(x)===dom||(Number(x)>last&&dom===last)))
+    :r.type==='nth_weekday'?(wd===Number(r.weekday)&&(r.n==='last'?dom+7>last:Math.ceil(dom/7)===Number(r.n)))
+    :false);
+}
+function _crShiftWeekend(d,shift){
+  const x=new Date(d);
+  if(!shift) return x;
+  while(x.getDay()===0||x.getDay()===6) x.setDate(x.getDate()+(shift==='prev'?-1:1));
+  return x;
+}
+// วันวางบิลถัดไป n วัน นับจาก from (รวมวันนี้) — ใช้คำนวณ/แสดงตัวอย่าง และนำไปใช้ต่อ (เช่น วันวางบิลของใบกำกับ)
+function crNextBillingDates(rules,from=new Date(),n=6,shift=''){
+  const d0=new Date(from.getFullYear(),from.getMonth(),from.getDate());
+  const out=new Map();
+  for(let i=0;i<500&&out.size<n;i++){
+    const d=new Date(d0);d.setDate(d0.getDate()+i);
+    if(!crBillMatch(rules,d)) continue;
+    const s=_crShiftWeekend(d,shift);
+    if(s>=d0) out.set(s.getTime(),s);
+  }
+  return [...out.values()].sort((a,b)=>a-b).slice(0,n);
+}
+function crBillRuleText(r){
+  if(r.type==='weekly') return (r.days||[]).length?'ทุกวัน'+(r.days||[]).map(x=>CR_WD[x]).join(', '):'ทุกสัปดาห์ (ยังไม่เลือกวัน)';
+  if(r.type==='monthday') return (r.days||[]).length?'ทุกวันที่ '+(r.days||[]).map(x=>x==='last'?'สิ้นเดือน':x).join(', ')+' ของเดือน':'รายเดือน (ยังไม่เลือกวันที่)';
+  if(r.type==='nth_weekday') return `ทุกวัน${CR_WD[r.weekday??5]}${r.n==='last'?'สุดท้าย':'ที่ '+(r.n||1)} ของเดือน`;
+  return '';
+}
+function crBillRulesHtml(){
+  const rules=crBillRules(),shift=_crV('cr-bill-shift');
+  const wdChips=(i,sel)=>CR_WD.map((w,k)=>`<label style="display:inline-flex;align-items:center;gap:3px;border:1px solid ${sel.includes(k)?'var(--BL)':'var(--BD)'};background:${sel.includes(k)?'var(--LBL)':'var(--W)'};border-radius:6px;padding:2px 8px;font-size:12px;cursor:pointer"><input type="checkbox" style="margin:0" ${sel.includes(k)?'checked':''} onchange="crBillToggleDay(${i},${k},this.checked)">${w}</label>`).join('');
+  const rows=rules.map((r,i)=>{
+    let body='';
+    if(r.type==='weekly') body=`<div style="display:flex;flex-wrap:wrap;gap:4px">${wdChips(i,(r.days||[]).map(Number))}</div>`;
+    else if(r.type==='monthday') body=`<input type="text" value="${esc((r.days||[]).map(x=>x==='last'?'สิ้นเดือน':x).join(', '))}" placeholder="เช่น 25 หรือ 10, 25, สิ้นเดือน" style="width:230px" onchange="crBillSetDays(${i},this.value)">`;
+    else body=`<select onchange="crBillSet(${i},'n',this.value==='last'?'last':Number(this.value))">${[1,2,3,4,'last'].map(v=>`<option value="${v}" ${String(r.n??1)===String(v)?'selected':''}>${v==='last'?'สุดท้าย':'ที่ '+v}</option>`).join('')}</select>
+      <select onchange="crBillSet(${i},'weekday',Number(this.value))">${CR_WD.map((w,k)=>`<option value="${k}" ${Number(r.weekday??5)===k?'selected':''}>วัน${w}</option>`).join('')}</select> ของเดือน`;
+    return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 8px;border:1px solid var(--BD);border-radius:7px;margin-bottom:6px;background:var(--bg2)">
+      <b style="font-size:12px;min-width:120px">${i+1}. ${{weekly:'รายสัปดาห์',monthday:'วันที่ของเดือน',nth_weekday:'วัน…ที่…ของเดือน'}[r.type]}</b>${body}
+      <span style="font-size:11.5px;color:var(--BL);flex:1">${esc(crBillRuleText(r))}</span>
+      <button class="btn btn-xs btn-r" onclick="crBillRem(${i})">ลบ</button></div>`;
+  }).join('');
+  const next=crNextBillingDates(rules,new Date(),6,shift);
+  return `${rows||'<div style="font-size:12px;color:var(--TX3);margin-bottom:6px">ยังไม่ได้กำหนดวันรับวางบิล</div>'}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+      <button class="btn btn-xs" onclick="crBillAdd('weekly')">+ ทุกวัน…ของสัปดาห์ (เช่น ทุกวันพุธ)</button>
+      <button class="btn btn-xs" onclick="crBillAdd('monthday')">+ ทุกวันที่…ของเดือน (เช่น ทุกวันที่ 25)</button>
+      <button class="btn btn-xs" onclick="crBillAdd('nth_weekday')">+ วัน…ที่…ของเดือน (เช่น ศุกร์ที่ 2)</button>
+      <select id="cr-bill-shift" onchange="_cr.data['cr-bill-shift']=this.value;crBillRefresh()" style="font-size:12px"><option value="" ${!shift?'selected':''}>ตรงเสาร์-อาทิตย์: วางบิลวันนั้น</option><option value="next" ${shift==='next'?'selected':''}>ตรงเสาร์-อาทิตย์: เลื่อนไปวันทำการถัดไป</option><option value="prev" ${shift==='prev'?'selected':''}>ตรงเสาร์-อาทิตย์: เลื่อนมาวันทำการก่อนหน้า</option></select>
+    </div>
+    ${rules.length?`<div style="font-size:12px;color:var(--TX2)">🗓️ วางบิลครั้งถัดไป: <b>${next.map(d=>d.toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short'})).join(' · ')||'—'}</b></div>`:''}`;
+}
+function crBillRefresh(){const b=document.getElementById('cr-bill-rules-box');if(b)b.innerHTML=crBillRulesHtml();}
+function crBillAdd(type){const r=crBillRules().slice();r.push(type==='weekly'?{type,days:[3]}:type==='monthday'?{type,days:[25]}:{type,n:2,weekday:5});_cr.data['cr-bill-rules']=r;crBillRefresh();}
+function crBillRem(i){const r=crBillRules().slice();r.splice(i,1);_cr.data['cr-bill-rules']=r;crBillRefresh();}
+function crBillSet(i,k,v){const r=crBillRules().map(x=>({...x}));if(!r[i])return;r[i][k]=v;_cr.data['cr-bill-rules']=r;crBillRefresh();}
+function crBillToggleDay(i,day,on){const r=crBillRules().map(x=>({...x}));if(!r[i])return;const s=new Set((r[i].days||[]).map(Number));on?s.add(day):s.delete(day);r[i].days=[...s].sort();_cr.data['cr-bill-rules']=r;crBillRefresh();}
+function crBillSetDays(i,txt){
+  const days=[...new Set(String(txt||'').split(/[,\s]+/).map(x=>x.trim()).filter(Boolean).map(x=>/สิ้น|last/i.test(x)?'last':Math.max(1,Math.min(31,parseInt(x,10)||0))).filter(x=>x==='last'||x>0))];
+  crBillSet(i,'days',days);
+}
+// ข้อมูลวางบิลที่ส่งขึ้น server กับคำขอ (custreg_subs.billing_json)
+function crBillingFromData(d=_cr.data){
+  const rules=Array.isArray(d['cr-bill-rules'])?d['cr-bill-rules']:[];
+  return {addr:d['cr-bill-addr']||'',zip:d['cr-bill-zip']||'',same:!!d['cr-bill-same'],note:d['cr-billdate']||'',shift:d['cr-bill-shift']||'',rules,
+    rules_text:rules.map(crBillRuleText),channels:[['cr-inv-none','ไม่วางบิล'],['cr-inv-man','แมสเซนเจอร์'],['cr-inv-fax','แฟกซ์'],['cr-inv-email','อีเมล์'],['cr-inv-post','ไปรษณีย์']].filter(([k])=>d[k]).map(([,l])=>l)};
+}
+function crBillingCardHtml(b){
+  if(!b) return '';
+  const next=Array.isArray(b.rules)&&b.rules.length?crNextBillingDates(b.rules,new Date(),4,b.shift||''):[];
+  const row=(k,v)=>`<div class="cr-sr"><span style="color:var(--TX2)">${k}</span><span style="font-weight:600;white-space:pre-wrap">${esc(v||'—')}</span></div>`;
+  return `<div class="card"><div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📨 การวางบิล</div>
+    ${row('ที่อยู่วางบิล',(b.addr||'')+(b.zip?' '+b.zip:'')+(b.same?' (เดียวกับที่อยู่จัดส่ง)':''))}
+    ${row('ช่องทาง',(b.channels||[]).join(', '))}
+    ${row('วันรับวางบิล',(b.rules_text||[]).join(' · ')+(b.shift?(b.shift==='next'?' · ตรงวันหยุดเลื่อนไปวันทำการถัดไป':' · ตรงวันหยุดเลื่อนมาวันทำการก่อนหน้า'):''))}
+    ${next.length?row('วางบิลครั้งถัดไป',next.map(d=>d.toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short'})).join(' · ')):''}
+    ${row('หมายเหตุการวางบิล',b.note)}</div>`;
+}
 function crTogBillingField(){
   const emailOn=document.getElementById('cr-inv-email')?.checked;
   const postOn=document.getElementById('cr-inv-post')?.checked;
@@ -10811,6 +10963,7 @@ function crSec5(){
   <div class="cr-sr"><span style="color:var(--TX2)">ประเภทร้าน</span><span style="font-weight:600">${storeType}</span></div>
   <div class="cr-sr"><span style="color:var(--TX2)">ราคา</span><span style="font-weight:600">${priceType}</span></div>
 </div>
+${crBillingCardHtml(crBillingFromData(d))}
 <div class="card">
   <div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📁 เอกสารที่อัปโหลด</div>
   ${docsHtml}
@@ -10882,6 +11035,7 @@ async function _crUploadPendingFiles(subId){
 async function crConfirmApproval(){
   if(!_cr.selectedApprovers.length){toast('กรุณาเลือกผู้อนุมัติอย่างน้อย 1 คน','warn');return;}
   _crSave();
+  if(_cr.data['cr-c-new']&&!String(_cr.data['cr-bill-addr']||'').trim()){toast('ลูกค้าใหม่: กรุณากรอกที่อยู่วางบิล (ขั้นการเงิน) หรือติ๊ก "ใช้ที่อยู่เดียวกับที่อยู่จัดส่งสินค้า"','warn');return;}
   const ts=new Date().toLocaleString('th-TH',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
   const note=document.getElementById('cr-apv-note')?.value||'';
   const d=_cr.data;
@@ -10890,7 +11044,7 @@ async function crConfirmApproval(){
   const ownerUid=crOwnerUid(),ownerName=crSalesName(ownerUid),requestType=crRequestTypes(d);
   const sub={id:'CR-'+Date.now(),docNo:_cr.docNo,shop:d['cr-shopname']||'(ไม่ระบุ)',sales:UNAME,salesUid:UID,createdByUid:UID,ownerSalesUid:ownerUid,ownerSalesName:ownerName,requestType,existingCust:d['cr-existing-cust']||'',driveLink:d['cr-drive-link']||'',externalEmails:d['cr-external-emails']||'',taxAddr:d['cr-tax-addr']||'',taxZip:d['cr-tax-zip']||'',
     phone:d['cr-phone']||'',taxid:d['cr-taxid']||'',crdays:d['cr-crdays']||'',price:priceType,
-    date:ts,note,finalNote:d['cr-final-note']||'',approvers:_cr.selectedApprovers.map(uid=>{const u=users.find(x=>x.uid===uid)||{};return{uid,name:u.name||uid,role:u.role||'',status:'pending'};}),
+    date:ts,note,finalNote:d['cr-final-note']||'',billing:crBillingFromData(d),approvers:_cr.selectedApprovers.map(uid=>{const u=users.find(x=>x.uid===uid)||{};return{uid,name:u.name||uid,role:u.role||'',status:'pending'};}),
     status:'pending',custcode:'',ts:Date.now()};
   const subs=DB.get('custreg_subs')||[];subs.push(sub);DB.set('custreg_subs',subs);
   closeM();audit('CUSTREG_SUBMIT',sub.docNo,{shop:sub.shop});toast('ส่งอนุมัติสำเร็จ '+sub.docNo);
@@ -11029,6 +11183,7 @@ function crRenderApproveDetail(sub,el){
   <div class="cr-sr"><span style="color:var(--TX2)">📅 วันที่ส่ง</span><span style="font-weight:600">${sub.date}</span></div>
 </div>
 ${workflowHtml}
+${crBillingCardHtml(sub.billing)}
 <div class="card"><div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--BD)">📁 เอกสาร</div>${docsHtml}${sub.externalEmails?`<button class="btn btn-sm btn-t" style="margin-top:10px" onclick="crMailExternal('${sub.id}')">ส่งอีเมลภายนอก</button>`:''}</div>
 ${sub.note?`<div class="card"><div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:6px">💬 หมายเหตุจาก Sales</div><div style="font-size:13px;color:var(--TX2)">${sub.note}</div></div>`:''}
 ${canAct?`<div class="card"><div style="font-size:13px;font-weight:700;color:var(--TX);margin-bottom:8px">💬 ความเห็น</div><div class="field" style="margin-bottom:0"><textarea id="cr-apv-comment" placeholder="ระบุความเห็น..." style="height:56px"></textarea></div></div>
@@ -11186,7 +11341,7 @@ async function crConfirmWithWorkflow(wfLevels){
   const sub={
     id:'CR-'+Date.now(),docNo:_cr.docNo,shop:d['cr-shopname']||'(ไม่ระบุ)',
     sales:UNAME,salesUid:UID,createdByUid:UID,ownerSalesUid:ownerUid,ownerSalesName:ownerName,requestType,existingCust:d['cr-existing-cust']||'',driveLink:d['cr-drive-link']||'',externalEmails:d['cr-external-emails']||'',taxAddr:d['cr-tax-addr']||'',taxZip:d['cr-tax-zip']||'',phone:d['cr-phone']||'',taxid:d['cr-taxid']||'',
-    crdays:d['cr-crdays']||'',price:priceType,date:ts,note:'',finalNote:d['cr-final-note']||'',
+    crdays:d['cr-crdays']||'',price:priceType,date:ts,note:'',finalNote:d['cr-final-note']||'',billing:crBillingFromData(d),
     levels,currentLevel:0,
     // backward compat: flat approvers list = all approvers from all levels
     approvers:levels.flatMap(lv=>lv.approvers),
@@ -11222,6 +11377,125 @@ function crDoApprove(id){
   audit('CUSTREG_APPROVE',sub.docNo,{shop:sub.shop});crHideDetail();
 }
 
+// ── เป้าการขาย (2026-09-30) ─────────────────────────────────────────────────────────────────────────
+// sales_targets: เป้ารายรหัส Sales ใน Express × เดือน — กรอกที่ จัดการกลุ่ม → 🎯 เป้าการขาย
+const _stCache={};
+const _ST_MTH=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+async function salesTargetsLoad(year,force=false){
+  if(!force&&_stCache[year]) return _stCache[year];
+  const r=await apiFetch('/api/sales_targets?year='+encodeURIComponent(year));
+  if(r.error) throw new Error(r.error.message);
+  const m={};(r.data||[]).forEach(x=>{(m[x.slm_code]=m[x.slm_code]||{})[x.ym]=Number(x.amount)||0;});
+  _stCache[year]=m;return m;
+}
+// ผลรวมเป้าของรหัส (คั่น , ได้) ช่วง fromYm–toYm จาก map ที่โหลดแล้ว — null = ไม่มีเป้าเลย
+function salesTargetSum(map,key,fromYm,toYm){
+  let t=0,any=false;
+  String(key||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(c=>Object.entries((map||{})[c]||{}).forEach(([ym,a])=>{if(ym>=fromYm&&ym<=toYm){t+=a;any=true;}}));
+  return any?t:null;
+}
+// รายชื่อ Sales ที่มีชื่อจริงใน Express (ไม่ใช่ "***") — ใช้ในตารางกรอกเป้า
+function realSalesmenList(){
+  const codes=new Set([...(window._dashSlmCodes||[]),...salesMaster().filter(s=>s.active!==false&&s.source!=='User').map(s=>s.code)]);
+  return [...codes].map(c=>({code:c,name:salesNameFor(c)})).filter(s=>s.name&&s.name!==s.code&&!/^\*+$/.test(String(s.name).trim()))
+    .sort((a,b)=>String(a.code).localeCompare(String(b.code),'th',{numeric:true}));
+}
+let _stYear=new Date().getFullYear(),_stDirty={};
+const _stCanEdit=()=>['superadmin','admin','manager','sales_manager'].includes(ROLE);
+async function renderSalesTargets(){
+  const el=document.getElementById('grp-body');if(!el)return;
+  el.innerHTML='<div class="al ali">⏳ กำลังโหลดเป้าการขาย…</div>';
+  let map;try{map=await salesTargetsLoad(_stYear,true);}catch(e){el.innerHTML=`<div class="al alw">โหลดเป้าไม่สำเร็จ: ${esc(e.message)}</div>`;return;}
+  _stDirty={};
+  const list=realSalesmenList(),months=Array.from({length:12},(_,i)=>`${_stYear}-${String(i+1).padStart(2,'0')}`);
+  const dis=_stCanEdit()?'':'disabled';
+  el.innerHTML=`<div class="card"><div class="ch"><div class="ct2">🎯 เป้าการขายรายพนักงานขาย (บาท / เดือน)</div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <select onchange="_stYear=Number(this.value);renderSalesTargets()">${[_stYear-1,_stYear,_stYear+1].map(y=>`<option value="${y}" ${y===_stYear?'selected':''}>ปี ${y+543}</option>`).join('')}</select>
+      <button class="btn btn-sm" onclick="salesTargetsExport()">⬇ Excel</button>
+      ${_stCanEdit()?`<button class="btn btn-sm" onclick="document.getElementById('st-imp').click()">⬆ นำเข้า Excel</button><input type="file" id="st-imp" accept=".xlsx,.xls,.csv" style="display:none" onchange="salesTargetsImport(event)">
+      <button class="btn btn-sm btn-p" onclick="salesTargetsSave()">💾 บันทึก</button>`:''}
+    </div></div>
+    <div style="font-size:12px;color:var(--TX3);margin-bottom:6px">ใช้เทียบใน Dashboard (ยอดขาย vs เป้า) และ Sales Overview แท็บรายเซลส์ · ช่องว่าง = ไม่มีเป้า · ➡️ = เติมทุกเดือนเท่ากับเดือนแรกที่กรอก${_stCanEdit()?'':' · (ดูได้อย่างเดียว — แก้ได้เฉพาะ Sales Manager ขึ้นไป)'}</div>
+    <div class="tw tw-scroll"><table style="font-size:12px"><thead><tr><th style="min-width:170px">พนักงานขาย</th>${months.map(ym=>`<th class="r">${_ST_MTH[Number(ym.slice(5))-1]}</th>`).join('')}<th class="r">รวมทั้งปี</th><th></th></tr></thead>
+    <tbody>${list.map(sm=>`<tr><td><span class="mono">${esc(sm.code)}</span> ${esc(sm.name)}</td>${months.map(ym=>`<td><input type="number" min="0" step="1000" data-st="${esc(sm.code)}|${ym}" value="${map[sm.code]?.[ym]??''}" style="width:92px;text-align:right;padding:3px 5px" oninput="salesTargetEdit(this)" ${dis}></td>`).join('')}
+      <td class="r" id="st-tot-${esc(sm.code)}" style="font-weight:700">${_sdF(Object.values(map[sm.code]||{}).reduce((a,b)=>a+b,0))}</td>
+      <td>${_stCanEdit()?`<button class="btn btn-xs" title="เติมทุกเดือนเท่ากับเดือนแรกที่กรอก" onclick="salesTargetFillRow('${esc(sm.code)}')">➡️</button>`:''}</td></tr>`).join('')||'<tr><td colspan="15" style="color:var(--TX3)">ยังไม่มีรายชื่อพนักงานขาย</td></tr>'}</tbody></table></div></div>`;
+}
+function salesTargetEdit(inp){
+  const [code,ym]=inp.dataset.st.split('|');_stDirty[code+'|'+ym]={slm_code:code,ym,amount:inp.value===''?null:Number(inp.value)};
+  const tot=[...document.querySelectorAll(`[data-st^="${CSS.escape(code)}|"]`)].reduce((a,x)=>a+(Number(x.value)||0),0);
+  const t=document.getElementById('st-tot-'+code);if(t)t.textContent=_sdF(tot);
+}
+function salesTargetFillRow(code){
+  const inps=[...document.querySelectorAll(`[data-st^="${CSS.escape(code)}|"]`)];
+  const first=inps.find(x=>x.value!=='');if(!first){toast('กรอกเป้าเดือนแรกก่อน','warn');return;}
+  inps.forEach(x=>{if(x!==first){x.value=first.value;salesTargetEdit(x);}});
+}
+async function salesTargetsSave(){
+  const rows=Object.values(_stDirty);
+  if(!rows.length){toast('ไม่มีการเปลี่ยนแปลง');return;}
+  const r=await apiFetch('/api/sales_targets',{method:'PUT',body:JSON.stringify({rows})});
+  if(r.error){toast('บันทึกเป้าไม่สำเร็จ: '+r.error.message,'warn');return;}
+  toast(`บันทึกเป้าแล้ว ${r.data.saved} ช่อง${r.data.removed?' · ลบ '+r.data.removed:''}`);
+  delete _stCache[_stYear];renderSalesTargets();
+}
+function salesTargetsExport(){
+  const months=Array.from({length:12},(_,i)=>`${_stYear}-${String(i+1).padStart(2,'0')}`);
+  const map=_stCache[_stYear]||{};
+  const rows=realSalesmenList().map(sm=>[sm.code,sm.name,...months.map(ym=>map[sm.code]?.[ym]??'')]);
+  toXLSX([['เป้าการขาย',['รหัส Sales','ชื่อ',...months],rows]],`Sales_Target_${_stYear}.xlsx`);
+}
+function salesTargetsImport(e){
+  const file=e.target.files?.[0];if(!file)return;
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'binary'});
+      const aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+      const head=(aoa[0]||[]).map(String);let n=0;
+      aoa.slice(1).forEach(row=>{const code=String(row[0]||'').trim();if(!code)return;
+        head.forEach((h,ci)=>{if(!/^\d{4}-\d{2}$/.test(h.trim()))return;const inp=document.querySelector(`[data-st="${CSS.escape(code)}|${h.trim()}"]`);if(inp){inp.value=row[ci]===''?'':Number(row[ci])||0;salesTargetEdit(inp);n++;}});});
+      toast(`นำเข้า ${n} ช่อง — ตรวจแล้วกด 💾 บันทึก`);
+    }catch(err){toast('อ่านไฟล์ไม่สำเร็จ: '+(err.message||err),'warn');}
+    e.target.value='';
+  };
+  rd.readAsBinaryString(file);
+}
+// Dashboard: ยอดขาย vs เป้า ต่อพนักงานขาย (เดือนล่าสุด + สะสมปี) — ยอดใบกำกับรวมทุกบริษัท (TSS/CONSI/TSSNV/TGM)
+async function dashRenderTargets(){
+  const box=document.getElementById('dash-target');if(!box)return;
+  const inv=window._dashInvoiceSummary;
+  const now=new Date(),y=now.getFullYear(),curYm=`${y}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  let map;try{map=await salesTargetsLoad(y);}catch(e){box.innerHTML=`<div class="al alw">โหลดเป้าไม่สำเร็จ: ${esc(e.message)}</div>`;return;}
+  if(!Object.keys(map).length){box.innerHTML=`<div style="padding:12px;font-size:12px;color:var(--TX3)">ยังไม่ได้กรอกเป้าการขาย — ตั้งได้ที่ <a href="#" onclick="_grpTab='target';nav('groups');return false">จัดการกลุ่ม → 🎯 เป้าการขาย</a></div>`;return;}
+  const slmF=window._dashSlmF||'';
+  const pct=(a,t)=>t?Math.round(a/t*100):null;
+  const bar=p=>p==null?'<span style="color:var(--TX3)">—</span>':`<div style="display:inline-flex;align-items:center;gap:6px"><div style="width:80px;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden"><div style="width:${Math.min(100,p)}%;height:100%;background:${p>=100?'var(--G)':p>=80?'var(--A)':'var(--R)'}"></div></div><b style="color:${p>=100?'var(--G)':p>=80?'var(--A)':'var(--R)'}">${p}%</b></div>`;
+  const ytdFrom=`${y}-01`;
+  if(slmF){
+    // เลือก Sales แล้ว: รายเดือน ยอด / เป้า / % ของคนนั้น
+    const months=Array.from({length:now.getMonth()+1},(_,i)=>`${y}-${String(i+1).padStart(2,'0')}`);
+    const act=ym=>Number(inv?.amountMonthly?.[ym])||0;
+    const rows=months.map(ym=>{const t=salesTargetSum(map,slmF,ym,ym),a=act(ym);return `<tr><td>${_ST_MTH[Number(ym.slice(5))-1]}</td><td class="r">${_sdF(a)}</td><td class="r">${t==null?'—':_sdF(t)}</td><td class="r">${bar(pct(a,t))}</td></tr>`;}).join('');
+    const tt=salesTargetSum(map,slmF,ytdFrom,curYm),ta=months.reduce((s2,ym)=>s2+act(ym),0);
+    box.innerHTML=`<table style="font-size:12.5px"><thead><tr><th>เดือน</th><th class="r">ยอดขาย</th><th class="r">เป้า</th><th class="r">% บรรลุ</th></tr></thead><tbody>${rows}
+      <tr style="font-weight:700;background:var(--LN)"><td>สะสมปี</td><td class="r">${_sdF(ta)}</td><td class="r">${tt==null?'—':_sdF(tt)}</td><td class="r">${bar(pct(ta,tt))}</td></tr></tbody></table>`;
+    return;
+  }
+  const bySlm=inv?.bySlm||{};
+  const act=(code,from,to)=>Object.entries(bySlm[code]||{}).reduce((a,[ym,v])=>ym>=from&&ym<=to?a+v:a,0);
+  const list=realSalesmenList().filter(sm=>map[sm.code]||bySlm[sm.code]);
+  let sumA=0,sumT=0,sumAy=0,sumTy=0;
+  const rows=list.map(sm=>{
+    const a=act(sm.code,curYm,curYm),t=salesTargetSum(map,sm.code,curYm,curYm),ay=act(sm.code,ytdFrom,curYm),ty=salesTargetSum(map,sm.code,ytdFrom,curYm);
+    sumA+=a;sumT+=t||0;sumAy+=ay;sumTy+=ty||0;
+    return `<tr><td><span class="mono">${esc(sm.code)}</span> ${esc(sm.name)}</td><td class="r">${_sdF(a)}</td><td class="r">${t==null?'—':_sdF(t)}</td><td class="r">${bar(pct(a,t))}</td><td class="r">${_sdF(ay)}</td><td class="r">${ty==null?'—':_sdF(ty)}</td><td class="r">${bar(pct(ay,ty))}</td></tr>`;
+  }).join('');
+  box.innerHTML=`<div class="tw tw-scroll"><table style="font-size:12.5px"><thead><tr><th rowspan="2">พนักงานขาย</th><th colspan="3" style="text-align:center">${_ST_MTH[now.getMonth()]} ${y+543}</th><th colspan="3" style="text-align:center">สะสมปี (ม.ค.–${_ST_MTH[now.getMonth()]})</th></tr>
+    <tr><th class="r">ยอดขาย</th><th class="r">เป้า</th><th class="r">% บรรลุ</th><th class="r">ยอดขาย</th><th class="r">เป้า</th><th class="r">% บรรลุ</th></tr></thead><tbody>${rows}
+    <tr style="font-weight:700;background:var(--LN)"><td>รวม</td><td class="r">${_sdF(sumA)}</td><td class="r">${_sdF(sumT)}</td><td class="r">${bar(pct(sumA,sumT))}</td><td class="r">${_sdF(sumAy)}</td><td class="r">${_sdF(sumTy)}</td><td class="r">${bar(pct(sumAy,sumTy))}</td></tr></tbody></table></div>`;
+}
 // ── GROUP ADMIN ───────────────────────────────────────────────────
 let _grpTab='prod';
 function pgGroupAdmin(){
@@ -11232,9 +11506,10 @@ function pgGroupAdmin(){
     <div class="tab ${_grpTab==='cust'?'act':''}" onclick="_grpTab='cust';pgGroupAdmin()">กลุ่มลูกค้า</div>
     <div class="tab ${_grpTab==='sales'?'act':''}" onclick="_grpTab='sales';pgGroupAdmin()">Sales</div>
     <div class="tab ${_grpTab==='bom'?'act':''}" onclick="_grpTab='bom';pgGroupAdmin()">สินค้ารหัสแม่ลูก</div>
+    <div class="tab ${_grpTab==='target'?'act':''}" onclick="_grpTab='target';pgGroupAdmin()">🎯 เป้าการขาย</div>
   </div>
   <div id="grp-body"></div>`;
-  if(_grpTab==='prod')renderProdGroups();else if(_grpTab==='cust')renderCustGroups();else if(_grpTab==='bom')renderBomAdmin();else renderSalesMaster();
+  if(_grpTab==='prod')renderProdGroups();else if(_grpTab==='cust')renderCustGroups();else if(_grpTab==='bom')renderBomAdmin();else if(_grpTab==='target')renderSalesTargets();else renderSalesMaster();
 }
 let _pgItemTab='items';
 function renderProdGroups(){
@@ -13568,7 +13843,171 @@ const DRAFT_STATUS_LABELS = {
   draft: ['ร่าง', 'bbgr'], pending_approval: ['รออนุมัติ', 'bba'],
   pending_exec_approval: ['รอผู้บริหารอนุมัติ', 'bba'], approved: ['อนุมัติแล้ว', 'bbg'],
   rejected: ['ไม่อนุมัติ', 'bbr'], keyed_to_express: ['คีย์เข้า Express แล้ว', 'bbl'],
+  cancelled: ['🚫 ยกเลิกแล้ว', 'bbr'],
 };
+// ── ยกเลิก / เรียกกลับ / ประวัติการดำเนินการ (2026-09-30) ─────────────────────────────────────────────
+const DRAFT_CANCELABLE = ['pending_approval', 'pending_exec_approval', 'approved', 'keyed_to_express'];
+function _draftCancelSet(h) { return new Set(Array.isArray(h?.cancelled_skus_json) ? h.cancelled_skus_json : []); }
+function _draftCancelPending(h) { const r = h?.cancel_request_json; return r && typeof r === 'object' && !Array.isArray(r) ? r : null; }
+function _draftCancelBadges(h) {
+  const rq = _draftCancelPending(h), cx = _draftCancelSet(h);
+  return (rq ? ` <span class="badge bba">⏳ ขอยกเลิก${rq.scope === 'all' ? 'ทั้งใบ' : ` ${rq.skus.length} รายการ`} (รอ ${esc(rq.approver_name || uidToName(rq.approver_uid))})</span>` : '')
+    + (cx.size && h.status !== 'cancelled' ? ` <span class="badge bbr">ยกเลิกบางรายการ (${cx.size})</span>` : '');
+}
+function _draftIsCancelWriter() { return isSales() || ['admin', 'superadmin'].includes(ROLE); }
+// ปุ่มยกเลิก/เรียกกลับ/ประวัติ — ใช้ทั้งหน้ารายการเอกสาร และหัวหน้าต่างเอกสาร
+function _draftCancelButtons(h, small = true) {
+  const b = small ? 'btn btn-xs' : 'btn btn-sm';
+  const rq = _draftCancelPending(h), no = esc(h.draft_no), out = [];
+  if (['pending_approval', 'pending_exec_approval'].includes(h.status) && (h.created_by === UID || ['admin', 'superadmin'].includes(ROLE)))
+    out.push(`<button class="${b}" onclick="draftRecall('${no}')" title="เรียกกลับมาเป็นร่างเพื่อแก้ไข แล้วส่งอนุมัติใหม่">↩️ เรียกกลับเพื่อแก้ไข</button>`);
+  if (DRAFT_CANCELABLE.includes(h.status) && !rq && _draftIsCancelWriter()) out.push(`<button class="${b}" onclick="draftCancelRequestDialog('${no}')">🚫 ขอยกเลิก</button>`);
+  if (rq && (rq.approver_uid === UID || ROLE === 'superadmin')) out.push(`<button class="${b} btn-r" onclick="draftCancelDecide('${no}',false)">ไม่อนุมัติยกเลิก</button><button class="${b} btn-g" onclick="draftCancelDecide('${no}',true)">อนุมัติยกเลิก</button>`);
+  if (rq && rq.requested_by === UID) out.push(`<button class="${b}" onclick="draftCancelWithdraw('${no}')">ถอนคำขอยกเลิก</button>`);
+  if (h.draft_no) out.push(`<button class="${b}" onclick="draftShowLogs('${no}')">📜 ประวัติ</button>`);
+  return out.join('');
+}
+async function _draftAfterCancelAction(no) {
+  CACHE.clear('promo_draft_headers');
+  if (document.getElementById('promo-drafts-list')) pgPromoDraftsRenderBody();
+  if (_draftEditNo === no && document.getElementById('draft-fp')?.innerHTML) await showPromoDraftModal(no);
+}
+async function draftCancelRequestDialog(no) {
+  let h, lines, approvers;
+  try {
+    [h, lines, approvers] = await Promise.all([SB.getPromoDraftHeader(no), SB.getPromoDraftLines(no),
+      apiFetch('/api/promo_draft_headers/cancel-approvers/list').then(r => { if (r.error) throw new Error(r.error.message); return r.data || []; })]);
+  } catch (e) { toast('โหลดข้อมูลไม่สำเร็จ: ' + (e.message || e), 'warn'); return; }
+  const cx = _draftCancelSet(h);
+  const skus = [...new Map((lines || []).filter(l => l.sku).map(l => [l.sku, l.sku_name || ''])).entries()];
+  openMod(`<div class="mh"><div class="mt2">🚫 ขอยกเลิกเอกสาร ${esc(h.promo_no || h.doc_no || no)}</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="font-size:12px;color:var(--TX2);margin-bottom:10px">${esc(h.promo_name || '')} · สถานะ ${draftStatusBadgeHtml(h.status)} — ผู้อนุมัติที่เลือกต้องอนุมัติก่อนจึงจะยกเลิกจริง · ระบบไม่เขียน Express (ต้องไปยกเลิกโปรใน Express เองหลังอนุมัติ)</div>
+    <div class="field"><label>ยกเลิก</label>
+      <label class="esc-item"><input type="radio" name="dcx-scope" value="all" checked onchange="document.getElementById('dcx-skus').classList.add('hidden')"> ทั้งใบ</label>
+      <label class="esc-item" style="margin-left:14px"><input type="radio" name="dcx-scope" value="lines" ${skus.length ? '' : 'disabled'} onchange="document.getElementById('dcx-skus').classList.remove('hidden')"> เป็นรายสินค้า (ทุกสาขาในใบ)</label></div>
+    <div id="dcx-skus" class="hidden" style="max-height:200px;overflow:auto;border:1px solid var(--BD);border-radius:7px;padding:6px 10px;margin-bottom:10px">
+      ${skus.map(([c, n]) => `<label class="esc-item" style="display:flex;gap:6px;padding:2px 0${cx.has(c) ? ';color:var(--TX3);text-decoration:line-through' : ''}"><input type="checkbox" class="dcx-sku" value="${esc(c)}" ${cx.has(c) ? 'disabled' : ''}><span class="mono">${esc(c)}</span> ${esc(n)}${cx.has(c) ? ' (ยกเลิกแล้ว)' : ''}</label>`).join('')}</div>
+    <div class="field"><label>ผู้อนุมัติการยกเลิก <span style="color:var(--R)">*</span></label>
+      <select id="dcx-approver"><option value="">— เลือกผู้อนุมัติ —</option>${approvers.filter(u => u.uid !== UID).map(u => `<option value="${esc(u.uid)}">${esc(u.name || u.uid)}${u.position ? ' · ' + esc(u.position) : ''}</option>`).join('')}</select></div>
+    <div class="field"><label>หมายเหตุการยกเลิก <span style="color:var(--R)">*</span></label>
+      <textarea id="dcx-reason" rows="3" maxlength="1000" placeholder="ระบุเหตุผลการยกเลิก" style="width:100%;border:1px solid var(--BD);border-radius:7px;padding:7px;font:inherit;box-sizing:border-box"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ปิด</button><button class="btn btn-p" onclick="draftCancelSubmit('${esc(no)}')">ส่งคำขอยกเลิก</button></div>`);
+}
+async function draftCancelSubmit(no) {
+  const scope = document.querySelector('input[name="dcx-scope"]:checked')?.value || 'all';
+  const skus = [...document.querySelectorAll('.dcx-sku:checked')].map(x => x.value);
+  const approver = document.getElementById('dcx-approver')?.value || '';
+  const reason = (document.getElementById('dcx-reason')?.value || '').trim();
+  if (scope === 'lines' && !skus.length) { alert('กรุณาเลือกสินค้าที่ต้องการยกเลิก'); return; }
+  if (!approver) { alert('กรุณาเลือกผู้อนุมัติการยกเลิก'); return; }
+  if (!reason) { alert('กรุณากรอกหมายเหตุการยกเลิก'); document.getElementById('dcx-reason')?.focus(); return; }
+  const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/cancel-request`, { method: 'POST', body: JSON.stringify({ scope, skus, reason, approver_uid: approver }) });
+  if (r.error) { toast('ส่งคำขอยกเลิกไม่สำเร็จ: ' + r.error.message, 'warn'); return; }
+  closeM(); toast('ส่งคำขอยกเลิกแล้ว — รอ ' + uidToName(approver) + ' อนุมัติ');
+  await _draftAfterCancelAction(no);
+}
+async function draftCancelDecide(no, approve) {
+  const h = await SB.getPromoDraftHeader(no).catch(() => null);
+  const rq = _draftCancelPending(h);
+  if (!rq) { toast('ไม่มีคำขอยกเลิกที่รออนุมัติแล้ว', 'warn'); return; }
+  openMod(`<div class="mh"><div class="mt2">${approve ? '✅ อนุมัติการยกเลิก' : '❌ ไม่อนุมัติการยกเลิก'} — ${esc(h.promo_no || h.doc_no || no)}</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="font-size:12.5px;line-height:1.7;margin-bottom:10px;background:var(--bg2);border-radius:7px;padding:8px 12px">
+      <div><b>ขอยกเลิก:</b> ${rq.scope === 'all' ? 'ทั้งใบ' : 'รายสินค้า ' + rq.skus.map(esc).join(', ')}</div>
+      <div><b>ผู้ขอ:</b> ${esc(rq.requested_by_name || uidToName(rq.requested_by))} · ${new Date(rq.requested_at).toLocaleString('th-TH')}</div>
+      <div><b>หมายเหตุผู้ขอ:</b> ${esc(rq.reason)}</div></div>
+    <div class="field"><label>หมายเหตุผู้อนุมัติ <span style="font-weight:400;color:var(--TX3)">(ไม่บังคับ)</span></label>
+      <textarea id="dcx-note" rows="3" maxlength="1000" style="width:100%;border:1px solid var(--BD);border-radius:7px;padding:7px;font:inherit;box-sizing:border-box"></textarea></div>
+    ${approve ? '<div class="al alw" style="font-size:12px">อนุมัติแล้วระบบไม่เขียน Express — ต้องไปยกเลิกโปรใน Express เองด้วย</div>' : ''}
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ปิด</button>
+      <button class="btn ${approve ? 'btn-g' : 'btn-r'}" onclick="draftCancelDecideSubmit('${esc(no)}',${approve})">${approve ? 'ยืนยันอนุมัติยกเลิก' : 'ยืนยันไม่อนุมัติ'}</button></div>`);
+}
+async function draftCancelDecideSubmit(no, approve) {
+  const note = (document.getElementById('dcx-note')?.value || '').trim();
+  const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/cancel-decision`, { method: 'POST', body: JSON.stringify({ approve, note }) });
+  if (r.error) { toast('บันทึกไม่สำเร็จ: ' + r.error.message, 'warn'); return; }
+  closeM(); toast(approve ? (r.data?.status === 'cancelled' ? 'ยกเลิกเอกสารแล้ว' : 'ยกเลิกรายการที่ขอแล้ว') + ' — อย่าลืมยกเลิกใน Express' : 'ไม่อนุมัติการยกเลิก');
+  await _draftAfterCancelAction(no);
+}
+async function draftCancelWithdraw(no) {
+  if (!confirm('ถอนคำขอยกเลิกนี้?')) return;
+  const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/cancel-withdraw`, { method: 'POST', body: '{}' });
+  if (r.error) { toast('ถอนคำขอไม่สำเร็จ: ' + r.error.message, 'warn'); return; }
+  toast('ถอนคำขอยกเลิกแล้ว'); await _draftAfterCancelAction(no);
+}
+function draftRecall(no) {
+  openMod(`<div class="mh"><div class="mt2">↩️ เรียกเอกสารกลับเพื่อแก้ไข</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="font-size:12.5px;color:var(--TX2);margin-bottom:10px">เอกสารจะกลับเป็น "ร่าง" ผลอนุมัติที่ทำไปแล้วจะถูกล้าง (เก็บไว้ในประวัติ) ลิงก์อนุมัติในอีเมลเดิมใช้ไม่ได้ — แก้ไขแล้วส่งอนุมัติใหม่ เริ่มขั้นที่ 1</div>
+    <div class="field"><label>หมายเหตุ <span style="font-weight:400;color:var(--TX3)">(ไม่บังคับ — แจ้งผู้อนุมัติขั้นปัจจุบันทางอีเมล)</span></label>
+      <textarea id="drc-note" rows="2" maxlength="1000" style="width:100%;border:1px solid var(--BD);border-radius:7px;padding:7px;font:inherit;box-sizing:border-box"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ปิด</button><button class="btn btn-p" onclick="draftRecallSubmit('${esc(no)}')">เรียกกลับ</button></div>`);
+}
+async function draftRecallSubmit(no) {
+  const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/recall`, { method: 'POST', body: JSON.stringify({ note: (document.getElementById('drc-note')?.value || '').trim() }) });
+  if (r.error) { toast('เรียกกลับไม่สำเร็จ: ' + r.error.message, 'warn'); return; }
+  closeM(); toast('เรียกเอกสารกลับเป็นร่างแล้ว — แก้ไขแล้วส่งอนุมัติใหม่ได้');
+  CACHE.clear('promo_draft_headers');
+  if (document.getElementById('promo-drafts-list')) pgPromoDraftsRenderBody();
+  if (_draftEditNo === no) await showPromoDraftModal(no);
+}
+const DRAFT_LOG_LABELS = {
+  create: '📝 สร้างเอกสาร', edit: '✏️ แก้ไข', submit: '📤 ส่งอนุมัติ', approve: '✅ อนุมัติ', reject: '❌ ไม่อนุมัติ',
+  skip_level: '⏭️ ข้ามขั้น', escalate_exec: '⬆️ ส่งต่อขั้นผู้บริหาร', approved_final: '🎫 อนุมัติครบ / ออกเลขใบโปร', reopen: '🔁 เปิดแก้ไขใหม่',
+  recall: '↩️ เรียกกลับเพื่อแก้ไข', cancel_request: '🚫 ขอยกเลิก', cancel_approve: '✅ อนุมัติการยกเลิก', cancel_reject: '❌ ไม่อนุมัติการยกเลิก',
+  cancel_withdraw: '↩️ ถอนคำขอยกเลิก', keyed: '⌨️ คีย์เข้า Express แล้ว', delete: '🗑️ ลบเอกสาร', attach: '📎 แนบไฟล์', detach: '🗑️ ลบไฟล์แนบ',
+  copy_attachments: '📋 คัดลอกไฟล์แนบ',
+};
+const DRAFT_LOG_FIELD_LABELS = { promo_name: 'ชื่อรายการ', purpose: 'วัตถุประสงค์', condition_type: 'เงื่อนไข', item_type: 'ลักษณะรายการ', note: 'หมายเหตุ',
+  start_date: 'วันเริ่มโปร', due_date: 'วันสิ้นสุดโปร', cost_start_date: 'วันเริ่มทุน', cost_end_date: 'วันสิ้นสุดทุน', is_npd: 'NPD', has_off_contract_cost: 'นอกสัญญา',
+  has_marketing_cost: 'ค่าลงสื่อ', other_costs_json: 'ค่าใช้จ่ายอื่นๆ', has_compensate: 'Compensate', form_extra_json: 'รายละเอียดฟอร์ม', route_id: 'เส้นทางอนุมัติ' };
+function _draftLogDetail(l) {
+  const d = l.detail || {}, bits = [];
+  if (d.level) bits.push(`ขั้นที่ ${d.level}${d.label ? ' · ' + d.label : ''}${d.stage === 'ผู้บริหาร' ? ' (ผู้บริหาร)' : ''}`);
+  if (d.route) bits.push('เส้นทาง ' + d.route);
+  if (d.verdicts) bits.push(`ผลตรวจสอบ ขายได้ ${d.verdicts.profit} · ขาดทุน ${d.verdicts.loss}`);
+  if (d.channel === 'email') bits.push('ผ่านอีเมล');
+  if (d.fields?.length) bits.push('แก้: ' + d.fields.map(k => DRAFT_LOG_FIELD_LABELS[k] || k).join(', '));
+  if (d.scope) bits.push(d.scope === 'all' ? 'ทั้งใบ' : 'รายสินค้า ' + (d.skus || []).join(', '));
+  if (d.approver) bits.push('ผู้อนุมัติ ' + d.approver);
+  if (d.promo_no) bits.push('เลขใบโปร ' + d.promo_no);
+  if (d.copied_from) bits.push('คัดลอกจาก ' + d.copied_from);
+  if (d.filename) bits.push(d.filename);
+  if (d.reason) bits.push('หมายเหตุ: ' + d.reason);
+  if (d.note) bits.push('หมายเหตุ: ' + d.note);
+  if (d.comment) bits.push('ความเห็น: ' + d.comment);
+  if (d.approvals_done?.length) bits.push('ผลอนุมัติเดิม: ' + d.approvals_done.map(a => `${a.level} ${a.name} (${a.status === 'approved' ? 'อนุมัติ' : a.status})`).join(', '));
+  return bits.map(esc).join(' · ');
+}
+async function _draftLogsHtml(no) {
+  const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/logs`);
+  if (r.error) return `<div class="al alw" style="margin:8px">โหลดประวัติไม่สำเร็จ: ${esc(r.error.message)}</div>`;
+  const rows = r.data || [];
+  if (!rows.length) return '<div style="padding:10px;color:var(--TX3);font-size:12px">ยังไม่มีประวัติ (เริ่มเก็บตั้งแต่ 30 ก.ย. 2569)</div>';
+  return `<div class="tw" style="max-height:360px;overflow:auto"><table><thead><tr><th style="width:150px">วันเวลา</th><th style="width:170px">ผู้ดำเนินการ</th><th style="width:190px">การดำเนินการ</th><th>รายละเอียด</th></tr></thead><tbody>${rows.map(l => `<tr>
+    <td style="font-size:12px;white-space:nowrap">${new Date(l.ts).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+    <td style="font-size:12px">${esc(l.name || l.uid || '')}</td><td style="font-size:12px;font-weight:600">${esc(DRAFT_LOG_LABELS[l.action] || l.action)}</td>
+    <td style="font-size:12px;white-space:pre-wrap">${_draftLogDetail(l)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+async function draftShowLogs(no) {
+  openMod(`<div class="mh"><div class="mt2">📜 ประวัติการดำเนินการ</div><span class="mx" onclick="closeM()">✕</span></div><div id="dlog-body">⏳ กำลังโหลด…</div>`);
+  const html = await _draftLogsHtml(no);
+  const el = document.getElementById('dlog-body'); if (el) el.innerHTML = html;
+}
+async function draftRenderLogs() {
+  const el = document.getElementById('draft-log-list');
+  if (!el || !_draftEditNo) return;
+  el.innerHTML = await _draftLogsHtml(_draftEditNo);
+}
+function _draftCancelBannerHtml(h) {
+  if (!h) return '';
+  const rq = _draftCancelPending(h), cx = _draftCancelSet(h);
+  const hist = (Array.isArray(h.cancel_history_json) ? h.cancel_history_json : []).filter(x => x.result === 'approved');
+  const last = hist[hist.length - 1];
+  const parts = [];
+  if (h.status === 'cancelled') parts.push(`<div class="al ald" style="font-size:12.5px">🚫 <b>เอกสารนี้ถูกยกเลิกแล้ว</b>${last ? ` — อนุมัติโดย ${esc(last.decided_by_name || '')} · หมายเหตุผู้ขอ: ${esc(last.reason || '')}${last.manager_note ? ' · ผู้อนุมัติ: ' + esc(last.manager_note) : ''}` : ''}</div>`);
+  else if (cx.size) parts.push(`<div class="al alw" style="font-size:12.5px">🚫 ยกเลิกบางรายการแล้ว: <b class="mono">${[...cx].map(esc).join(', ')}</b> (ขีดฆ่าในตารางสินค้า)</div>`);
+  if (rq) parts.push(`<div class="al ali" style="font-size:12.5px">⏳ มีคำขอยกเลิก${rq.scope === 'all' ? 'ทั้งใบ' : ' ' + rq.skus.map(esc).join(', ')} โดย ${esc(rq.requested_by_name || '')} — รอ ${esc(rq.approver_name || '')} อนุมัติ · หมายเหตุ: ${esc(rq.reason)}</div>`);
+  return parts.join('');
+}
 const DRAFT_AUDIT_ACTION_LABELS = {
   PROMO_DRAFT_CREATE: 'สร้างร่าง', PROMO_DRAFT_EDIT: 'แก้ไขร่าง', PROMO_DRAFT_SUBMIT: 'ส่งอนุมัติ',
   PROMO_DRAFT_APPROVE: 'อนุมัติ', PROMO_DRAFT_REJECT: 'ไม่อนุมัติ', PROMO_DRAFT_ESCALATE: 'ส่งต่อผู้บริหาร',
@@ -13583,6 +14022,8 @@ let _draftEditNo = ''; // draft_no ที่กำลังแก้ไข ('' =
 let _draftHeader = null; // แถว promo_draft_headers เต็ม (null = ยังไม่เคยบันทึก/เอกสารใหม่)
 // ค่า "อุปกรณ์" เดิมของเอกสาร — ช่องนี้เอาออกจากฟอร์มแล้ว (2026-09-24 v3) แต่คงค่าเดิมไว้ตอนบันทึก/คัดลอก
 let _draftEquipKeep = '';
+// "ลดเป็น" / "รูปแบบการจัดจำหน่ายพิเศษ" เอาออกจากฟอร์ม (2026-09-30 v4) — คงค่าเดิมของเอกสารไว้ตอนบันทึก
+let _draftDiscScopeKeep = '', _draftSpecialDistKeep = '';
 let _draftCopyHeader = null; // หัวเอกสารต้นทางตอน "คัดลอกจากเอกสารเดิม" (ใช้เติมช่องเท่านั้น — _draftHeader ยังเป็น null = เอกสารใหม่)
 let _draftCopySrcNo = '';    // draft_no ต้นทาง — คัดลอกไฟล์แนบให้หลังบันทึกเอกสารใหม่ครั้งแรก
 // แถว promo_drafts (1 แถวต่อสาขา×SKU) → บรรทัดในฟอร์ม (1 บรรทัดต่อ SKU)
@@ -13829,6 +14270,7 @@ async function draftRefreshCustomerCatalog(extraCodes = []) {
 }
 function draftItemTypeChanged() {
   _draftRefreshCompensateMarks();
+  _draftLines.forEach((l, i) => { if (l.sku) _draftRecalcCost(i); }); // Compensate เปิด/ปิด → ทุนสุทธิโปรคำนวณใหม่/ล้าง
   if (_draftPlanOpts) draftRenderApprovalTrail();
 }
 // "ใช้วันเดียวกับวันโปร" (2026-09-23) — ไม่มีคอลัมน์ใน DB: เปิดเอกสารเดิมถือว่าติ๊กเมื่อวันทุนตรงกับวันโปร
@@ -13882,6 +14324,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
   _draftLineVerdicts = {};
   _draftPromoDocsCache.clear();
   _draftEquipKeep = '';
+  _draftDiscScopeKeep = ''; _draftSpecialDistKeep = '';
   _draftEditStatus = '';
   _draftEditCreatedBy = '';
   _draftOtherCosts = [];
@@ -13902,6 +14345,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
     if (!header) { toast('ไม่พบใบเคาะราคานี้แล้ว', 'warn'); return; }
     _draftHeader = header;
     _draftEquipKeep = header.equipment || '';
+    _draftDiscScopeKeep = header.discount_scope || ''; _draftSpecialDistKeep = header.special_distribution || '';
     _draftLineVerdicts = { ...(_draftSavedLineVerdicts(header) || {}) };
     _draftEditStatus = header.status || 'draft';
     _draftEditCreatedBy = header.created_by || '';
@@ -13914,6 +14358,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
     _draftCopyHeader = src;
     _draftCopySrcNo = srcNo || '';
     _draftEquipKeep = src.equipment || '';
+    _draftDiscScopeKeep = src.discount_scope || ''; _draftSpecialDistKeep = src.special_distribution || '';
     _draftOtherCosts = Array.isArray(src.other_costs_json) ? src.other_costs_json.map(c => ({ ...c })) : [];
     _draftAttachments = Array.isArray(attachments) ? attachments : [];
     _draftSelectedBranches = _draftBranchesFrom(src, lines);
@@ -13947,6 +14392,8 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
     </div>
   </div>
   <div class="cr-fullpage-content">
+    ${_draftCancelBannerHtml(_draftHeader)}
+    ${draftNo && _draftHeader ? `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:8px">${_draftCancelButtons(_draftHeader, false)}</div>` : ''}
     <div class="al ali">เอกสารนี้เก็บในระบบเท่านั้น ไม่เขียนเข้า Express — คีย์เข้า Express เองหลังอนุมัติ แล้วมากดปิดสถานะที่ "เอกสารใบเคาะราคา"</div>
     <div class="fg">
       <div class="field" style="grid-column:1/-1"><label>ชื่อรายการ</label>
@@ -13957,11 +14404,6 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
         <input type="text" id="draft-condition-other" placeholder="ระบุเงื่อนไขอื่นๆ" value="${esc(_draftOtherText(DRAFT_CONDITION_TYPES, header?.condition_type))}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field" style="grid-column:1/-1"><label>ลักษณะรายการ <span style="font-weight:400;color:var(--TX3);font-size:11px">(เลือกได้มากกว่า 1)</span></label>
         <div style="display:flex;gap:16px;flex-wrap:wrap">${DRAFT_ITEM_TYPES.map(t => `<label class="esc-item"><input type="checkbox" class="draft-item-type-chk" value="${esc(t)}" onchange="draftItemTypeChanged()" ${selectedItemTypes.includes(t) ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>${esc(t)}</label>`).join('')}</div></div>
-      <div class="field"><label>ลดเป็น</label>
-        <select id="draft-discount-scope" ${canEdit ? '' : 'disabled'}>
-          <option value="item" ${(!header || header.discount_scope === 'item') ? 'selected' : ''}>รายการ</option>
-          <option value="bill" ${header?.discount_scope === 'bill' ? 'selected' : ''}>ท้ายบิล</option>
-        </select></div>
       <div class="field"><label>วันที่เริ่มโปร</label>
         <input type="date" id="draft-start" value="${esc(header?.start_date || '')}" onchange="draftSyncCostDates();draftUpdateDayCounts();draftRefreshLineRefData();draftSyncLineDates()" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>วันสิ้นสุดโปร</label>
@@ -13976,9 +14418,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
       <div class="field" style="grid-column:1/-1"><label>วัตถุประสงค์</label>
         <input type="text" id="draft-purpose" value="${esc(header?.purpose || '')}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field" style="grid-column:1/-1"><label>หมายเหตุ</label>
-        <input type="text" id="draft-note" value="${esc(header?.note || '')}" ${canEdit ? '' : 'disabled'}></div>
-      <div class="field" style="grid-column:1/-1"><label>รูปแบบการจัดจำหน่ายพิเศษ <span style="font-weight:400;color:var(--TX3);font-size:11px">(ถ้ามี)</span></label>
-        <input type="text" id="draft-special-distribution" placeholder="เช่น ขายผ่านบูธ, ขายแบบ bundle, ส่งตรงหน้าร้าน" value="${esc(header?.special_distribution || '')}" ${canEdit ? '' : 'disabled'}></div>
+        <textarea id="draft-note" rows="2" style="width:100%;border:1px solid var(--BD);border-radius:7px;padding:7px 10px;font:inherit;font-size:13px;box-sizing:border-box;resize:vertical" ${canEdit ? '' : 'disabled'}>${esc(header?.note || '')}</textarea></div>
       ${_draftFormExtraHtml(header?.form_extra_json, canEdit, header)}
     </div>
     <div id="draft-esc-warn" style="margin-bottom:13px"></div>
@@ -14025,6 +14465,10 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
       <div id="draft-approval-trail"></div>
     </div>
     ${draftNo ? `<div class="card" style="margin-top:16px">
+      <div class="ch"><div class="ct2">📜 ประวัติการดำเนินการ</div><button class="btn btn-xs" onclick="draftRenderLogs()">🔄</button></div>
+      <div id="draft-log-list"><div style="padding:10px;color:var(--TX3);font-size:12px">⏳ กำลังโหลด…</div></div>
+    </div>` : ''}
+    ${draftNo ? `<div class="card" style="margin-top:16px">
       <div class="ch"><div class="ct2">💬 คอมเมนต์ในเอกสาร <span id="draft-anchor-count" style="font-weight:400;color:var(--TX3)"></span></div></div>
       <div id="draft-anchor-list"></div>
     </div>` : ''}
@@ -14065,6 +14509,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
   draftRefreshLineRefData();
   draftRenderAuditTrail(draftNo);
   draftRenderApprovalTrail();
+  draftRenderLogs();
   _draftCmtMode = false;
   draftLoadAnchorComments();
   draftRenderAttachments();
@@ -14106,6 +14551,8 @@ function _draftFormExtraHtml(raw, canEdit, header) {
   const fx = _draftFx(raw), dis = canEdit ? '' : 'disabled';
   const sale = fx.sale || {};
   const ck = (id, on, label, extra = '', attrs = '') => `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox" id="${id}" ${on ? 'checked' : ''} ${attrs} ${dis}>${label}${extra}</label>`;
+  // ค่าแรกเข้า (2026-09-30): เลือกได้อย่างเดียว มี/ไม่มี — id เดิม fx-fee / fx-fee-none (อ่านด้วย .checked เหมือนเดิม)
+  const rd = (id, on, label, extra = '') => `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="fx-fee-mode" id="${id}" ${on ? 'checked' : ''} ${dis}>${label}${extra}</label>`;
   const num = (id, v, w = 64, ph = '') => `<input type="number" id="${id}" value="${esc(v ?? '')}" placeholder="${ph}" min="0" style="width:${w}px;padding:3px 6px;font-size:12px" ${dis}>`;
   const txt = (id, v, w = 150) => `<input type="text" id="${id}" value="${esc(v ?? '')}" style="width:${w}px;padding:3px 6px;font-size:12px" ${dis}>`;
   const row = (label, body, cls = '') => `<div class="${cls}" data-acm-row="${esc(label)}" style="display:grid;grid-template-columns:130px 1fr;gap:6px;align-items:center;margin-top:6px"><b style="font-size:12px;color:var(--TX2)">${label}</b><div style="display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:12.5px">${body}</div></div>`;
@@ -14120,16 +14567,24 @@ function _draftFormExtraHtml(raw, canEdit, header) {
       ${row('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? ck('fx-pt-other', fx.ptype_other?.on, 'อื่นๆ', ' ' + txt('fx-pt-other-v', fx.ptype_other?.text)) + '<span style="flex-basis:100%;height:0"></span>'
           : t === 'อื่นๆ2' ? ck('fx-pt-other2', fx.ptype_other2?.on, 'อื่นๆ', ' ' + txt('fx-pt-other2-v', fx.ptype_other2?.text))
           : ck(`fx-pt-${DRAFT_PRODUCT_TYPES.indexOf(t)}`, (fx.ptypes || []).includes(t), t)).join(''))}
-      ${row('สินค้า NPD/ลงสื่อ', ck('draft-npd', header?.is_npd, '🆕 สินค้า NPD', '', escAttr)
-        + ck('fx-fee-none', fx.fee_none, 'ไม่มีค่าแรกเข้า')
-        + ck('fx-fee', fx.fee?.on, 'ค่าแรกเข้า', ` ${num('fx-fee-v', fx.fee?.amt, 100)} บาท`)
-        + ck('draft-marketing-cost', header?.has_marketing_cost, 'ค่าลงสื่อ/โฆษณา', ` ${num('fx-media-v', fx.media?.amt, 100)} บาท`, escAttr)
+      ${row('สินค้า NPD', ck('draft-npd', header?.is_npd, '🆕 สินค้า NPD', '', 'onchange="draftEscalateChanged();draftNpdChanged()"')
+        + `<span id="draft-npd-opts" class="${header?.is_npd ? '' : 'hidden'}" style="display:contents">`
+        + rd('fx-fee-none', fx.fee_none, 'ไม่มีค่าแรกเข้า')
+        + rd('fx-fee', fx.fee?.on, 'มีค่าแรกเข้า', ` ${num('fx-fee-v', fx.fee?.amt, 100)} บาท`)
+        + `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;flex:1;min-width:260px">หมายเหตุ ${txt('fx-npd-note', fx.npd_note, 0).replace('style="width:0px;', 'style="flex:1;min-width:180px;')}</label>`
+        + '<span style="font-size:11px;color:var(--R);flex-basis:100%">* ติ๊ก NPD แล้วต้องเลือกว่ามีหรือไม่มีค่าแรกเข้า</span></span>')}
+      ${row('ลงสื่อ', ck('draft-marketing-cost', header?.has_marketing_cost, 'ค่าลงสื่อ/โฆษณา', ` ${num('fx-media-v', fx.media?.amt, 100)} บาท`, escAttr)
         + ck('fx-media-online', fx.media_online?.on, 'ค่าลงสื่อ online', ` ${num('fx-media-online-v', fx.media_online?.amt, 100)} บาท`)
-        + ck('fx-other-cost', oc.on, 'ค่าใช้จ่ายอื่นๆ', ` ${num('fx-other-cost-v', oc.amt, 100).replace('<input ', `<input data-manual="${fx.other_cost && Number(fx.other_cost.amt || 0) !== ocSum ? 1 : ''}" oninput="this.dataset.manual=1" `)} บาท`))}
+        + ck('fx-vl-sign', fx.vl_sign?.on, 'ค่าป้าย promotion VL', ` ${num('fx-vl-sign-v', fx.vl_sign?.amt, 100)} บาท`))}
+      ${row('ค่าใช้จ่ายอื่นๆ', ck('fx-other-cost', oc.on, 'ค่าใช้จ่ายอื่นๆ', ` ${num('fx-other-cost-v', oc.amt, 100).replace('<input ', `<input data-manual="${fx.other_cost && Number(fx.other_cost.amt || 0) !== ocSum ? 1 : ''}" oninput="this.dataset.manual=1" `)} บาท`)
+        + `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;flex:1;min-width:300px">รายละเอียด ${txt('fx-other-cost-detail', oc.detail ?? _draftOtherCostDetailDefault(), 0).replace('style="width:0px;', 'style="flex:1;min-width:200px;')}</label>`)}
       ${row('ค่าใช้จ่ายนอกสัญญา', ck('draft-off-contract', header?.has_off_contract_cost, '📄 ค่าใช้จ่ายนอกสัญญา', '', 'onchange="draftEscalateChanged();draftOffContractChanged()"')
         + '<span style="font-size:11px;color:var(--TX3)">ติ๊กแล้ว ตารางรายการสินค้าจะเปลี่ยนเป็นช่องพิมพ์รายละเอียด + แนบไฟล์</span>')}
     </div></div>`;
 }
+// รายละเอียดค่าใช้จ่ายอื่นๆ ตั้งต้น = ชื่อรายการในตาราง 💵 ค่าใช้จ่ายอื่นๆ
+function _draftOtherCostDetailDefault() { return _draftOtherCosts.map(c => String(c.item || '').trim()).filter(Boolean).join(', '); }
+function draftNpdChanged() { document.getElementById('draft-npd-opts')?.classList.toggle('hidden', !document.getElementById('draft-npd')?.checked); }
 function _draftReadFormExtra() {
   const on = id => !!document.getElementById(id)?.checked;
   const val = id => (document.getElementById(id)?.value || '').trim();
@@ -14142,11 +14597,14 @@ function _draftReadFormExtra() {
     ptypes: DRAFT_PRODUCT_TYPES.filter((_, i) => on(`fx-pt-${i}`)),
     ptype_other: { on: on('fx-pt-other'), text: val('fx-pt-other-v') },
     ptype_other2: { on: on('fx-pt-other2'), text: val('fx-pt-other2-v') },
-    fee_none: on('fx-fee-none'),
-    fee: { on: on('fx-fee'), amt: n('fx-fee-v') },
+    // ค่าแรกเข้า/หมายเหตุ NPD มีผลเฉพาะเมื่อติ๊ก NPD
+    fee_none: on('draft-npd') && on('fx-fee-none'),
+    fee: { on: on('draft-npd') && on('fx-fee'), amt: n('fx-fee-v') },
+    npd_note: on('draft-npd') ? val('fx-npd-note') : '',
     media: { on: on('draft-marketing-cost'), amt: n('fx-media-v') },
     media_online: { on: on('fx-media-online'), amt: n('fx-media-online-v') },
-    other_cost: { on: on('fx-other-cost'), amt: n('fx-other-cost-v') },
+    vl_sign: { on: on('fx-vl-sign'), amt: n('fx-vl-sign-v') },
+    other_cost: { on: on('fx-other-cost'), amt: n('fx-other-cost-v'), detail: val('fx-other-cost-detail') },
     off_contract_text: offContract ? val('draft-off-contract-text') : '',
     branches: offContract ? [..._draftSelectedBranches] : [],
   };
@@ -14160,8 +14618,10 @@ function _draftSetFormExtra(raw) {
   setC('fx-pt-other', fx.ptype_other?.on); setV('fx-pt-other-v', fx.ptype_other?.text);
   setC('fx-pt-other2', fx.ptype_other2?.on); setV('fx-pt-other2-v', fx.ptype_other2?.text);
   setC('fx-fee-none', fx.fee_none); setC('fx-fee', fx.fee?.on); setV('fx-fee-v', fx.fee?.amt); setV('fx-media-v', fx.media?.amt);
-  setC('fx-other-cost', fx.other_cost?.on); setV('fx-other-cost-v', fx.other_cost?.amt);
+  setC('fx-other-cost', fx.other_cost?.on); setV('fx-other-cost-v', fx.other_cost?.amt); setV('fx-other-cost-detail', fx.other_cost?.detail);
   setC('fx-media-online', fx.media_online?.on); setV('fx-media-online-v', fx.media_online?.amt);
+  setC('fx-vl-sign', fx.vl_sign?.on); setV('fx-vl-sign-v', fx.vl_sign?.amt); setV('fx-npd-note', fx.npd_note);
+  document.getElementById('draft-npd-opts')?.classList.toggle('hidden', !document.getElementById('draft-npd')?.checked);
   setV('draft-off-contract-text', fx.off_contract_text);
 }
 // ติ๊ก/ไม่ติ๊ก "ค่าใช้จ่ายนอกสัญญา": ซ่อน/แสดงตารางสินค้า (+ GP/ท้ายบิลค่าเริ่มต้น, คำเตือนซ้อนโปร) สลับกับ
@@ -14538,7 +14998,8 @@ function _draftApplyCompensate(i) {
 function _draftRecalcCost(i) {
   const l = _draftLines[i];
   l.costPrice = _draftCalcNetCost(l.normalPrice, l.gpPct, l.billDiscPct);
-  l.costPricePromo = _draftCalcNetCost(l.unitPrice, l.gpPctPromo, l.billDiscPctPromo);
+  // ติ๊ก Compensate (2026-09-30): ไม่คำนวณทุนสุทธิโปร
+  l.costPricePromo = _draftHasCompensate() ? '' : _draftCalcNetCost(l.unitPrice, l.gpPctPromo, l.billDiscPctPromo);
   const fmt2 = v => v !== '' ? Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   const elN = document.getElementById(`draft-line-cost-${i}`); if (elN) elN.textContent = fmt2(l.costPrice);
   const elP = document.getElementById(`draft-line-cost-promo-${i}`); if (elP) elP.textContent = fmt2(l.costPricePromo);
@@ -14596,8 +15057,9 @@ function draftRenderLines() {
     // ปุ่ม "+ ย่อย" กดได้ทั้งบรรทัดหลัก (เพิ่ม 1.1) และบรรทัดย่อยชั้น 1 (เพิ่ม 1.1.1) — จำกัดไว้ที่ 2 ชั้น
     // (subLevel 0/1/2) กันการซ้อนไม่รู้จบ ดู _draftIsSpecialPriceSku
     const canAddSub = level < 2 && _draftIsSpecialPriceSku(l.sku);
-    return `<tr${level > 0 ? ' style="background:var(--bg2)"' : ''}>
-    <td class="mono" style="${level > 0 ? `padding-left:${20 * level}px;color:var(--TX3)` : 'font-weight:700'}"><span class="draft-line-num">${nums[i]}</span><span id="draft-line-ovl-${i}"></span>
+    const isCx = _draftCancelSet(_draftHeader).has(l.sku);
+    return `<tr${level > 0 || isCx ? ` style="${level > 0 ? 'background:var(--bg2);' : ''}${isCx ? 'text-decoration:line-through;opacity:.55' : ''}"` : ''}${isCx ? ' title="รายการนี้ถูกยกเลิกแล้ว"' : ''}>
+    <td class="mono" style="${level > 0 ? `padding-left:${20 * level}px;color:var(--TX3)` : 'font-weight:700'}"><span class="draft-line-num">${nums[i]}</span>${isCx ? '<span class="badge bbr" style="font-size:9.5px;text-decoration:none">ยกเลิก</span>' : ''}<span id="draft-line-ovl-${i}"></span>
       ${canEdit && canAddSub ? `<button class="btn btn-xs" id="draft-subitem-btn-${i}" title="รหัสสินค้าราคาพิเศษ หรือรหัสมี suffix -A/-B/-C — เพิ่มรายการย่อยได้" onclick="draftAddSubItem(${i})">+ ย่อย</button>` : `<button class="btn btn-xs hidden" id="draft-subitem-btn-${i}" onclick="draftAddSubItem(${i})">+ ย่อย</button>`}</td>
     <td><input list="draft-sku-opts" value="${esc(l.sku)}" placeholder="รหัสสินค้า..." style="width:96px"
       oninput="draftApplySku(${i},this.value,this)" ${dis}></td>
@@ -14879,6 +15341,7 @@ async function _draftRefreshLineRefDataNow() {
       } catch (e) { console.warn('prev period sales:', e.message || e); }
       skuList.forEach(sku => {
         const ref = next.get(sku), f = found.get(sku);
+        ref.prevPeriodFrom = from; ref.prevPeriodTo = to;
         if (f) { ref.prevPeriodQty = f.qty; ref.prevPeriodSource = f.source; ref.prevPeriodNote = f.note; }
         else { ref.prevPeriodQty = 0; ref.prevPeriodNote = `ไม่มียอดขายสินค้านี้ทั้งสาขาที่เลือก สาขาคู่ CONSI และทั้งกลุ่มลูกค้า ใน${period}`; }
       });
@@ -14920,7 +15383,7 @@ function draftRenderRefCells() {
     const qtyEl = document.getElementById(`draft-line-last-month-qty-${i}`);
     if (qtyEl) {
       qtyEl.innerHTML = ref?.prevPeriodQty != null
-        ? `${Number(ref.prevPeriodQty).toLocaleString('th-TH')}${ref.prevPeriodSource ? `<div style="font-size:10px;color:var(--O);font-weight:600">${esc(ref.prevPeriodSource)}</div>` : ''}`
+        ? `${Number(ref.prevPeriodQty).toLocaleString('th-TH')}${ref.prevPeriodFrom ? `<div style="font-size:10px;color:var(--TX3)">${esc(promoFmtD(ref.prevPeriodFrom))} – ${esc(promoFmtD(ref.prevPeriodTo))}</div>` : ''}`
         : '—';
       qtyEl.title = ref?.prevPeriodNote || (ref ? 'ไม่พบ Pro Period ก่อนของสาขาที่เลือก + สินค้านี้' : '');
     }
@@ -15073,7 +15536,7 @@ function _draftPlanHtml() {
         <input list="draft-plan-users" placeholder="🔍 พิมพ์ชื่อเพื่อเพิ่ม" style="width:190px;font-size:12px;padding:3px 7px" onchange="draftPlanAddByText('${_promoJsKey(lv.id)}',this)">` : ''}</div>
         <div style="font-size:10.5px;color:var(--TX3);margin-top:2px">ผู้สร้างเลือกเอง</div>`;
     } else who = esc((lv.approvers || []).map(a => a.name || uidToName(a.uid)).join(' / ') || '—');
-    rows.push(`<tr><td>${i + 2}</td><td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b>${lv.audit_verdict ? '<div style="font-size:10.5px;color:var(--BL)">🔍 ขั้นตรวจสอบ (ขายได้/ขาดทุน รายสินค้า)</div>' : ''}</td><td class="l">${who}</td>
+    rows.push(`<tr><td>${i + 2}</td><td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b>${lv.audit_verdict ? '<div style="font-size:10.5px;color:var(--BL)">🔍 ขั้นตรวจสอบ (ขายได้/ขาดทุน รายสินค้า)</div>' : ''}${lv.only_if_loss ? '<div style="font-size:10.5px;color:var(--O)">⚠️ เฉพาะเมื่อมีรายการขาดทุน</div>' : ''}</td><td class="l">${who}</td>
       <td style="white-space:nowrap;font-size:11.5px">${(lv.approvers || []).length > 1 || lv.pick_by_creator ? (lv.mode === 'all' ? 'ทุกคนต้องอนุมัติ' : 'คนใดคนหนึ่ง') : '—'}</td></tr>`);
   });
   if (!(opt?.levels || []).length) rows.push(`<tr><td>2</td><td class="l" colspan="3" style="color:var(--TX3)">ยังไม่ได้ตั้งขั้นอนุมัติ — ผู้จัดการอนุมัติได้โดยตรง</td></tr>`);
@@ -15171,11 +15634,12 @@ function draftRenderApprovalTrail() {
   // v3 (2026-09-24, ตาม mockup): ตารางแถวเตี้ย ผู้จัดทำ + ผู้อนุมัติทุกคนทุกขั้น — คอลัมน์ความเห็นกว้างที่สุด
   const rows = [`<tr><td>1</td><td class="l"><b>ผู้จัดทำ</b></td><td class="l">${esc(uidToName(h.created_by) || h.created_by || '—')}</td>
     <td><span class="badge bbg">ส่งอนุมัติ</span></td><td class="l">—</td></tr>`];
-  levels.forEach((lv, i) => (lv.approvers || []).forEach(a => {
+  levels.forEach((lv, i) => lv.skipped ? rows.push(`<tr style="color:var(--TX3)"><td>${rows.length + 1}</td><td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b><div style="font-size:10.5px;color:var(--O)">⚠️ เฉพาะเมื่อมีรายการขาดทุน</div></td>
+      <td class="l">—</td><td><span class="badge bbgr">⏭️ ข้าม</span></td><td class="l">ไม่มีรายการขาดทุน — ไม่ต้องผ่านขั้นนี้</td></tr>`) : (lv.approvers || []).forEach(a => {
     const [t, cls] = st[a.status] || st.pending;
     const isCur = i === cur && active;
     rows.push(`<tr${isCur ? ' style="background:var(--LBL)"' : ''}><td>${rows.length + 1}</td>
-      <td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b>${(lv.approvers || []).length > 1 ? `<div style="font-size:10.5px;color:var(--TX3)">(${lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง'})</div>` : ''}</td>
+      <td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b>${(lv.approvers || []).length > 1 ? `<div style="font-size:10.5px;color:var(--TX3)">(${lv.mode === 'all' ? 'ต้องอนุมัติทุกคน' : 'คนใดคนหนึ่ง'})</div>` : ''}${lv.only_if_loss ? '<div style="font-size:10.5px;color:var(--O)">⚠️ เฉพาะเมื่อมีรายการขาดทุน</div>' : ''}</td>
       <td class="l">${esc(a.name || uidToName(a.uid))}</td>
       <td style="white-space:nowrap"><span class="badge ${cls}">${t}</span>${a.ts ? ` <span style="color:var(--TX3);font-size:11px">${fmtTs(a.ts)}</span>` : ''}</td>
       <td class="l" style="white-space:pre-wrap">${_draftVerdictSummary(a.line_verdicts)}${a.comment ? esc(a.comment) : (lv.audit_verdict && a.status === 'pending' ? '<span style="font-size:11px;color:var(--TX3)">🔍 ขั้นตรวจสอบ — เลือกผล ขายได้/ขาดทุน ในคอลัมน์ "ผลตรวจสอบ" ของตารางสินค้า</span>' : '')}</td></tr>`);
@@ -15406,7 +15870,7 @@ async function saveDraftPromo(submitAfter = false) {
   const itemType = _draftSelectedItemTypes();
   // ช่อง "อุปกรณ์" ถูกเอาออกจากฟอร์มแล้ว (2026-09-24 v3) — คงค่าเดิมของเอกสารไว้ ไม่ลบทิ้ง
   const equipment = _draftEquipKeep || '';
-  const discountScope = document.getElementById('draft-discount-scope')?.value || 'item';
+  const discountScope = _draftDiscScopeKeep || 'item';
   const purpose = (document.getElementById('draft-purpose')?.value || '').trim();
   const note = (document.getElementById('draft-note')?.value || '').trim();
   const promoStart = document.getElementById('draft-start')?.value || '';
@@ -15417,7 +15881,7 @@ async function saveDraftPromo(submitAfter = false) {
   const hasOffContractCost = document.getElementById('draft-off-contract')?.checked ? 1 : 0;
   const hasMarketingCost = document.getElementById('draft-marketing-cost')?.checked ? 1 : 0;
   const hasCompensate = _draftHasCompensate() ? 1 : 0;
-  const specialDistribution = (document.getElementById('draft-special-distribution')?.value || '').trim();
+  const specialDistribution = _draftSpecialDistKeep || '';
   const custCodes = [..._draftSelectedBranches];
   // ค่าใช้จ่ายนอกสัญญา (2026-09-24 v3): ไม่มีตารางสินค้า — บันทึกรายละเอียดข้อความ (form_extra_json) แทนบรรทัด
   const offContract = !!hasOffContractCost;
@@ -15436,6 +15900,12 @@ async function saveDraftPromo(submitAfter = false) {
     const nums = _draftLineNumbers();
     const missing = _draftLines.map((l, i) => (l.sku && _draftIsBlank(l.compensate)) ? nums[i] : null).filter(Boolean);
     if (missing.length) { alert(`เลือกลักษณะรายการ "Compensate" แล้ว กรุณากรอก Compensate ให้ครบทุกรายการ (ลำดับ ${missing.join(', ')})`); return; }
+  }
+  {
+    const fxv = _draftReadFormExtra();
+    if (isNpd && !fxv.fee_none && !fxv.fee.on) { alert('ติ๊ก "สินค้า NPD" แล้ว กรุณาเลือกว่า "มีค่าแรกเข้า" หรือ "ไม่มีค่าแรกเข้า"'); return; }
+    if (isNpd && fxv.fee.on && !(Number(fxv.fee.amt) > 0)) { alert('เลือก "ค่าแรกเข้า" แล้ว กรุณากรอกจำนวนเงินค่าแรกเข้า'); return; }
+    if (fxv.other_cost.on && Number(fxv.other_cost.amt) > 0 && !fxv.other_cost.detail) { alert('กรอกค่าใช้จ่ายอื่นๆ แล้ว กรุณากรอกรายละเอียดของค่าใช้จ่ายอื่นๆ ด้วย'); return; }
   }
 
   const editingExisting = !!_draftEditNo;
@@ -15495,7 +15965,7 @@ async function saveDraftPromo(submitAfter = false) {
       draftNo = _draftEditNo;
     } else {
       // เอกสารใหม่: สร้าง header ก่อนเพื่อให้ server ออก draft_no/doc_no ให้ แล้วค่อยเขียนบรรทัดสินค้าตาม
-      const header = await SB.createPromoDraftHeader({ ...headerFields, status: 'draft' });
+      const header = await SB.createPromoDraftHeader({ ...headerFields, status: 'draft', ...(_draftCopySrcNo ? { _copied_from: _draftCopySrcNo } : {}) });
       draftNo = header.draft_no;
       _draftEditNo = draftNo; _draftHeader = header; _draftEditStatus = header.status || 'draft';
     }
@@ -15540,6 +16010,8 @@ function pgPromoDrafts() {
           <option value="approved">อนุมัติแล้ว</option>
           <option value="rejected">ไม่อนุมัติ</option>
           <option value="keyed_to_express">คีย์เข้า Express แล้ว</option>
+          <option value="cancel_pending">รออนุมัติยกเลิก</option>
+          <option value="cancelled">ยกเลิกแล้ว</option>
         </select>
         <button class="btn btn-sm" onclick="_pdListView='workflow';pgPromoDrafts()">⚙️ ตั้งค่าเส้นทางอนุมัติ</button>
         <button class="btn btn-sm btn-p" onclick="showPromoDraftModal()">+ สร้างใบเคาะราคา</button>
@@ -15568,7 +16040,8 @@ async function pgPromoDraftsRenderBody() {
       CACHE.get('promo_drafts', () => SB.getPromoDraftLines()),
     ]);
   } catch (e) { box.innerHTML = `<div class="al alw">โหลดข้อมูลไม่สำเร็จ: ${esc(e.message || String(e))}</div>`; return; }
-  if (_draftListStatusFilter) headers = headers.filter(h => h.status === _draftListStatusFilter);
+  if (_draftListStatusFilter === 'cancel_pending') headers = headers.filter(h => _draftCancelPending(h));
+  else if (_draftListStatusFilter) headers = headers.filter(h => h.status === _draftListStatusFilter);
 
   const linesByDraftNo = new Map();
   lines.forEach(l => {
@@ -15586,11 +16059,12 @@ async function pgPromoDraftsRenderBody() {
     const branchCodes = docLines.length ? docLines.map(l => l.cust_code) : [..._draftBranchesFrom(h, [])];
     const branches = docLines.length ? [...new Set(docLines.map(l => `${l.cust_code} — ${l.cust_name || ''}`))] : [...new Set(branchCodes)];
     const branchRanges = _draftBranchRanges(branchCodes);
-    const skuLines = [...new Set(docLines.map(l => `${l.sku} — ${l.sku_name || ''} (${(Number(l.unit_price) || 0).toLocaleString('th-TH')})`))];
+    const cxSet = _draftCancelSet(h);
+    const skuLines = [...new Set(docLines.map(l => `${cxSet.has(l.sku) ? '🚫 ' : ''}${l.sku} — ${l.sku_name || ''} (${(Number(l.unit_price) || 0).toLocaleString('th-TH')})${cxSet.has(l.sku) ? ' [ยกเลิก]' : ''}`))];
     const canEdit = draftCanEditStatus(h.status);
     return `<div class="card" style="margin-bottom:10px;background:var(--bg2)">
       <div class="ch" style="margin-bottom:8px">
-        <div><b>${esc(h.promo_name || h.draft_no)}</b> ${draftStatusBadgeHtml(h.status || 'draft')}
+        <div><b>${esc(h.promo_name || h.draft_no)}</b> ${draftStatusBadgeHtml(h.status || 'draft')}${_draftCancelBadges(h)}
           <div style="font-size:11px;color:var(--TX3)"><span class="mono">${esc(h.doc_no || h.draft_no)}</span>${h.promo_no ? ` · <b style="color:var(--G)">🎫 ใบโปร <span class="mono">${esc(h.promo_no)}</span></b>` : ''} · ${esc(h.condition_type || '')} · ${esc(_draftItemTypesArr(h.item_type).join(', '))} · สร้างโดย ${esc(uidToName(h.created_by))}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -15599,7 +16073,8 @@ async function pgPromoDraftsRenderBody() {
           ${(h.status === 'draft' || h.status === 'rejected' || !h.status) ? `<button class="btn btn-xs" onclick="draftSubmitForApproval('${esc(h.draft_no)}')">ส่งอนุมัติ</button>` : ''}
           ${h.status === 'pending_approval' && _draftCanApprove(h) ? `<button class="btn btn-xs btn-r" onclick="draftApprove('${esc(h.draft_no)}',false)">ไม่อนุมัติ</button><button class="btn btn-xs btn-g" onclick="draftApprove('${esc(h.draft_no)}',true)">อนุมัติ</button>` : ''}
           ${h.status === 'pending_exec_approval' && _draftCanApprove(h) ? `<button class="btn btn-xs btn-r" onclick="draftExecApprove('${esc(h.draft_no)}',false)">ผู้บริหาร: ไม่อนุมัติ</button><button class="btn btn-xs btn-g" onclick="draftExecApprove('${esc(h.draft_no)}',true)">ผู้บริหาร: อนุมัติ</button>` : ''}
-          ${h.status !== 'keyed_to_express' ? `<button class="btn btn-xs btn-p" onclick="draftMarkKeyed('${esc(h.draft_no)}')">คีย์เข้า Express แล้ว</button>` : ''}
+          ${h.status !== 'keyed_to_express' && h.status !== 'cancelled' ? `<button class="btn btn-xs btn-p" onclick="draftMarkKeyed('${esc(h.draft_no)}')">คีย์เข้า Express แล้ว</button>` : ''}
+          ${_draftCancelButtons(h)}
           <button class="btn btn-xs btn-r" onclick="draftDeleteConfirm('${esc(h.draft_no)}')">ลบ</button>
         </div>
       </div>
@@ -15859,7 +16334,8 @@ async function _draftApplyApproval(draftNo, approved, executive) {
       // เลือกผลได้ในตารางสินค้าของเอกสารเท่านั้น — กดอนุมัติจากหน้ารายการ = เปิดเอกสารให้เลือกก่อน
       if (no !== _draftEditNo) { toast('ขั้นตรวจสอบ: เลือกผล ขายได้/ขาดทุน ในตารางสินค้าก่อน แล้วกดอนุมัติในเอกสาร', 'warn'); await showPromoDraftModal(no); return; }
       const nums = _draftLineNumbers();
-      const lines = _draftLines.map((l, i) => ({ l, num: nums[i] })).filter(x => x.l.sku);
+      const cxs = _draftCancelSet(_draftHeader);
+      const lines = _draftLines.map((l, i) => ({ l, num: nums[i] })).filter(x => x.l.sku && !cxs.has(x.l.sku));
       const missing = lines.filter(x => !DRAFT_VERDICT[_draftLineVerdicts[x.l.sku]]).map(x => x.num);
       if (missing.length) { toast(`ขั้นตรวจสอบ: เลือกผล "ขายได้" หรือ "ขาดทุน" ให้ครบทุกรายการ (ยังขาดลำดับ ${missing.join(', ')})`, 'warn'); return; }
       verdicts = Object.fromEntries(lines.map(x => [x.l.sku, _draftLineVerdicts[x.l.sku]]));
@@ -16012,6 +16488,7 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
         <span style="color:var(--TX3)">รายชื่อด้านล่างเป็นค่าแนะนำ (ปล่อยว่างได้)</span>` : ''}
       </div>` : ''}
       <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--TX2);margin:-2px 0 7px"><input type="checkbox" ${lv.audit_verdict ? 'checked' : ''} onchange="pdWfSetField('${kind}','${lv.id}','audit_verdict',this.checked)">🔍 ขั้นตรวจสอบ — ผู้อนุมัติขั้นนี้ต้องเลือกผล "ขายได้" หรือ "ขาดทุน" ทุกรายการสินค้าก่อนอนุมัติ</label>
+      <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--TX2);margin:-2px 0 7px 14px"><input type="checkbox" ${lv.only_if_loss ? 'checked' : ''} onchange="pdWfSetField('${kind}','${lv.id}','only_if_loss',this.checked)">⚠️ ใช้ขั้นนี้เฉพาะเมื่อมีรายการ "ขาดทุน" (ขายได้ทั้งหมด = ข้ามขั้นนี้) — ต้องอยู่หลังขั้นตรวจสอบ</label>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">
         ${(lv.approvers || []).map(a => `<span style="font-size:11px;background:var(--LBL);color:var(--BL);border-radius:4px;padding:3px 8px;display:flex;align-items:center;gap:4px">${esc(a.name)}${a.department ? `<span style="color:var(--TX3)">· ${esc(a.department)}</span>` : ''}<button onclick="pdWfRemApprover('${kind}','${lv.id}','${_promoJsKey(a.uid)}')" style="background:none;border:none;cursor:pointer;color:var(--TX3);font-size:10px;padding:0">✕</button></span>`).join('')}
       </div>
@@ -16537,12 +17014,10 @@ async function draftPreviewPDF(orient = 'landscape') {
   const name = (document.getElementById('draft-name')?.value || '').trim();
   const condition = _draftReadOtherSelect('draft-condition', 'draft-condition-other');
   const itemType = _draftSelectedItemTypes();
-  const discountScope = document.getElementById('draft-discount-scope')?.value || 'item';
   const purpose = (document.getElementById('draft-purpose')?.value || '').trim();
   const note = (document.getElementById('draft-note')?.value || '').trim();
   const offContract = _draftIsOffContract();
   const offText = (document.getElementById('draft-off-contract-text')?.value || '').trim();
-  const specialDistribution = (document.getElementById('draft-special-distribution')?.value || '').trim();
   const hasCompensate = _draftHasCompensate();
   const promoStart = document.getElementById('draft-start')?.value || '';
   const promoDue = document.getElementById('draft-due')?.value || '';
@@ -16563,7 +17038,19 @@ async function draftPreviewPDF(orient = 'landscape') {
   const fx = _draftReadFormExtra();
   const fv = (v, w = 0) => `<span class="fv${v === '' || v == null ? ' empty' : ''}"${w ? ` style="flex:0 0 ${w}px;min-width:${w}px;text-align:center"` : ''}>${v === '' || v == null ? '-' : esc(String(v))}</span>`;
   const box = (on, label, extra = '') => `<span class="ck${on ? ' on' : ''}"><i class="box${on ? ' on' : ''}">${on ? '✓' : ''}</i>${label}${extra}</span>`;
-  const optRow = (title, items, cls = '') => `<b>${title}</b><div class="row ${cls}">${items.join('')}</div>`;
+  // v4 (2026-09-30): แสดงเฉพาะตัวเลือกที่ติ๊ก — ไม่มีเลยแสดงหัวข้อ + "—"
+  const it = (on, label, extra = '') => ({ on: !!on, html: box(on, label, extra) });
+  const optRow = (title, items, cls = '') => { const sel = items.filter(x => x && x.on);
+    return `<b>${title}</b><div class="row ${cls}">${sel.length ? sel.map(x => x.html).join('') : '<span class="none">—</span>'}</div>`; };
+  // ส่วนลด: ค่าจริงจากบรรทัดสินค้า — เท่ากันทุกรายการ = ค่าเดียว, ต่างกัน = ช่วง min–max* (ดูรายสินค้าในตาราง)
+  let discVaries = false;
+  const discTxt = (key, defId) => {
+    const vals = [...new Set(_draftLines.filter(l => l.sku && l[key] !== '' && l[key] != null && !isNaN(parseFloat(l[key]))).map(l => Math.round(parseFloat(l[key]) * 100) / 100))];
+    if (!vals.length) return fv(gpv(defId), 48) + ' %';
+    if (vals.length === 1) return fv(vals[0], 48) + ' %';
+    discVaries = true;
+    return fv(`${Math.min(...vals)} – ${Math.max(...vals)}*`, 78) + ' %';
+  };
   const condSel = document.getElementById('draft-condition')?.value || '';
   const condOther = condSel === 'อื่นๆ' ? (document.getElementById('draft-condition-other')?.value || '').trim() : '';
   const flag = id => !!document.getElementById(id)?.checked;
@@ -16573,8 +17060,11 @@ async function draftPreviewPDF(orient = 'landscape') {
   const fmtAmt = v => v == null || v === '' ? '' : Number(v).toLocaleString('th-TH');
   const writtenAt = promoFmtD(_draftHeader?.created_at || new Date().toISOString());
   const sale = fx.sale || {};
-  const buildFormHeader = () => `<div class="titlerow"><div class="doctitle">${esc(docTitle)}${isApproved ? '<span class="stamp">✅ อนุมัติแล้ว</span>' : ''}</div>
+  const isCancelledDoc = _draftHeader?.status === 'cancelled';
+  const cxLast = (Array.isArray(_draftHeader?.cancel_history_json) ? _draftHeader.cancel_history_json : []).filter(x => x.result === 'approved').pop();
+  const buildFormHeader = () => `<div class="titlerow"><div class="doctitle">${esc(docTitle)}${isCancelledDoc ? '<span class="stamp cxs">🚫 ยกเลิก</span>' : isApproved ? '<span class="stamp">✅ อนุมัติแล้ว</span>' : ''}</div>
       <div class="written">วันที่เขียนใบ Pro ${fv(writtenAt)}</div></div>
+    ${isCancelledDoc || pdfCx.size ? `<div class="cxnote">🚫 ${isCancelledDoc ? 'เอกสารนี้ถูกยกเลิกทั้งใบ' : 'ยกเลิกบางรายการ: ' + [...pdfCx].map(esc).join(', ')}${cxLast ? ` — หมายเหตุ: ${esc(cxLast.reason || '')} · อนุมัติยกเลิกโดย ${esc(cxLast.decided_by_name || '')} ${esc(promoFmtD(cxLast.decided_at))}${cxLast.manager_note ? ' (' + esc(cxLast.manager_note) + ')' : ''}` : ''}</div>` : ''}
     <div class="form">
       <div class="grid2">
         <div class="fl"><b>ห้าง/ร้านค้า</b>${fv(_draftCustGroupsText(branchCodes))}</div>
@@ -16585,25 +17075,25 @@ async function draftPreviewPDF(orient = 'landscape') {
         <div class="fl"><b>ทุนเริ่ม</b>${fv(range(costStart, costEnd))}<b class="k">รวม</b>${fv(days(costStart, costEnd), 56)}วัน</div>
       </div>
       <div class="opts">
-        ${optRow('เงื่อนไข', DRAFT_CONDITION_TYPES.map(t => box(condSel === t, esc(t), t === 'อื่นๆ' ? ' ' + fv(condOther) : '')))}
-        ${optRow('ลักษณะรายการ', DRAFT_ITEM_TYPES.map(t => box(itemType.includes(t), esc(t))))}
-        ${optRow('ลดเป็น', [box(discountScope !== 'bill', 'รายการ'), box(discountScope === 'bill', 'ท้ายบิล')])}
-        ${optRow('สินค้า NPD/ลงสื่อ', [box(flag('draft-npd'), 'สินค้า NPD'), box(fx.fee_none, 'ไม่มีค่าแรกเข้า'),
-          box(fx.fee?.on, 'ค่าแรกเข้า', ` ${fv(fmtAmt(fx.fee?.amt), 50)} บาท`),
-          box(flag('draft-marketing-cost'), 'ค่าลงสื่อ/โฆษณา', ` ${fv(fmtAmt(fx.media?.amt), 44)} บาท`),
-          box(fx.media_online?.on, 'ค่าลงสื่อ online', ` ${fv(fmtAmt(fx.media_online?.amt), 44)} บาท`),
-          box(fx.other_cost?.on, 'ค่าใช้จ่ายอื่นๆ', ` ${fv(fmtAmt(fx.other_cost?.amt), 44)} บาท`)], 'r5')}
-        ${optRow('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => box(sale[p.k]?.on, p.label,
+        ${optRow('เงื่อนไข', DRAFT_CONDITION_TYPES.map(t => it(condSel === t, esc(t), t === 'อื่นๆ' ? ' ' + fv(condOther) : '')))}
+        ${optRow('ลักษณะรายการ', DRAFT_ITEM_TYPES.map(t => it(itemType.includes(t), esc(t))))}
+        ${optRow('สินค้า NPD', flag('draft-npd') ? [it(true, 'สินค้า NPD'), it(fx.fee_none, 'ไม่มีค่าแรกเข้า'),
+          it(fx.fee?.on, 'ค่าแรกเข้า', ` ${fv(fmtAmt(fx.fee?.amt), 50)} บาท`),
+          fx.npd_note ? { on: true, html: `<span class="ck wide">หมายเหตุ ${fv(fx.npd_note)}</span>` } : null] : [], 'r5')}
+        ${optRow('ลงสื่อ', [it(flag('draft-marketing-cost'), 'ค่าลงสื่อ/โฆษณา', ` ${fv(fmtAmt(fx.media?.amt), 44)} บาท`),
+          it(fx.media_online?.on, 'ค่าลงสื่อ online', ` ${fv(fmtAmt(fx.media_online?.amt), 44)} บาท`),
+          it(fx.vl_sign?.on, 'ค่าป้าย promotion VL', ` ${fv(fmtAmt(fx.vl_sign?.amt), 44)} บาท`)], 'r5')}
+        ${optRow('ค่าใช้จ่ายอื่นๆ', [fx.other_cost?.on ? { on: true, html: `<span class="ck on wide"><i class="box on">✓</i>${fv(fmtAmt(fx.other_cost?.amt), 60)} บาท · รายละเอียด ${fv(fx.other_cost?.detail || '')}</span>` } : null], 'r5')}
+        ${optRow('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => it(sale[p.k]?.on, p.label,
           p.text ? ' ' + fv(sale[p.k]?.text) : ` ${fv(sale[p.k]?.n ?? '', 48)} ${p.unit}`)))}
-        ${optRow('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? box(fx.ptype_other?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other?.text))
-          : t === 'อื่นๆ2' ? box(fx.ptype_other2?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other2?.text)) : box((fx.ptypes || []).includes(t), esc(t))))}
+        ${optRow('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? it(fx.ptype_other?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other?.text))
+          : t === 'อื่นๆ2' ? it(fx.ptype_other2?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other2?.text)) : it((fx.ptypes || []).includes(t), esc(t))))}
         <b>ส่วนลด</b><div class="disc">
-          <span>GP ปกติ ${fv(gpv('draft-gp-normal-default'), 48)} %</span><span>GP โปร ${fv(gpv('draft-gp-promo-default'), 48)} %</span>
-          <span>ท้ายบิล ปกติ ${fv(gpv('draft-bill-normal-default'), 48)} %</span><span>ท้ายบิล โปร ${fv(gpv('draft-bill-promo-default'), 48)} %</span>
-          ${hasCompensate ? '<span style="color:#4A5568">Compensate: ราคาขายโปร = ราคาปกติ − Compensate</span>' : ''}</div>
-        <b>อื่นๆ</b><div class="grid2" style="margin:0">
-          <div class="fl"><b class="k">รูปแบบการจัดจำหน่ายพิเศษ</b>${fv(specialDistribution)}</div>
-          <div class="fl"><b class="k">หมายเหตุ</b>${fv(note)}</div></div>
+          <span>GP ปกติ ${discTxt('gpPct', 'draft-gp-normal-default')}</span><span>ท้ายบิล ปกติ ${discTxt('billDiscPct', 'draft-bill-normal-default')}</span>
+          <span>GP โปร ${discTxt('gpPctPromo', 'draft-gp-promo-default')}</span><span>ท้ายบิล โปร ${discTxt('billDiscPctPromo', 'draft-bill-promo-default')}</span>
+          ${discVaries ? '<span style="color:#4A5568">* ต่างกันตามรายการ — ดูค่ารายสินค้าในตาราง</span>' : ''}
+</div>
+        <b>หมายเหตุ</b><div class="notefull">${note ? esc(note) : '<span class="none">—</span>'}</div>
       </div>
     </div>`;
   const draftNums = _draftLineNumbers();
@@ -16617,21 +17107,24 @@ async function draftPreviewPDF(orient = 'landscape') {
       : '<span class="vbox"><i class="box"></i>ขายได้</span><span class="vbox"><i class="box"></i>ขาดทุน</span>';
     return pdfAudit ? `<td class="gs vcell">${body}</td>` : '';
   };
+  const pdfCx = _draftCancelSet(_draftHeader);
+  const cxTag = sku => pdfCx.has(sku) ? ' <b class="cxtag">ยกเลิก</b>' : '';
   const buildRows = lines => lines.map(({ l, num }) => {
     const level = l.subLevel || 0;
     const ref = _draftRefData.get(l.sku);
     // ช่วงวันที่ 2 บรรทัดตายตัว (เริ่ม / – สิ้นสุด) แทนการปล่อยให้ตัดคำเองกลางวันที่
     const periodHtml = k => ref?.[k + 'StartDate'] || ref?.[k + 'DueDate'] ? `${esc(promoFmtD(ref[k + 'StartDate']))}<br>– ${esc(promoFmtD(ref[k + 'DueDate']))}` : '—';
-    const prevPeriodQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? `<div class="sub">${esc(ref.prevPeriodSource)}</div>` : '') : '—';
+    // v4: ยอดขาย + ช่วงวันที่ที่ดึงยอดขายมา (ไม่แสดงป้ายแหล่งยอด "ทั้งกลุ่ม" แล้ว)
+    const prevPeriodQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodFrom ? `<div class="sub">${esc(promoFmtD(ref.prevPeriodFrom))}<br>– ${esc(promoFmtD(ref.prevPeriodTo))}</div>` : '') : '—';
     // ตัวเลขทุกช่องพิมพ์บรรทัดเดียว (class n) — % อยู่ที่หัวคอลัมน์ (GP% / ท้ายบิล%) แล้ว ไม่ต้องต่อท้ายค่า
     const pct = v => v !== '' && v != null ? esc(String(v)) : '—';
     const promoCells = (k, cls) => { const pp = _draftPrevPromoPrice(ref, l, k);
-      return `<td class="mono docc ${cls} gs">${esc(_draftRefCode(ref?.[k + 'DocNo']) || '—')}</td><td class="n ${cls}">${fmt2(pp.sell)}${pp.tssCost != null ? `<div class="sub">ทุน TSS<br>${fmt2(pp.tssCost)}</div>` : ''}</td><td class="${cls} period">${periodHtml(k)}</td>`; };
-    return `<tr class="${level ? 'subrow' : ''}">
-    <td class="num n">${esc(num)}</td><td class="mono n">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
+      return `<td class="mono docc ${cls} gs">${esc(_draftRefCode(ref?.[k + 'DocNo']) || '—')}</td><td class="n ${cls}">${fmt2(pp.sell)}</td><td class="${cls} period">${periodHtml(k)}</td>`; };
+    return `<tr class="${level ? 'subrow' : ''}${pdfCx.has(l.sku) ? ' cx' : ''}">
+    <td class="num n">${esc(num)}</td><td class="mono n">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}${cxTag(l.sku)}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
     <td class="n g-norm gs">${fmt2(l.normalPrice)}</td><td class="n g-norm">${pct(l.gpPct)}</td><td class="n g-norm">${pct(l.billDiscPct)}</td><td class="n g-norm strong">${fmt2(l.costPrice)}</td>
-    <td class="n g-promo gs">${fmt2(l.compensate)}</td><td class="n g-promo">${fmt2(l.unitPrice)}</td><td class="n g-promo">${pct(l.gpPctPromo)}</td><td class="n g-promo">${pct(l.billDiscPctPromo)}</td><td class="n g-promo strong">${fmt2(l.costPricePromo)}</td>
-    <td class="n gs">${prevPeriodQty}</td><td class="n">${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>${vCell(l.sku)}
+    <td class="n g-promo gs">${fmt2(l.compensate)}</td><td class="n g-promo">${fmt2(l.unitPrice)}</td><td class="n g-promo">${pct(l.gpPctPromo)}</td><td class="n g-promo">${pct(l.billDiscPctPromo)}</td><td class="n g-promo strong${hasCompensate ? ' x-na' : ''}">${hasCompensate ? '—' : fmt2(l.costPricePromo)}</td>
+    <td class="n gs pq">${prevPeriodQty}</td><td class="n">${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>${vCell(l.sku)}
   </tr>`;
   }).join('');
   // แถวแบบแนวตั้ง: สินค้า (รหัส/ชื่อ/ชุด) · Pro Period ก่อน / Pro No. ล่าสุด (เลขที่/ราคา/ช่วง ช่องละกลุ่ม)
@@ -16642,17 +17135,18 @@ async function draftPreviewPDF(orient = 'landscape') {
     const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
     const promoCell = (k, cls) => { const pp = _draftPrevPromoPrice(ref, l, k);
       const period = ref?.[k + 'StartDate'] || ref?.[k + 'DueDate'] ? `${esc(promoFmtD(ref[k + 'StartDate']))}<br>– ${esc(promoFmtD(ref[k + 'DueDate']))}` : '';
-      return `<td class="${cls} gs"><span class="mono n">${esc(_draftRefCode(ref?.[k + 'DocNo']) || '—')}</span>${pp.sell != null ? `<br><b>${fmt2(pp.sell)}</b>` : ''}${pp.tssCost != null ? `<div class="sub">ทุน TSS ${fmt2(pp.tssCost)}</div>` : ''}${period ? `<div class="sub">${period}</div>` : ''}</td>`; };
-    const prevQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodSource ? `<div class="sub">${esc(ref.prevPeriodSource)}</div>` : '') : '—';
-    const kv = (sell, gp, bill, cost) => `<div class="kv"><span>ขาย</span><b>${fmt2(sell)}</b><span>GP</span><b>${pct(gp)}</b><span>ท้ายบิล</span><b>${pct(bill)}</b><span class="tot">ทุน</span><b class="tot">${fmt2(cost)}</b></div>`;
-    return `<tr class="${level ? 'subrow' : ''}">
+      return `<td class="${cls} gs"><span class="mono n">${esc(_draftRefCode(ref?.[k + 'DocNo']) || '—')}</span>${pp.sell != null ? `<br><b>${fmt2(pp.sell)}</b>` : ''}${period ? `<div class="sub">${period}</div>` : ''}</td>`; };
+    const prevQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodFrom ? `<div class="sub">${esc(promoFmtD(ref.prevPeriodFrom))}<br>– ${esc(promoFmtD(ref.prevPeriodTo))}</div>` : '') : '—';
+    // noCost = ติ๊ก Compensate → ราคาโปรไม่คำนวณทุนสุทธิ (ไม่แสดงบรรทัดทุนสุทธิ)
+    const kv = (sell, gp, bill, cost, noCost = false) => `<div class="kv"><span>ขาย</span><b>${fmt2(sell)}</b><span>GP</span><b>${pct(gp)}</b><span>ท้ายบิล</span><b>${pct(bill)}</b>${noCost ? '' : `<span class="tot">ทุนสุทธิ</span><b class="tot">${fmt2(cost)}</b>`}</div>`;
+    return `<tr class="${level ? 'subrow' : ''}${pdfCx.has(l.sku) ? ' cx' : ''}">
     <td class="num">${esc(num)}</td>
-    <td class="sku-name" style="padding-left:${5 + level * 10}px"><b class="mono">${esc(l.sku)}</b><br>${esc(l.skuName || '')}<div class="sub">ชุด ${esc(l.equipmentSet || '—')}</div></td>
+    <td class="sku-name" style="padding-left:${5 + level * 10}px"><b class="mono">${esc(l.sku)}</b>${cxTag(l.sku)}<br>${esc(l.skuName || '')}<div class="sub">ชุด ${esc(l.equipmentSet || '—')}</div></td>
     ${promoCell('prev', 'g-prev')}${promoCell('last', 'g-last')}
     <td class="g-norm gs">${kv(l.normalPrice, l.gpPct, l.billDiscPct, l.costPrice)}</td>
     <td class="g-promo gs">${fmt2(l.compensate)}</td>
-    <td class="g-promo">${kv(l.unitPrice, l.gpPctPromo, l.billDiscPctPromo, l.costPricePromo)}</td>
-    <td class="gs">${prevQty}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>${vCell(l.sku)}
+    <td class="g-promo">${kv(l.unitPrice, l.gpPctPromo, l.billDiscPctPromo, l.costPricePromo, hasCompensate)}</td>
+    <td class="gs pq">${prevQty}</td><td>${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>${vCell(l.sku)}
   </tr>`;
   }).join('');
   const otherCostsRows = _draftOtherCosts.filter(c => (c.item || '').trim()).map(c => `<tr>
@@ -16711,7 +17205,8 @@ async function draftPreviewPDF(orient = 'landscape') {
   const signRows = [{ step: 'ผู้จัดทำ', uid: creatorUid, name: uidToName(creatorUid) || '—', state: isSubmitted ? 'signed' : 'pending',
     ts: isSubmitted ? fmtTs(_draftHeader?.created_at) : '', status: isSubmitted ? 'จัดทำ/ส่งอนุมัติ' : 'ยังไม่ส่งอนุมัติ' }];
   [...history, ...current, ...upcoming].forEach((lv, i) => {
-    const step = `ขั้นที่ ${i + 1} · ${lv.label || 'ผู้อนุมัติ'}`;
+    const step = `ขั้นที่ ${i + 1} · ${lv.label || 'ผู้อนุมัติ'}${lv.only_if_loss ? ' (เฉพาะเมื่อมีขาดทุน)' : ''}`;
+    if (lv.skipped) { signRows.push({ step, name: '—', state: 'pending', ts: '', status: 'ข้าม — ไม่มีขาดทุน' }); return; }
     const all = (lv.approvers || []).map(a => ({ ...a, name: a.name || uidToName(a.uid) }));
     const acted = all.filter(a => a.status === 'approved' || a.status === 'rejected');
     if (!acted.length) {
@@ -16849,6 +17344,16 @@ async function draftPreviewPDF(orient = 'landscape') {
     .offbox .txt{white-space:pre-wrap}
     .offbox .atts{margin-top:8px;font-size:10.6px}
     .row.r5{display:flex;flex-wrap:wrap;gap:2px 18px}
+    .row .none,.notefull .none{color:#8896A5}
+    table.items td.pq .sub{font-size:8.4px;letter-spacing:-.2px;line-height:1.1}
+    table.items tr.cx td{text-decoration:line-through;color:#9AA5B1}
+    table.items tr.cx td .cxtag,.cxtag{text-decoration:none;display:inline-block;font-size:8.6px;color:#A32D2D;border:1px solid #EFC4C4;background:#FBEAEA;border-radius:8px;padding:0 5px;margin-left:3px}
+    .doctitle .stamp.cxs{background:#FBEAEA;color:#A32D2D;border-color:#EFC4C4}
+    .cxnote{font-size:10.4px;color:#A32D2D;background:#FBEAEA;border:1px solid #EFC4C4;border-radius:6px;padding:4px 10px;margin-bottom:6px}
+    .ck.wide{white-space:normal;flex:1;min-width:0}
+    .ck.wide .fv{min-width:120px;white-space:normal}
+    .notefull{border-bottom:1px dotted #8896A5;min-height:14px;color:#1E3A5F;font-weight:600;white-space:pre-wrap;padding:0 4px}
+    table.items td.x-na{color:#8896A5}
     table.items td.g-last{background:#EEF0FA}
     .st{display:inline-block;padding:0 6px;border-radius:9px;font-weight:700;font-size:8.4px;border:1px solid}
     .st.signed{color:#0A5940;background:#E5F3EE;border-color:#bfe3d3}
@@ -16867,9 +17372,9 @@ async function draftPreviewPDF(orient = 'landscape') {
       ${offContract ? `<div class="offbox"><h4>รายละเอียดค่าใช้จ่ายนอกสัญญา</h4><div class="txt">${esc(offText) || '—'}</div>
         ${_draftAttachments.length ? `<div class="atts"><b>ไฟล์แนบ (${_draftAttachments.length})</b>${_draftAttachments.map(a => `<div>📎 ${esc(a.filename)}</div>`).join('')}</div>` : ''}</div>`
       : portrait ? `<table class="items portrait">
-        <colgroup><col style="width:22px"><col><col style="width:80px"><col style="width:80px"><col style="width:96px"><col style="width:40px"><col style="width:96px"><col style="width:48px"><col style="width:44px">${pdfAudit ? '<col style="width:58px">' : ''}</colgroup>
-        <thead><tr class="cols"><th>ลำดับ</th><th>สินค้า<small>รหัส · ชื่อ · ชุดอุปกรณ์</small></th><th class="gs">Pro Period ก่อน<small>เลขที่ · ราคา · ช่วง</small></th><th class="gs">Pro No. ล่าสุด<small>เลขที่ · ราคา · ช่วง</small></th>
-          <th class="gs">ราคาปกติ<small>ขาย · GP · ท้ายบิล → ทุน</small></th><th class="gs">Comp-<br>ensate</th><th>ราคาโปรโมชั่น<small>ขาย · GP · ท้ายบิล → ทุน</small></th>
+        <colgroup><col style="width:22px"><col><col style="width:80px"><col style="width:80px"><col style="width:96px"><col style="width:40px"><col style="width:96px"><col style="width:60px"><col style="width:44px">${pdfAudit ? '<col style="width:58px">' : ''}</colgroup>
+        <thead><tr class="cols"><th>ลำดับ</th><th>สินค้า<small>รหัส · ชื่อ · ชุดอุปกรณ์</small></th><th class="gs">Pro Period ก่อน<small>เลขที่ · ราคาปลีก · ช่วง</small></th><th class="gs">Pro No. ล่าสุด<small>เลขที่ · ราคาปลีก · ช่วง</small></th>
+          <th class="gs">ราคาปกติ<small>ขาย · GP · ท้ายบิล → ทุนสุทธิ</small></th><th class="gs">Comp-<br>ensate</th><th>ราคาโปรโมชั่น<small>ขาย · GP · ท้ายบิล${hasCompensate ? '' : ' → ทุนสุทธิ'}</small></th>
           <th class="gs">ขายช่วง<br>Pro Period<br>ก่อน</th><th>ประมาณ<br>การ</th>${pdfAudit ? '<th class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr></thead>
         <tbody>${rowsHtml || `<tr><td colspan="${pdfAudit ? 10 : 9}" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>`}</tbody>
       </table>` : `<table class="items">
@@ -16880,13 +17385,13 @@ async function draftPreviewPDF(orient = 'landscape') {
           <col style="width:${pdfAudit ? 52 : 58}px"><col style="width:${pdfAudit ? 44 : 48}px"><col style="width:${pdfAudit ? 54 : 60}px">
           <col style="width:${pdfAudit ? 42 : 44}px"><col style="width:${pdfAudit ? 34 : 36}px"><col style="width:${pdfAudit ? 36 : 38}px"><col style="width:${pdfAudit ? 42 : 44}px">
           <col style="width:${pdfAudit ? 38 : 40}px"><col style="width:${pdfAudit ? 42 : 44}px"><col style="width:${pdfAudit ? 34 : 36}px"><col style="width:${pdfAudit ? 36 : 38}px"><col style="width:${pdfAudit ? 42 : 44}px">
-          <col style="width:${pdfAudit ? 42 : 46}px"><col style="width:${pdfAudit ? 40 : 44}px">${pdfAudit ? '<col style="width:56px">' : ''}
+          <col style="width:${pdfAudit ? 58 : 62}px"><col style="width:${pdfAudit ? 40 : 44}px">${pdfAudit ? '<col style="width:56px">' : ''}
         </colgroup>
         <thead>
           <tr class="grp"><th colspan="4"></th><th colspan="3">Pro Period ก่อน</th><th colspan="3">Pro No. ล่าสุด</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th colspan="2">ปริมาณ</th>${pdfAudit ? '<th rowspan="2" class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr>
           <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>ชุด<br>อุปกรณ์</th>
-            <th class="gs">เลขที่</th><th>ราคา</th><th>ช่วงวันที่</th>
-            <th class="gs">เลขที่</th><th>ราคา</th><th>ช่วงวันที่</th>
+            <th class="gs">เลขที่</th><th>ราคาปลีก</th><th>ช่วงวันที่</th>
+            <th class="gs">เลขที่</th><th>ราคาปลีก</th><th>ช่วงวันที่</th>
             <th class="gs">ราคาขาย</th><th>GP%</th><th>ท้ายบิล%</th><th>ทุนสุทธิ</th>
             <th class="gs">Compen-<br>sate</th><th>ราคาขาย</th><th>GP%</th><th>ท้ายบิล%</th><th>ทุนสุทธิ</th>
             <th class="gs">ขายช่วง Pro<br>Period ก่อน</th><th>ประมาณ<br>การ</th></tr>

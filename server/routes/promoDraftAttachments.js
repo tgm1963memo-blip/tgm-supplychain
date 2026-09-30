@@ -1,8 +1,25 @@
 const { attachmentRoutes } = require('../lib/attachments');
 const { requireRole } = require('../middleware/auth');
 const { genId } = require('../lib/crud');
+const express = require('express');
+const { logDraft } = require('../lib/promoLog');
 module.exports = (db, writeRoles) => {
-  const router = attachmentRoutes(db, writeRoles, { table: 'promo_draft_attachments', parent: 'draft_no', param: 'draftNo', prefix: 'PDA' });
+  // log แนบ/ลบไฟล์ (2026-09-30) — ครอบ router ไฟล์แนบกลาง: จับชื่อไฟล์/เอกสารก่อนลบ แล้วเขียน log เมื่อสำเร็จ
+  const router = express.Router();
+  router.use((req, res, next) => {
+    let pre = null;
+    if (req.method === 'DELETE') pre = db.prepare('SELECT draft_no, filename FROM promo_draft_attachments WHERE id = ?').get(req.path.slice(1));
+    res.on('finish', () => {
+      if (res.statusCode >= 300 || !req.user) return;
+      try {
+        if (req.method === 'DELETE' && pre) logDraft(db, pre.draft_no, 'detach', req.user, { filename: pre.filename });
+        else if (req.method === 'POST' && /^\/[^/]+$/.test(req.path)) logDraft(db, req.path.slice(1), 'attach', req.user, { filename: req.file?.originalname || req.body?.filename || '' });
+        else if (req.method === 'POST' && /\/copy-from\//.test(req.path)) logDraft(db, req.path.split('/')[1], 'copy_attachments', req.user, { from: req.path.split('/')[3] });
+      } catch (e) { console.warn('[promoLog]', e.message); }
+    });
+    next();
+  });
+  router.use(attachmentRoutes(db, writeRoles, { table: 'promo_draft_attachments', parent: 'draft_no', param: 'draftNo', prefix: 'PDA' }));
   // "คัดลอกจากเอกสารเดิม" (2026-09-24): คัดลอกไฟล์แนบทั้งหมดของเอกสารต้นทางไปเอกสารใหม่ฝั่ง server (BLOB เดิม)
   // ปลายทางต้องมีอยู่และยังแก้ไขได้ (ร่าง/ไม่อนุมัติ) — กันคัดลอกไฟล์เข้าเอกสารที่ส่งอนุมัติไปแล้ว
   router.post('/:draftNo/copy-from/:src', requireRole(...writeRoles), (req, res) => {

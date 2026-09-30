@@ -178,4 +178,40 @@ async function afterChange(db, before, after, baseUrl) {
   }
 }
 
-module.exports = { afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };
+// ── ขอยกเลิก / ผลการยกเลิก / เรียกเอกสารกลับ (2026-09-30) — อีเมลแจ้งเท่านั้น (ตัดสินในระบบ ไม่มีลิงก์อนุมัติจากอีเมล)
+function simpleMail(header, title, rows, openUrl) {
+  const docNo = header.promo_no || header.doc_no || header.draft_no;
+  const subject = `${title} — ${docNo} ${header.promo_name || ''}`.trim();
+  const html = shell(`<h2 style="margin:0 0 10px;font-size:17px;color:#1E3A5F">${e(title)}</h2>
+    <table style="border-collapse:collapse;font-size:13px;margin-bottom:14px">${rows.map(([k, v]) => `<tr><td style="padding:3px 12px 3px 0;color:#6B7280;white-space:nowrap">${e(k)}</td><td style="padding:3px 0;font-weight:600">${e(v)}</td></tr>`).join('')}</table>
+    <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">🔎 เปิดดูในระบบ</a>`);
+  return { subject, html, text: `${subject}\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\nเปิดในระบบ: ${openUrl}` };
+}
+const emailOf = (db, uid) => { const u = db.prepare('SELECT email, is_active FROM sc_users WHERE uid = ?').get(uid); return u?.email && u.is_active ? u.email : ''; };
+const openUrlOf = header => `${appUrl()}/?draft=${encodeURIComponent(header.draft_no)}`;
+const scopeText = rq => rq.scope === 'all' ? 'ยกเลิกทั้งใบ' : `ยกเลิกบางรายการ (${(rq.skus || []).join(', ')})`;
+async function notifyCancelRequest(db, header, rq) {
+  const to = emailOf(db, rq.approver_uid);
+  if (!to) return { sent: false, reason: 'NO_EMAIL' };
+  return sendMail({ to, ...simpleMail(header, '🚫 ขออนุมัติยกเลิกเอกสาร', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
+    ['รายการ', scopeText(rq)], ['ผู้ขอ', rq.requested_by_name || rq.requested_by], ['หมายเหตุ', rq.reason]], openUrlOf(header)) });
+}
+async function notifyCancelDecision(db, header, d) {
+  const to = emailOf(db, d.requested_by);
+  if (!to) return { sent: false, reason: 'NO_EMAIL' };
+  return sendMail({ to, ...simpleMail(header, d.result === 'approved' ? '✅ อนุมัติการยกเลิกแล้ว' : '❌ ไม่อนุมัติการยกเลิก', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
+    ['รายการ', scopeText(d)], ['ผู้อนุมัติ', d.decided_by_name || d.decided_by], ['หมายเหตุ', d.manager_note || '—'],
+    ...(d.result === 'approved' ? [['หมายเหตุระบบ', 'ระบบไม่เขียน Express — ต้องยกเลิกโปรใน Express เองด้วย']] : [])], openUrlOf(header)) });
+}
+async function notifyRecall(db, header, uids, byName, note) {
+  const out = [];
+  for (const uid of uids) {
+    const to = emailOf(db, uid);
+    if (!to) { out.push({ uid, sent: false, reason: 'NO_EMAIL' }); continue; }
+    out.push({ uid, ...(await sendMail({ to, ...simpleMail(header, '↩️ เอกสารถูกเรียกกลับเพื่อแก้ไข — ไม่ต้องอนุมัติแล้ว', [['เอกสาร', header.doc_no || header.draft_no],
+      ['เรียกกลับโดย', byName], ['หมายเหตุ', note || '—']], openUrlOf(header)) })) });
+  }
+  return out;
+}
+
+module.exports = { notifyCancelRequest, notifyCancelDecision, notifyRecall, afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };

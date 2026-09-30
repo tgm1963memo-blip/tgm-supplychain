@@ -21,7 +21,7 @@ const SALES_ONLY = [
   // (ใช้ใน mpoSelect ของ Planning ด้วย), refreshSalesOverviewGrouping (เรียกจาก saveCustomerGroup/
   // confirmCustomerGroup ฝั่ง admin ที่ใช้ทั้ง 2 แอป)
   'SD_MTH', 'SD_MD', 'SD_WM', 'SD_PRODS', 'SD_VS',
-  '_sd', '_sdApi', '_SD_CACHE_TTL', '_sdNum', '_sdCmp', '_sdByValue', '_sdResetBuildCache', '_sdEffSlm', '_sdRowSlmMatch', '_sdFiltered', '_sdInvDet', '_sdInvPeriod', '_sdInvDetGet', '_sdInvBranchHtml', '_sdInvCusts', '_sdInvKey', '_sdInvGroupHtml', '_sdShipBranch', '_sdShipBranchLoading', '_sdLoadShipBranch', '_sdBranchLabel', '_sdBranchCell', 'sdEditBranch', 'sdSaveBranch', 'sdInvSetView', 'sdInvTogProd', '_sdInvRegList', '_sdInvReg', 'sdShowInvoicesAt', '_SD_RECTYP', 'sdShowInvoices', 'sdInvToggleLines',
+  '_sd', '_sdApi', '_SD_CACHE_TTL', '_sdNum', '_sdCmp', '_sdByValue', '_sdResetBuildCache', '_sdInvExtras', '_sdTargetFor', '_sdEffSlm', '_sdRowSlmMatch', '_sdFiltered', '_sdInvDet', '_sdInvPeriod', '_sdInvDetGet', '_sdInvBranchHtml', '_sdInvCusts', '_sdInvKey', '_sdInvGroupHtml', '_sdShipBranch', '_sdShipBranchLoading', '_sdLoadShipBranch', '_sdBranchLabel', '_sdBranchCell', 'sdEditBranch', 'sdSaveBranch', 'sdInvSetView', 'sdInvTogProd', '_sdInvRegList', '_sdInvReg', 'sdShowInvoicesAt', '_SD_RECTYP', 'sdShowInvoices', 'sdInvToggleLines',
   '_sdMonthRange', '_companyFromExpressSlm',
   '_sdKpiFromRows', '_sdSalesListFromRows', '_sdBuildKey', '_sdEnsureBuilt', '_applySalesRowsToSd',
   '_loadSalesFromSupabase', '_loadSalesSummaryFromSupabase', '_sdFmtTotal', '_sdUseLatestMonthIfEmpty',
@@ -90,13 +90,13 @@ const SALES_ONLY = [
   'draftSubmitForApproval', '_draftNeedsEscalation', '_draftCheckExecRoute', '_draftApplyApproval', 'draftApprove', '_draftFinishNormalRoute', 'draftExecApprove',
   '_pdWfNormalLevels', '_pdWfExecLevels', 'pgPromoDraftWorkflowSettings', '_pdWfLevelsFor',
   'pdWfAddLevel', 'pdWfRemLevel', 'pdWfAddApprover', 'pdWfRemApprover', 'pdWfSave',
-  'draftAuditActionLabel', 'draftRenderAuditTrail', 'draftOpenCopyPicker', 'draftCopyFrom', 'draftPreviewPDF',
+  'draftAuditActionLabel', 'draftRenderAuditTrail', 'DRAFT_CANCELABLE', '_draftCancelSet', '_draftCancelPending', '_draftCancelBadges', '_draftIsCancelWriter', '_draftCancelButtons', '_draftAfterCancelAction', 'draftCancelRequestDialog', 'draftCancelSubmit', 'draftCancelDecide', 'draftCancelDecideSubmit', 'draftCancelWithdraw', 'draftRecall', 'draftRecallSubmit', 'DRAFT_LOG_LABELS', 'DRAFT_LOG_FIELD_LABELS', '_draftLogDetail', '_draftLogsHtml', 'draftShowLogs', 'draftRenderLogs', '_draftCancelBannerHtml', 'draftOpenCopyPicker', 'draftCopyFrom', 'draftPreviewPDF',
   // ใบเคาะราคา v3 (2026-09-24): สินค้า NPD / ค่าใช้จ่ายนอกสัญญา, Pro Period ก่อน / Pro No. ล่าสุด, เส้นทางอนุมัติหลายแบบ
   '_draftFormExtraHtml', '_draftOtherCostSum', '_draftBranchesFrom', '_draftIsOffContract', 'draftOffContractChanged', '_draftDocDate', '_draftPickSetRoute',
   'PROMO_DRAFT_ROUTES_ENTITY', '_draftRouteEntity', '_draftLoadRoutes', '_draftNorm', '_draftDocRouteFacts', '_draftRouteMatch', '_draftSuggestRoute',
   '_pdWfRoutes', '_pdWfRouteId', '_pdWfCorpOpts', '_pdWfCurRoute', 'pdWfSelectRoute', 'pdWfAddRoute', 'pdWfDelRoute',
   'pdWfRouteName', 'pdWfRouteMatch', 'pdWfRouteType', 'pdWfRouteCorpAdd', 'pdWfRouteCorpRem',
-  '_draftEquipKeep', '_draftSyncOtherCostBox', 'DRAFT_LINE_COL_KEYS', 'DRAFT_LINE_COL_KEYS_V2', '_pdWfDirty',
+  '_draftEquipKeep', '_draftDiscScopeKeep', '_draftSpecialDistKeep', '_draftOtherCostDetailDefault', 'draftNpdChanged', '_draftSyncOtherCostBox', 'DRAFT_LINE_COL_KEYS', 'DRAFT_LINE_COL_KEYS_V2', '_pdWfDirty',
   '_draftCorpBase', '_draftOverlap', '_draftRenderOverlapMarks', 'draftShowOverlap', '_draftCopyHeader', '_draftCopySrcNo', '_draftLinesFromRows', 'pdWfCopyRoute',
   '_draftPlan', '_draftPlanOpts', '_draftPlanRoutes', '_draftPlanUsers', '_draftPlanLoading', '_draftPlanLoad', '_draftFormRouteFacts', '_draftPlanOpt',
   '_draftPlanFillDefaults', '_draftPlanHtml', 'draftPlanSetRoute', 'draftPlanAuto', 'draftPlanAdd', 'draftPlanAddByText', 'draftPlanRem', '_draftPlanForSave', '_draftPromoDocsCache', '_draftRefSeq', '_draftFormSeq', '_draftLoadRouteOptions',
@@ -111,7 +111,7 @@ const SALES_ONLY = [
   'crRender', 'crRequestTypes', 'crIsExistingChange', 'crToggleExistingChange', 'crIsChangeSub', 'crDocFileLink',
   'crSalesUsers', 'crSalesName', 'crOwnerUid', 'crCustomerMasterRows', 'crCustomerOptionHtml', 'crLoadExistingCustomer',
   'crVisibleSubs', 'crSubMailBody', 'crMailExternal', 'crRenderSummary', 'crShowSummaryDetail',
-  'crSec0', 'crSec1', 'crSec2', 'crSec3', 'crTogBillingField', 'crTogDocOther', 'crSec4',
+  'crSec0', 'crSec1', 'crSec2', 'crSec3', 'crTogBillingField', 'CR_WD', 'crBillSameChanged', 'crBillRules', 'crBillMatch', '_crShiftWeekend', 'crNextBillingDates', 'crBillRuleText', 'crBillRulesHtml', 'crBillRefresh', 'crBillAdd', 'crBillRem', 'crBillSet', 'crBillToggleDay', 'crBillSetDays', 'crBillingFromData', 'crBillingCardHtml', 'crTogDocOther', 'crSec4',
   'crRenderDocSlots', 'crRenderSlot', 'crToggleSlot', 'crTrigUpload', 'crReadFileDataUrl', 'crHandleFiles', 'crDelFile',
   '_crOcrParsed', '_crOcrSend', '_crParseCert', '_crCleanVatText', '_crVatAfter', '_crParseVat20', '_crParseAnyOcr',
   'crOcrTrigger', 'crOcrHandleFile', 'crOcrApply', 'crOcrRetry', 'crSec5', 'crSec6', 'crNewForm',

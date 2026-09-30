@@ -96,7 +96,7 @@ module.exports = function promoEmailApproveRoutes(db) {
       st = loadState(db, req.params.token);
       if (st.error || st.closed) { db.exec('ROLLBACK'); return res.status(409).send(page('บันทึกไม่ได้', promoMail.shell(`<p style="font-size:14px">${e(st.error || st.closed)}</p>`))); }
       before = st.header;
-      after = applyHeaderChange(db, st.raw, { status: action === 'reject' ? 'rejected' : st.raw.status, approval_comment: comment, ...(action !== 'reject' && Object.keys(lineVerdicts).length ? { approval_line_verdicts: lineVerdicts } : {}) }, st.user);
+      after = applyHeaderChange(db, st.raw, { status: action === 'reject' ? 'rejected' : st.raw.status, approval_comment: comment, ...(action !== 'reject' && Object.keys(lineVerdicts).length ? { approval_line_verdicts: lineVerdicts } : {}) }, st.user, { channel: 'email' });
       db.prepare("UPDATE promo_approval_tokens SET used_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE token = ?").run(req.params.token);
       db.prepare('INSERT INTO audit_log (uid, role, action, target) VALUES (?, ?, ?, ?)')
         .run(st.user.uid, st.user.role, 'PROMO_DRAFT_EMAIL_' + (action === 'reject' ? 'REJECT' : 'APPROVE'), st.header.draft_no);

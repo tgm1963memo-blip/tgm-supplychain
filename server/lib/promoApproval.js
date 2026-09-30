@@ -54,6 +54,10 @@ function stampSignature(db, levels, current, uid) {
   const actor = levels[current]?.approvers?.find(a => a.uid === uid);
   if (actor && actor.status === 'approved') actor.signature = signatureOf(db, uid);
 }
+// มีผลตรวจสอบ "ขาดทุน" อย่างน้อย 1 รายการในขั้นใดขั้นหนึ่ง
+function hasLoss(levels) {
+  return (levels || []).some(lv => (lv.approvers || []).some(a => a.line_verdicts && Object.values(a.line_verdicts).includes('loss')));
+}
 function history(old) {
   try { return parse(old.approval_history_json || '[]') || []; } catch { return []; }
 }
@@ -80,6 +84,9 @@ function validateChange(db, old, change, user) {
     assign([]);
     return;
   }
+  // เอกสารที่ยกเลิกแล้ว (2026-09-30) แก้ไข/อนุมัติต่อไม่ได้ · ข้อมูลการยกเลิกเขียนผ่าน endpoint ยกเลิกเท่านั้น
+  if (old.status === 'cancelled') throw new Error('เอกสารนี้ถูกยกเลิกแล้ว — แก้ไขหรืออนุมัติต่อไม่ได้');
+  if (change.status === 'cancelled') throw new Error('ยกเลิกเอกสารผ่านเมนู "ขอยกเลิก" เท่านั้น');
   const status = change.status;
   const active = ['pending_approval', 'pending_exec_approval'].includes(old.status);
   if (active && ['is_npd','has_off_contract_cost','has_marketing_cost'].some(k => change[k] !== undefined && Number(change[k]) !== Number(old[k]))) throw new Error('ไม่สามารถเปลี่ยนเงื่อนไขระหว่างรออนุมัติ');
@@ -123,7 +130,9 @@ function validateChange(db, old, change, user) {
       }
       if (curLv.audit_verdict && status !== 'rejected') {
         // ต้องครบทุก SKU ของเอกสาร (เอกสารนอกสัญญาไม่มีบรรทัดสินค้า = ไม่ต้องกรอก)
-        const skus = db.prepare('SELECT DISTINCT sku FROM promo_drafts WHERE draft_no = ?').all(old.draft_no).map(r => r.sku).filter(Boolean);
+        // สินค้าที่ยกเลิกแล้ว (cancelled_skus_json) ไม่ต้องตรวจ
+        const cancelled = new Set((() => { try { return parse(old.cancelled_skus_json || '[]') || []; } catch { return []; } })());
+        const skus = db.prepare('SELECT DISTINCT sku FROM promo_drafts WHERE draft_no = ?').all(old.draft_no).map(r => r.sku).filter(s => s && !cancelled.has(s));
         const missing = skus.filter(s => !['profit', 'loss'].includes(lineVerdicts?.[s]));
         if (missing.length) throw new Error(`ขั้นตรวจสอบ: กรุณาเลือกผล "ขายได้" หรือ "ขาดทุน" ให้ครบทุกรายการสินค้า (ยังขาด ${missing.join(', ')})`);
         verdicts = Object.fromEntries(skus.map(s => [s, lineVerdicts[s]]));
@@ -131,6 +140,18 @@ function validateChange(db, old, change, user) {
       result = workflow.advance(levels, old.current_level, user.uid, status !== 'rejected', comment);
       stampSignature(db, result.levels, old.current_level, user.uid);
       if (verdicts) { const actor = result.levels[old.current_level]?.approvers?.find(a => a.uid === user.uid); if (actor) actor.line_verdicts = verdicts; }
+      // ขั้น "เฉพาะเมื่อมีรายการขาดทุน" (only_if_loss, 2026-09-30): ขั้นก่อนหน้าผ่านแล้วและยังไม่มีผลตรวจ 'loss'
+      // ในเอกสาร → ข้ามขั้นนั้น (ทำเครื่องหมาย skipped) ต่อไปจนเจอขั้นปกติ; ข้ามจนสุดเส้นทาง = อนุมัติครบ
+      if (result.levelDone && !result.rejected && !result.complete) {
+        const all = [...history(old), ...result.levels];
+        let cur = result.current;
+        while (cur < result.levels.length && result.levels[cur].only_if_loss && !hasLoss(all)) {
+          result.levels[cur].skipped = 'no_loss';
+          cur++;
+        }
+        if (cur >= result.levels.length) { result.complete = true; result.current = result.levels.length - 1; }
+        else result.current = cur;
+      }
     }
     assign(result.levels, result.current);
     if (result.rejected) change.status = 'rejected';

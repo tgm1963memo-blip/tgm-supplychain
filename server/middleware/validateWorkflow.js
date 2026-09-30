@@ -22,6 +22,11 @@ module.exports = function validateWorkflow(db) {
         const pickable = /^promo_draft(@|$)/.test(String(row.entity_type || ''));
         const isOpenPick = lv => pickable && lv && lv.pick_by_creator && !(lv.approvers || []).length;
         if (Array.isArray(levels) && levels.some(lv => isOpenPick(lv) && !['any', 'all'].includes(lv.mode))) return res.status(400).json({ error: 'แต่ละขั้นต้องเลือกเงื่อนไข any/all' });
+        // ขั้น "เฉพาะเมื่อมีรายการขาดทุน" (2026-09-30) ต้องอยู่หลังขั้นตรวจสอบ (audit_verdict) ในเส้นทางเดียวกัน
+        // (ขั้นผู้บริหาร promo_draft_exec ไม่ต้อง — ผลตรวจมาจากเส้นทางปกติที่ผ่านมาแล้ว)
+        if (pickable && Array.isArray(levels) && levels.some((lv, i) => lv?.only_if_loss && !levels.slice(0, i).some(x => x?.audit_verdict))) {
+          return res.status(400).json({ error: 'ขั้น "เฉพาะเมื่อมีรายการขาดทุน" ต้องอยู่หลังขั้นตรวจสอบ (ขายได้/ขาดทุน)' });
+        }
         const fixed = Array.isArray(levels) ? levels.filter(lv => !isOpenPick(lv)) : levels;
         const error = validate(fixed, db.prepare('SELECT uid,is_active FROM sc_users').all(), true);
         if (error) return res.status(400).json({ error });

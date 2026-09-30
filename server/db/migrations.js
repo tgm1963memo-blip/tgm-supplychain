@@ -383,6 +383,33 @@ function runMigrations(db) {
   // เดิม slm_id เก็บชื่อบัญชี (piyaporn ฯลฯ) ซึ่งไม่ตรงกับรหัสในข้อมูลขาย จึงกรองยอดของเซลส์ไม่ได้
   addColumnIfMissing(db, 'sc_users', 'slm_codes', 'slm_codes TEXT');
 
+  // เป้าการขายรายพนักงานขาย × เดือน (2026-09-30) — routes/salesTargets.js
+  db.exec('CREATE TABLE IF NOT EXISTS sales_targets (slm_code TEXT NOT NULL, ym TEXT NOT NULL, amount REAL NOT NULL DEFAULT 0, updated_by TEXT, updated_at TEXT, PRIMARY KEY (slm_code, ym))');
+  // custreg_subs.billing_json (2026-09-30): ที่อยู่วางบิล + กฎวันรับวางบิล (หลายกฎ) ของคำขอลงทะเบียนลูกค้า
+  addColumnIfMissing(db, 'custreg_subs', 'billing_json', 'billing_json TEXT');
+  // invoice_sales_monthly: จำนวน/มูลค่าใบลดหนี้ (CN) + VAT + ยอดรวม VAT (2026-09-30, Sales Overview)
+  addColumnIfMissing(db, 'invoice_sales_monthly', 'cn_count', 'cn_count INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'invoice_sales_monthly', 'cn_amount', 'cn_amount REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'invoice_sales_monthly', 'vat_amount', 'vat_amount REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'invoice_sales_monthly', 'gross_amount', 'gross_amount REAL NOT NULL DEFAULT 0');
+  // ยกเลิกใบเคาะ/ใบโปร (2026-09-30): คำขอที่รออยู่ / ประวัติคำขอ / SKU ที่ยกเลิกแล้ว (ยกเลิกทั้งใบ = status 'cancelled')
+  addColumnIfMissing(db, 'promo_draft_headers', 'cancel_request_json', 'cancel_request_json TEXT');
+  addColumnIfMissing(db, 'promo_draft_headers', 'cancel_history_json', 'cancel_history_json TEXT');
+  addColumnIfMissing(db, 'promo_draft_headers', 'cancelled_skus_json', 'cancelled_skus_json TEXT');
+  // ประวัติการดำเนินการของเอกสาร (2026-09-30) — เขียนโดย server เท่านั้น (lib/promoLog.js)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS promo_draft_logs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      draft_no    TEXT NOT NULL,
+      action      TEXT NOT NULL,
+      uid         TEXT,
+      name        TEXT,
+      detail_json TEXT,
+      ts          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_promo_draft_logs_draft ON promo_draft_logs(draft_no, ts);
+  `);
+
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 }
 

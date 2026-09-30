@@ -999,8 +999,8 @@ async function syncInvoiceSales(db) {
   // Plain INSERT, not upsert: each company's rows are deleted immediately below before these run,
   // so there's never a pre-existing row to conflict with within one sync cycle.
   const insert = db.prepare(`
-    INSERT INTO invoice_sales_monthly (company, ym, cust_code, slm_code, amount, invoice_count)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO invoice_sales_monthly (company, ym, cust_code, slm_code, amount, invoice_count, cn_count, cn_amount, vat_amount, gross_amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   // Include RECTYP='0' as revenue-bearing AI invoices. Confirmed from live TSS ARTRN on
   // 2026-09-18: Express's 2026 year-to-date sales total includes these February AI69...
@@ -1024,9 +1024,16 @@ async function syncInvoiceSales(db) {
       const slmCode = normalizeSlmCode(r.SLMCOD) || '(none)';
       const signedNetVal = r.RECTYP === '5' ? -(Number(r.NETVAL) || 0) : (Number(r.NETVAL) || 0);
       const key = `${period}|${custCode}|${slmCode}`;
-      const cur = monthly.get(key) || { amount: 0, invoice_count: 0 };
+      const cur = monthly.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, gross_amount: 0 };
       cur.amount += signedNetVal;
       if (r.RECTYP !== '5') cur.invoice_count += 1;
+      // (2026-09-30) CN + แยก VAT — NETVAL = ก่อน VAT ทุกแบบ (FLGVAT 2 = VAT แยกนอก, 1 = รวมใน, 0 = ไม่มี VAT)
+      // VATAMT = VAT ของใบ → ยอดรวม VAT = NETVAL + VATAMT · ลดหนี้ (RECTYP 5) ติดลบ, cn_amount เก็บค่าบวก (NETVAL)
+      const sign = r.RECTYP === '5' ? -1 : 1;
+      const vat = Number(r.VATAMT) || 0;
+      cur.vat_amount += sign * vat;
+      cur.gross_amount += sign * ((Number(r.NETVAL) || 0) + vat);
+      if (r.RECTYP === '5') { cur.cn_count += 1; cur.cn_amount += Number(r.NETVAL) || 0; }
       monthly.set(key, cur);
     }
 
@@ -1035,7 +1042,7 @@ async function syncInvoiceSales(db) {
       db.prepare('DELETE FROM invoice_sales_monthly WHERE company = ?').run(company);
       for (const [key, agg] of monthly) {
         const [period, custCode, slmCode] = key.split('|');
-        insert.run(company, period, custCode, slmCode, agg.amount, agg.invoice_count);
+        insert.run(company, period, custCode, slmCode, agg.amount, agg.invoice_count, agg.cn_count, agg.cn_amount, agg.vat_amount, agg.gross_amount);
         rowsImported++;
       }
 

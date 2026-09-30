@@ -104,6 +104,7 @@ function buildApp(db, opts = {}) {
   // ยอด Express ที่ tgm-wms freeze ไว้รายวัน (ย้ายมาจาก Supabase 2026-09-28) — เขียน/ลบต้องมี token ผู้ใช้ tgm-wms ด้วย
   app.use('/api/express_stock_snapshots', authed, require('./routes/expressSnapshots')(db, wms));
   app.use('/api/invoice_detail', authed, require('./routes/invoiceDetail')(db));
+  app.use('/api/sales_targets', authed, require('./routes/salesTargets')(db));
   // สิทธิ์เขียนใบโปรร่าง (promo_drafts, 2026-09-03) — ให้ตรงกับ role ที่เข้าหน้า promo_history ได้อยู่แล้ว
   // (MASTER_DATA_ROLES ด้านบนไม่มี role ฝ่ายขายเลย ใช้ไม่ได้กับฟีเจอร์นี้)
   const PROMO_DRAFT_ROLES = ['superadmin', 'admin', 'sales_manager', 'sales_officer', 'sales_worker', 'sales'];
@@ -367,8 +368,8 @@ function buildApp(db, opts = {}) {
     fields: ['id', 'doc_no', 'shop', 'sales', 'sales_uid', 'created_by_uid', 'owner_sales_uid', 'owner_sales_name',
       'request_type', 'existing_cust', 'drive_link', 'external_emails', 'tax_addr', 'tax_zip', 'phone', 'taxid',
       'crdays', 'price', 'date', 'note', 'final_note', 'levels_json', 'current_level', 'approvers_json',
-      'status', 'custcode', 'ts'],
-    jsonFields: ['levels_json', 'approvers_json'],
+      'status', 'custcode', 'ts', 'billing_json'],
+    jsonFields: ['levels_json', 'approvers_json', 'billing_json'],
     orderBy: 'ts',
     writeRoles: CUSTREG_ROLES,
   }));
@@ -563,7 +564,7 @@ function buildApp(db, opts = {}) {
   // comment. No SKU/product dimension exists on this table, only company+month+customer.
   app.use('/api/invoice_sales_monthly', authed, makeCrudRouter(db, 'invoice_sales_monthly', {
     pk: 'cust_code',
-    fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count'],
+    fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count', 'cn_count', 'cn_amount', 'vat_amount', 'gross_amount'],
     readOnly: true,
   }));
 
