@@ -13646,7 +13646,7 @@ function _promoFiltered() {
     if (f.company.excluded.size && f.company.excluded.has(r.company || '')) return false;
     if (f.cust.excluded.size && f.cust.excluded.has(r.cust_code || '')) return false;
     if (f.sku.excluded.size && f.sku.excluded.has(r.sku || '')) return false;
-    if (f.doc.excluded.size && f.doc.excluded.has(r.sonum || '')) return false;
+    if (f.doc.excluded.size && f.doc.excluded.has(PROMO_MS_FIELDS.doc.key(r))) return false;
     if (f.ref.excluded.size && f.ref.excluded.has((r.doc_ref || '').trim())) return false;
     if (f.type.excluded.size && f.type.excluded.has(promoIsCompensate(r) ? 'compensate' : 'normal')) return false;
     if (_promo.dateFrom && r.due_date && r.due_date < _promo.dateFrom) return false;
@@ -13696,7 +13696,8 @@ const PROMO_MS_FIELDS = {
   company:{ icon: '🏢', label: 'บริษัท',        key: r => r.company,               text: r => r.company || '' },
   cust: { icon: '🏪', label: 'ลูกค้า',        key: r => r.cust_code,             text: r => `${r.cust_code || ''} — ${r.cust_name || '—'}` },
   sku:  { icon: '📦', label: 'สินค้า',         key: r => r.sku,                   text: r => `${r.sku || ''} — ${r.sku_name || '—'}` },
-  doc:  { icon: '📄', label: 'เลขที่เอกสาร',   key: r => r.sonum,                 text: r => r.sonum || '' },
+  // เลขที่เอกสาร Express นับแยกต่อบริษัท — เลขเดียวกันอาจเป็นคนละใบ (TSS/CONSI) จึงใช้ บริษัท|เลขที่ เป็น key
+  doc:  { icon: '📄', label: 'เลขที่เอกสาร',   key: r => r.sonum ? `${r.company || ''}|${r.sonum}` : '', text: r => r.sonum ? `${r.sonum} · ${r.company || ''}` : '' },
   ref:  { icon: '🔖', label: 'ใบโปรอ้างอิง',   key: r => (r.doc_ref || '').trim(),text: r => (r.doc_ref || '').trim() },
   type: { icon: '🏷️', label: 'ประเภท',        key: r => promoIsCompensate(r) ? 'compensate' : 'normal', text: r => promoIsCompensate(r) ? 'Compensate' : 'ปกติ' },
 };
@@ -15423,7 +15424,8 @@ async function _draftRefreshLineRefDataNow() {
     });
     // เลขที่ที่แสดง = หมายเหตุอ้างอิง (doc_ref) ของใบ — ใบเดียวกันคีย์แยกทุกสาขา (sonum ต่างกัน) แต่ doc_ref ร่วมกัน
     const promoInfo = d => d ? { price: d.unit_price, docNo: String(d.doc_ref || '').trim() || String(d.sonum || '').trim(), sonum: d.sonum || '',
-      startDate: d.start_date || '', dueDate: d.due_date || '', createDate: d.create_date || '', company: d.company || '' } : null;
+      startDate: d.start_date || '', dueDate: d.due_date || '', createDate: d.create_date || '', company: d.company || '',
+      isSonum: !String(d.doc_ref || '').trim() } : null;
     const next = new Map();
     skus.forEach(sku => {
       let latestSales = null, lastMonthQty = 0;
@@ -15440,9 +15442,9 @@ async function _draftRefreshLineRefDataNow() {
       // *IsTssCost: ราคาอ้างอิงจากบริษัท TSS เป็น "ทุนสุทธิ" — ต้องแปลงย้อนเป็นราคาขายก่อนใช้ (ดู _draftCostToSell)
       next.set(sku, {
         prevPrice: prev?.price ?? null, prevIsTssCost: _draftIsNetCostCompany(prev?.company),
-        prevDocNo: prev?.docNo || '', prevSonum: prev?.sonum || '', prevStartDate: prev?.startDate || '', prevDueDate: prev?.dueDate || '',
+        prevDocNo: prev?.docNo || '', prevSonum: prev?.sonum || '', prevCompany: prev?.company || '', prevIsSonum: !!prev?.isSonum, prevStartDate: prev?.startDate || '', prevDueDate: prev?.dueDate || '',
         lastPrice: last?.price ?? null, lastIsTssCost: _draftIsNetCostCompany(last?.company),
-        lastDocNo: last?.docNo || '', lastSonum: last?.sonum || '', lastStartDate: last?.startDate || '', lastDueDate: last?.dueDate || '', lastCreateDate: last?.createDate || '',
+        lastDocNo: last?.docNo || '', lastSonum: last?.sonum || '', lastCompany: last?.company || '', lastIsSonum: !!last?.isSonum, lastStartDate: last?.startDate || '', lastDueDate: last?.dueDate || '', lastCreateDate: last?.createDate || '',
         latestSalesPrice: salesRef?.price || null, latestIsTssCost: _draftIsNetCostCompany(salesRef?.company),
         masterPrice: masterPrice || null, masterIsTssCost: _draftMasterPriceIsTss(skuMeta),
         lastMonthQty, lastMonthLabel: lastMonth.label,
@@ -15518,8 +15520,9 @@ function draftRenderRefCells() {
     [['prev', 'Pro Period ก่อน'], ['last', 'Pro No. ล่าสุด']].forEach(([k, title]) => {
       const docEl = document.getElementById(`draft-line-${k}-doc-${i}`);
       if (docEl) {
-        docEl.textContent = ref?.[k + 'DocNo'] || '—';
-        docEl.title = ref?.[k + 'Sonum'] ? `${title} · Express ${ref[k + 'Sonum']}${ref[k + 'CreateDate'] ? ' · สร้าง ' + promoFmtD(ref[k + 'CreateDate']) : ''}` : '';
+        const dl = _draftRefDocLabel(ref, k);
+        docEl.textContent = (ref?.[k + 'DocNo'] || '—') + (dl.co ? ' · ' + dl.co : '');
+        docEl.title = ref?.[k + 'Sonum'] ? `${title} · Express ${ref[k + 'Company'] || ''} ${ref[k + 'Sonum']}${ref[k + 'CreateDate'] ? ' · สร้าง ' + promoFmtD(ref[k + 'CreateDate']) : ''}` : '';
       }
       const priceEl = document.getElementById(`draft-line-${k}-${i}`);
       if (priceEl) {
@@ -15556,6 +15559,12 @@ function draftRenderRefCells() {
   });
 }
 // รหัสเอกสารแบบสั้นสำหรับพิมพ์ (2026-09-24): doc_ref มักมีหมายเหตุต่อท้าย เช่น "LT-0149 compensate.." → "LT-0149"
+// เลขอ้างอิงใบโปรที่แสดงในตาราง/PDF (2026-10-02): ใบที่ไม่มีหมายเหตุอ้างอิงจะแสดงเลขที่เอกสาร Express (sonum)
+// ซึ่งแต่ละบริษัทนับเลขแยกกัน (เช่น P16902030 มีทั้ง TSS = โลตัส และ CONSI = วิลล่า) → ต้องบอกบริษัทกำกับเสมอ
+function _draftRefDocLabel(ref, k) {
+  const code = _draftRefCode(ref?.[k + 'DocNo']);
+  return { code, co: code && ref?.[k + 'IsSonum'] ? String(ref[k + 'Company'] || '') : '' };
+}
 function _draftRefCode(v) {
   const t = String(v || '').trim();
   const m = t.match(/^[A-Za-z]{1,6}-?\d+[A-Za-z0-9]*/);
@@ -17270,7 +17279,8 @@ async function draftPreviewPDF(orient = 'landscape') {
     // ตัวเลขทุกช่องพิมพ์บรรทัดเดียว (class n) — % อยู่ที่หัวคอลัมน์ (GP% / ท้ายบิล%) แล้ว ไม่ต้องต่อท้ายค่า
     const pct = v => v !== '' && v != null ? esc(String(v)) : '—';
     const promoCells = (k, cls) => { const pp = _draftPrevPromoPrice(ref, l, k);
-      return `<td class="mono docc ${cls} gs">${esc(_draftRefCode(ref?.[k + 'DocNo']) || '—')}</td><td class="n ${cls}">${fmt2(pp.sell)}</td><td class="${cls} period">${periodHtml(k)}</td>`; };
+      const dl = _draftRefDocLabel(ref, k);
+      return `<td class="mono docc ${cls} gs">${esc(dl.code || '—')}${dl.co ? `<div class="sub">${esc(dl.co)}</div>` : ''}</td><td class="n ${cls}">${fmt2(pp.sell)}</td><td class="${cls} period">${periodHtml(k)}</td>`; };
     return `<tr class="${level ? 'subrow' : ''}${pdfCx.has(l.sku) ? ' cx' : ''}">
     <td class="num n">${esc(num)}</td><td class="mono n">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}${cxTag(l.sku)}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
     <td class="n g-norm gs">${fmt2(l.normalPrice)}</td><td class="n g-norm">${pct(l.gpPct)}</td><td class="n g-norm">${pct(l.billDiscPct)}</td><td class="n g-norm strong">${fmt2(l.costPrice)}</td>
@@ -17286,7 +17296,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     const pct = v => v !== '' && v != null ? esc(String(v)) + '%' : '—';
     const promoCell = (k, cls) => { const pp = _draftPrevPromoPrice(ref, l, k);
       const period = ref?.[k + 'StartDate'] || ref?.[k + 'DueDate'] ? `${esc(promoFmtD(ref[k + 'StartDate']))}<br>– ${esc(promoFmtD(ref[k + 'DueDate']))}` : '';
-      return `<td class="${cls} gs"><span class="mono n">${esc(_draftRefCode(ref?.[k + 'DocNo']) || '—')}</span>${pp.sell != null ? `<br><b>${fmt2(pp.sell)}</b>` : ''}${period ? `<div class="sub">${period}</div>` : ''}</td>`; };
+      return `<td class="${cls} gs"><span class="mono n">${esc(_draftRefDocLabel(ref, k).code || '—')}</span>${_draftRefDocLabel(ref, k).co ? `<span class="sub">${esc(_draftRefDocLabel(ref, k).co)}</span>` : ''}${pp.sell != null ? `<br><b>${fmt2(pp.sell)}</b>` : ''}${period ? `<div class="sub">${period}</div>` : ''}</td>`; };
     const prevQty = ref?.prevPeriodQty != null ? Number(ref.prevPeriodQty).toLocaleString('th-TH') + (ref.prevPeriodFrom ? `<div class="sub">${esc(promoFmtD(ref.prevPeriodFrom))}<br>– ${esc(promoFmtD(ref.prevPeriodTo))}</div>` : '') : '—';
     // noCost = ติ๊ก Compensate → ราคาโปรไม่คำนวณทุนสุทธิ (ไม่แสดงบรรทัดทุนสุทธิ)
     const kv = (sell, gp, bill, cost, noCost = false) => `<div class="kv"><span>ขาย</span><b>${fmt2(sell)}</b><span>GP</span><b>${pct(gp)}</b><span>ท้ายบิล</span><b>${pct(bill)}</b>${noCost ? '' : `<span class="tot">ทุนสุทธิ</span><b class="tot">${fmt2(cost)}</b>`}</div>`;
@@ -17430,7 +17440,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     .box{width:10px;height:10px;border:1.2px solid #4A5568;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:8px;line-height:1;flex:none;font-style:normal}
     .box.on{background:#1E3A5F;border-color:#1E3A5F;color:#fff}
     .ck.on{font-weight:700;color:#1E3A5F}
-    .disc{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+    .disc{display:flex;gap:0 18px;flex-wrap:wrap;align-items:baseline}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact} /* พิมพ์พื้นหัวตาราง/แรเงาออกมาด้วย */
     table{width:100%;border-collapse:collapse;margin-top:7px;font-size:11.2px;table-layout:fixed} /* +2pt (2026-09-24) */
     thead tr.grp th{background:#16304d;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:6px 3px;border-left:1px solid rgba(255,255,255,.35)}
