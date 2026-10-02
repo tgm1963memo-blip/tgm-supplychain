@@ -15111,16 +15111,21 @@ function _draftCalcNetCost(sellPrice, gpPct, billDiscPct) {
   return Math.round((sp / 1.07) * (1 - gp / 100) * (1 - bill / 100) * 100) / 100;
 }
 // ราคาอ้างอิงจากบริษัท TSS ถูกคีย์เป็น "ราคาทุนสุทธิ" (ผู้ใช้ยืนยัน 2026-09-23) — แปลงย้อนเป็นราคาขาย
-// ด้วยสูตรที่ยืนยันแล้วว่า "ไม่หักท้ายบิล": ทุนสุทธิ ÷ (1 − GP%) × 1.07 (GP ว่าง = 0)
-// ตัวอย่าง: ทุน 121.08, GP 18% => 121.08 ÷ 0.82 × 1.07 = 157.99
+// ด้วยสูตรย้อนกลับของ _draftCalcNetCost (2026-10-02 ผู้ใช้แก้: ต้องหักท้ายบิลด้วย — เดิม 2026-09-23 ไม่หักท้ายบิล):
+// ทุนสุทธิ ÷ (1 − GP%) ÷ (1 − ท้ายบิล%) × 1.07 (ว่าง = 0)
+// ตัวอย่าง: ทุน 47.71, GP 20%, ท้ายบิล 23.11% => 47.71 ÷ 0.80 ÷ 0.7689 × 1.07 = 83.00
 const DRAFT_NET_COST_COMPANY = 'TSS';
 function _draftIsNetCostCompany(company) { return String(company || '').trim().toUpperCase() === DRAFT_NET_COST_COMPANY; }
-function _draftCostToSell(cost, gpPct) {
+function _draftCostToSell(cost, gpPct, billPct) {
   const c = parseFloat(cost);
   if (isNaN(c)) return '';
-  const gp = parseFloat(gpPct) || 0;
-  if (gp >= 100) return '';
-  return Math.round((c / (1 - gp / 100)) * 1.07 * 100) / 100;
+  const gp = parseFloat(gpPct) || 0, bill = parseFloat(billPct) || 0;
+  if (gp >= 100 || bill >= 100) return '';
+  const v = (c / (1 - gp / 100) / (1 - bill / 100)) * 1.07;
+  // ทุนสุทธิใน Express ถูกปัดเหลือ 2 ตำแหน่งแล้ว → ย้อนกลับคลาด ±0.01 (เช่น 82.99 แทน 83.00) — ราคาปลีกมักเป็น
+  // ทีละ 0.25 บาท จึงปัดเข้าค่านั้นเมื่อห่างไม่เกิน 0.015 ไม่เช่นนั้นใช้ค่าที่คำนวณได้ (2 ตำแหน่ง)
+  const q = Math.round(v * 4) / 4;
+  return Math.abs(v - q) <= 0.015 ? q : Math.round(v * 100) / 100;
 }
 // ตั้ง "ราคาปกติ" จากระบบ (ไม่ใช่ผู้ใช้พิมพ์เอง) — tssCost != null หมายถึงราคาอ้างอิงเป็นทุนสุทธิของ TSS
 // ต้องแปลงย้อนด้วย GP ปกติของบรรทัด และจำทุนไว้เพื่อคำนวณใหม่เมื่อ GP เปลี่ยน (จนกว่าผู้ใช้จะพิมพ์ราคาเอง)
@@ -15128,7 +15133,7 @@ function _draftSetAutoNormalPrice(i, price, tssCost = null) {
   const l = _draftLines[i];
   if (!l) return;
   l.normalTssCost = tssCost != null ? Number(tssCost) : null;
-  l.normalPrice = tssCost != null ? _draftCostToSell(tssCost, l.gpPct) : Math.round(Number(price) * 100) / 100;
+  l.normalPrice = tssCost != null ? _draftCostToSell(tssCost, l.gpPct, l.billDiscPct) : Math.round(Number(price) * 100) / 100;
   l.normalPriceEdited = true;
   const npEl = document.getElementById(`draft-line-normalprice-${i}`);
   if (npEl) npEl.value = l.normalPrice;
@@ -15167,11 +15172,11 @@ function draftLineField(i, key, value) {
   // once, before the user has touched it at all.
   if (key === 'normalPrice') { _draftLines[i].normalPriceEdited = true; _draftLines[i].normalTssCost = null; }
   if (['gpPct', 'normalPrice', 'gpPctPromo', 'unitPrice', 'billDiscPct', 'billDiscPctPromo'].includes(key)) _draftRecalcCost(i);
-  // ราคาปกติที่แปลงย้อนจากทุน TSS ต้องคำนวณใหม่เมื่อ GP ปกติเปลี่ยน
-  if (key === 'gpPct' && _draftLines[i].normalTssCost != null) _draftSetAutoNormalPrice(i, null, _draftLines[i].normalTssCost);
+  // ราคาปกติที่แปลงย้อนจากทุน TSS ต้องคำนวณใหม่เมื่อ GP ปกติ / ท้ายบิลปกติ เปลี่ยน
+  if ((key === 'gpPct' || key === 'billDiscPct') && _draftLines[i].normalTssCost != null) _draftSetAutoNormalPrice(i, null, _draftLines[i].normalTssCost);
   if (key === 'normalPrice' || key === 'compensate') _draftApplyCompensate(i);
   if (key === 'compensate') _draftMarkCompensateInput(i);
-  if (key === 'gpPctPromo') draftRenderRefCells();
+  if (key === 'gpPctPromo' || key === 'billDiscPctPromo') draftRenderRefCells();
   if (key === 'sku') { const m=_draftFindSku(value); if(m && !_draftLines[i].skuName) _draftLines[i].skuName=m.name||value; draftCheckOverlap(); draftRefreshLineRefData(); }
 }
 // ยืนยันแล้วว่า "1 ใบเคาะราคา = 1 ช่วงเวลา" (ผู้ใช้ 2026-09-14) — ทุกบรรทัดผูกกับวันที่ของหัวเอกสารเสมอ
@@ -15576,7 +15581,7 @@ function _draftPrevPromoPrice(ref, l, which = 'prev') {
   const price = ref?.[which + 'Price'];
   if (!ref || price == null) return { sell: null, tssCost: null };
   if (!ref[which + 'IsTssCost']) return { sell: Number(price), tssCost: null };
-  const sell = _draftCostToSell(price, l?.gpPctPromo);
+  const sell = _draftCostToSell(price, l?.gpPctPromo, l?.billDiscPctPromo);
   return { sell: sell === '' ? null : sell, tssCost: Number(price) };
 }
 
