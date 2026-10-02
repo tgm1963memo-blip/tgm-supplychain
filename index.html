@@ -13765,7 +13765,30 @@ function promoMsItems(field) {
     <input type="checkbox" ${st.excluded.has(o.key) ? '' : 'checked'} onclick="event.stopPropagation()">
     <span style="font-size:12px">${esc(o.label)}</span>
   </div>`).join('');
-  return overflow + (items || '<div style="padding:8px;color:var(--TX3);font-size:12px">ไม่พบรายการ</div>');
+  // ไม่พบในช่วงวันที่สร้างเอกสารที่โหลดอยู่ → ให้ค้นทุกช่วงวันที่ แล้วขยายช่วงโหลดใหม่อัตโนมัติ (2026-10-02)
+  const findAll = q.length >= 2 && field !== 'company' && field !== 'type'
+    ? `<div style="padding:4px 6px 6px"><button class="btn btn-xs" onclick="event.stopPropagation();promoFindAllRanges('${field}')">🔎 ค้นหา "${esc(st.q.trim())}" ทุกช่วงวันที่สร้างเอกสาร</button><div id="promo-ms-${field}-findall" style="font-size:11px;color:var(--TX3);margin-top:3px"></div></div>`
+    : '';
+  return overflow + (items || `<div style="padding:8px;color:var(--TX3);font-size:12px">ไม่พบรายการในช่วงวันที่สร้างเอกสาร ${esc(_dateToDisplayTh(_promo.createFrom))} – ${esc(_dateToDisplayTh(_promo.createTo))}</div>${findAll}`);
+}
+async function promoFindAllRanges(field) {
+  const st = _promo.filters[field], q = String(st.q || '').trim();
+  const msg = document.getElementById('promo-ms-' + field + '-findall');
+  if (msg) msg.textContent = '⏳ กำลังค้นหา…';
+  const r = await apiFetch(`/api/promo_docs_find?field=${encodeURIComponent(field)}&q=${encodeURIComponent(q)}`);
+  if (r.error) { if (msg) msg.textContent = 'ค้นหาไม่สำเร็จ: ' + (r.error.message || r.error); return; }
+  const d = r.data || {};
+  if (!d.lines) { if (msg) msg.textContent = 'ไม่พบในทุกช่วงวันที่ (อาจยังไม่ได้ sync จาก Express)'; return; }
+  // ขยายช่วง (ไม่หด) ให้ครอบใบที่พบ แล้วโหลดใหม่ — คงคำค้นไว้ให้กรองตาราง
+  const from = d.min_create && d.min_create < _promo.createFrom ? d.min_create : _promo.createFrom;
+  const to = d.max_create && d.max_create > _promo.createTo ? d.max_create : _promo.createTo;
+  toast(`พบ ${d.docs} เอกสาร (สร้าง ${_dateToDisplayTh(d.min_create)}${d.max_create !== d.min_create ? ' – ' + _dateToDisplayTh(d.max_create) : ''}) — ขยายช่วงวันที่สร้างเอกสารแล้วโหลดใหม่`);
+  _promo.createFrom = from; _promo.createTo = to;
+  const f2 = document.getElementById('promo-create-from'), t2 = document.getElementById('promo-create-to');
+  if (f2) f2.value = from; if (t2) t2.value = to;
+  await promoReloadForCreateRange();
+  promoMsSearch(field, q);
+  promoRenderBody();
 }
 
 // Excel autofilter semantics (confirmed with user 2026-08-26, replacing the earlier "browse, then

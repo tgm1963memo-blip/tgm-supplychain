@@ -457,6 +457,19 @@ function buildApp(db, opts = {}) {
     readOnly: true,
   }));
 
+  // ค้นหาใบโปรทุกช่วงวันที่ (2026-10-02): หน้า "ใบโปร" โหลดตามช่วงวันที่สร้างเอกสาร — ค้นไม่เจอเพราะใบอยู่นอกช่วง
+  // (เช่น LT-0149 สร้าง 1 ก.ย. แต่ค่าเริ่มต้นคือเดือนปัจจุบัน) → คืนช่วง create_date ของใบที่ตรง ให้ client ขยายช่วงแล้วโหลดใหม่
+  // ?field=ref|doc|cust|sku&q=
+  app.get('/api/promo_docs_find', authed, (req, res) => {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    if (q.length < 2) return res.status(400).json({ error: 'q (อย่างน้อย 2 ตัวอักษร) is required' });
+    const cols = { ref: ['doc_ref'], doc: ['sonum'], cust: ['cust_code', 'cust_name'], sku: ['sku', 'sku_name'] }[String(req.query.field || 'ref')] || ['doc_ref'];
+    const like = '%' + q.replace(/[\\%_]/g, m => '\\' + m) + '%';
+    const where = cols.map(c => `lower(coalesce(${c}, '')) LIKE ? ESCAPE '\\'`).join(' OR ');
+    const row = db.prepare(`SELECT MIN(create_date) AS min_create, MAX(create_date) AS max_create, COUNT(*) AS lines, COUNT(DISTINCT sonum) AS docs FROM promo_docs WHERE ${where}`).get(...cols.map(() => like));
+    const samples = db.prepare(`SELECT DISTINCT ${cols[0]} AS v FROM promo_docs WHERE ${where} LIMIT 5`).all(...cols.map(() => like)).map(r => r.v);
+    res.json({ ...row, samples });
+  });
   app.use('/api/promo_docs', authed, makeCrudRouter(db, 'promo_docs', {
     pk: 'sonum',
     fields: ['company', 'sonum', 'seqnum', 'cust_code', 'cust_name', 'sku', 'sku_name', 'unit_price', 'start_date', 'due_date', 'docstat', 'create_date', 'doc_ref', 'updated_at'],
