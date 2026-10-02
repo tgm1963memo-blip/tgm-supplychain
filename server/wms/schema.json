@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-28T08:17:32.823Z",
+ "generatedAt": "2026-10-02T01:51:52.101Z",
  "source": "supabase qncfkletcnncutyhjjfb",
  "tables": {
   "adjust_requests": {
@@ -959,6 +959,79 @@
       "kind": "now"
      },
      "array": false
+    },
+    {
+     "name": "street_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "lane",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "street",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "subdistrict",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "district",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "province",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "postcode",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "receiver_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "receiver_tel",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by_driver",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
     }
    ],
    "pk": [
@@ -1192,6 +1265,122 @@
     }
    ]
   },
+  "delivery_fuel_logs": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "trip_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "fuel_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "odometer_km",
+     "type": "num",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "litres",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cost_baht",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "photo_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "created_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "trip_id"
+     ],
+     "refTable": "delivery_trips",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    },
+    {
+     "columns": [
+      "photo_id"
+     ],
+     "refTable": "delivery_photos",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "SET NULL"
+    }
+   ],
+   "indexes": [
+    {
+     "name": "delivery_fuel_logs_trip_idx",
+     "columns": [
+      "trip_id"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
   "delivery_photos": {
    "columns": [
     {
@@ -1206,7 +1395,7 @@
     {
      "name": "stop_id",
      "type": "uuid",
-     "nullable": false,
+     "nullable": true,
      "default": null,
      "array": false
     },
@@ -1265,6 +1454,13 @@
       "kind": "now"
      },
      "array": false
+    },
+    {
+     "name": "trip_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
     }
    ],
    "pk": [
@@ -1281,6 +1477,16 @@
       "id"
      ],
      "onDelete": "CASCADE"
+    },
+    {
+     "columns": [
+      "trip_id"
+     ],
+     "refTable": "delivery_trips",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
     }
    ],
    "indexes": [
@@ -1288,6 +1494,14 @@
      "name": "delivery_photos_stop_idx",
      "columns": [
       "stop_id"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "delivery_photos_trip_idx",
+     "columns": [
+      "trip_id"
      ],
      "unique": false,
      "where": null
@@ -1497,6 +1711,75 @@
       "kind": "now"
      },
      "array": false
+    },
+    {
+     "name": "qty_kg",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_basket",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "qty_box",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "handled_by",
+     "type": "json",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": []
+     },
+     "array": true
+    },
+    {
+     "name": "issue_reason",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_redelivery",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "qty_return",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "origin_stop_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "actual_seq",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
     }
    ],
    "pk": [
@@ -1513,6 +1796,16 @@
       "id"
      ],
      "onDelete": "CASCADE"
+    },
+    {
+     "columns": [
+      "origin_stop_id"
+     ],
+     "refTable": "delivery_stops",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "SET NULL"
     }
    ],
    "indexes": [
@@ -1622,6 +1915,76 @@
       "kind": "now"
      },
      "array": false
+    },
+    {
+     "name": "shift_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "vehicle_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "helper1_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "helper2_id",
+     "type": "uuid",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "start_km",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "end_km",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "shift_opened_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "shift_closed_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "loading_started_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "loading_ended_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
     }
    ],
    "pk": [
@@ -1632,9 +1995,43 @@
      "trip_date",
      "route_name",
      "round_no"
+    ],
+    [
+     "shift_code"
     ]
    ],
-   "fks": [],
+   "fks": [
+    {
+     "columns": [
+      "vehicle_id"
+     ],
+     "refTable": "vehicles",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "SET NULL"
+    },
+    {
+     "columns": [
+      "helper1_id"
+     ],
+     "refTable": "helpers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "SET NULL"
+    },
+    {
+     "columns": [
+      "helper2_id"
+     ],
+     "refTable": "helpers",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "SET NULL"
+    }
+   ],
    "indexes": [
     {
      "name": "delivery_trips_driver_idx",
@@ -1646,6 +2043,71 @@
      "where": null
     }
    ]
+  },
+  "driver_profiles": {
+   "columns": [
+    {
+     "name": "user_id",
+     "type": "uuid",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "emp_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "nickname",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "tel",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "user_id"
+   ],
+   "uniques": [],
+   "fks": [
+    {
+     "columns": [
+      "user_id"
+     ],
+     "refTable": "users",
+     "refColumns": [
+      "id"
+     ],
+     "onDelete": "CASCADE"
+    }
+   ],
+   "indexes": []
   },
   "forecasts": {
    "columns": [
@@ -1808,6 +2270,83 @@
      "where": null
     }
    ]
+  },
+  "helpers": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "emp_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "name",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "nickname",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "tel",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "emp_code"
+    ]
+   ],
+   "fks": [],
+   "indexes": []
   },
   "locations": {
    "columns": [
@@ -6005,6 +6544,69 @@
     }
    ]
   },
+  "thai_addresses": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "int",
+     "nullable": false,
+     "default": {
+      "kind": "serial"
+     },
+     "array": false
+    },
+    {
+     "name": "postcode",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "province",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "district",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "subdistrict",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "postcode",
+     "province",
+     "district",
+     "subdistrict"
+    ]
+   ],
+   "fks": [],
+   "indexes": [
+    {
+     "name": "thai_addresses_postcode_idx",
+     "columns": [
+      "postcode"
+     ],
+     "unique": false,
+     "where": null
+    }
+   ]
+  },
   "transport_routes": {
    "columns": [
     {
@@ -6093,6 +6695,16 @@
      "nullable": true,
      "default": null,
      "array": false
+    },
+    {
+     "name": "run_days",
+     "type": "json",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": []
+     },
+     "array": true
     }
    ],
    "pk": [
@@ -6323,6 +6935,117 @@
     "id"
    ],
    "uniques": [],
+   "fks": [],
+   "indexes": []
+  },
+  "vehicles": {
+   "columns": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "nullable": false,
+     "default": {
+      "kind": "uuid"
+     },
+     "array": false
+    },
+    {
+     "name": "vehicle_code",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "plate",
+     "type": "text",
+     "nullable": false,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "vehicle_type",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "load_kg",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "load_m3",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cooling",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "has_plug",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "has_lift",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "is_active",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": true
+     },
+     "array": false
+    },
+    {
+     "name": "updated_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "updated_at",
+     "type": "ts",
+     "nullable": false,
+     "default": {
+      "kind": "now"
+     },
+     "array": false
+    }
+   ],
+   "pk": [
+    "id"
+   ],
+   "uniques": [
+    [
+     "plate"
+    ]
+   ],
    "fks": [],
    "indexes": []
   },
