@@ -14741,8 +14741,8 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
     <div class="tw tw-scroll" style="margin-bottom:8px"><table id="draft-lines-table">
       <thead>
         <tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2">RTE-Set</th>
-          <th colspan="3" class="dl-prev dl-start" title="โปรล่าสุดของสาขาที่เลือก + สินค้านี้ ที่เริ่มโปรก่อนวันทำเอกสาร">Pro Last</th>
-          <th colspan="3" class="dl-last dl-start" title="ใบโปรที่สร้างล่าสุดของสาขาที่เลือก + สินค้านี้ (ดูวันที่สร้างเอกสาร ไม่สนช่วงโปร)">Pro Next</th>
+          <th colspan="3" class="dl-prev dl-start" title="โปรล่าสุดของสาขาที่เลือก + สินค้านี้ ที่เริ่มโปรก่อนวันทำเอกสาร">Pro before period</th>
+          <th colspan="3" class="dl-last dl-start" title="โปรของสาขาที่เลือก + สินค้านี้ ที่ช่วงโปรอยู่หลังวันทำเอกสาร (เลือกใบที่เริ่มช้าที่สุด)">Pro last confirm</th>
           <th colspan="4" class="dl-norm dl-start">ราคาปกติ</th><th colspan="5" class="dl-promo dl-start">ราคาโปรโมชั่น</th>
           <th rowspan="2" class="dl-start">ปริมาณการขาย · Pro ก่อน<br><span style="font-weight:400;color:var(--TX3)">สาขาที่เลือก → CONSI → ทั้งกลุ่ม</span></th><th rowspan="2">Forecast<br><span style="font-weight:400;color:var(--TX3)">ประมาณการจำนวน</span></th><th rowspan="2" class="dl-start" title="ผู้อนุมัติขั้นตรวจสอบเลือก ขายได้ / ขาดทุน ทุกรายการ">🔍 ผลตรวจสอบ</th><th rowspan="2"></th><th rowspan="2"></th></tr>
         <tr><th class="dl-prev dl-start">เลขที่</th><th class="dl-prev">ราคา</th><th class="dl-prev">ช่วงวันที่</th>
@@ -14862,7 +14862,7 @@ function _draftFormExtraHtml(raw, canEdit, header) {
   return `<div class="field" style="grid-column:1/-1"><label>รายละเอียดตามฟอร์มใบเคาะ <span style="font-weight:400;color:var(--TX3);font-size:11px">(แสดงในเอกสาร — ติ๊กเฉพาะที่เกี่ยวข้อง)</span></label>
     <div style="background:var(--bg2);border-radius:8px;padding:6px 12px 10px">
       ${row('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => ck(`fx-sale-${p.k}`, sale[p.k]?.on, p.label,
-        p.text ? ' ' + txt(`fx-sale-${p.k}-v`, sale[p.k]?.text) : ` ${num(`fx-sale-${p.k}-v`, sale[p.k]?.n)} ${p.unit}`)).join(''), '', true)}
+        p.text ? ' ' + txt(`fx-sale-${p.k}-v`, sale[p.k]?.text) : ` ${num(`fx-sale-${p.k}-v`, sale[p.k]?.n, 64, p.k === 'regular' ? 'จำนวนสาขา' : '')} ${p.unit}`)).join(''), '', true)}
       ${row('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? ck('fx-pt-other', fx.ptype_other?.on, 'อื่นๆ', ' ' + txt('fx-pt-other-v', fx.ptype_other?.text)) + '<span style="flex-basis:100%;height:0"></span>'
           : t === 'อื่นๆ2' ? ck('fx-pt-other2', fx.ptype_other2?.on, 'อื่นๆ', ' ' + txt('fx-pt-other2-v', fx.ptype_other2?.text))
           : ck(`fx-pt-${DRAFT_PRODUCT_TYPES.indexOf(t)}`, (fx.ptypes || []).includes(t), t)).join(''), '', true)}
@@ -15520,7 +15520,7 @@ async function _draftRefreshLineRefDataNow() {
     // วันทำเอกสาร = วันที่สร้างใบเคาะ (ใบใหม่/คัดลอก = วันนี้) — ทั้งสองกลุ่มนับเฉพาะใบที่มีอยู่แล้ว ณ วันนั้น
     // เปิดเอกสารเก่าดูภายหลังจึงได้ค่าเดิม ไม่ถูกใบโปรที่คีย์ทีหลัง (รวมถึงใบของเอกสารนี้เอง) มาแทนที่
     //   · Pro Period ก่อน = ใบที่ start_date ≤ วันทำเอกสาร และ start_date ล่าสุด (เท่ากันดู due_date, sonum)
-    //   · Pro No. ล่าสุด  = ใบที่ create_date ≤ วันทำเอกสาร และ create_date ล่าสุด (เท่ากันดู start_date, sonum)
+    //   · Pro last confirm (เดิม Pro No. ล่าสุด, 2026-10-03) = ใบที่ start_date > วันทำเอกสาร และเริ่มช้าที่สุด (มีใน Express แล้ว ณ วันทำเอกสาร)
     const consiCodes = [...new Set(custCodes.filter(c => !/^BB-/i.test(c)).map(_draftConsiPairCode).filter(Boolean))];
     const promoCodes = [...new Set([...custCodes, ...consiCodes])];
     // กลุ่มลูกค้าเดียวกัน = ลูกค้าเดียวกัน (2026-09-24): ใบโปรฝั่ง TSS ของโลตัสคีย์ที่ 30-NU (เอก-ชัย, กลุ่ม "โลตัส TGM")
@@ -15541,7 +15541,9 @@ async function _draftRefreshLineRefDataNow() {
     ]);
     const docDate = _draftDocDate();
     const periodRank = r => `${r.start_date || ''}|${r.due_date || ''}|${r.sonum || ''}`;
-    const createdRank = r => `${r.create_date || ''}|${r.start_date || ''}|${r.sonum || ''}`;
+    // Pro last confirm (2026-10-03): ใบโปรที่ช่วงโปรเริ่มหลังวันทำเอกสาร เลือกใบที่เริ่มช้าที่สุด (เท่ากันดู due_date, sonum)
+    // นับเฉพาะใบที่มีใน Express แล้ว ณ วันทำเอกสาร (create_date ≤ วันทำเอกสาร) — เปิดเอกสารเก่าดูภายหลังได้ค่าเดิม
+    // (เดิม "Pro No. ล่าสุด" = ใบที่สร้างล่าสุด ไม่สนช่วงโปร)
     const periodBySku = new Map(), lastBySku = new Map();
     docs.forEach(d => {
       if (!(Number(d.unit_price) > 0)) return;
@@ -15549,9 +15551,9 @@ async function _draftRefreshLineRefDataNow() {
         const cur = periodBySku.get(d.sku);
         if (!cur || periodRank(d) > periodRank(cur)) periodBySku.set(d.sku, d);
       }
-      if (d.create_date && d.create_date <= docDate) {
+      if (d.start_date && d.start_date > docDate && (!d.create_date || d.create_date <= docDate)) {
         const cur = lastBySku.get(d.sku);
-        if (!cur || createdRank(d) > createdRank(cur)) lastBySku.set(d.sku, d);
+        if (!cur || periodRank(d) > periodRank(cur)) lastBySku.set(d.sku, d);
       }
     });
     const qtyMap = new Map();
@@ -15671,7 +15673,7 @@ function draftRenderRefCells() {
   _draftLines.forEach((l, i) => {
     const ref = _draftRefData.get(l.sku);
     // 2 กลุ่มใช้โครงเดียวกัน: prev = Pro Period ก่อน, last = Pro No. ล่าสุด (ดู _draftRefreshLineRefDataNow)
-    [['prev', 'Pro Last'], ['last', 'Pro Next']].forEach(([k, title]) => {
+    [['prev', 'Pro before period'], ['last', 'Pro last confirm']].forEach(([k, title]) => {
       const docEl = document.getElementById(`draft-line-${k}-doc-${i}`);
       if (docEl) {
         const dl = _draftRefDocLabel(ref, k);
@@ -15975,8 +15977,8 @@ const DRAFT_LINE_COL_KEYS = ['num', 'sku', 'name', 'set', 'pp_doc', 'pp_price', 
   'n_sell', 'n_gp', 'n_bill', 'n_cost', 'comp', 'p_sell', 'p_gp', 'p_bill', 'p_cost', 'qty', 'est', 'verdict'];
 const DRAFT_LINE_COL_KEYS_V2 = ['num', 'sku', 'name', 'set', 'pp_doc', 'pp_price', 'pp_period', 'n_sell', 'n_gp', 'n_bill', 'n_cost',
   'comp', 'p_sell', 'p_gp', 'p_bill', 'p_cost', 'disc', 'qty', 'est'];
-const DRAFT_LINE_COL_LABELS = ['ลำดับ', 'รหัสสินค้า', 'ชื่อสินค้า', 'RTE-Set', 'Pro Last · เลขที่', 'Pro Last · ราคา', 'Pro Last · ช่วงวันที่',
-  'Pro Next · เลขที่', 'Pro Next · ราคา', 'Pro Next · ช่วงวันที่',
+const DRAFT_LINE_COL_LABELS = ['ลำดับ', 'รหัสสินค้า', 'ชื่อสินค้า', 'RTE-Set', 'Pro before period · เลขที่', 'Pro before period · ราคา', 'Pro before period · ช่วงวันที่',
+  'Pro last confirm · เลขที่', 'Pro last confirm · ราคา', 'Pro last confirm · ช่วงวันที่',
   'ราคาปกติ · ราคาขาย', 'ราคาปกติ · GP%', 'ราคาปกติ · ท้ายบิล%', 'ราคาปกติ · ทุนสุทธิ', 'Compensate', 'ราคาโปร · ราคาขาย', 'ราคาโปร · GP%',
   'ราคาโปร · ท้ายบิล%', 'ราคาโปร · ทุนสุทธิ', 'ปริมาณการขาย · Pro ก่อน', 'Forecast', 'ผลตรวจสอบ'];
 function _draftAnchorFor(el) {
@@ -16215,6 +16217,8 @@ async function saveDraftPromo(submitAfter = false) {
     const missing = _draftLines.map((l, i) => (l.sku && _draftIsBlank(l.compensate)) ? nums[i] : null).filter(Boolean);
     if (missing.length) { alert(`เลือกลักษณะรายการ "Compensate" แล้ว กรุณากรอก Compensate ให้ครบทุกรายการ (ลำดับ ${missing.join(', ')})`); return; }
   }
+  // จุดประจำ ติ๊กแล้วไม่กรอกจำนวน → ใช้จำนวนสาขาที่เลือก (2026-10-03)
+  { const rc = document.getElementById('fx-sale-regular'), rv = document.getElementById('fx-sale-regular-v'); if (rc?.checked && rv && !String(rv.value).trim() && custCodes.length) rv.value = custCodes.length; }
   {
     const fxv = _draftReadFormExtra();
     if (isNpd && !fxv.fee_none && !fxv.fee.on) { alert('ติ๊ก "สินค้า NPD" แล้ว กรุณาเลือกว่า "มีค่าแรกเข้า" หรือ "ไม่มีค่าแรกเข้า"'); return; }
@@ -17469,7 +17473,7 @@ async function draftPreviewPDF(orient = 'landscape') {
         ${optRow('ค่าป้าย promotion VL', [it(_draftVlHas(fx) === true, 'มี', ` ${fv(fmtAmt(fx.vl_sign?.amt), 50)} บาท`), it(_draftVlHas(fx) === false, 'ไม่มี')], 'r5')}
         ${optRow('ค่าใช้จ่ายอื่นๆ', [fx.other_cost?.on ? { on: true, html: `<span class="ck on wide"><i class="box on">✓</i>${fv(fmtAmt(fx.other_cost?.amt), 60)} บาท · รายละเอียด ${fv(fx.other_cost?.detail || '')}</span>` } : null], 'r5')}
         ${optRow('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => it(sale[p.k]?.on, p.label,
-          p.text ? ' ' + fv(sale[p.k]?.text) : ` ${fv(sale[p.k]?.n ?? '', 48)} ${p.unit}`)))}
+          p.text ? ' ' + fv(sale[p.k]?.text) : ` ${fv(sale[p.k]?.n ?? (p.k === 'regular' && branchCodes.length ? branchCodes.length : ''), 48)} ${p.unit}`)))}
         ${optRow('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? it(fx.ptype_other?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other?.text))
           : t === 'อื่นๆ2' ? it(fx.ptype_other2?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other2?.text)) : it((fx.ptypes || []).includes(t), esc(t))))}
         <b>ส่วนลด</b><div class="disc">
@@ -17761,7 +17765,7 @@ async function draftPreviewPDF(orient = 'landscape') {
       : portrait ? `<table class="items portrait">
         <colgroup><col style="width:22px"><col><col style="width:80px"><col style="width:80px"><col style="width:96px"><col style="width:40px"><col style="width:96px"><col style="width:60px"><col style="width:44px">${pdfAudit ? '<col style="width:58px">' : ''}</colgroup>
         <thead><tr class="grp"><th colspan="4" class="blank"></th><th colspan="3" style="white-space:nowrap">Promotion ปัจจุบัน${curPeriod ? ` <span class="per">${esc(curPeriod)}</span>` : ''}</th><th colspan="2">ปริมาณการขาย</th>${pdfAudit ? '<th class="blank"></th>' : ''}</tr>
-          <tr class="cols"><th style="font-size:7.5px;padding-left:1px;padding-right:1px">ลำดับ</th><th>สินค้า</th><th class="gs">Pro Last</th><th class="gs">Pro Next</th>
+          <tr class="cols"><th style="font-size:7.5px;padding-left:1px;padding-right:1px">ลำดับ</th><th>สินค้า</th><th class="gs">Pro before<br>period</th><th class="gs">Pro last<br>confirm</th>
           <th class="gs">ราคาปกติ</th><th class="gs">Comp-<br>ensate</th><th>ราคาโปรโมชั่น</th>
           <th class="gs">Pro ก่อน</th><th style="font-size:8px;letter-spacing:-.2px;padding-left:1px;padding-right:1px">Forecast</th>${pdfAudit ? '<th class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr></thead>
         <tbody>${rowsHtml || `<tr><td colspan="${pdfAudit ? 10 : 9}" style="text-align:center;color:#888">ไม่มีรายการสินค้า</td></tr>`}</tbody>
@@ -17777,7 +17781,7 @@ async function draftPreviewPDF(orient = 'landscape') {
         </colgroup>
         <thead>
           <tr class="grp sup"><th colspan="10" class="blank"></th><th colspan="9">Promotion ปัจจุบัน${curPeriod ? ` <span class="per">${esc(curPeriod)}</span>` : ''}</th><th colspan="2" class="blank"></th>${pdfAudit ? '<th class="blank"></th>' : ''}</tr>
-          <tr class="grp"><th colspan="4"></th><th colspan="3">Pro Last</th><th colspan="3">Pro Next</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th colspan="2">ปริมาณการขาย</th>${pdfAudit ? '<th rowspan="2" class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr>
+          <tr class="grp"><th colspan="4"></th><th colspan="3">Pro before period</th><th colspan="3">Pro last confirm</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th colspan="2">ปริมาณการขาย</th>${pdfAudit ? '<th rowspan="2" class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr>
           <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>RTE-<br>Set</th>
             <th class="gs">เลขที่</th><th>ราคาปลีก</th><th>ช่วงวันที่</th>
             <th class="gs">เลขที่</th><th>ราคาปลีก</th><th>ช่วงวันที่</th>
