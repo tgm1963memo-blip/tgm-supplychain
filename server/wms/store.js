@@ -177,10 +177,17 @@ function openStore(dbPath) {
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA busy_timeout = 30000');
-  db.exec('PRAGMA foreign_keys = ON');
+  // foreign_keys stays OFF while the schema is brought up to date (a table rebuild below drops and renames
+  // tables, which must not cascade into or orphan the rows that reference them); switched on at the end.
+  db.exec('PRAGMA foreign_keys = OFF');
   db.exec(AUTH_DDL);
   for (const [name, t] of Object.entries(schema.tables)) {
     db.exec(tableDdl(name, t));
+    // A column that became nullable in Supabase after this table was created here (e.g. delivery_photos.stop_id
+    // for shift-level photos, ePOD v2.0 2026-09-30): SQLite can't drop NOT NULL in place, so rebuild the table
+    // from the current schema and copy the rows across.
+    const info = db.prepare(`PRAGMA table_info(${q(name)})`).all();
+    if (t.columns.some((c) => c.nullable && info.find((i) => i.name === c.name)?.notnull)) rebuildTable(db, name, t, info);
     // columns added to schema.json after the table was first created here
     const have = new Set(db.prepare(`PRAGMA table_info(${q(name)})`).all().map((c) => c.name));
     for (const c of t.columns) {
@@ -194,7 +201,25 @@ function openStore(dbPath) {
     }
   }
   for (const v of Object.values(VIEWS)) db.exec(v.sql);
+  db.exec('PRAGMA foreign_keys = ON');
   return db;
+}
+
+function rebuildTable(db, name, t, info) {
+  const tmp = `${name}__rebuild`;
+  const keep = info.map((i) => i.name).filter((n) => t.columns.some((c) => c.name === n)).map(q).join(', ');
+  db.exec('BEGIN');
+  try {
+    db.exec(`DROP TABLE IF EXISTS ${q(tmp)}`);
+    db.exec(tableDdl(tmp, t));
+    db.exec(`INSERT INTO ${q(tmp)} (${keep}) SELECT ${keep} FROM ${q(name)}`);
+    db.exec(`DROP TABLE ${q(name)}`);
+    db.exec(`ALTER TABLE ${q(tmp)} RENAME TO ${q(name)}`);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 // Column metadata for a table or view: { name → {name, type, array, nullable, default} }
