@@ -6594,15 +6594,30 @@ function _dashNiceMax(v){
   const p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p;
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
 }
+// เป้ารายเดือนของ Sales ที่เลือก / ในความดูแล / ทั้งบริษัท (2026-10-03) — null = ไม่มีเป้าเดือนนั้น
+// โหลดเป้าของปีที่ยังไม่อยู่ใน cache แล้ววาดกราฟใหม่ครั้งเดียว · ไม่มีเป้าเลย = ไม่แสดงเส้น
+function _dashTargetFor(ym){
+  const y=Number(String(ym).slice(0,4));if(!y||typeof salesTargetsLoad!=='function')return null;
+  const map=_stCache[y];
+  if(!map){
+    if(!_dashTargetFor._loading?.[y]){(_dashTargetFor._loading=_dashTargetFor._loading||{})[y]=true;
+      salesTargetsLoad(y).then(()=>{if(document.getElementById('dash-val-tbl'))dashUpdateSummaryTables();}).catch(()=>{});}
+    return null;
+  }
+  const key=window._dashSlmF||myScopeKey()||Object.keys(map).join(',');
+  return salesTargetSum(map,key,ym,ym);
+}
 function dashValueChartHtml(valRows, sumKeys){
   const series = DASH_VAL_SERIES.filter(s => sumKeys.includes(s.k));
   if (!series.length || !valRows.length) return '';
+  const tg = valRows.map(r => _dashTargetFor(r.m));
+  const hasTg = tg.some(v => v != null);
   const mode = _dashValMode();
   const W = 1000, H = 300, padL = 56, padR = 12, padT = 26, padB = 30;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const monthTotal = r => series.reduce((s, x) => s + Math.max(0, Number(r[x.k]) || 0), 0);
   const maxVal = mode === 'stack' ? Math.max(...valRows.map(monthTotal)) : Math.max(...valRows.flatMap(r => series.map(x => Number(r[x.k]) || 0)));
-  const yMax = _dashNiceMax(maxVal * 1.08);
+  const yMax = _dashNiceMax(Math.max(maxVal, ...tg.map(v => Number(v) || 0)) * 1.08);
   const y = v => padT + plotH - (v / yMax) * plotH;
   const slot = plotW / valRows.length;
   const barW = Math.min(46, slot * 0.62);
@@ -6643,16 +6658,26 @@ function dashValueChartHtml(valRows, sumKeys){
     labels += `<text x="${cx}" y="${H - 9}" text-anchor="middle" class="dvc-x">${esc(mL(r.m))}</text>`;
     hits += `<rect class="dvc-hit" x="${padL + slot * i}" y="${padT}" width="${slot}" height="${plotH}" data-i="${i}" onmousemove="dashValTip(event,${i})" onmouseleave="dashValTipHide()"/>`;
   });
+  // เส้นเป้า: เส้นประ + จุด (เดือนที่ไม่มีเป้าตัดเส้น)
+  let tgLine = '';
+  if (hasTg) {
+    let d = '', pen = false;
+    tg.forEach((v, i) => { const cx = padL + slot * i + slot / 2; if (v == null) { pen = false; return; } d += `${pen ? 'L' : 'M'}${cx},${y(v)}`; pen = true; });
+    tgLine = `<path d="${d}" fill="none" stroke="var(--TX)" stroke-width="2" stroke-dasharray="6 4"/>`
+      + tg.map((v, i) => v == null ? '' : `<circle cx="${padL + slot * i + slot / 2}" cy="${y(v)}" r="4" fill="var(--W)" stroke="var(--TX)" stroke-width="2"/>`).join('');
+  }
   const grid = ticks.map(t => `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" class="${t === 0 ? 'dvc-base' : 'dvc-grid'}"/><text x="${padL - 8}" y="${y(t) + 4}" text-anchor="end" class="dvc-y">${t === 0 ? '0' : '฿' + _dashFmtM(t)}</text>`).join('');
   const yearTot = series.map(s => ({ ...s, v: valRows.reduce((a, r) => a + (Number(r[s.k]) || 0), 0) }));
   const grand = yearTot.reduce((a, s) => a + s.v, 0) || 1;
-  window._dashValChart = { valRows, series };
-  const legend = yearTot.map(s => `<span class="dvc-leg"><i style="background:${s.color}"></i>${esc(s.label)} <b>฿${_dashFmtM(s.v)}</b><span class="dvc-pct">${(s.v / grand * 100).toFixed(0)}%</span></span>`).join('');
+  window._dashValChart = { valRows, series, tg };
+  const tgSum = tg.reduce((a, v) => a + (Number(v) || 0), 0);
+  const legend = yearTot.map(s => `<span class="dvc-leg"><i style="background:${s.color}"></i>${esc(s.label)} <b>฿${_dashFmtM(s.v)}</b><span class="dvc-pct">${(s.v / grand * 100).toFixed(0)}%</span></span>`).join('')
+    + (hasTg ? `<span class="dvc-leg"><i style="background:none;border-top:2px dashed var(--TX);border-radius:0;height:0;width:16px"></i>เป้า <b>฿${_dashFmtM(tgSum)}</b><span class="dvc-pct">${(yearTot.reduce((a, s) => a + s.v, 0) / (tgSum || 1) * 100).toFixed(0)}% ของเป้า</span></span>` : '');
   const seg = (m, label) => `<button class="${mode === m ? 'act' : ''}" onclick="dashSetValueChartMode('${m}')">${label}</button>`;
   return `<div class="dvc">
     <div class="dvc-head"><div class="dvc-legend">${legend}</div><div class="dvc-seg">${seg('stack', 'ซ้อน (ยอดรวม)')}${seg('group', 'เทียบข้างกัน')}</div></div>
     <div class="dvc-plot" id="dash-val-plot">
-      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="กราฟมูลค่าการขายรายเดือนแยกบริษัท">${grid}${bars}${labels}${hits}</svg>
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="กราฟมูลค่าการขายรายเดือนแยกบริษัท">${grid}${bars}${tgLine}${labels}${hits}</svg>
       <div class="dvc-tip hidden" id="dash-val-tip"></div>
     </div>
   </div>`;
@@ -6665,7 +6690,8 @@ function dashValTip(ev, i){
   tip.innerHTML = `<div class="dvc-tip-h">${esc(mL(r.m))}</div>` + st.series.map(s => {
     const v = Number(r[s.k]) || 0;
     return `<div class="dvc-tip-r"><span><i style="background:${s.color}"></i>${esc(s.label)}</span><b>${_sdF(v)}</b><em>${tot ? (v / tot * 100).toFixed(1) : '0.0'}%</em></div>`;
-  }).join('') + `<div class="dvc-tip-r dvc-tip-t"><span>รวม</span><b>${_sdF(tot)}</b><em></em></div>`;
+  }).join('') + `<div class="dvc-tip-r dvc-tip-t"><span>รวม</span><b>${_sdF(tot)}</b><em></em></div>`
+    + (st.tg && st.tg[i] != null ? `<div class="dvc-tip-r"><span>🎯 เป้า</span><b>${_sdF(st.tg[i])}</b><em>${st.tg[i] ? (tot / st.tg[i] * 100).toFixed(0) + '%' : ''}</em></div>` : '');
   tip.classList.remove('hidden');
   const box = plot.getBoundingClientRect();
   const x = ev.clientX - box.left, tw = tip.offsetWidth;
@@ -11674,7 +11700,7 @@ async function renderSalesTargets(){
       <button class="btn btn-sm btn-p" onclick="salesTargetsSave()">💾 บันทึก</button>`:''}
     </div></div>
     <div style="font-size:12px;color:var(--TX3);margin-bottom:6px">ใช้เทียบใน Dashboard (ยอดขาย vs เป้า) และ Sales Overview แท็บรายเซลส์ · ช่องว่าง = ไม่มีเป้า · ➡️ = เติมทุกเดือนเท่ากับเดือนแรกที่กรอก${_stCanEdit()?'':' · (ดูได้อย่างเดียว — แก้ได้เฉพาะ Sales Manager ขึ้นไป)'}</div>
-    <div class="tw tw-scroll"><table style="font-size:12px"><thead><tr><th style="min-width:170px">พนักงานขาย</th>${months.map(ym=>`<th class="r">${_ST_MTH[Number(ym.slice(5))-1]}</th>`).join('')}<th class="r">รวมทั้งปี</th><th></th></tr></thead>
+    <div class="tw tw-scroll"><table style="font-size:12px"><thead><tr><th style="min-width:170px">พนักงานขาย</th>${months.map((ym,i)=>`<th class="r">${_ST_MTH[Number(ym.slice(5))-1]}${_stCanEdit()&&i?`<button class="btn btn-xs" style="margin-left:4px;padding:0 5px" title="คัดลอกเป้าทุกคนจาก ${_ST_MTH[i-1]}" onclick="salesTargetCopyPrev('${ym}')">⇐</button>`:''}</th>`).join('')}<th class="r">รวมทั้งปี</th><th></th></tr></thead>
     <tbody>${list.map(sm=>`<tr><td><span class="mono">${esc(sm.code)}</span> ${esc(sm.name)}</td>${months.map(ym=>`<td><input type="number" min="0" step="1000" data-st="${esc(sm.code)}|${ym}" value="${map[sm.code]?.[ym]??''}" style="width:92px;text-align:right;padding:3px 5px" oninput="salesTargetEdit(this)" ${dis}></td>`).join('')}
       <td class="r" id="st-tot-${esc(sm.code)}" style="font-weight:700">${_sdF(Object.values(map[sm.code]||{}).reduce((a,b)=>a+b,0))}</td>
       <td>${_stCanEdit()?`<button class="btn btn-xs" title="เติมทุกเดือนเท่ากับเดือนแรกที่กรอก" onclick="salesTargetFillRow('${esc(sm.code)}')">➡️</button>`:''}</td></tr>`).join('')||'<tr><td colspan="15" style="color:var(--TX3)">ยังไม่มีรายชื่อพนักงานขาย</td></tr>'}</tbody></table></div></div>`;
@@ -11683,6 +11709,16 @@ function salesTargetEdit(inp){
   const [code,ym]=inp.dataset.st.split('|');_stDirty[code+'|'+ym]={slm_code:code,ym,amount:inp.value===''?null:Number(inp.value)};
   const tot=[...document.querySelectorAll(`[data-st^="${CSS.escape(code)}|"]`)].reduce((a,x)=>a+(Number(x.value)||0),0);
   const t=document.getElementById('st-tot-'+code);if(t)t.textContent=_sdF(tot);
+}
+// คัดลอกเป้าทุกคนจากเดือนก่อนหน้า มาใส่เดือน ym (2026-10-03) — ช่องที่ยังไม่บันทึกจะบันทึกเมื่อกด 💾
+function salesTargetCopyPrev(ym){
+  const m=Number(ym.slice(5)),prev=`${ym.slice(0,4)}-${String(m-1).padStart(2,'0')}`;
+  let n=0;
+  document.querySelectorAll(`[data-st$="|${prev}"]`).forEach(src=>{
+    const code=src.dataset.st.split('|')[0],dst=document.querySelector(`[data-st="${CSS.escape(code)}|${ym}"]`);
+    if(dst&&src.value!==''&&dst.value!==src.value){dst.value=src.value;salesTargetEdit(dst);n++;}
+  });
+  toast(n?`คัดลอกเป้าจาก ${_ST_MTH[m-2]} มา ${_ST_MTH[m-1]} แล้ว ${n} คน — กด 💾 บันทึก`:`ไม่มีเป้าใน ${_ST_MTH[m-2]} ให้คัดลอก`,n?'':'warn');
 }
 function salesTargetFillRow(code){
   const inps=[...document.querySelectorAll(`[data-st^="${CSS.escape(code)}|"]`)];
@@ -16824,8 +16860,9 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
         ${lv.pick_by_creator ? `<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" ${lv.default_self ? 'checked' : ''} onchange="pdWfSetField('normal','${lv.id}','default_self',this.checked)">ค่าเริ่มต้น = ผู้สร้างเอกสารเอง</label>
         <span style="color:var(--TX3)">รายชื่อด้านล่างเป็นค่าแนะนำ (ปล่อยว่างได้)</span>` : ''}
       </div>` : ''}
-      <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--TX2);margin:-2px 0 7px"><input type="checkbox" ${lv.audit_verdict ? 'checked' : ''} onchange="pdWfSetField('${kind}','${lv.id}','audit_verdict',this.checked)">🔍 ขั้นตรวจสอบ — ผู้อนุมัติขั้นนี้ต้องเลือกผล "ขายได้" หรือ "ขาดทุน" ทุกรายการสินค้าก่อนอนุมัติ</label>
-      <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--TX2);margin:-2px 0 7px 14px"><input type="checkbox" ${lv.only_if_loss ? 'checked' : ''} onchange="pdWfSetField('${kind}','${lv.id}','only_if_loss',this.checked)">⚠️ ใช้ขั้นนี้เฉพาะเมื่อมีรายการ "ขาดทุน" (ขายได้ทั้งหมด = ข้ามขั้นนี้) — ต้องอยู่หลังขั้นตรวจสอบ</label>
+      <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--TX2);margin:-2px 0 7px"><input type="checkbox" ${lv.audit_verdict ? 'checked' : ''} onchange="pdWfSetField('${kind}','${lv.id}','audit_verdict',this.checked);pgPromoDraftWorkflowSettings(true)">🔍 ขั้นตรวจสอบ — ผู้อนุมัติขั้นนี้ต้องเลือกผล "ขายได้" หรือ "ขาดทุน" ทุกรายการสินค้าก่อนอนุมัติ</label>
+      <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--TX2);margin:-2px 0 7px 14px"><input type="checkbox" ${lv.only_if_loss ? 'checked' : ''} onchange="pdWfSetField('${kind}','${lv.id}','only_if_loss',this.checked);pgPromoDraftWorkflowSettings(true)">⚠️ ใช้ขั้นนี้เฉพาะเมื่อมีรายการ "ขาดทุน" (ขายได้ทั้งหมด = ข้ามขั้นนี้) — ต้องอยู่หลังขั้นตรวจสอบ</label>
+      ${kind === 'normal' && lv.only_if_loss && !levels.slice(0, i).some(x => x.audit_verdict) ? '<div class="al alw" style="font-size:11.5px;margin:0 0 7px;padding:5px 9px">⚠️ ขั้น "เฉพาะเมื่อมีรายการขาดทุน" ต้องอยู่หลังขั้นตรวจสอบ (🔍) — ติ๊กขั้นตรวจสอบในขั้นก่อนหน้า หรือย้ายขั้นนี้ลงไป ไม่งั้นจะบันทึกไม่ได้</div>' : ''}
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">
         ${(lv.approvers || []).map(a => `<span style="font-size:11px;background:var(--LBL);color:var(--BL);border-radius:4px;padding:3px 8px;display:flex;align-items:center;gap:4px">${esc(a.name)}${a.department ? `<span style="color:var(--TX3)">· ${esc(a.department)}</span>` : ''}<button onclick="pdWfRemApprover('${kind}','${lv.id}','${_promoJsKey(a.uid)}')" style="background:none;border:none;cursor:pointer;color:var(--TX3);font-size:10px;padding:0">✕</button></span>`).join('')}
       </div>
@@ -17132,6 +17169,9 @@ function pdWfSave(kind) {
   });
   // ขั้น "ผู้สร้างเลือกเอง" ปล่อยรายชื่อว่างได้ — ตรวจเฉพาะขั้นที่มีรายชื่อ + ทุกขั้นต้องเลือกเงื่อนไข any/all
   if (levels.some(lv => !['any', 'all'].includes(lv.mode))) { toast('แต่ละขั้นต้องเลือกเงื่อนไข any/all', 'warn'); return; }
+  // ขั้น "เฉพาะเมื่อมีรายการขาดทุน" ต้องอยู่หลังขั้นตรวจสอบ (server ตรวจซ้ำใน validateWorkflow)
+  const badLoss = kind === 'normal' ? levels.findIndex((lv, i) => lv.only_if_loss && !levels.slice(0, i).some(x => x.audit_verdict)) : -1;
+  if (badLoss >= 0) { toast(`ขั้นที่ ${badLoss + 1}: "เฉพาะเมื่อมีรายการขาดทุน" ต้องอยู่หลังขั้นตรวจสอบ (ขายได้/ขาดทุน)`, 'warn'); return; }
   const fixed = levels.filter(lv => !(kind === 'normal' && lv.pick_by_creator && !(lv.approvers || []).length));
   const error = ApprovalWorkflow.validate(fixed, DB.get('users') || [], kind !== 'exec' || fixed.length > 0);
   if (error) { toast(error, 'warn'); return; }
