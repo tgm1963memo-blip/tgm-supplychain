@@ -16253,8 +16253,6 @@ async function saveDraftPromo(submitAfter = false) {
     const missing = _draftLines.map((l, i) => (l.sku && _draftIsBlank(l.compensate)) ? nums[i] : null).filter(Boolean);
     if (missing.length) { alert(`เลือกลักษณะรายการ "Compensate" แล้ว กรุณากรอก Compensate ให้ครบทุกรายการ (ลำดับ ${missing.join(', ')})`); return; }
   }
-  // จุดประจำ ติ๊กแล้วไม่กรอกจำนวน → ใช้จำนวนสาขาที่เลือก (2026-10-03)
-  { const rc = document.getElementById('fx-sale-regular'), rv = document.getElementById('fx-sale-regular-v'); if (rc?.checked && rv && !String(rv.value).trim() && custCodes.length) rv.value = custCodes.length; }
   {
     const fxv = _draftReadFormExtra();
     if (isNpd && !fxv.fee_none && !fxv.fee.on) { alert('ติ๊ก "สินค้า NPD" แล้ว กรุณาเลือกว่า "มีค่าแรกเข้า" หรือ "ไม่มีค่าแรกเข้า"'); return; }
@@ -16266,6 +16264,18 @@ async function saveDraftPromo(submitAfter = false) {
     if ((fxv.ptype_other.on && !fxv.ptype_other.text) || (fxv.ptype_other2.on && !fxv.ptype_other2.text)) { alert('ติ๊กประเภทสินค้า "อื่นๆ" แล้ว กรุณาระบุประเภท'); return; }
     if (fxv.vl_sign.has == null) { alert('กรุณาเลือก "ค่าป้าย promotion VL" ว่ามี หรือ ไม่มี'); document.getElementById('fx-vl-none')?.focus(); return; }
     if (fxv.vl_sign.has && !(Number(fxv.vl_sign.amt) > 0)) { alert('เลือก "มี" ค่าป้าย promotion VL แล้ว กรุณากรอกจำนวนเงิน'); document.getElementById('fx-vl-sign-v')?.focus(); return; }
+    // (2026-10-03) ทุกตัวเลือกที่ติ๊กและมีช่องรายละเอียด ต้องกรอกเสมอ
+    const need = (cond, msg, id) => { if (!cond) return false; alert(msg); const el = document.getElementById(id); el?.focus(); return true; };
+    const num0 = v => !(Number(v) > 0);
+    for (const p of DRAFT_SALE_PLACES) {
+      const v = fxv.sale[p.k];
+      if (!p.text && need(v?.on && num0(v.n), `ติ๊ก "${p.label}" แล้ว กรุณากรอกจำนวน${p.unit}`, `fx-sale-${p.k}-v`)) return;
+    }
+    if (need(condition === 'อื่นๆ' || (document.getElementById('draft-condition')?.value === 'อื่นๆ' && !(document.getElementById('draft-condition-other')?.value || '').trim()), 'เลือกเงื่อนไข "อื่นๆ" แล้ว กรุณาระบุรายละเอียดเงื่อนไข', 'draft-condition-other')) return;
+    if (need(fxv.media.on && num0(fxv.media.amt), 'ติ๊ก "ค่าลงสื่อ/โฆษณา" แล้ว กรุณากรอกจำนวนเงิน', 'fx-media-v')) return;
+    if (need(fxv.media_online.on && num0(fxv.media_online.amt), 'ติ๊ก "ค่าลงสื่อ online" แล้ว กรุณากรอกจำนวนเงิน', 'fx-media-online-v')) return;
+    if (need(fxv.other_cost.on && num0(fxv.other_cost.amt), 'ติ๊ก "ค่าใช้จ่ายอื่นๆ" แล้ว กรุณากรอกจำนวนเงิน', 'fx-other-cost-v')) return;
+    if (need(fxv.other_cost.on && !fxv.other_cost.detail, 'ติ๊ก "ค่าใช้จ่ายอื่นๆ" แล้ว กรุณากรอกรายละเอียด', 'fx-other-cost-detail')) return;
     if (fxv.other_cost.on && Number(fxv.other_cost.amt) > 0 && !fxv.other_cost.detail) { alert('กรอกค่าใช้จ่ายอื่นๆ แล้ว กรุณากรอกรายละเอียดของค่าใช้จ่ายอื่นๆ ด้วย'); return; }
   }
 
@@ -17395,7 +17405,23 @@ function _draftCustGroupsText(codes) {
   const gs = [...byG.entries()].sort((a, b) => b[1].length - a[1].length);
   return gs.map(([g, cs]) => `${g} ${_draftBranchRanges([...cs].sort((a, b) => a.localeCompare(b, 'th'))).join(', ')}${gs.length > 1 ? ` (${cs.length} สาขา)` : ''}`).join(' · ');
 }
+// จุดประจำ (2026-10-03): ใส่จำนวนสาขาที่เลือกให้อัตโนมัติ — ผู้ใช้แก้เองได้ (แก้แล้วไม่ทับ, ลบให้ว่าง = กลับเป็นอัตโนมัติ)
+// ค่าที่บันทึกไว้ต่างจากจำนวนสาขา = ถือว่าแก้เอง
+function _draftSyncRegularCount() {
+  const rv = document.getElementById('fx-sale-regular-v'), rc = document.getElementById('fx-sale-regular');
+  if (!rv) return;
+  const n = _draftSelectedBranches.size;
+  if (!rv.dataset.bound) {
+    rv.dataset.bound = '1';
+    if (String(rv.value).trim() && Number(rv.value) !== n) rv.dataset.manual = '1';
+    rv.addEventListener('input', () => { rv.dataset.manual = String(rv.value).trim() ? '1' : ''; });
+    rv.addEventListener('change', () => { if (!String(rv.value).trim()) { rv.dataset.manual = ''; _draftSyncRegularCount(); } });
+    rc?.addEventListener('change', () => _draftSyncRegularCount());
+  }
+  if (rv.dataset.manual !== '1' && !rv.disabled) rv.value = n ? n : ''; // เอกสารที่แก้ไม่ได้แล้ว แสดงค่าที่บันทึกไว้
+}
 function _draftRenderCustSummary() {
+  _draftSyncRegularCount();
   const el = document.getElementById('draft-cust-summary');
   if (!el) return;
   const codes = [..._draftSelectedBranches];
