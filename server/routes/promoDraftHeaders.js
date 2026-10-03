@@ -4,7 +4,8 @@ const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 const { genId } = require('../lib/crud');
 const { validateChange } = require('../lib/promoApproval');
 const promoMail = require('../lib/promoApprovalMail');
-const { nextPromoNoFor, previewForCorp } = require('../lib/promoNumber');
+const promoNo = require('../lib/promoNumber');
+const { nextPromoNoFor, nextDocNoFor, docCustCodes, ruleForCodes, loadCodeMap, docNoBase } = promoNo;
 const { logDraft, logHeaderChange } = require('../lib/promoLog');
 
 // เอกสาร "ใบเคาะราคา" ระดับหัว (1 แถวต่อ 1 เอกสาร, draft_no เป็น PK) — ไม่ใช้ makeCrudRouter ทั่วไปเพราะ
@@ -43,20 +44,7 @@ function genDraftNo() {
   return genId('PMD');
 }
 
-// พ.ศ. ปัจจุบัน + เลขวิ่ง 4 หลักต่อปี เช่น PC2569-0001 — คำนวณจาก MAX ของเลขวิ่งปีเดียวกันที่มีอยู่ +1
-// ภายใน request เดียวกับ insert; node:sqlite (DatabaseSync) เขียนได้ทีละ connection อยู่แล้ว (single
-// writer เสมอ ไม่มี concurrent write จริงจากหลาย process) จึงไม่มี race ระหว่าง SELECT MAX กับ INSERT
-// แม้ไม่ได้ห่อ BEGIN/COMMIT ชัดเจน — ปลอดภัยกว่าการทำ sequence table แยกที่ซับซ้อนเกินจำเป็นสำหรับเคสนี้
-function nextDocNo(db) {
-  const year = new Date().getFullYear() + 543;
-  const prefix = `PC${year}-`;
-  const row = db.prepare(`
-    SELECT MAX(CAST(SUBSTR(doc_no, LENGTH(?) + 1) AS INTEGER)) AS maxN
-    FROM promo_draft_headers WHERE doc_no LIKE ?
-  `).get(prefix, `${prefix}%`);
-  const next = (row?.maxN || 0) + 1;
-  return `${prefix}${String(next).padStart(4, '0')}`;
-}
+// เลขที่ใบเคาะ (doc_no) ตามรหัสลูกค้า — ดู lib/promoNumber.js (2026-10-03: 1LTA69-10001, ไม่เข้ากฎ = PC<พ.ศ.>-0001)
 
 // เลขที่ "ใบโปรโมชั่น" — ออกให้ครั้งเดียวตอนอนุมัติผ่านขั้นสุดท้ายจริง เอกสารที่เคยมี promo_no แล้วไม่ออกซ้ำ
 // (idempotent ต่อการ PATCH ซ้ำ) · 2026-09-24: แยกตามลูกค้า ต่อเลขชุดเดิมใน Express (LT-0149 → LT-0150) —
@@ -70,7 +58,7 @@ function applyHeaderChange(db, target, input, user, opts = {}) {
   for (const f of JSON_FIELDS) if (body[f] !== undefined && typeof body[f] !== 'string') body[f] = JSON.stringify(body[f]);
   const cols = [...FIELDS.filter(f => body[f] !== undefined), 'updated_at'];
   if (body.status === 'approved' && !target.promo_no) {
-    body.promo_no = nextPromoNoFor(db, target);
+    body.promo_no = nextPromoNoFor(db, target);  // ใบโปรตามรหัสลูกค้า เช่น LTA69-10001
     cols.push('promo_no');
   }
   db.prepare(`UPDATE promo_draft_headers SET ${cols.map(c => `${c} = ?`).join(',')} WHERE draft_no = ?`)
@@ -101,10 +89,42 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   const router = express.Router();
   router.use(requireAuth(db));
 
-  // ตัวอย่างเลขที่ใบโปรถัดไปของกลุ่มลูกค้า (หน้าตั้งค่า) — ?corp=โลตัส → { prefix, source, next }
-  router.get('/promo-no-preview', (req, res) => {
-    const corps = [].concat(req.query.corp || []).map(String).filter(Boolean).slice(0, 50);
-    res.json(corps.map(c => previewForCorp(db, c)));
+  // ── ตารางรหัสเอกสารตามรหัสลูกค้า (2026-10-03) — นำเข้าจาก Excel ในหน้าตั้งค่า ─────────────────────────
+  const MAP_ADMIN = ['admin', 'superadmin'];
+  router.get('/code-map', (req, res) => res.json(loadCodeMap(db)));
+  // client ส่งแถวดิบจาก Excel ({row, A..M}) → server แปลงเป็นกฎ (ตัวอ่านเดียว) — preview ไม่บันทึก
+  router.post('/code-map/preview', (req, res) => res.json(promoNo.parseCodeMap(req.body?.rows)));
+  router.put('/code-map', requireRole(...MAP_ADMIN), (req, res) => {
+    const { rules, skipped } = promoNo.parseCodeMap(req.body?.rows);
+    if (!rules.length) return res.status(400).json({ error: 'ไม่พบแถวรหัสที่ใช้ได้ในไฟล์ (ต้องเป็นชีต "รหัสใบโปรโมชั่น")' });
+    const v = JSON.stringify({ rules, skipped, file: String(req.body?.file || '').slice(0, 200), imported_by: req.user.uid, imported_at: new Date().toISOString() });
+    db.prepare(`INSERT INTO approval_workflow_templates (entity_type, levels_json, updated_by, updated_at) VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(entity_type) DO UPDATE SET levels_json = excluded.levels_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
+      .run(promoNo.CODE_MAP_ENTITY, v, req.user.uid);
+    res.json(loadCodeMap(db));
+  });
+  // ทดสอบ: ?codes=30-NU-0005,30-NU-0006 → กฎ + เลขถัดไป
+  router.get('/code-map/test', (req, res) => {
+    const codes = String(req.query.codes || '').split(/[\s,]+/).map(x => x.trim()).filter(Boolean).slice(0, 500);
+    res.json(promoNo.previewForCodes(db, codes));
+  });
+  // ออกเลขใหม่ให้เอกสารทั้งหมดตามตาราง — GET = ตัวอย่าง, POST = บันทึก (admin) + log เลขเดิม
+  router.get('/renumber-all', (req, res) => res.json(promoNo.planRenumberAll(db)));
+  router.post('/renumber-all', requireRole(...MAP_ADMIN), (req, res) => {
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      const plan = promoNo.planRenumberAll(db).filter(p => p.new_doc_no !== p.old_doc_no || p.new_promo_no !== p.old_promo_no);
+      // ย้ายเลขเดิมออกก่อน (doc_no / promo_no เป็น unique — กันชนระหว่างสลับเลข) แล้วค่อยใส่เลขใหม่
+      const tmp = db.prepare("UPDATE promo_draft_headers SET doc_no = 'TMP-' || draft_no, promo_no = NULL WHERE draft_no = ?");
+      plan.forEach(p => tmp.run(p.draft_no));
+      const up = db.prepare('UPDATE promo_draft_headers SET doc_no = ?, promo_no = ? WHERE draft_no = ?');
+      plan.forEach(p => {
+        up.run(p.new_doc_no, p.new_promo_no, p.draft_no);
+        logDraft(db, p.draft_no, 'renumber', req.user, { from_doc_no: p.old_doc_no, to_doc_no: p.new_doc_no, from_promo_no: p.old_promo_no, to_promo_no: p.new_promo_no, reason: 'ออกเลขใหม่ตามตารางรหัสเอกสาร' });
+      });
+      db.exec('COMMIT');
+      res.json({ changed: plan.length, plan });
+    } catch (e) { if (db.isTransaction) db.exec('ROLLBACK'); res.status(400).json({ error: e.message }); }
   });
 
   router.get('/', (req, res) => {
@@ -114,6 +134,15 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     const offset = parseInt(req.query.offset, 10) || 0;
     const rows = db.prepare(`SELECT * FROM promo_draft_headers ${where} ${orderClause} LIMIT ? OFFSET ?`)
       .all(...params, limit, offset).map(parseRow);
+    // old_nos: เลขที่เดิมก่อนออกเลขใหม่ (log renumber) — ให้ค้นด้วยเลขเดิมได้ (2026-10-03)
+    const old = new Map();
+    db.prepare("SELECT draft_no, detail_json FROM promo_draft_logs WHERE action = 'renumber'").all().forEach(l => {
+      const d = (() => { try { return JSON.parse(l.detail_json || '{}'); } catch { return {}; } })();
+      const a = old.get(l.draft_no) || [];
+      [d.from_doc_no, d.from_promo_no].forEach(x => { if (x && !a.includes(x)) a.push(x); });
+      old.set(l.draft_no, a);
+    });
+    rows.forEach(r => { r.old_nos = old.get(r.draft_no) || []; });
     res.json(rows);
   });
 
@@ -122,7 +151,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     const draftNo = genDraftNo();
     try {
       db.exec('BEGIN IMMEDIATE');
-      const docNo = nextDocNo(db);
+      const docNo = nextDocNoFor(db, Array.isArray(body._branch_codes) ? body._branch_codes.map(String).slice(0, 5000) : []);
       const row = { ...body };
       validateChange(db, null, row, req.user);
       for (const f of JSON_FIELDS) if (row[f] !== undefined && typeof row[f] !== 'string') row[f] = JSON.stringify(row[f]);
@@ -222,6 +251,26 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     } catch (e) { if (db.isTransaction) db.exec('ROLLBACK'); return res.status(400).json({ error: e.message }); }
     mailLater(promoMail.notifyRecall(db, t, pendingUids, userName(req.user.uid), note));
     res.json(parseRow(getRaw(t.draft_no)));
+  });
+
+  // ออกเลขใบเคาะใหม่เมื่อสาขาเปลี่ยนเป็นลูกค้าคนละรหัส (2026-10-03, ผู้ใช้ยืนยัน) — เฉพาะร่างที่ยังไม่เคยส่งอนุมัติ
+  // client เรียกหลังบันทึกบรรทัดสินค้า · รหัสเดิมตรงกับกฎปัจจุบันอยู่แล้ว = ไม่ทำอะไร
+  router.post('/:draftNo/renumber', requireRole(...writeRoles), (req, res) => {
+    const t = getRaw(req.params.draftNo);
+    if (!t) return res.status(404).json({ error: 'ไม่พบเอกสาร' });
+    const submitted = t.status !== 'draft' || db.prepare("SELECT 1 FROM promo_draft_logs WHERE draft_no = ? AND action = 'submit' LIMIT 1").get(t.draft_no);
+    if (submitted) return res.json({ changed: false, doc_no: t.doc_no });
+    const rule = ruleForCodes(loadCodeMap(db).rules, docCustCodes(db, t));
+    const want = rule ? rule.kc : '', have = docNoBase(t.doc_no);
+    if (want === have) return res.json({ changed: false, doc_no: t.doc_no });
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      const docNo = nextDocNoFor(db, docCustCodes(db, t), t.created_at);
+      db.prepare('UPDATE promo_draft_headers SET doc_no = ? WHERE draft_no = ?').run(docNo, t.draft_no);
+      logDraft(db, t.draft_no, 'renumber', req.user, { from_doc_no: t.doc_no, to_doc_no: docNo, reason: 'สาขาเปลี่ยนเป็นลูกค้าคนละรหัส' });
+      db.exec('COMMIT');
+      res.json({ changed: true, from: t.doc_no, doc_no: docNo });
+    } catch (e) { if (db.isTransaction) db.exec('ROLLBACK'); res.status(400).json({ error: e.message }); }
   });
 
   // ── ยกเลิกทั้งใบ / รายสินค้า (2026-09-30) — Sales ขอ (หมายเหตุบังคับ) เลือกผู้อนุมัติเอง → manager ตัดสิน ────

@@ -100,7 +100,7 @@ const SALES_ONLY = [
   '_draftCorpBase', '_draftOverlap', '_draftRenderOverlapMarks', 'draftShowOverlap', '_draftCopyHeader', '_draftCopySrcNo', '_draftLinesFromRows', 'pdWfCopyRoute',
   '_draftPlan', '_draftPlanOpts', '_draftPlanRoutes', '_draftPlanUsers', '_draftPlanLoading', '_draftPlanLoad', '_draftFormRouteFacts', '_draftPlanOpt',
   '_draftPlanFillDefaults', '_draftPlanHtml', 'draftPlanSetRoute', 'draftPlanAuto', 'draftPlanAdd', 'draftPlanAddByText', 'draftPlanRem', '_draftPlanForSave', '_draftPromoDocsCache', '_draftRefSeq', '_draftFormSeq', '_draftLoadRouteOptions',
-  '_draftRefCode', '_pdWfPrefixes', '_pdWfPrefixPrev', '_PD_PREFIX_SRC', '_pdWfPrefixHtml', '_pdWfPrefixPreview', 'pdWfPrefixTest', 'pdWfPrefixAdd', 'pdWfPrefixRem', 'pdWfPrefixField', 'pdWfPrefixSave', '_draftCustGroupsText', '_draftRenderCustSummary', '_draftPtypeOrder', 'DRAFT_VERDICT',
+  '_draftRefCode', '_draftListQ', '_draftBusy', '_pdCodeMap', '_pdCodeMapDraft', '_pdRenumberPlan', '_pdCanCodeMap', '_pdYm', '_pdCodeMapHtml', 'pdCodeMapImport', 'pdCodeMapSave', 'pdCodeMapTest', 'pdRenumberAllPreview', 'pdRenumberAllApply', '_draftCustGroupsText', '_draftRenderCustSummary', '_draftPtypeOrder', 'DRAFT_VERDICT',
   '_draftLineVerdicts', '_draftSavedLineVerdicts', '_draftIsAuditTurn', '_draftVerdictCounts', '_draftVerdictSummary', '_draftVerdictCellHtml', 'draftSetLineVerdict',
 
   // ข้อมูลลูกค้า (custreg — สมัคร/แก้ไขข้อมูลลูกค้าใหม่) — ไม่รวม custregSubToRow/custregRowToSub (ใช้ใน

@@ -105,6 +105,7 @@ function buildApp(db, opts = {}) {
   app.use('/api/express_stock_snapshots', authed, require('./routes/expressSnapshots')(db, wms));
   app.use('/api/invoice_detail', authed, require('./routes/invoiceDetail')(db));
   app.use('/api/sales_targets', authed, require('./routes/salesTargets')(db));
+  app.use('/api/sales_teams', require('./routes/salesTeams')(db)); // ทีมขาย + สิทธิ์ดูยอด (2026-10-03)
   // สิทธิ์เขียนใบโปรร่าง (promo_drafts, 2026-09-03) — ให้ตรงกับ role ที่เข้าหน้า promo_history ได้อยู่แล้ว
   // (MASTER_DATA_ROLES ด้านบนไม่มี role ฝ่ายขายเลย ใช้ไม่ได้กับฟีเจอร์นี้)
   const PROMO_DRAFT_ROLES = ['superadmin', 'admin', 'sales_manager', 'sales_officer', 'sales_worker', 'sales'];
