@@ -58,6 +58,8 @@ function defaultScope(u, teams) {
   if (ALL_ROLES.has(u.role)) return 'all';
   if (/senior\s*sales\s*manager/.test(pos)) return 'members';
   if (/sales\s*director|sales\s*manager/.test(pos)) return 'dept';
+  // role ผู้จัดการฝ่ายขาย แต่ตำแหน่งในระบบไม่ใช่ Manager (เช่น ผจก.ธุรกิจค้าส่ง ตำแหน่ง "Sales") = ทั้งแผนก
+  if (u.role === 'sales_manager') return 'dept';
   return 'self';
 }
 

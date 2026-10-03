@@ -46,7 +46,8 @@ test('sales team scopes follow the org chart defaults and can be configured', as
   assert.deepEqual((await me('SSM')).codes, []);                                       // ยังไม่เลือกลูกทีม
   assert.deepEqual((await me('MT1')).codes, ['207']);                                  // Sales = ตัวเอง
   assert.deepEqual((await me('SM')).codes.sort(), ['103', '17', '500']);              // ร้านค้า: ทั้งแผนก (ไม่รวมค้าส่ง)
-  assert.deepEqual((await me('WSM')).codes, ['114']);                                  // ค้าส่ง: ทั้งแผนก
+  assert.equal((await me('WSM')).scope, 'dept');                                      // ผจก.ค้าส่ง ตำแหน่ง "Sales" → ทั้งแผนก
+  assert.deepEqual((await me('WSM')).codes, ['114']);
   const exe = await me('EXE');
   assert.equal(exe.all, true);
   assert.deepEqual(exe.filters.map(f => f.label), ['ทีมห้าง', 'แผนกขายธุรกิจค้าปลีก', 'ทีมร้านค้า', 'ฝ่ายขายร้านค้า', 'ธุรกิจค้าส่ง']);
