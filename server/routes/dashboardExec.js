@@ -234,7 +234,8 @@ module.exports = function dashboardExecRoutes(db) {
       }
       for (const g of groups.values()) g.channel = Object.entries(g.chAmt).sort((a, b) => b[1] - a[1])[0]?.[0] || 'general';
 
-      const isMall = (g) => g.channel === 'mall' || (makroInMall && g.channel === 'makro');
+      // Makro นับเป็นห้างเสมอใน Top 20 — อยู่แท็บห้าง ไม่อยู่แท็บร้านค้า (ผู้ใช้ยืนยัน 2026-10-05; เดิมเป็นสวิตช์ makro_in_mall)
+      const isMall = (g) => g.channel === 'mall' || g.channel === 'makro';
       // ไม่นับใน Top 20 (2026-10-05, ผู้ใช้ขอ): ไทย-เยอรมัน/ทีจีเอ็ม (30-IA-0002, 30-LA-0002 — บริษัทในเครือ) และกลุ่ม Shop
       // (Shop โรงงาน / Shop พระราม 3) — ยังนับใน KPI และยอดตามหมวดตามเดิม · จับชื่อเครือแบบตรงตัว ไม่ใช่ "มีคำว่า"
       // เพื่อไม่ให้โดน "วิลล่า … (ตู้ทีจีเอ็ม)" หรือ "ร้านอาหารไทย-เยอรมัน"
