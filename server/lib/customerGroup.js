@@ -1,0 +1,35 @@
+'use strict';
+
+// ชื่อ "เครือลูกค้า" สำหรับรวมแถวใน Top 20 (2026-10-05, ผู้ใช้ยืนยันรายการรวม) — ขั้นที่ 1 แบบแก้ด่วน
+// customer_profiles.corporate เป็นข้อความอิสระที่ปนหลายความหมาย (ตรวจข้อมูลจริง 2026-10-05):
+//   บริษัทที่ขาย ("Makro TSS"/"Makro TGM"), ฝากขาย ("วิลล่า (ยอดสั่ง)"), หน่วยธุรกิจ ("Tops/เบเกอรี่"),
+//   การขนส่ง ("บิ๊กซี เข้าศูนย์กระจาย") และชื่อสะกดต่างกัน (ไมเนอร์ 2 ชื่อ)
+// บริษัทที่ขายและวิธีขายรู้ได้จากใบกำกับอยู่แล้ว จึงตัดออกจากชื่อเครือ · ขั้นที่ 2 จะย้ายไปเป็นตาราง customer_groups/aliases
+const STRIP_SUFFIXES = [
+  /\s*\(ยอดสั่ง\)\s*$/,
+  /\s+(TSS|TGM)$/i,
+  /\s*เข้าศูนย์กระจาย$/,
+  /\/(ศูนย์กระจาย|เบเกอรี่)$/,
+];
+// เรียงลำดับสำคัญ — ข้อแรกที่ตรงชนะ · "เซ็นทรัล ฟุ้ด กรุ๊ป" กับ Tops รวมเป็นเครือเดียว (ผู้ใช้ยืนยัน 2026-10-05)
+const ALIASES = [
+  [/^makro$/i, 'Makro'],
+  [/^tops|^เซ็นทรัล\s*ฟุ้ด\s*กรุ๊ป|central\s*food/i, 'Central Food Retail (Tops)'],
+  [/^โลตัส/, "Lotus's"],
+  [/^วิลล่า/, 'Villa'],
+  [/^บิ๊กซี/, 'Big C'],
+  [/^เดอะมอลล์/, 'The Mall'],
+  [/ไมเนอร์\s*ฟู้ด/, 'Minor Food'],
+  [/^อิออน/, 'AEON'],
+  [/^สห\s*ลอว์สัน/, 'Lawson'],
+];
+
+function groupNameOf({ corporate = '', name = '', code = '' } = {}) {
+  let n = String(corporate || '').trim() || String(name || '').trim();
+  if (!n) return code || '(ไม่ระบุ)';
+  for (const re of STRIP_SUFFIXES) n = n.replace(re, '').trim();
+  for (const [re, target] of ALIASES) if (re.test(n)) return target;
+  return n || code || '(ไม่ระบุ)';
+}
+
+module.exports = { groupNameOf };

@@ -4,6 +4,7 @@ const express = require('express');
 const { DatabaseSync } = require('node:sqlite');
 const { requireRole } = require('../middleware/auth');
 const { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, guessExecChannel } = require('../lib/execChannel');
+const { groupNameOf } = require('../lib/customerGroup');
 
 // Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
 // ตามช่วงเวลาที่เลือก (YTD / เดือน / ไตรมาส / ทั้งปี) เทียบช่วงเดียวกันของปีก่อน:
@@ -108,9 +109,12 @@ module.exports = function dashboardExecRoutes(db) {
       GROUP BY company, cust_code`).all(...raw, from, to, ...slmCodes);
     const map = new Map();
     for (const r of rows) {
-      const cur = map.get(r.cust_code) || { net: 0, consi: 0 };
-      if (src[r.company] === 'CONSI') cur.consi += Number(r.amount) || 0;
-      else cur.net += Number(r.amount) || 0;
+      // tgm = ส่วนที่ขายผ่านโรงงาน (Bplus) — ใช้แสดงยอดแยกบริษัทใต้ชื่อเครือใน Top 20
+      const cur = map.get(r.cust_code) || { net: 0, consi: 0, tgm: 0 };
+      const amt = Number(r.amount) || 0;
+      if (src[r.company] === 'CONSI') cur.consi += amt;
+      else cur.net += amt;
+      if (src[r.company] === 'TGM') cur.tgm += amt;
       map.set(r.cust_code, cur);
     }
     return map;
@@ -213,25 +217,32 @@ module.exports = function dashboardExecRoutes(db) {
       const groups = new Map();
       const codes = new Set([...ty.keys(), ...ly.keys()]);
       for (const code of codes) {
-        const t = ty.get(code) || { net: 0, consi: 0 };
-        const l = ly.get(code) || { net: 0, consi: 0 };
+        const t = ty.get(code) || { net: 0, consi: 0, tgm: 0 };
+        const l = ly.get(code) || { net: 0, consi: 0, tgm: 0 };
         const ch = channelOf(meta, code, consiCodes.has(code));
         const a = channelAgg[ch];
         a.ty_net += t.net; a.ty_consi += t.consi; a.ly_net += l.net; a.ly_consi += l.consi;
         const m = meta.get(code) || {};
-        // ตัด " (ยอดสั่ง)" ท้ายชื่อกลุ่ม — บัญชีฝากขายของห้างใช้ชื่อกลุ่มแบบนี้ (เช่น 'วิลล่า (ยอดสั่ง)') ส่วนยอดขายจริง
-        // ใช้ 'วิลล่า' — ต้องรวมเป็นแถวเดียวกัน ไม่งั้นตารางห้างจะแยก Consi กับ Net เป็นคนละบรรทัด (ตรวจ 2026-10-03)
-        const gname = String(m.corporate || '').replace(/\s*\(ยอดสั่ง\)\s*$/, '').trim() || String(m.pname || m.name || '').trim() || code;
-        const g = groups.get(gname) || { name: gname, codes: [], ty_net: 0, ty_consi: 0, ly_net: 0, ly_consi: 0, chAmt: {} };
+        // รวมเป็น "เครือลูกค้า" (2026-10-05): ตัดชื่อบริษัท/ฝากขาย/หน่วยย่อยออกจาก corporate แล้วจับชื่อสะกดต่างกันเข้าเครือเดียว
+        // เช่น Makro TSS + Makro TGM → Makro · ดูกฎใน lib/customerGroup.js
+        const gname = groupNameOf({ corporate: m.corporate, name: m.pname || m.name, code });
+        const g = groups.get(gname) || { name: gname, codes: [], ty_net: 0, ty_consi: 0, ly_net: 0, ly_consi: 0, ty_tgm: 0, chAmt: {} };
         g.codes.push(code);
-        g.ty_net += t.net; g.ty_consi += t.consi; g.ly_net += l.net; g.ly_consi += l.consi;
+        g.ty_net += t.net; g.ty_consi += t.consi; g.ly_net += l.net; g.ly_consi += l.consi; g.ty_tgm += t.tgm;
         g.chAmt[ch] = (g.chAmt[ch] || 0) + Math.abs(t.net + t.consi) + Math.abs(l.net + l.consi);
         groups.set(gname, g);
       }
       for (const g of groups.values()) g.channel = Object.entries(g.chAmt).sort((a, b) => b[1] - a[1])[0]?.[0] || 'general';
 
       const isMall = (g) => g.channel === 'mall' || (makroInMall && g.channel === 'makro');
-      const list = [...groups.values()];
+      // ไม่นับใน Top 20 (2026-10-05, ผู้ใช้ขอ): ไทย-เยอรมัน/ทีจีเอ็ม (30-IA-0002, 30-LA-0002 — บริษัทในเครือ) และกลุ่ม Shop
+      // (Shop โรงงาน / Shop พระราม 3) — ยังนับใน KPI และยอดตามหมวดตามเดิม · จับชื่อเครือแบบตรงตัว ไม่ใช่ "มีคำว่า"
+      // เพื่อไม่ให้โดน "วิลล่า … (ตู้ทีจีเอ็ม)" หรือ "ร้านอาหารไทย-เยอรมัน"
+      const OFF_TOP_NAMES = new Set(['ไทย-เยอรมัน', 'ทีจีเอ็ม']);
+      const OFF_TOP_CHANNELS = new Set(['shop_factory', 'shop_rama3']);
+      const allGroups = [...groups.values()];
+      const offTop = allGroups.filter((g) => OFF_TOP_NAMES.has(g.name) || OFF_TOP_CHANNELS.has(g.channel));
+      const list = allGroups.filter((g) => !offTop.includes(g));
       const top = {
         all: list.filter((g) => g.ty_net + (withConsi ? g.ty_consi : 0) > 0)
           .sort((a, b) => (b.ty_net + (withConsi ? b.ty_consi : 0)) - (a.ty_net + (withConsi ? a.ty_consi : 0))).slice(0, 20),
@@ -253,6 +264,8 @@ module.exports = function dashboardExecRoutes(db) {
         return {
           name: g.name, channel: g.channel, branches: g.codes.length,
           ty_net: g.ty_net, ty_consi: g.ty_consi, ly_net: g.ly_net, ly_consi: g.ly_consi,
+          // ยอดปีนี้ที่ขายผ่านโรงงาน TGM (ส่วนที่เหลือของ ty_net + ty_consi คือ TSS/TSS-NV/CONSI)
+          ty_tgm: g.ty_tgm,
           kg_ty_net: k.ty_net, kg_ty_consi: k.ty_consi, kg_ly_net: k.ly_net, kg_ly_consi: k.ly_consi,
           kg_coverage: k.amt > 0 ? k.amtKg / k.amt : null,
         };
@@ -267,6 +280,8 @@ module.exports = function dashboardExecRoutes(db) {
         kpi,
         channels: EXEC_CHANNELS.map((c) => ({ key: c.key, label: c.label, ...channelAgg[c.key] })),
         top: { all: top.all.map(shape), mall: top.mall.map(shape), shop: top.shop.map(shape) },
+        top_excluded: offTop.map((g) => ({ name: g.name, channel: g.channel, ty: g.ty_net + (withConsi ? g.ty_consi : 0) }))
+          .filter((x) => Math.abs(x.ty) > 0.5).sort((a, b) => b.ty - a.ty),
         last_ym: freshness?.last_ym || null,
         kg_synced_at: linesSync?.at || null,
       });

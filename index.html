@@ -6655,7 +6655,10 @@ function _dxKg(v,cov){
 }
 function _dxCust(x,i,showCh=true){
   const l=(DX_CHANNELS.find(c=>c[0]===x.channel)||[x.channel,x.channel])[1].replace(' (ไม่รวม Makro)','');
-  return `<td><span class="dx-rk${i<3?' g':''}">${i+1}</span></td><td><div class="dx-cust"><b title="${esc(x.name)}">${esc(x.name)}</b><span>${showCh?`<i style="background:${DX_CH_COLORS[x.channel]||'#999'}"></i>${esc(l)}`:''}${x.branches>1?`${showCh?' · ':''}${x.branches} สาขา`:''}</span></div></td>`;
+  // (2026-10-05) เครือที่ขายผ่านทั้ง TSS และโรงงาน TGM (เช่น Makro) — บอกยอดแยกบริษัทใต้ชื่อ
+  const tgm=Number(x.ty_tgm)||0,tss=(Number(x.ty_net)||0)+(Number(x.ty_consi)||0)-tgm;
+  const split=tgm>0.5&&tss>0.5?` · TSS ${_dxMil(tss)} ล. · TGM ${_dxMil(tgm)} ล.`:'';
+  return `<td><span class="dx-rk${i<3?' g':''}">${i+1}</span></td><td><div class="dx-cust"><b title="${esc(x.name)}">${esc(x.name)}</b><span>${showCh?`<i style="background:${DX_CH_COLORS[x.channel]||'#999'}"></i>${esc(l)}`:''}${x.branches>1?`${showCh?' · ':''}${x.branches} สาขา`:''}${split}</span></div></td>`;
 }
 function _dxTop(d){
   const s=_dxState(),r=_dxRange(),yy=String((r.y+543)%100),lyy=String((r.y+542)%100);
@@ -6696,7 +6699,8 @@ function _dxTop(d){
   return `<div class="dx-card"><div class="dx-ch"><div><div class="t">Top 20 ลูกค้า</div><div class="s">${sub} · ${_dxLabel(r)} เทียบ ${_dxLabel(r,-1)}</div></div>
       <div class="r"><div class="dx-seg" role="group" aria-label="กลุ่มลูกค้า">${tabs}</div>${makroCk}<button class="dx-btn" type="button" onclick="dxExportTop()">⬇ Excel</button></div></div>
     ${rows.length?`<div class="dx-tw"><table class="dx-t"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>`:'<div class="dx-empty">ไม่มีข้อมูลในช่วงนี้</div>'}
-    <div class="dx-foot">รวมลูกค้าตาม Corporate group (หลายสาขาเป็นแถวเดียว) · KG = จำนวนขาย × น้ำหนักต่อหน่วยจาก tgm-wms ไม่หักใบรับคืน${cov?` · <span class="dx-warn">⚠</span> ${cov} รายการคำนวณน้ำหนักได้ไม่ถึง 90% ของยอด (สินค้าบางตัวยังไม่มีน้ำหนักใน WMS)`:''}${d.kg_synced_at?` · KG อัปเดต ${new Date(d.kg_synced_at).toLocaleString('th-TH')}`:''}</div>
+    ${(d.top_excluded||[]).length?`<div class="dx-foot" style="margin-top:8px">ไม่นับใน Top 20 (ยังรวมในยอดขายด้านบน): ${d.top_excluded.map(x=>`${esc(x.name)} ${_dxMil(x.ty)} ล.`).join(' · ')}</div>`:''}
+    <div class="dx-foot">รวมลูกค้าตามเครือ (Makro TSS + TGM เป็นแถวเดียว, หลายสาขาเป็นแถวเดียว) · KG = จำนวนขาย × น้ำหนักต่อหน่วยจาก tgm-wms ไม่หักใบรับคืน${cov?` · <span class="dx-warn">⚠</span> ${cov} รายการคำนวณน้ำหนักได้ไม่ถึง 90% ของยอด (สินค้าบางตัวยังไม่มีน้ำหนักใน WMS)`:''}${d.kg_synced_at?` · KG อัปเดต ${new Date(d.kg_synced_at).toLocaleString('th-TH')}`:''}</div>
   </div>`;
 }
 async function dxExportTop(){
