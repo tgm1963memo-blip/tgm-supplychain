@@ -6443,7 +6443,7 @@ function _dxEnsureCss(){
   .dx-grid2{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
   @media (max-width:980px){.dx-grid2{grid-template-columns:1fr}}
   .dx-chl{display:flex;flex-direction:column}
-  .dx-chr{display:grid;grid-template-columns:190px minmax(80px,1fr) 92px 56px 76px;align-items:center;gap:12px;padding:8px 4px;border-bottom:1px solid var(--dx-line);font-size:13px}
+  .dx-chr{display:grid;grid-template-columns:minmax(120px,180px) minmax(40px,1fr) 76px 76px 54px 80px;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--dx-line);font-size:13px}
   .dx-chr:last-child{border-bottom:0}
   .dx-chr.hd{font-size:11px;color:var(--dx-mut);font-weight:600;padding-top:0}
   .dx-chr .nm{display:flex;align-items:center;gap:8px;color:var(--dx-ink);font-weight:500;min-width:0}
@@ -6456,7 +6456,8 @@ function _dxEnsureCss(){
   .dx-n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   .dx-chr .v{font-weight:600;color:var(--dx-ink)}
   .dx-chr .p{color:var(--dx-mut);font-size:12px}
-  @media (max-width:700px){.dx-chr{grid-template-columns:130px minmax(60px,1fr) 70px 64px}.dx-chr .p{display:none}}
+  @media (max-width:700px){.dx-chr{grid-template-columns:110px minmax(30px,1fr) 62px 62px 74px}.dx-chr .p{display:none}}
+  .dx-chr .lyv{color:var(--dx-mut)}
   .dx-donut{display:flex;flex-direction:column;align-items:center;gap:10px}
   .dx-donut .cap{font-size:12px;color:var(--dx-mut);text-align:center}
   .dx-tw{overflow-x:auto;margin:0 -4px}
@@ -6654,9 +6655,9 @@ function _dxChannels(d){
     const tip=`<b>${esc(x.n)}</b><div class="r"><span>${_dxLabel(r)}</span><b>${_dxMil(x.ty)} ล.</b></div><div class="r"><span>${_dxLabel(r,-1)}</span><span>${_dxMil(x.ly)} ล.</span></div>`;
     return `<div class="dx-chr${zero?' zero':''}" data-dxtip="${esc(tip)}"><div class="nm"><i style="background:${x.c}"></i><span>${esc(x.n)}</span></div>
       <div class="dx-trk">${x.ty>0?`<div class="f" style="width:${x.ty/mx*100}%;background:${x.c}"></div>`:''}${x.ly>0?`<div class="ly" style="left:calc(${x.ly/mx*100}% - 1px)"></div>`:''}</div>
-      <div class="dx-n v">${zero?'—':_dxMil(x.ty)}</div><div class="dx-n p">${zero?'':(x.ty/tot*100).toFixed(1)+'%'}</div><div class="dx-n">${zero?'':_dxPill(g)}</div></div>`;}).join('');
+      <div class="dx-n v">${zero?'—':_dxMil(x.ty)}</div><div class="dx-n lyv">${zero?'—':_dxMil(x.ly)}</div><div class="dx-n p">${zero?'':(x.ty/tot*100).toFixed(1)+'%'}</div><div class="dx-n">${zero?'':_dxPill(g)}</div></div>`;}).join('');
   return `<div class="dx-card"><div class="dx-ch"><div><div class="t">ยอดขายตามหมวดลูกค้า</div><div class="s">ล้านบาท · แท่ง = ${_dxLabel(r)} · ขีดดำ = ${_dxLabel(r,-1)} · ตั้งหมวดได้ที่ จัดการกลุ่ม › กลุ่มลูกค้า</div></div></div>
-    <div class="dx-grid2"><div class="dx-chl"><div class="dx-chr hd"><div>หมวด</div><div></div><div class="dx-n">ล้านบาท</div><div class="dx-n p">สัดส่วน</div><div class="dx-n">เทียบปีก่อน</div></div>${list}</div>
+    <div class="dx-grid2"><div class="dx-chl"><div class="dx-chr hd"><div>หมวด</div><div></div><div class="dx-n" title="${esc(_dxLabel(r))} (ล้านบาท)">ปี ${(r.y+543)%100}</div><div class="dx-n" title="${esc(_dxLabel(r,-1))} (ล้านบาท)">ปี ${(r.y+542)%100}</div><div class="dx-n p">สัดส่วน</div><div class="dx-n">เทียบปีก่อน</div></div>${list}</div>
       <div class="dx-donut">${_dxDonut(rows,tot)}<div class="cap">สัดส่วนยอดขาย ${_dxLabel(r)}</div></div></div></div>`;
 }
 function _dxKg(v,cov){
