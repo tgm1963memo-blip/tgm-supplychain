@@ -6530,9 +6530,21 @@ function _dxKpis(d){
   if(r.y===cy&&cm===1){
     k4=`<div class="dx-kpi"><div class="l"><i style="background:#7A4500"></i>คาดการณ์ทั้งปี ${r.y+543}</div><div class="v" style="font-size:18px">รอจบเดือนแรก</div><div class="d">ทั้งปี ${r.y+542}: ${_dxMil(lyFull)} ล้าน</div></div>`;
   }else if(r.y===cy){
-    const done=tyM.slice(0,cm-1),avg=done.reduce((a,b)=>a+b,0)/done.length;
-    const fc=done.reduce((a,b)=>a+b,0)+avg*(12-done.length);
-    k4=`<div class="dx-kpi" data-dxtip="${esc(`คาดการณ์ = ยอด ${done.length} เดือนที่จบแล้ว + ค่าเฉลี่ยต่อเดือน × ${12-done.length} เดือนที่เหลือ`)}"><div class="l"><i style="background:#7A4500"></i>คาดการณ์ทั้งปี ${r.y+543}</div><div class="v">${_dxMil(fc)}<small>ล้านบาท</small></div><div class="d">${_dxPill(_dxPct(fc,lyFull))} ทั้งปี ${r.y+542} ${_dxMil(lyFull)} ล้าน</div>${_dxSpark(done.map((_,i)=>done.slice(0,i+1).reduce((a,b)=>a+b,0)),'#7A4500')}</div>`;
+    // (2026-10-05, ผู้ใช้ขอ) คาดการณ์ = ยอดจริงเดือนที่จบแล้ว + ยอดปีก่อนของแต่ละเดือนที่เหลือ × (1 + อัตราเติบโตช่วงที่ผ่านมา)
+    // เพื่อให้ seasonal effect ของแต่ละเดือนตามปีก่อน (เดิมใช้ค่าเฉลี่ยต่อเดือน × เดือนที่เหลือ ซึ่งไม่สะท้อนฤดูกาล)
+    // อัตราเติบโต = ยอดจริงรวม ÷ ยอดปีก่อนช่วงเดียวกัน − 1 (ถ่วงน้ำหนัก ไม่ใช่เฉลี่ย % รายเดือนที่แกว่งแรง)
+    // เดือนปัจจุบันยังไม่จบ → ใช้ยอดปีก่อน × อัตราเติบโต · ไม่มียอดปีก่อนเลย → ใช้ค่าเฉลี่ยต่อเดือนแบบเดิม
+    const done=tyM.slice(0,cm-1),doneSum=done.reduce((a,b)=>a+b,0);
+    const lyDone=lyM.slice(0,cm-1).reduce((a,b)=>a+b,0),lyRest=lyM.slice(cm-1);
+    const lyRestSum=lyRest.reduce((a,b)=>a+b,0),useLy=lyDone>0&&lyRestSum>0;
+    const g=useLy?doneSum/lyDone-1:0;
+    const fcM=useLy?lyRest.map(v=>v*(1+g)):lyRest.map(()=>doneSum/done.length);
+    const fc=doneSum+fcM.reduce((a,b)=>a+b,0);
+    const tip=useLy
+      ?`คาดการณ์ = ยอดจริง ${done.length} เดือน ${_dxMil(doneSum)} ล.<br>+ ยอดปี ${r.y+542} ของ ${lyRest.length} เดือนที่เหลือ ${_dxMil(lyRestSum)} ล. × (1 ${g>=0?'+':'−'} ${Math.abs(g*100).toFixed(1)}%)<br>อัตราเติบโต = ยอดจริงเทียบปีก่อนช่วงเดียวกัน (${DX_MONTHS[0]}–${DX_MONTHS[cm-2]})`
+      :`คาดการณ์ = ยอด ${done.length} เดือนที่จบแล้ว + ค่าเฉลี่ยต่อเดือน × ${12-done.length} เดือนที่เหลือ (ไม่มียอดปีก่อนให้เทียบ)`;
+    const cum=[...done,...fcM].map((_,i,a)=>a.slice(0,i+1).reduce((x,y)=>x+y,0));
+    k4=`<div class="dx-kpi" data-dxtip="${esc(tip)}"><div class="l"><i style="background:#7A4500"></i>คาดการณ์ทั้งปี ${r.y+543}</div><div class="v">${_dxMil(fc)}<small>ล้านบาท</small></div><div class="d">${_dxPill(_dxPct(fc,lyFull))} ทั้งปี ${r.y+542} ${_dxMil(lyFull)} ล้าน${useLy?` · ใช้อัตราเติบโต ${g>=0?'+':'−'}${Math.abs(g*100).toFixed(1)}%`:''}</div>${_dxSpark(cum,'#7A4500')}</div>`;
   }else{
     const full=tyM.reduce((a,b)=>a+b,0);
     k4=`<div class="dx-kpi"><div class="l"><i style="background:#7A4500"></i>ยอดทั้งปี ${r.y+543}</div><div class="v">${_dxMil(full)}<small>ล้านบาท</small></div><div class="d">${_dxPill(_dxPct(full,lyFull))} ปี ${r.y+542} ${_dxMil(lyFull)} ล้าน</div>${_dxSpark(tyM,'#7A4500')}</div>`;
