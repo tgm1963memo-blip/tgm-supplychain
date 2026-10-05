@@ -1896,6 +1896,10 @@ const SB = {
         disp_by: rec.disp_by || null, disp_at: rec.disp_at || null,
         recv_by: rec.recv_by || null, recv_at: rec.recv_at || null,
         submitted_at: rec.submitted_at || null, updated_by: rec.updated_by || CURRENT_USER?.uid || null,
+        // 2 ประเภท + ขั้น R&D (2026-10-05) — doc_no ไม่ส่ง: server ออกเลขเองผ่าน assignSampleDocNo() เท่านั้น
+        req_type: rec.req_type === 'new' ? 'new' : 'existing', new_info: rec.new_info || null,
+        rd_accepted_by: rec.rd_accepted_by || null, rd_accepted_at: rec.rd_accepted_at || null,
+        rd_done_by: rec.rd_done_by || null, rd_done_at: rec.rd_done_at || null, rd_note: rec.rd_note || null,
       }), 'upsertSampleRequest');
       return data;
     } catch (e) {
@@ -1912,6 +1916,55 @@ const SB = {
       console.warn('deleteSampleRequest:', e.message || e);
       return false;
     }
+  },
+
+  // เลขที่เอกสาร SE/SN (2026-10-05) — server ออกเลขใน transaction, เรียกซ้ำได้เลขเดิม · คืน null ถ้าไม่สำเร็จ
+  async assignSampleDocNo(id) {
+    try {
+      const { data, error } = await apiFetch('/api/sample_request_actions/' + encodeURIComponent(id) + '/assign_no', { method: 'POST', body: '{}' });
+      if (error) throw new Error(error.message);
+      return data?.doc_no || null;
+    } catch (e) {
+      console.warn('assignSampleDocNo:', e.message || e);
+      return null;
+    }
+  },
+  // ไฟล์แนบคำขอของตัวอย่าง (2026-10-05) — แบบเดียวกับไฟล์แนบใบเคาะ (multipart ตรงผ่าน fetch)
+  async uploadSampleRequestAttachment(requestId, file, note) {
+    const form = new FormData();
+    form.append('file', file);
+    if (note) form.append('note', note);
+    const res = await fetch(`${API_BASE}/api/sample_request_attachments/${encodeURIComponent(requestId)}`, { method: 'POST', headers: { 'ngrok-skip-browser-warning': 'true', ...(getSessionToken() ? { Authorization: 'Bearer ' + getSessionToken() } : {}) }, body: form });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error || `upload failed (${res.status})`); }
+    return res.json();
+  },
+  async getSampleRequestAttachments(requestId) {
+    try {
+      const res = await fetch(`${API_BASE}/api/sample_request_attachments?request_id=${encodeURIComponent(requestId)}`, { headers: { 'ngrok-skip-browser-warning': 'true', ...(getSessionToken() ? { Authorization: 'Bearer ' + getSessionToken() } : {}) } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      console.warn('getSampleRequestAttachments:', e.message || e);
+      return [];
+    }
+  },
+  async deleteSampleRequestAttachment(id) {
+    try {
+      const res = await fetch(`${API_BASE}/api/sample_request_attachments/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'ngrok-skip-browser-warning': 'true', ...(getSessionToken() ? { Authorization: 'Bearer ' + getSessionToken() } : {}) } });
+      return res.ok;
+    } catch (e) {
+      console.warn('deleteSampleRequestAttachment:', e.message || e);
+      return false;
+    }
+  },
+  async openSampleRequestAttachment(id) {
+    try {
+      const res = await fetch(`${API_BASE}/api/sample_request_attachments/${encodeURIComponent(id)}/content`, { headers: { 'ngrok-skip-browser-warning': 'true', ...(getSessionToken() ? { Authorization: 'Bearer ' + getSessionToken() } : {}) } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const url = URL.createObjectURL(await res.blob());
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { toast('เปิดไฟล์ไม่สำเร็จ: ' + (e.message || e)); }
   },
 
   // ข้อมูลลูกค้า (custreg, 2026-09) — เดิม local-only (DB.get/set('custreg_subs'/'custreg_workflow'))
@@ -6443,7 +6496,7 @@ function _dxEnsureCss(){
   .dx-grid2{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
   @media (max-width:980px){.dx-grid2{grid-template-columns:1fr}}
   .dx-chl{display:flex;flex-direction:column}
-  .dx-chr{display:grid;grid-template-columns:minmax(120px,180px) minmax(40px,1fr) 76px 76px 54px 80px;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--dx-line);font-size:13px}
+  .dx-chr{display:grid;grid-template-columns:minmax(120px,180px) minmax(40px,1fr) 76px 76px 54px 78px 88px;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--dx-line);font-size:13px}
   .dx-chr:last-child{border-bottom:0}
   .dx-chr.hd{font-size:11px;color:var(--dx-mut);font-weight:600;padding-top:0}
   .dx-chr .nm{display:flex;align-items:center;gap:8px;color:var(--dx-ink);font-weight:500;min-width:0}
@@ -6456,8 +6509,10 @@ function _dxEnsureCss(){
   .dx-n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   .dx-chr .v{font-weight:600;color:var(--dx-ink)}
   .dx-chr .p{color:var(--dx-mut);font-size:12px}
-  @media (max-width:700px){.dx-chr{grid-template-columns:110px minmax(30px,1fr) 62px 62px 74px}.dx-chr .p{display:none}}
+  @media (max-width:700px){.dx-chr{grid-template-columns:110px minmax(30px,1fr) 62px 62px 62px 80px}.dx-chr .p{display:none}}
   .dx-chr .lyv{color:var(--dx-mut)}
+  /* ผลต่างเทียบปีก่อนเป็นบาท (2026-10-05, ผู้ใช้ขอเพิ่มข้าง %) — หน่วยล้านบาทเหมือนคอลัมน์ปี */
+  .dx-chr .df{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.dx-chr .df.up{color:var(--G)}.dx-chr .df.dn{color:var(--R)}
   .dx-donut{display:flex;flex-direction:column;align-items:center;gap:10px}
   .dx-donut .cap{font-size:12px;color:var(--dx-mut);text-align:center}
   .dx-tw{overflow-x:auto;margin:0 -4px}
@@ -6652,12 +6707,13 @@ function _dxChannels(d){
   const tot=rows.reduce((a,x)=>a+Math.max(x.ty,0),0)||1;
   const mx=Math.max(...rows.map(x=>Math.max(x.ty,x.ly)),1);
   const list=rows.map(x=>{const g=_dxPct(x.ty,x.ly),zero=x.ty<=0&&x.ly<=0;
-    const tip=`<b>${esc(x.n)}</b><div class="r"><span>${_dxLabel(r)}</span><b>${_dxMil(x.ty)} ล.</b></div><div class="r"><span>${_dxLabel(r,-1)}</span><span>${_dxMil(x.ly)} ล.</span></div>`;
+    const tip=`<b>${esc(x.n)}</b><div class="r"><span>${_dxLabel(r)}</span><b>${_dxMil(x.ty)} ล.</b></div><div class="r"><span>${_dxLabel(r,-1)}</span><span>${_dxMil(x.ly)} ล.</span></div><div class="r"><span>ผลต่าง</span><b>${x.ty-x.ly>=0?'+':'−'}${(Math.abs(x.ty-x.ly)).toLocaleString('en-US',{maximumFractionDigits:0})} บาท</b></div>`;
+    const df=x.ty-x.ly,dfTxt=`${df>=0?'+':'−'}${_dxMil(Math.abs(df))}`;
     return `<div class="dx-chr${zero?' zero':''}" data-dxtip="${esc(tip)}"><div class="nm"><i style="background:${x.c}"></i><span>${esc(x.n)}</span></div>
       <div class="dx-trk">${x.ty>0?`<div class="f" style="width:${x.ty/mx*100}%;background:${x.c}"></div>`:''}${x.ly>0?`<div class="ly" style="left:calc(${x.ly/mx*100}% - 1px)"></div>`:''}</div>
-      <div class="dx-n v">${zero?'—':_dxMil(x.ty)}</div><div class="dx-n lyv">${zero?'—':_dxMil(x.ly)}</div><div class="dx-n p">${zero?'':(x.ty/tot*100).toFixed(1)+'%'}</div><div class="dx-n">${zero?'':_dxPill(g)}</div></div>`;}).join('');
+      <div class="dx-n v">${zero?'—':_dxMil(x.ty)}</div><div class="dx-n lyv">${zero?'—':_dxMil(x.ly)}</div><div class="dx-n p">${zero?'':(x.ty/tot*100).toFixed(1)+'%'}</div><div class="dx-n df ${df>0?'up':df<0?'dn':''}">${zero?'':dfTxt}</div><div class="dx-n">${zero?'':_dxPill(g)}</div></div>`;}).join('');
   return `<div class="dx-card"><div class="dx-ch"><div><div class="t">ยอดขายตามหมวดลูกค้า</div><div class="s">ล้านบาท · แท่ง = ${_dxLabel(r)} · ขีดดำ = ${_dxLabel(r,-1)} · ตั้งหมวดได้ที่ จัดการกลุ่ม › กลุ่มลูกค้า</div></div></div>
-    <div class="dx-grid2"><div class="dx-chl"><div class="dx-chr hd"><div>หมวด</div><div></div><div class="dx-n" title="${esc(_dxLabel(r))} (ล้านบาท)">ปี ${(r.y+543)%100}</div><div class="dx-n" title="${esc(_dxLabel(r,-1))} (ล้านบาท)">ปี ${(r.y+542)%100}</div><div class="dx-n p">สัดส่วน</div><div class="dx-n">เทียบปีก่อน</div></div>${list}</div>
+    <div class="dx-grid2"><div class="dx-chl"><div class="dx-chr hd"><div>หมวด</div><div></div><div class="dx-n" title="${esc(_dxLabel(r))} (ล้านบาท)">ปี ${(r.y+543)%100}</div><div class="dx-n" title="${esc(_dxLabel(r,-1))} (ล้านบาท)">ปี ${(r.y+542)%100}</div><div class="dx-n p">สัดส่วน</div><div class="dx-n" title="ยอดปีนี้ − ปีก่อน (ล้านบาท)">ต่าง (ล.)</div><div class="dx-n">เทียบปีก่อน</div></div>${list}</div>
       <div class="dx-donut">${_dxDonut(rows,tot)}<div class="cap">สัดส่วนยอดขาย ${_dxLabel(r)}</div></div></div></div>`;
 }
 function _dxKg(v,cov){
@@ -18681,26 +18737,69 @@ function expFcDoc(custCode, month) {
 
 // ════════════════════════════════════════════════════════════════
 // pgSample() — ขอสินค้าตัวอย่าง
-// Process: Sales สร้าง → Manager อนุมัติ → Planning เตรียม → จัดส่ง → รับแล้ว
+// 2 ประเภท (2026-10-05): สินค้าเดิม (SE…) และ สินค้าใหม่ (SN… มีแบบฟอร์มสเปค/ราคาเป้าหมาย/คู่แข่ง/GP)
+// สินค้าเดิม: Sales สร้าง → Manager อนุมัติ → Planning เตรียม → จัดส่ง → รับแล้ว → ผลทดสอบ
+// สินค้าใหม่: Sales สร้าง → Manager อนุมัติ → R&D รับเรื่อง → R&D ทำตัวอย่างเสร็จ → จัดส่ง → รับแล้ว → ผลทดสอบ
+// เลขที่เอกสารออกที่ server ตอนส่งคำขอ (POST /api/sample_request_actions/:id/assign_no) — คำขอเก่าแสดงรหัสเดิม
 // ════════════════════════════════════════════════════════════════
-let _sr = { view: 'home', editId: null, form: {}, filter: '', tab: 'all' };
+let _sr = { view: 'home', editId: null, form: {}, filter: '', tab: 'all', type: 'existing',
+  f: { from: '', to: '', status: '', cust: '', by: '' }, atts: [], attsFor: null };
 
 const SR_STATUS = {
-  draft:      { lbl: 'ร่าง',          cls: 'bbgr', icon: '📝' },
-  pending:    { lbl: 'รออนุมัติ',     cls: 'bbl',  icon: '⏳' },
-  approved:   { lbl: 'อนุมัติแล้ว',   cls: 'bbg',  icon: '✅' },
-  rejected:   { lbl: 'ปฏิเสธ',        cls: 'bbr',  icon: '❌' },
-  preparing:  { lbl: 'กำลังเตรียม',   cls: 'bba',  icon: '🔧' },
-  dispatched: { lbl: 'จัดส่งแล้ว',    cls: 'bbg',  icon: '🚚' },
-  received:   { lbl: 'รับแล้ว',       cls: 'bbg',  icon: '✔️' },
+  draft:         { lbl: 'ร่าง',               cls: 'bbgr', icon: '📝' },
+  pending:       { lbl: 'รออนุมัติ',          cls: 'bbl',  icon: '⏳' },
+  approved:      { lbl: 'อนุมัติแล้ว',        cls: 'bbg',  icon: '✅' },
+  rejected:      { lbl: 'ปฏิเสธ',             cls: 'bbr',  icon: '❌' },
+  rd_developing: { lbl: 'R&D กำลังพัฒนา',     cls: 'bba',  icon: '🧑‍🔬' },
+  rd_ready:      { lbl: 'R&D ทำตัวอย่างเสร็จ', cls: 'bbg',  icon: '🧪' },
+  preparing:     { lbl: 'กำลังเตรียม',        cls: 'bba',  icon: '🔧' },
+  dispatched:    { lbl: 'จัดส่งแล้ว',         cls: 'bbg',  icon: '🚚' },
+  received:      { lbl: 'รับแล้ว',            cls: 'bbg',  icon: '✔️' },
 };
+const SR_TYPES = { existing: { lbl: 'สินค้าเดิม', icon: '📦' }, new: { lbl: 'สินค้าใหม่', icon: '✨' } };
+const SR_FLOW = {
+  existing: ['draft', 'pending', 'approved', 'preparing', 'dispatched', 'received'],
+  new:      ['draft', 'pending', 'approved', 'rd_developing', 'rd_ready', 'dispatched', 'received'],
+};
+// เหตุผลไม่ผ่านของสินค้าใหม่ — ตามหัวข้อในสไลด์ NPD ของฝ่ายขาย
+const SR_FAIL_REASONS = [['price', 'ราคาสูง'], ['taste', 'รสชาติ/เนื้อสัมผัสไม่ตรง'], ['hold', 'โปรเจกต์พัก'], ['cannot', 'พัฒนาไม่ได้'], ['cancel', 'ยกเลิก']];
+const SR_TEMPS = ['แช่เย็น', 'แช่แข็ง', 'อุณหภูมิปกติ'];
+const SR_UNITS = ['กก.', 'ถุง', 'กล่อง', 'ชิ้น', 'แพ็ค'];
+// ออกเลขอัตโนมัติย้อนหลัง (เปิดหน้ารายละเอียดแล้วยังไม่มีเลข) เฉพาะคำขอที่สร้างหลังเปิดใช้เลขที่เอกสาร — คำขอเก่าคงรหัสเดิม
+const SR_DOCNO_SINCE = Date.parse('2026-10-05T00:00:00+07:00');
+
+// สิทธิ์ (2026-10-05): เดิมเช็คชื่อ role แบบเก่า (sales/manager/planning/warehouse) อย่างเดียว ผู้ใช้ role ใหม่
+// (sales_manager, planning_officer …) จึงไม่เห็นปุ่ม — ต้องอยู่ใน SR_WRITE_ROLES (ตรงกับ SAMPLE_REQUEST_ROLES
+// ใน server/app.js) ก่อนเสมอ ไม่งั้น server ปฏิเสธการบันทึก · ยังไม่มี role R&D ในระบบ ใช้ฝ่ายผลิต/แผนแทน
+const SR_WRITE_ROLES = ['superadmin', 'admin', 'manager', 'sales', 'sales_manager', 'sales_officer', 'sales_worker',
+  'planning', 'planning_manager', 'planning_officer', 'planning_worker', 'warehouse'];
+function _srCanWrite()    { return SR_WRITE_ROLES.includes(ROLE); }
+function srCanCreate()   { return _srCanWrite() && (isSales() || ['manager', 'superadmin', 'admin'].includes(ROLE)); }
+function srCanApprove()  { return ['manager', 'sales_manager', 'superadmin', 'admin'].includes(ROLE); }
+function srCanDispatch() { return _srCanWrite() && (isPlanning() || ['warehouse', 'superadmin', 'admin'].includes(ROLE)); }
+function srCanRD()       { return _srCanWrite() && (isPlanning() || ['superadmin', 'admin'].includes(ROLE)); }
 
 function srBadge(st) {
   const s = SR_STATUS[st] || { lbl: st, cls: 'bbgr', icon: '❓' };
   return `<span class="badge ${s.cls}">${s.icon} ${s.lbl}</span>`;
 }
+function srTypeBadge(r) {
+  const t = srType(r);
+  return `<span class="badge ${t === 'new' ? 'bba' : 'bbl'}" style="font-size:10px">${SR_TYPES[t].icon} ${SR_TYPES[t].lbl}</span>`;
+}
+function srType(r) { return r && r.req_type === 'new' ? 'new' : 'existing'; }
+function srNo(r)   { return (r && (r.doc_no || r.id)) || ''; }
+function srItemLabel(it) { return it.name || it.skuName || it.sku || ''; }
+function srNewInfo(r) {
+  const ni = r && r.new_info;
+  if (!ni) return {};
+  if (typeof ni === 'string') { try { return JSON.parse(ni) || {}; } catch (e) { return {}; } }
+  return ni;
+}
 function getSR()  { return DB.get('sample_requests') || []; }
 function saveSR(arr) { DB.set('sample_requests', arr); }
+const _srNum = (v, d = 0) => v === '' || v == null || isNaN(Number(v)) ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: d, maximumFractionDigits: d });
+const _srBack = (to, lbl = '← กลับ') => `<button onclick="_sr.view='${to}';pgSample()" style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:var(--bg2);border:1px solid var(--BD);color:var(--TX2);font-weight:500;margin-bottom:16px">${lbl}</button>`;
 
 // เข้าหน้านี้ผ่าน nav() เท่านั้น (nav dispatch table ชี้ 'sample' มาที่นี่ ไม่ใช่ pgSample() ตรงๆ) —
 // วาดทันทีจาก local cache ที่มีอยู่ (เหมือนเดิม) แล้ว sync จาก server เบื้องหลังครั้งเดียว จากนั้นค่อย
@@ -18713,6 +18812,31 @@ function pgSampleEntry() {
   }).catch(e => console.warn('sample_requests load:', e));
 }
 
+// ── ตัวกรองประวัติ (ใช้ร่วมกันระหว่างตารางหน้าแรกและรายงาน PDF) ─────────────
+function _srFilteredRows() {
+  const all = getSR().filter(r => srType(r) === _sr.type);
+  const mineOnly = isSales() && !isManager();
+  const tabSrc = _sr.tab === 'pending'  ? all.filter(r => r.status === 'pending') :
+                 _sr.tab === 'rd'       ? all.filter(r => ['approved', 'rd_developing'].includes(r.status)) :
+                 _sr.tab === 'dispatch' ? all.filter(r => (_sr.type === 'new' ? ['rd_ready'] : ['approved', 'preparing']).includes(r.status)) :
+                 mineOnly ? all.filter(r => r.by === UID) : all;
+  const f = _sr.f, q = (_sr.filter || '').toLowerCase(), cq = (f.cust || '').toLowerCase();
+  return tabSrc.filter(r => {
+    const d = String(r.date || '').slice(0, 10);
+    if (f.from && d < f.from) return false;
+    if (f.to && d > f.to) return false;
+    if (f.status && r.status !== f.status) return false;
+    if (f.by && r.by !== f.by) return false;
+    if (cq && !(`${r.custName || ''} ${r.custCode || ''}`).toLowerCase().includes(cq)) return false;
+    if (q && ![r.custName, r.custCode, r.id, r.doc_no, r.purpose, ...(r.items || []).map(srItemLabel)]
+      .some(v => String(v || '').toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+}
+function srSetFilter(k, v) { _sr.f[k] = v; pgSample(); }
+function srClearFilter() { _sr.f = { from: '', to: '', status: '', cust: '', by: '' }; _sr.filter = ''; pgSample(); }
+function srSetType(t) { _sr.type = t; _sr.tab = 'all'; _sr.f.status = ''; pgSample(); }
+
 // ── หน้าหลัก ─────────────────────────────────────────────────
 function pgSample() {
   document.getElementById('app').classList.remove('custreg-mode');
@@ -18720,119 +18844,155 @@ function pgSample() {
   if (_sr.view === 'testresult') { _srRenderTestResult(_sr.editId); return; }
   if (_sr.view === 'detail')     { _srRenderDetail(_sr.editId);   return; }
 
-  const canCreate   = ['sales','manager','superadmin'].includes(ROLE);
-  const canApprove  = ['manager','superadmin'].includes(ROLE);
-  const canDispatch = ['planning','warehouse','superadmin'].includes(ROLE);
+  const canCreate = srCanCreate(), canApprove = srCanApprove(), canDispatch = srCanDispatch(), canRD = srCanRD();
+  const isNew = _sr.type === 'new';
+  const allSR = getSR();
+  const all = allSR.filter(r => srType(r) === _sr.type);
+  const myReqs = (isSales() && !isManager()) ? all.filter(r => r.by === UID) : all;
+  const cnt = st => all.filter(r => (Array.isArray(st) ? st : [st]).includes(r.status)).length;
+  const cntPending = cnt('pending');
+  const cntRD = cnt(['approved', 'rd_developing']);
+  const cntDispatch = isNew ? cnt('rd_ready') : cnt(['approved', 'preparing']);
+  const rows = _srFilteredRows();
 
-  const all = getSR();
-  const myReqs = (isSales()&&!isManager()) ? all.filter(r => r.by === UID) : all;
-
-  const cntPending  = all.filter(r => r.status === 'pending').length;
-  const cntApproved = all.filter(r => r.status === 'approved').length;
-  const cntPrep     = all.filter(r => r.status === 'preparing').length;
-  const cntDisp     = all.filter(r => r.status === 'dispatched').length;
-
-  // tab filter
-  const tabSrc = _sr.tab === 'pending'  ? all.filter(r => r.status === 'pending')  :
-                 _sr.tab === 'dispatch' ? all.filter(r => ['approved','preparing'].includes(r.status)) :
-                 myReqs;
-  const q = (_sr.filter || '').toLowerCase();
-  const rows = tabSrc.filter(r =>
-    !q ||
-    (r.custName  || '').toLowerCase().includes(q) ||
-    (r.custCode  || '').toLowerCase().includes(q) ||
-    (r.id        || '').toLowerCase().includes(q) ||
-    (r.purpose   || '').toLowerCase().includes(q)
-  ).sort((a, b) => (b.ts || 0) - (a.ts || 0));
-
-  const tTab = (id, lbl, cnt) => {
-    const dot = cnt > 0 ? ` <span class="badge bbr" style="font-size:10px;padding:1px 5px">${cnt}</span>` : '';
-    return `<div class="tab ${_sr.tab===id?'act':''}" onclick="_sr.tab='${id}';pgSample()">${lbl}${dot}</div>`;
+  const tTab = (id, lbl, n) => {
+    const dot = n > 0 ? ` <span class="badge bbr" style="font-size:10px;padding:1px 5px">${n}</span>` : '';
+    return `<div class="tab ${_sr.tab === id ? 'act' : ''}" onclick="_sr.tab='${id}';pgSample()">${lbl}${dot}</div>`;
   };
+  const typeBtn = t => {
+    const on = _sr.type === t, n = allSR.filter(r => srType(r) === t && !['draft', 'received', 'rejected'].includes(r.status)).length;
+    return `<button onclick="srSetType('${t}')" style="flex:1;min-width:150px;padding:10px 14px;border-radius:10px;cursor:pointer;font-family:var(--font);font-size:14px;font-weight:700;
+      border:2px solid ${on ? 'var(--N)' : 'var(--BD)'};background:${on ? 'var(--N)' : 'var(--W)'};color:${on ? '#fff' : 'var(--TX2)'}">
+      ${SR_TYPES[t].icon} ${SR_TYPES[t].lbl}${n ? ` <span style="font-size:11px;font-weight:500;opacity:.85">(ดำเนินการอยู่ ${n})</span>` : ''}</button>`;
+  };
+  const users = [...new Set(all.map(r => r.by).filter(Boolean))].map(u => [u, uidToName(u) || u]).sort((a, b) => a[1].localeCompare(b[1], 'th'));
+  const flow = SR_FLOW[_sr.type].concat('rejected');
+  const fSt = 'padding:5px 8px;border:1px solid var(--BD);border-radius:7px;font-size:12px;font-family:var(--font)';
+  const hasFilter = Object.values(_sr.f).some(Boolean) || _sr.filter;
 
   document.getElementById('ct').innerHTML = `
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${typeBtn('existing')}${typeBtn('new')}</div>
   <div class="krow">
-    <div class="kpi b"><div class="kl">คำขอทั้งหมด</div><div class="kv">${myReqs.length}</div></div>
+    <div class="kpi b"><div class="kl">คำขอ${SR_TYPES[_sr.type].lbl}ทั้งหมด</div><div class="kv">${myReqs.length}</div></div>
     <div class="kpi a"><div class="kl">รออนุมัติ</div><div class="kv">${cntPending}</div></div>
-    <div class="kpi g"><div class="kl">อนุมัติแล้ว</div><div class="kv">${cntApproved}</div></div>
-    <div class="kpi t"><div class="kl">กำลังเตรียม/ส่ง</div><div class="kv">${cntPrep + cntDisp}</div></div>
+    ${isNew ? `<div class="kpi g"><div class="kl">R&D กำลังพัฒนา</div><div class="kv">${cntRD}</div></div>`
+            : `<div class="kpi g"><div class="kl">อนุมัติแล้ว</div><div class="kv">${cnt('approved')}</div></div>`}
+    <div class="kpi t"><div class="kl">${isNew ? 'รอจัดส่ง/ส่งแล้ว' : 'กำลังเตรียม/ส่ง'}</div><div class="kv">${cntDispatch + cnt('dispatched') - (isNew ? 0 : cnt('approved'))}</div></div>
   </div>
   <div class="tabs" style="margin-bottom:10px">
-    ${tTab('all', '📋 รายการของฉัน', 0)}
-    ${canApprove  ? tTab('pending',  '✅ รออนุมัติ',     cntPending) : ''}
-    ${canDispatch ? tTab('dispatch', '📦 รอเตรียม/จัดส่ง', cntPrep + cntApproved) : ''}
+    ${tTab('all', (isSales() && !isManager()) ? '📋 รายการของฉัน' : '📋 ประวัติทั้งหมด', 0)}
+    ${canApprove ? tTab('pending', '✅ รออนุมัติ', cntPending) : ''}
+    ${isNew && canRD ? tTab('rd', '🧑‍🔬 งาน R&D', cntRD) : ''}
+    ${canDispatch ? tTab('dispatch', '📦 รอเตรียม/จัดส่ง', cntDispatch) : ''}
   </div>
   <div class="card">
-    <div class="ch">
-      <div class="ct2">รายการขอสินค้าตัวอย่าง</div>
+    <div class="ch" style="flex-wrap:wrap;gap:8px">
+      <div class="ct2">ประวัติคำขอ${SR_TYPES[_sr.type].lbl} <span style="font-size:12px;font-weight:400;color:var(--TX3)">(${rows.length} รายการ)</span></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="text" placeholder="ค้นหาลูกค้า / รหัส" value="${esc(_sr.filter || '')}"
-          oninput="_sr.filter=this.value;pgSample()"
-          style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:12px;width:170px;font-family:var(--font)">
-        ${canCreate ? `<button class="btn btn-sm btn-p" onclick="_srNewForm()">+ สร้างคำขอ</button>` : ''}
+        <button class="btn btn-sm" onclick="srPrintReport()" ${rows.length ? '' : 'disabled'}>🖨 พิมพ์รายงาน (PDF)</button>
+        ${canCreate ? `<button class="btn btn-sm btn-p" onclick="_srNewForm('${_sr.type}')">+ ${isNew ? 'ขอตัวอย่างสินค้าใหม่' : 'เบิกสินค้าเดิม'}</button>` : ''}
       </div>
     </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 0 10px">
+      <span style="font-size:12px;color:var(--TX3)">วันที่ขอ</span>
+      <input type="date" value="${esc(_sr.f.from)}" onchange="srSetFilter('from',this.value)" style="${fSt}">
+      <span style="font-size:12px;color:var(--TX3)">ถึง</span>
+      <input type="date" value="${esc(_sr.f.to)}" onchange="srSetFilter('to',this.value)" style="${fSt}">
+      <select onchange="srSetFilter('status',this.value)" style="${fSt}">
+        <option value="">ทุกสถานะ</option>
+        ${flow.map(s => `<option value="${s}" ${_sr.f.status === s ? 'selected' : ''}>${SR_STATUS[s].lbl}</option>`).join('')}
+      </select>
+      <input type="text" placeholder="ลูกค้า" value="${esc(_sr.f.cust)}" onchange="srSetFilter('cust',this.value)" style="${fSt};width:130px">
+      ${users.length > 1 ? `<select onchange="srSetFilter('by',this.value)" style="${fSt}">
+        <option value="">ผู้ขอทั้งหมด</option>
+        ${users.map(([u, n]) => `<option value="${esc(u)}" ${_sr.f.by === u ? 'selected' : ''}>${esc(n)}</option>`).join('')}
+      </select>` : ''}
+      <input type="text" placeholder="ค้นหาเลขที่ / สินค้า / วัตถุประสงค์" value="${esc(_sr.filter || '')}"
+        onchange="_sr.filter=this.value;pgSample()" style="${fSt};width:200px">
+      ${hasFilter ? `<button class="btn btn-xs" onclick="srClearFilter()">ล้างตัวกรอง</button>` : ''}
+    </div>
     ${rows.length === 0 ? `<div style="padding:28px;text-align:center;color:var(--TX3)">
-      ยังไม่มีรายการ${canCreate ? ` — <button class="btn btn-sm btn-p" onclick="_srNewForm()">+ สร้างคำขอแรก</button>` : ''}
+      ไม่พบรายการ${canCreate && !hasFilter ? ` — <button class="btn btn-sm btn-p" onclick="_srNewForm('${_sr.type}')">+ สร้างคำขอแรก</button>` : ''}
     </div>` : `
     <div class="tw"><table>
       <thead><tr>
-        <th>รหัสคำขอ</th><th>วันที่ขอ</th><th>ลูกค้า</th><th>สินค้า (สรุป)</th>
-        <th>วัตถุประสงค์</th><th>วันที่ต้องการ</th><th>ผู้ขอ</th><th>สถานะ</th><th></th>
+        <th>เลขที่</th><th>วันที่ขอ</th><th>ลูกค้า</th><th>${isNew ? 'สินค้าใหม่ (สรุป)' : 'สินค้า (สรุป)'}</th>
+        ${isNew ? '<th class="r">ราคาเป้าหมาย</th><th class="r">คาดการณ์ กก./ด.</th>' : '<th>วัตถุประสงค์</th>'}
+        <th>วันที่ต้องการ</th><th>ผู้ขอ</th><th>สถานะ</th><th></th>
       </tr></thead>
       <tbody>${rows.map(r => {
-        const itemSum = (r.items || []).slice(0, 2).map(i => esc((i.skuName || i.sku || '').substring(0, 16))).join(', ')
-                      + ((r.items || []).length > 2 ? ` +${r.items.length - 2}` : '');
+        const items = r.items || [];
+        const itemSum = items.slice(0, 2).map(i => esc(srItemLabel(i).substring(0, 18))).join(', ') + (items.length > 2 ? ` +${items.length - 2}` : '');
         const sid = String(r.id || '').replace(/'/g, "\\'");
-        return `<tr>
-          <td class="mono" style="font-size:11px">${esc(r.id || '')}</td>
+        const prices = items.map(i => Number(i.targetPrice)).filter(v => v > 0);
+        const fc = items.reduce((s, i) => s + (Number(i.forecastKg) || 0), 0);
+        return `<tr style="cursor:pointer" onclick="_sr.view='detail';_sr.editId='${sid}';pgSample()">
+          <td class="mono" style="font-size:11px;white-space:nowrap">${r.doc_no ? `<b>${esc(r.doc_no)}</b>` : `<span style="color:var(--TX3)">${esc(r.id || '')}</span>`}</td>
           <td style="font-size:12px">${fmtD(r.date || '')}</td>
           <td style="font-size:12px">${esc((r.custName || '').substring(0, 22))}</td>
           <td style="font-size:11px;color:var(--TX2)">${itemSum || '—'}</td>
-          <td style="font-size:11px;color:var(--TX2);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((r.purpose || '').substring(0, 30))}</td>
-          <td style="font-size:12px${r.deliveryDate && r.deliveryDate < today() && !['received','dispatched'].includes(r.status) ? ';color:var(--R);font-weight:700' : ''}">${fmtD(r.deliveryDate || '')}</td>
+          ${isNew ? `<td class="r" style="font-size:12px">${prices.length ? (Math.min(...prices) === Math.max(...prices) ? _srNum(prices[0], 2) : `${_srNum(Math.min(...prices), 2)}–${_srNum(Math.max(...prices), 2)}`) : '—'}</td>
+                     <td class="r" style="font-size:12px">${fc ? _srNum(fc) : '—'}</td>`
+                  : `<td style="font-size:11px;color:var(--TX2);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((r.purpose || '').substring(0, 30))}</td>`}
+          <td style="font-size:12px${r.deliveryDate && r.deliveryDate < today() && !['received', 'dispatched'].includes(r.status) ? ';color:var(--R);font-weight:700' : ''}">${fmtD(r.deliveryDate || '')}</td>
           <td style="font-size:12px">${esc(uidToName(r.by) || r.by || '')}</td>
           <td>${srBadge(r.status)}</td>
-          <td><button class="btn btn-xs" onclick="_sr.view='detail';_sr.editId='${sid}';pgSample()">ดู</button></td>
+          <td><button class="btn btn-xs">ดู</button></td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>`}
   </div>`;
 }
 
-function _srNewForm() {
+function _srBlankItem(type) {
+  return type === 'new'
+    ? { name: '', ptype: '', flavor: '', size: '', packWeight: '', pack: '', temp: '', shelfLife: '', qty: 1, unit: 'กก.',
+        targetPrice: '', forecastKg: '', refSku: '', refName: '', competitor: '', menu: '', note: '' }
+    : { sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' };
+}
+function _srNewForm(type = 'existing') {
   _sr.view = 'form';
   _sr.editId = null;
-  _sr.form = { items: [{ sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' }] };
+  _sr.atts = []; _sr.attsFor = null;
+  _sr.form = { req_type: type, items: [_srBlankItem(type)], new_info: { custGroup: '', gpTarget: '', costs: [] } };
   pgSample();
 }
 
 // ── ฟอร์มสร้าง/แก้ไขคำขอ ─────────────────────────────────────
 function _srRenderForm() {
   const f   = _sr.form || {};
-  const items = f.items && f.items.length ? f.items : [{ sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' }];
+  const type = f.req_type === 'new' ? 'new' : 'existing';
+  const isNew = type === 'new';
+  const items = f.items && f.items.length ? f.items : [_srBlankItem(type)];
+  f.items = items;
   const custs = salesCustomers().slice(0, 300);
   const skus  = getSkusMerged();
   const isEdit = !!_sr.editId;
+  const ni = f.new_info || (f.new_info = { custGroup: '', gpTarget: '', costs: [] });
 
   const inpSt = 'padding:8px 10px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:var(--font);font-size:13px;box-sizing:border-box';
-  const selSt = inpSt;
+  const sec = (title, body) => `<div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:12px;color:var(--TX)">${title}</div>${body}</div>`;
 
   document.getElementById('ct').innerHTML = `
-  <button onclick="_sr.view='home';pgSample()" style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:var(--bg2);border:1px solid var(--BD);color:var(--TX2);font-weight:500;margin-bottom:16px">← กลับ</button>
+  ${_srBack('home')}
   <div class="card">
-    <div class="ch"><div class="ct2">🧪 ${isEdit ? 'แก้ไขคำขอ' : 'สร้างคำขอสินค้าตัวอย่าง'}</div></div>
+    <div class="ch"><div class="ct2">${isNew ? '✨' : '🧪'} ${isEdit ? 'แก้ไขคำขอ' : isNew ? 'ขอตัวอย่างสินค้าใหม่' : 'เบิกตัวอย่างสินค้าเดิม'}</div>
+      <div>${srTypeBadge({ req_type: type })}</div></div>
 
-    <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px">
-      <div style="font-weight:600;font-size:13px;margin-bottom:12px;color:var(--TX)">📋 ข้อมูลทั่วไป</div>
-      <div class="cgrid c2" style="gap:12px">
+    ${sec('📋 ข้อมูลทั่วไป', `<div class="cgrid c2" style="gap:12px">
         <div class="field" style="margin:0">
           <label>ลูกค้า *</label>
-          <select id="sr-cust" style="${selSt}" onchange="_srOnCustChange(this)">
+          <select id="sr-cust" style="${inpSt}" onchange="_srOnCustChange(this)">
             <option value="">— เลือกลูกค้า —</option>
             ${custs.map(c => `<option value="${esc(c.c)}" data-name="${esc(c.n || '')}" ${f.custCode === c.c ? 'selected' : ''}>${esc(c.c)} — ${esc((c.n || '').substring(0, 32))}</option>`).join('')}
           </select>
         </div>
+        ${isNew ? `<div class="field" style="margin:0">
+          <label>กลุ่มลูกค้า</label>
+          <input id="sr-cg" list="sr-cg-list" value="${esc(ni.custGroup || '')}" placeholder="เช่น ห้าง, ร้านค้าทั่วไป, Export Agent" style="${inpSt}">
+          <datalist id="sr-cg-list">${DX_CHANNELS.map(([, l]) => `<option value="${esc(l)}"></option>`).join('')}<option value="โรงแรม/ร้านอาหาร"></option><option value="โรงงาน/OEM"></option></datalist>
+        </div>` : ''}
         <div class="field" style="margin:0">
           <label>ผู้ติดต่อ</label>
           <input id="sr-contact" type="text" value="${esc(f.contact || '')}" placeholder="ชื่อผู้ติดต่อที่ลูกค้า" style="${inpSt}">
@@ -18847,7 +19007,7 @@ function _srRenderForm() {
         </div>
         <div class="field" style="margin:0;grid-column:1/-1">
           <label>วัตถุประสงค์ / เหตุผล *</label>
-          <textarea id="sr-purpose" placeholder="เช่น ทดสอบสูตรใหม่, ทดลองตลาด, เปิดลูกค้าใหม่, งานแสดงสินค้า" style="${inpSt};height:64px;resize:vertical">${esc(f.purpose || '')}</textarea>
+          <textarea id="sr-purpose" placeholder="${isNew ? 'เช่น ลูกค้าต้องการสินค้าทดแทนคู่แข่ง, เมนูใหม่ของร้าน, เปิดตลาดใหม่' : 'เช่น ทดสอบสูตรใหม่, ทดลองตลาด, เปิดลูกค้าใหม่, งานแสดงสินค้า'}" style="${inpSt};height:64px;resize:vertical">${esc(f.purpose || '')}</textarea>
         </div>
         <div class="field" style="margin:0">
           <label>ที่อยู่จัดส่ง</label>
@@ -18857,20 +19017,34 @@ function _srRenderForm() {
           <label>หมายเหตุเพิ่มเติม</label>
           <input id="sr-note" type="text" value="${esc(f.note || '')}" placeholder="หมายเหตุ" style="${inpSt}">
         </div>
-      </div>
-    </div>
+      </div>`)}
 
-    <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px">
-      <div style="font-weight:600;font-size:13px;margin-bottom:12px;color:var(--TX)">📦 รายการสินค้าตัวอย่าง</div>
-      <div id="sr-items-wrap">
-        ${items.map((it, i) => _srItemRow(it, i, skus, items.length)).join('')}
-      </div>
+    ${sec(isNew ? '✨ รายการสินค้าใหม่ที่ต้องการ (สเปค · ราคาเป้าหมาย · คู่แข่ง)' : '📦 รายการสินค้าตัวอย่าง', `
+      <div id="sr-items-wrap">${items.map((it, i) => isNew ? _srNewItemCard(it, i, items.length) : _srItemRow(it, i, skus, items.length)).join('')}</div>
       <button onclick="srAddItem()" class="btn btn-sm" style="margin-top:6px">+ เพิ่มรายการสินค้า</button>
+      ${isNew ? `<div id="sr-items-total" style="margin-top:10px;font-size:13px;text-align:right">${_srItemsTotalHtml(items)}</div>` : ''}
       <!-- FIXED (2026-09-16, same root cause as จัดการกลุ่ม > กลุ่มลูกค้า's "โหลดไม่ขึ้น" bug): a full copy
       of the SKU list used to be duplicated as a <select>'s <option> children PER ITEM ROW — shared
       datalist built once instead (matching corp-list/cat-list/slm-list already used elsewhere). -->
-      <datalist id="sr-sku-list">${skus.map(s => `<option value="${esc(s.code)}" label="${esc(s.code + ' — ' + (s.name || '').substring(0, 30))}"></option>`).join('')}</datalist>
-    </div>
+      <datalist id="sr-sku-list">${skus.map(s => `<option value="${esc(s.code)}" label="${esc(s.code + ' — ' + (s.name || '').substring(0, 30))}"></option>`).join('')}</datalist>`)}
+
+    ${isNew ? sec('💰 GP / ค่าใช้จ่ายอื่นๆ', `
+      <div class="cgrid c2" style="gap:12px;margin-bottom:10px">
+        <div class="field" style="margin:0"><label>GP เป้าหมาย (%)</label>
+          <input id="sr-gp" type="number" step="0.01" value="${esc(ni.gpTarget ?? '')}" placeholder="เช่น 25" style="${inpSt}"></div>
+      </div>
+      <div style="font-size:12px;color:var(--TX3);margin-bottom:6px">ค่าใช้จ่ายอื่นๆ (เช่น ค่าแม่พิมพ์/บรรจุภัณฑ์ใหม่, ค่าขนส่ง, ค่าแรกเข้า)</div>
+      ${(ni.costs || []).map((c, i) => `<div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+        <input type="text" value="${esc(c.item || '')}" placeholder="รายการ" onchange="srCostField(${i},'item',this.value)" style="${inpSt};flex:3;min-width:160px;width:auto">
+        <input type="number" step="0.01" value="${esc(c.amount ?? '')}" placeholder="บาท" onchange="srCostField(${i},'amount',this.value)" style="${inpSt};width:120px">
+        <input type="text" value="${esc(c.note || '')}" placeholder="หมายเหตุ" onchange="srCostField(${i},'note',this.value)" style="${inpSt};flex:2;min-width:120px;width:auto">
+        <button onclick="srRemoveCost(${i})" style="padding:7px 10px;border:1px solid var(--BD);border-radius:7px;cursor:pointer;background:var(--W);color:var(--R)">✕</button>
+      </div>`).join('')}
+      <button class="btn btn-sm" onclick="srAddCost()">+ เพิ่มค่าใช้จ่าย</button>`) : ''}
+
+    ${sec('📎 ไฟล์แนบ (รูปสินค้า / ไฟล์สเปค)', isEdit
+      ? `<div id="sr-atts">${_srAttsHtml(true)}</div>`
+      : `<div style="font-size:12px;color:var(--TX3)">กด "💾 บันทึกร่าง" ก่อน แล้วจึงแนบไฟล์ได้ (รูป/PDF ไม่เกิน 15MB ต่อไฟล์)</div>`)}
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px">
       <button class="btn" onclick="_sr.view='home';pgSample()">ยกเลิก</button>
@@ -18878,6 +19052,7 @@ function _srRenderForm() {
       <button class="btn btn-p" onclick="srSubmit()" style="font-weight:600">📤 ส่งขออนุมัติ</button>
     </div>
   </div>`;
+  if (isEdit) _srLoadAtts(_sr.editId, true);
 }
 
 function _srItemRow(it, i, skus, total) {
@@ -18896,11 +19071,7 @@ function _srItemRow(it, i, skus, total) {
     <div style="width:82px">
       <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">หน่วย</div>
       <select onchange="srItemField(${i},'unit',this.value)" style="${inpSt}">
-        <option value="กก."    ${it.unit === 'กก.'    || !it.unit ? 'selected' : ''}>กก.</option>
-        <option value="ถุง"    ${it.unit === 'ถุง'    ? 'selected' : ''}>ถุง</option>
-        <option value="กล่อง"  ${it.unit === 'กล่อง'  ? 'selected' : ''}>กล่อง</option>
-        <option value="ชิ้น"   ${it.unit === 'ชิ้น'   ? 'selected' : ''}>ชิ้น</option>
-        <option value="แพ็ค"   ${it.unit === 'แพ็ค'   ? 'selected' : ''}>แพ็ค</option>
+        ${SR_UNITS.map(u => `<option value="${u}" ${(it.unit || 'กก.') === u ? 'selected' : ''}>${u}</option>`).join('')}
       </select>
     </div>
     <div style="flex:2;min-width:130px">
@@ -18913,9 +19084,95 @@ function _srItemRow(it, i, skus, total) {
   </div>`;
 }
 
+// การ์ดสินค้าใหม่ 1 รายการ — ไม่บังคับ SKU (ยังไม่มีในระบบ) ใช้ชื่อ/สเปคแทน · SKU อ้างอิงเลือกจากสินค้าเดิมได้ (ไม่บังคับ)
+function _srNewItemCard(it, i, total) {
+  const inpSt = 'padding:7px 8px;border:1px solid var(--BD);border-radius:7px;font-family:var(--font);font-size:13px;box-sizing:border-box;width:100%';
+  const fld = (lbl, key, ph = '', type = 'text', span = 1) => `<div style="grid-column:span ${span}">
+      <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">${lbl}</div>
+      <input type="${type}" ${type === 'number' ? 'step="0.01" min="0"' : ''} value="${esc(it[key] ?? '')}" placeholder="${esc(ph)}"
+        onchange="srNewItemField(${i},'${key}',this.value${type === 'number' ? ',true' : ''})" style="${inpSt}"></div>`;
+  return `<div style="margin-bottom:12px;padding:12px 14px;background:var(--W);border-radius:10px;border:1px solid var(--BD)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <b style="font-size:13px;color:var(--N)">สินค้าใหม่ #${i + 1}</b>
+      ${total > 1 ? `<button onclick="srRemoveItem(${i})" style="padding:4px 10px;border:1px solid var(--BD);border-radius:7px;cursor:pointer;background:var(--W);color:var(--R);font-size:12px">✕ ลบรายการ</button>` : ''}
+    </div>
+    <div style="font-size:11.5px;font-weight:600;color:var(--TX2);margin:2px 0 6px">สเปคสินค้า</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 10px">
+      ${fld('ชื่อสินค้า/คำอธิบาย *', 'name', 'เช่น ไส้กรอกชีสพริกไทยดำ', 'text', 2)}
+      ${fld('ประเภทสินค้า', 'ptype', 'ไส้กรอก/แฮม/เบคอน…')}
+      ${fld('รสชาติ', 'flavor', 'เช่น เผ็ดน้อย, รมควัน')}
+      ${fld('ขนาด/ความหนา/การหั่น', 'size', 'เช่น ยาว 12 ซม., สไลซ์ 2 มม.')}
+      ${fld('น้ำหนักต่อแพ็ค', 'packWeight', 'เช่น 500 กรัม')}
+      ${fld('บรรจุภัณฑ์', 'pack', 'เช่น ถุงสุญญากาศ')}
+      <div><div style="font-size:11px;color:var(--TX3);margin-bottom:4px">อุณหภูมิจัดเก็บ</div>
+        <select onchange="srNewItemField(${i},'temp',this.value)" style="${inpSt}"><option value="">—</option>
+        ${SR_TEMPS.map(t => `<option ${it.temp === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      ${fld('อายุสินค้า', 'shelfLife', 'เช่น 45 วัน')}
+      ${fld('เมนู/การใช้งานของลูกค้า', 'menu', 'เช่น พิซซ่า, ฮอทดอก', 'text', 2)}
+    </div>
+    <div style="font-size:11.5px;font-weight:600;color:var(--TX2);margin:12px 0 6px">จำนวนตัวอย่าง · ราคาเป้าหมาย · ปริมาณคาดการณ์</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 10px;align-items:end">
+      ${fld('จำนวนตัวอย่าง *', 'qty', '', 'number')}
+      <div><div style="font-size:11px;color:var(--TX3);margin-bottom:4px">หน่วย</div>
+        <select onchange="srNewItemField(${i},'unit',this.value)" style="${inpSt}">
+        ${SR_UNITS.map(u => `<option value="${u}" ${(it.unit || 'กก.') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+      ${fld('ราคาเป้าหมาย (บาท/กก.)', 'targetPrice', '', 'number')}
+      ${fld('ปริมาณคาดการณ์ (กก./เดือน)', 'forecastKg', '', 'number')}
+      <div><div style="font-size:11px;color:var(--TX3);margin-bottom:4px">มูลค่าคาดการณ์ (บาท/เดือน)</div>
+        <div id="sr-val-${i}" style="padding:7px 8px;font-weight:700;font-size:13px">${_srItemValue(it)}</div></div>
+    </div>
+    <div style="font-size:11.5px;font-weight:600;color:var(--TX2);margin:12px 0 6px">สินค้าอ้างอิง / คู่แข่ง</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 10px">
+      <div><div style="font-size:11px;color:var(--TX3);margin-bottom:4px">สินค้าอ้างอิง (SKU เดิม)</div>
+        <input list="sr-sku-list" value="${esc(it.refSku || '')}" onchange="srNewItemRef(${i},this.value)" placeholder="ไม่บังคับ" style="${inpSt}">
+        ${it.refName ? `<div style="font-size:10.5px;color:var(--TX3);margin-top:2px">${esc(it.refName)}</div>` : ''}</div>
+      ${fld('ยี่ห้อ/ราคาคู่แข่ง', 'competitor', 'เช่น ยี่ห้อ X 220 บ./กก.', 'text', 2)}
+      ${fld('หมายเหตุ', 'note', '')}
+    </div>
+  </div>`;
+}
+function _srItemValue(it) {
+  const v = (Number(it.targetPrice) || 0) * (Number(it.forecastKg) || 0);
+  return v ? _srNum(v) : '—';
+}
+function _srItemsTotalHtml(items) {
+  const kg = items.reduce((s, it) => s + (Number(it.forecastKg) || 0), 0);
+  const val = items.reduce((s, it) => s + (Number(it.targetPrice) || 0) * (Number(it.forecastKg) || 0), 0);
+  return kg || val ? `รวมปริมาณคาดการณ์ <b>${_srNum(kg)}</b> กก./เดือน · มูลค่า <b>${_srNum(val)}</b> บาท/เดือน` : '';
+}
+function srNewItemField(i, key, val, num) {
+  _sr.form.items = _sr.form.items || [];
+  _sr.form.items[i] = _sr.form.items[i] || _srBlankItem('new');
+  _sr.form.items[i][key] = num ? (val === '' ? '' : parseFloat(val) || 0) : val;
+  if (key === 'targetPrice' || key === 'forecastKg') {
+    const el = document.getElementById('sr-val-' + i); if (el) el.textContent = _srItemValue(_sr.form.items[i]);
+    const tot = document.getElementById('sr-items-total'); if (tot) tot.innerHTML = _srItemsTotalHtml(_sr.form.items);
+  }
+}
+function srNewItemRef(i, code) {
+  const m = getSkusMerged().find(s => s.code === code);
+  srNewItemField(i, 'refSku', code);
+  _sr.form.items[i].refName = m ? (m.name || '') : '';
+}
+function srCostField(i, key, val) {
+  const ni = _sr.form.new_info || (_sr.form.new_info = { costs: [] });
+  ni.costs = ni.costs || [];
+  ni.costs[i] = ni.costs[i] || {};
+  ni.costs[i][key] = key === 'amount' ? (val === '' ? '' : parseFloat(val) || 0) : val;
+}
+function srAddCost()     { _srCollect(); const ni = _sr.form.new_info; ni.costs = (ni.costs || []).concat([{ item: '', amount: '', note: '' }]); _srRenderForm(); }
+function srRemoveCost(i) { _srCollect(); const ni = _sr.form.new_info; ni.costs = (ni.costs || []).filter((_, k) => k !== i); _srRenderForm(); }
+
 function _srOnCustChange(sel) {
   _sr.form.custCode = sel.value;
   _sr.form.custName = sel.options[sel.selectedIndex]?.getAttribute('data-name') || '';
+  // กลุ่มลูกค้าตั้งต้นจากหมวดผู้บริหาร (exec_channel ใน จัดการกลุ่ม) — แก้ได้ และไม่ทับค่าที่ผู้ใช้พิมพ์ไว้แล้ว
+  const cg = document.getElementById('sr-cg');
+  if (cg && !cg.value.trim()) {
+    const ch = (customerProfiles()[sel.value] || {}).exec_channel;
+    const lbl = (DX_CHANNELS.find(([k]) => k === ch) || [])[1];
+    if (lbl) cg.value = lbl;
+  }
 }
 function srItemSku(i, sel) {
   _sr.form.items = _sr.form.items || [];
@@ -18936,13 +19193,13 @@ function srItemField(i, field, val) {
 }
 function srAddItem() {
   _srCollect();
-  _sr.form.items = (_sr.form.items || []).concat([{ sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' }]);
+  _sr.form.items = (_sr.form.items || []).concat([_srBlankItem(_sr.form.req_type)]);
   _srRenderForm();
 }
 function srRemoveItem(i) {
   _srCollect();
   _sr.form.items = (_sr.form.items || []).filter((_, idx) => idx !== i);
-  if (!_sr.form.items.length) _sr.form.items = [{ sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' }];
+  if (!_sr.form.items.length) _sr.form.items = [_srBlankItem(_sr.form.req_type)];
   _srRenderForm();
 }
 function _srCollect() {
@@ -18951,12 +19208,23 @@ function _srCollect() {
     _sr.form.custCode = custSel.value;
     _sr.form.custName = custSel.options[custSel.selectedIndex]?.getAttribute('data-name') || _sr.form.custName || '';
   }
-  _sr.form.contact     = document.getElementById('sr-contact')?.value  || _sr.form.contact  || '';
-  _sr.form.phone       = document.getElementById('sr-phone')?.value    || _sr.form.phone    || '';
-  _sr.form.purpose     = document.getElementById('sr-purpose')?.value  || _sr.form.purpose  || '';
-  _sr.form.deliveryDate= document.getElementById('sr-delivery')?.value || _sr.form.deliveryDate || '';
-  _sr.form.address     = document.getElementById('sr-addr')?.value     || _sr.form.address  || '';
-  _sr.form.note        = document.getElementById('sr-note')?.value     || _sr.form.note     || '';
+  // อ่านค่าจากช่องตรงๆ (รวมค่าว่าง) — เดิมใช้ "|| ค่าเดิม" ทำให้ลบข้อความในช่องแล้วบันทึกไม่ได้
+  const val = (id, cur) => { const el = document.getElementById(id); return el ? el.value : (cur || ''); };
+  _sr.form.contact      = val('sr-contact', _sr.form.contact);
+  _sr.form.phone        = val('sr-phone', _sr.form.phone);
+  _sr.form.purpose      = val('sr-purpose', _sr.form.purpose);
+  _sr.form.deliveryDate = val('sr-delivery', _sr.form.deliveryDate);
+  _sr.form.address      = val('sr-addr', _sr.form.address);
+  _sr.form.note         = val('sr-note', _sr.form.note);
+  if (_sr.form.req_type === 'new') {
+    const ni = _sr.form.new_info || (_sr.form.new_info = { costs: [] });
+    ni.custGroup = val('sr-cg', ni.custGroup).trim();
+    const gp = val('sr-gp', ni.gpTarget);
+    ni.gpTarget = gp === '' || gp == null ? '' : parseFloat(gp);
+  }
+}
+function _srValidItems(f) {
+  return (f.items || []).filter(it => (f.req_type === 'new' ? String(it.name || '').trim() : it.sku) && Number(it.qty) > 0);
 }
 function _srValidate() {
   _srCollect();
@@ -18964,17 +19232,22 @@ function _srValidate() {
   if (!f.custCode)     { toast('กรุณาเลือกลูกค้า', 'warn'); return false; }
   if (!f.purpose?.trim()) { toast('กรุณาระบุวัตถุประสงค์', 'warn'); return false; }
   if (!f.deliveryDate) { toast('กรุณาระบุวันที่ต้องการรับ', 'warn'); return false; }
-  const valid = (f.items || []).filter(it => it.sku && it.qty > 0);
-  if (!valid.length)   { toast('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ', 'warn'); return false; }
+  if (!_srValidItems(f).length) {
+    toast(f.req_type === 'new' ? 'กรุณาระบุชื่อสินค้าใหม่และจำนวนตัวอย่างอย่างน้อย 1 รายการ' : 'กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ', 'warn');
+    return false;
+  }
   return true;
 }
 function _srBuild(status) {
   const f   = _sr.form;
   const now = new Date().toISOString();
   const base= _sr.editId ? (getSR().find(r => r.id === _sr.editId) || {}) : {};
+  const isNew = f.req_type === 'new';
+  const ni = f.new_info || {};
   return {
     ...base,
     id:           base.id || genId('SR'),
+    req_type:     isNew ? 'new' : 'existing',
     custCode:     f.custCode,
     custName:     f.custName || '',
     contact:      f.contact  || '',
@@ -18983,8 +19256,13 @@ function _srBuild(status) {
     deliveryDate: f.deliveryDate || '',
     address:      f.address  || '',
     note:         f.note     || '',
-    items:        (f.items || []).filter(it => it.sku && it.qty > 0),
+    // ร่างเก็บทุกแถวที่เริ่มกรอกแล้ว (ยังไม่ครบก็ได้) — ส่งขออนุมัติเก็บเฉพาะแถวที่ครบ
+    items:        status === 'draft'
+      ? (f.items || []).filter(it => isNew ? Object.entries(it).some(([k, v]) => !['qty', 'unit'].includes(k) && v !== '' && v != null) : it.sku)
+      : _srValidItems(f),
+    new_info:     isNew ? { custGroup: ni.custGroup || '', gpTarget: ni.gpTarget ?? '', costs: (ni.costs || []).filter(c => (c.item || '').trim() || Number(c.amount)) } : null,
     status,
+    submitted_at: status === 'pending' ? (base.submitted_at || now) : (base.submitted_at || null),
     by:           base.by     || UID,
     byName:       base.byName || UNAME,
     date:         base.date   || now.slice(0, 10),
@@ -18993,25 +19271,80 @@ function _srBuild(status) {
     updated_by:   UID,
   };
 }
-function _srSave(rec) {
+// บันทึก local ทันที แล้วรอผล server (คืน true/false) — ต้องรอเพราะการออกเลขที่/แนบไฟล์ต้องมีแถวบน server ก่อน
+async function _srSave(rec) {
   saveSR([rec, ...getSR().filter(r => r.id !== rec.id)]);
-  SB.upsertSampleRequest(rec).catch(e=>console.warn('upsertSampleRequest:',e));
+  try { return !!(await SB.upsertSampleRequest(rec)); }
+  catch (e) { console.warn('upsertSampleRequest:', e); return false; }
 }
-function srSaveDraft() {
+// ขอเลขที่เอกสารจาก server (ออกครั้งเดียว — มีแล้วได้เลขเดิม) แล้วเก็บลง local cache
+async function _srAssignNo(id) {
+  const no = await SB.assignSampleDocNo(id);
+  if (!no) return null;
+  const reqs = getSR(), r = reqs.find(x => x.id === id);
+  if (r && r.doc_no !== no) { r.doc_no = no; saveSR(reqs); }
+  return no;
+}
+async function srSaveDraft() {
   if (!_sr.form.custCode && !document.getElementById('sr-cust')?.value) { toast('กรุณาเลือกลูกค้าก่อนบันทึก', 'warn'); return; }
   _srCollect();
   const rec = _srBuild('draft');
-  _srSave(rec);
-  toast('บันทึกร่างแล้ว');
-  _sr.view = 'home'; pgSample();
+  const ok = await _srSave(rec);
+  if (!ok) { toast('บันทึกในเครื่องแล้ว แต่ส่งขึ้น server ไม่สำเร็จ — ยังแนบไฟล์ไม่ได้', 'warn'); _sr.view = 'home'; pgSample(); return; }
+  // อยู่ต่อในฟอร์มเพื่อแนบไฟล์ได้ทันที (แนบได้หลังมีแถวบน server แล้วเท่านั้น)
+  const first = !_sr.editId;
+  _sr.editId = rec.id;
+  toast(first ? 'บันทึกร่างแล้ว — แนบไฟล์ได้ด้านล่าง' : 'บันทึกร่างแล้ว');
+  _srRenderForm();
 }
-function srSubmit() {
+async function srSubmit() {
   if (!_srValidate()) return;
   const rec = _srBuild('pending');
-  _srSave(rec);
-  audit('SAMPLE_REQUEST', rec.id, { custCode: rec.custCode, items: rec.items.length });
-  toast('ส่งคำขออนุมัติแล้ว');
-  _sr.view = 'home'; pgSample();
+  const ok = await _srSave(rec);
+  audit('SAMPLE_REQUEST', rec.id, { custCode: rec.custCode, items: rec.items.length, type: rec.req_type });
+  const no = ok ? await _srAssignNo(rec.id) : null;
+  toast(no ? `ส่งคำขออนุมัติแล้ว — เลขที่ ${no}` : 'ส่งคำขอแล้ว แต่ยังออกเลขที่เอกสารไม่ได้ (จะลองใหม่เมื่อเปิดดูคำขอ)', no ? 'ok' : 'warn');
+  _sr.view = 'detail'; _sr.editId = rec.id; pgSample();
+}
+
+// ── ไฟล์แนบ ───────────────────────────────────────────────────
+function _srAttsHtml(editable) {
+  const atts = _sr.attsFor === _sr.editId ? (_sr.atts || []) : null;
+  const list = atts == null ? '<div style="font-size:12px;color:var(--TX3)">กำลังโหลด…</div>'
+    : !atts.length ? '<div style="font-size:12px;color:var(--TX3)">ยังไม่มีไฟล์แนบ</div>'
+    : atts.map(a => `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--BD);font-size:12.5px">
+        <span>${/^image\//.test(a.mime_type || '') ? '🖼' : '📄'}</span>
+        <a href="javascript:void(0)" onclick="SB.openSampleRequestAttachment('${esc(a.id)}')" style="color:var(--N);flex:1;word-break:break-all">${esc(a.filename || '')}</a>
+        <span style="color:var(--TX3);font-size:11px">${esc(uidToName(a.uploaded_by) || '')} ${fmtD(a.created_at || '')}</span>
+        ${editable ? `<button class="btn btn-xs" style="color:var(--R)" onclick="srDeleteAtt('${esc(a.id)}')">ลบ</button>` : ''}
+      </div>`).join('');
+  return list + (editable ? `<label class="btn btn-sm" style="margin-top:8px;display:inline-block;cursor:pointer">📎 เลือกไฟล์แนบ
+      <input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="srUploadAtt(this)"></label>
+      <span style="font-size:11px;color:var(--TX3);margin-left:6px">รูป/PDF ไม่เกิน 15MB ต่อไฟล์</span>` : '');
+}
+async function _srLoadAtts(id, editable) {
+  if (!id) return;
+  if (_sr.attsFor !== id) { _sr.atts = await SB.getSampleRequestAttachments(id); _sr.attsFor = id; }
+  const el = document.getElementById('sr-atts');
+  if (el && _sr.editId === id) el.innerHTML = _srAttsHtml(editable);
+}
+async function srUploadAtt(input) {
+  const id = _sr.editId, files = [...(input.files || [])];
+  if (!id || !files.length) return;
+  for (const f of files) {
+    if (f.size > 15 * 1024 * 1024) { toast(`${f.name} ใหญ่เกิน 15MB`, 'warn'); continue; }
+    try { await SB.uploadSampleRequestAttachment(id, f); }
+    catch (e) { toast(`แนบ ${f.name} ไม่สำเร็จ: ${e.message || e}`, 'warn'); }
+  }
+  _sr.attsFor = null;
+  await _srLoadAtts(id, true);
+  toast('แนบไฟล์แล้ว');
+}
+async function srDeleteAtt(attId) {
+  if (!confirm('ลบไฟล์แนบนี้?')) return;
+  if (!(await SB.deleteSampleRequestAttachment(attId))) { toast('ลบไฟล์ไม่สำเร็จ', 'warn'); return; }
+  _sr.attsFor = null;
+  await _srLoadAtts(_sr.editId, true);
 }
 
 // ── หน้ารายละเอียด + ปุ่ม Action ────────────────────────────
@@ -19019,13 +19352,14 @@ function _srRenderDetail(id) {
   const r = getSR().find(x => x.id === id);
   if (!r) { _sr.view = 'home'; pgSample(); return; }
 
-  const canApprove  = ['manager','superadmin'].includes(ROLE);
-  const canDispatch = ['planning','warehouse','superadmin'].includes(ROLE);
+  const type = srType(r), isNew = type === 'new';
+  const ni = srNewInfo(r);
+  const canApprove = srCanApprove(), canDispatch = srCanDispatch(), canRD = srCanRD();
   const isMine      = r.by === UID;
-  const isEditable  = (isMine || canApprove) && ['draft','pending'].includes(r.status);
+  const isEditable  = (isMine || canApprove) && ['draft', 'pending'].includes(r.status);
   const sid = String(id || '').replace(/'/g, "\\'");
 
-  const actions = [];
+  const actions = [`<button class="btn" onclick="srPrintDoc('${sid}')">🖨 พิมพ์ / PDF</button>`];
   if (isMine && r.status === 'draft')
     actions.push(`<button class="btn btn-p" onclick="srSubmitById('${sid}')">📤 ส่งขออนุมัติ</button>`);
   if (isEditable)
@@ -19034,80 +19368,80 @@ function _srRenderDetail(id) {
     actions.push(`<button class="btn btn-g" onclick="srApprove('${sid}')">✅ อนุมัติ</button>`);
     actions.push(`<button class="btn btn-r" onclick="srReject('${sid}')">❌ ปฏิเสธ</button>`);
   }
-  if (canDispatch && r.status === 'approved')
-    actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','preparing')">🔧 เริ่มเตรียมสินค้า</button>`);
-  if (canDispatch && r.status === 'preparing')
-    actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','dispatched')">🚚 จัดส่งแล้ว</button>`);
+  if (isNew) {
+    if (canRD && r.status === 'approved')
+      actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','rd_developing')">🧑‍🔬 R&D รับเรื่อง</button>`);
+    if (canRD && r.status === 'rd_developing')
+      actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','rd_ready')">🧪 ทำตัวอย่างเสร็จ</button>`);
+    if (canDispatch && r.status === 'rd_ready')
+      actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','dispatched')">🚚 จัดส่งแล้ว</button>`);
+  } else {
+    if (canDispatch && r.status === 'approved')
+      actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','preparing')">🔧 เริ่มเตรียมสินค้า</button>`);
+    if (canDispatch && r.status === 'preparing')
+      actions.push(`<button class="btn btn-p" onclick="srSetStatus('${sid}','dispatched')">🚚 จัดส่งแล้ว</button>`);
+  }
   if ((isMine || canApprove) && r.status === 'dispatched')
     actions.push(`<button class="btn btn-g" onclick="srSetStatus('${sid}','received')">✔️ ยืนยันรับแล้ว</button>`);
   if ((isMine || canApprove) && r.status === 'received')
     actions.push(`<button class="btn btn-t" onclick="_sr.view='testresult';_sr.editId='${sid}';pgSample()">🔬 ${r.testResult ? 'แก้ไขผลทดสอบ' : 'บันทึกผลทดสอบ'}</button>`);
-  if ((isMine || canApprove) && ['draft','pending','rejected'].includes(r.status))
+  if ((isMine || canApprove) && ['draft', 'pending', 'rejected'].includes(r.status))
     actions.push(`<button class="btn btn-r" onclick="srDelete('${sid}')" style="opacity:.7">🗑 ลบ</button>`);
 
-  // Timeline
-  const timeline = [
-    { st: 'draft',      lbl: 'สร้างคำขอ',      who: r.byName || r.by,        at: r.date },
-    { st: 'pending',    lbl: 'ส่งขออนุมัติ',    who: r.byName || r.by,        at: r.submitted_at ? r.submitted_at.slice(0,10) : (r.status !== 'draft' ? r.date : null) },
-    { st: 'approved',   lbl: 'อนุมัติ',         who: uidToName(r.approved_by) || r.approved_by, at: r.approved_at?.slice(0,10) },
-    { st: 'rejected',   lbl: 'ปฏิเสธ',          who: uidToName(r.rejected_by) || r.rejected_by, at: r.rejected_at?.slice(0,10) },
-    { st: 'preparing',  lbl: 'เตรียมสินค้า',    who: uidToName(r.prep_by)    || r.prep_by,    at: r.prep_at?.slice(0,10) },
-    { st: 'dispatched', lbl: 'จัดส่งแล้ว',      who: uidToName(r.disp_by)    || r.disp_by,    at: r.disp_at?.slice(0,10) },
-    { st: 'received',   lbl: 'รับแล้ว',         who: uidToName(r.recv_by)    || r.recv_by,    at: r.recv_at?.slice(0,10) },
-    { st: 'tested',     lbl: 'บันทึกผลทดสอบ',  who: uidToName(r.testResult?.by) || r.testResult?.by, at: r.testResult?.date },
-  ].filter(t => t.at || t.st === r.status);
-
-  const statusOrder = ['draft','pending','approved','preparing','dispatched','received'];
+  const timeline = _srTimeline(r);
+  const statusOrder = SR_FLOW[type];
   const curIdx = statusOrder.indexOf(r.status);
+  const kv = (lbl, val, span) => `<div${span ? ' style="grid-column:1/-1"' : ''}><div style="font-size:11px;color:var(--TX3)">${lbl}</div><div style="font-size:13px">${val}</div></div>`;
+  const costs = ni.costs || [];
+  const costTotal = costs.reduce((s, c) => s + (Number(c.amount) || 0), 0);
 
   document.getElementById('ct').innerHTML = `
-  <button onclick="_sr.view='home';pgSample()" style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:var(--bg2);border:1px solid var(--BD);color:var(--TX2);font-weight:500;margin-bottom:16px">← กลับ</button>
+  ${_srBack('home')}
   <div class="card">
     <div class="ch" style="flex-wrap:wrap;gap:10px">
       <div>
-        <div class="ct2">คำขอ ${esc(r.id || '')} ${srBadge(r.status)}</div>
-        <div style="font-size:12px;color:var(--TX3);margin-top:4px">ขอโดย ${esc(uidToName(r.by) || r.by || '')} เมื่อ ${fmtD(r.date || '')}</div>
+        <div class="ct2">${r.doc_no ? `<span class="mono">${esc(r.doc_no)}</span>` : `คำขอ ${esc(r.id || '')}`} ${srTypeBadge(r)} ${srBadge(r.status)}</div>
+        <div style="font-size:12px;color:var(--TX3);margin-top:4px">ขอโดย ${esc(uidToName(r.by) || r.by || '')} เมื่อ ${fmtD(r.date || '')}${r.doc_no ? ` · รหัสอ้างอิง ${esc(r.id)}` : ''}</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${actions.join('')}</div>
     </div>
 
-    <!-- Progress Bar -->
     <div style="display:flex;align-items:center;gap:0;margin:18px 0 14px;overflow-x:auto">
       ${statusOrder.map((st, i) => {
-        if (st === 'rejected') return '';
         const done = i < curIdx || r.status === st;
         const cur  = r.status === st;
         const s    = SR_STATUS[st] || {};
         return `<div style="display:flex;align-items:center;flex:1;min-width:0">
           <div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:none">
             <div style="width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;
-              background:${cur?'var(--N)':done?'var(--G)':'var(--bg2)'};
-              border:2px solid ${cur?'var(--N)':done?'var(--G)':'var(--BD)'};
-              color:${cur||done?'#fff':'var(--TX3)'}">${s.icon || (i+1)}</div>
-            <div style="font-size:10px;color:${cur?'var(--N)':done?'var(--G)':'var(--TX3)'};white-space:nowrap;font-weight:${cur?'700':'400'}">${s.lbl || st}</div>
+              background:${cur ? 'var(--N)' : done ? 'var(--G)' : 'var(--bg2)'};
+              border:2px solid ${cur ? 'var(--N)' : done ? 'var(--G)' : 'var(--BD)'};
+              color:${cur || done ? '#fff' : 'var(--TX3)'}">${s.icon || (i + 1)}</div>
+            <div style="font-size:10px;color:${cur ? 'var(--N)' : done ? 'var(--G)' : 'var(--TX3)'};white-space:nowrap;font-weight:${cur ? '700' : '400'}">${s.lbl || st}</div>
           </div>
-          ${i < statusOrder.filter(s=>s!=='rejected').length - 1 ? `<div style="flex:1;height:2px;background:${done&&!cur?'var(--G)':'var(--BD)'};margin:0 4px;margin-bottom:14px"></div>` : ''}
+          ${i < statusOrder.length - 1 ? `<div style="flex:1;height:2px;background:${done && !cur ? 'var(--G)' : 'var(--BD)'};margin:0 4px;margin-bottom:14px"></div>` : ''}
         </div>`;
       }).join('')}
     </div>
     ${r.status === 'rejected' ? `<div class="al ald" style="margin-bottom:14px">❌ ปฏิเสธ${r.reject_reason ? ` — เหตุผล: ${esc(r.reject_reason)}` : ''}</div>` : ''}
+    ${r.rd_note ? `<div class="al" style="margin-bottom:14px;background:var(--bg2);border:1px solid var(--BD)">🧑‍🔬 หมายเหตุ R&D: ${esc(r.rd_note)}</div>` : ''}
 
-    <!-- ข้อมูลทั่วไป -->
     <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:14px;margin-bottom:14px">
       <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:10px">ข้อมูลคำขอ</div>
       <div class="cgrid c2" style="gap:10px 20px">
-        <div><div style="font-size:11px;color:var(--TX3)">ลูกค้า</div><div style="font-size:13px;font-weight:600">${esc(r.custName || '—')}<span class="mono" style="font-size:11px;color:var(--TX3);margin-left:6px">${esc(r.custCode || '')}</span></div></div>
-        <div><div style="font-size:11px;color:var(--TX3)">ผู้ติดต่อ</div><div style="font-size:13px">${esc(r.contact || '—')}</div></div>
-        <div><div style="font-size:11px;color:var(--TX3)">เบอร์โทร</div><div style="font-size:13px">${esc(r.phone || '—')}</div></div>
-        <div><div style="font-size:11px;color:var(--TX3)">วันที่ต้องการรับ</div><div style="font-size:13px;font-weight:600;color:${r.deliveryDate && r.deliveryDate < today() && !['received','dispatched'].includes(r.status) ? 'var(--R)' : 'inherit'}">${fmtD(r.deliveryDate || '')}</div></div>
-        <div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">วัตถุประสงค์</div><div style="font-size:13px">${esc(r.purpose || '—')}</div></div>
-        ${r.address ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">ที่อยู่จัดส่ง</div><div style="font-size:13px">${esc(r.address)}</div></div>` : ''}
-        ${r.note    ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">หมายเหตุ</div><div style="font-size:13px">${esc(r.note)}</div></div>` : ''}
+        ${kv('ลูกค้า', `<b>${esc(r.custName || '—')}</b><span class="mono" style="font-size:11px;color:var(--TX3);margin-left:6px">${esc(r.custCode || '')}</span>`)}
+        ${isNew ? kv('กลุ่มลูกค้า', esc(ni.custGroup || '—')) : ''}
+        ${kv('ผู้ติดต่อ', esc(r.contact || '—'))}
+        ${kv('เบอร์โทร', esc(r.phone || '—'))}
+        ${kv('วันที่ต้องการรับ', `<b style="color:${r.deliveryDate && r.deliveryDate < today() && !['received', 'dispatched'].includes(r.status) ? 'var(--R)' : 'inherit'}">${fmtD(r.deliveryDate || '')}</b>`)}
+        ${kv('วัตถุประสงค์', esc(r.purpose || '—'), true)}
+        ${r.address ? kv('ที่อยู่จัดส่ง', esc(r.address), true) : ''}
+        ${r.note ? kv('หมายเหตุ', esc(r.note), true) : ''}
       </div>
     </div>
 
-    <!-- รายการสินค้า -->
-    <div style="font-weight:600;font-size:13px;margin-bottom:8px">รายการสินค้าตัวอย่าง</div>
+    <div style="font-weight:600;font-size:13px;margin-bottom:8px">${isNew ? 'รายการสินค้าใหม่ / สเปค' : 'รายการสินค้าตัวอย่าง'}</div>
+    ${isNew ? (r.items || []).map((it, i) => _srNewItemView(it, i)).join('') + `<div style="text-align:right;font-size:13px;margin:-4px 0 14px">${_srItemsTotalHtml(r.items || [])}</div>` : `
     <div class="tw" style="margin-bottom:14px"><table>
       <thead><tr><th>#</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r">จำนวน</th><th>หน่วย</th><th>หมายเหตุ</th></tr></thead>
       <tbody>${(r.items || []).map((it, i) => `<tr>
@@ -19118,48 +19452,98 @@ function _srRenderDetail(id) {
         <td>${esc(it.unit || 'กก.')}</td>
         <td style="font-size:12px;color:var(--TX2)">${esc(it.note || '')}</td>
       </tr>`).join('')}</tbody>
-    </table></div>
+    </table></div>`}
 
-    <!-- ผลทดสอบ -->
-    ${r.testResult ? (() => {
-      const tr = r.testResult;
-      const resultStyle = { pass:'color:var(--G);font-weight:700', fail:'color:var(--R);font-weight:700', in_progress:'color:var(--N);font-weight:700' };
-      const resultLbl   = { pass:'✅ ผ่าน', fail:'❌ ไม่ผ่าน', in_progress:'🔄 กำลังทดสอบ' };
-      const decisionLbl = { will_order:'🛒 ตัดสินใจสั่งซื้อ', wont_order:'🚫 ไม่สั่งซื้อ', need_more:'🔁 ต้องการตัวอย่างเพิ่ม', undecided:'⏳ ยังไม่ตัดสินใจ' };
-      const stars = tr.satisfaction ? '⭐'.repeat(tr.satisfaction) + '☆'.repeat(5 - tr.satisfaction) : '—';
-      return `<div style="background:var(--LG);border:1.5px solid var(--G);border-radius:10px;padding:14px;margin-bottom:14px">
-        <div style="font-weight:600;font-size:13px;color:var(--G);margin-bottom:10px">🔬 ผลการทดสอบ</div>
-        <div class="cgrid c2" style="gap:10px 20px">
-          <div><div style="font-size:11px;color:var(--TX3)">วันที่ทดสอบ</div><div style="font-size:13px">${fmtD(tr.date || '')}</div></div>
-          <div><div style="font-size:11px;color:var(--TX3)">ผลการทดสอบ</div><div style="font-size:13px;${resultStyle[tr.result] || ''}">${resultLbl[tr.result] || tr.result || '—'}</div></div>
-          <div><div style="font-size:11px;color:var(--TX3)">ความพึงพอใจ</div><div style="font-size:14px">${stars}</div></div>
-          <div><div style="font-size:11px;color:var(--TX3)">การตัดสินใจ</div><div style="font-size:13px;font-weight:600">${decisionLbl[tr.decision] || tr.decision || '—'}</div></div>
-          <div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">ความคิดเห็นลูกค้า</div><div style="font-size:13px">${esc(tr.feedback || '—')}</div></div>
-          ${tr.note ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">หมายเหตุ</div><div style="font-size:13px">${esc(tr.note)}</div></div>` : ''}
-          ${(tr.itemResults || []).some(x => x.result) ? `<div style="grid-column:1/-1">
-            <div style="font-size:11px;color:var(--TX3);margin-bottom:6px">ผลทดสอบรายสินค้า</div>
-            <div class="tw"><table><thead><tr><th>สินค้า</th><th>ผล</th><th>หมายเหตุ</th></tr></thead><tbody>
-              ${(tr.itemResults || []).map(ir => `<tr>
-                <td style="font-size:12px">${esc(ir.skuName || ir.sku || '')}</td>
-                <td>${ir.result === 'pass' ? '<span class="badge bbg">✅ ผ่าน</span>' : ir.result === 'fail' ? '<span class="badge bbr">❌ ไม่ผ่าน</span>' : '<span class="badge bbl">—</span>'}</td>
-                <td style="font-size:12px;color:var(--TX2)">${esc(ir.note || '')}</td>
-              </tr>`).join('')}
-            </tbody></table></div>
-          </div>` : ''}
-        </div>
-        <div style="margin-top:8px;font-size:11px;color:var(--TX3)">บันทึกโดย ${esc(uidToName(tr.by) || tr.by || '')} เมื่อ ${fmtD(tr.date || '')}</div>
-      </div>`;
-    })() : ''}
+    ${isNew ? `<div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:10px">💰 GP / ค่าใช้จ่ายอื่นๆ</div>
+      <div style="font-size:13px;margin-bottom:${costs.length ? 8 : 0}px">GP เป้าหมาย: <b>${ni.gpTarget !== '' && ni.gpTarget != null ? esc(String(ni.gpTarget)) + '%' : '—'}</b></div>
+      ${costs.length ? `<div class="tw"><table><thead><tr><th>ค่าใช้จ่าย</th><th class="r">บาท</th><th>หมายเหตุ</th></tr></thead><tbody>
+        ${costs.map(c => `<tr><td>${esc(c.item || '')}</td><td class="r">${_srNum(c.amount)}</td><td style="font-size:12px;color:var(--TX2)">${esc(c.note || '')}</td></tr>`).join('')}
+        <tr><td><b>รวม</b></td><td class="r"><b>${_srNum(costTotal)}</b></td><td></td></tr></tbody></table></div>` : ''}
+    </div>` : ''}
 
-    <!-- Timeline -->
+    <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:8px">📎 ไฟล์แนบ</div>
+      <div id="sr-atts">${_srAttsHtml(isEditable || (isMine && r.status !== 'rejected'))}</div>
+    </div>
+
+    ${_srTestResultView(r)}
+
     <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:8px">ประวัติสถานะ</div>
     <div style="display:flex;flex-direction:column;gap:6px">
       ${timeline.map(t => `<div style="display:flex;gap:10px;align-items:flex-start;font-size:12px">
         <div style="min-width:80px;color:var(--TX3)">${t.at ? fmtD(t.at) : ''}</div>
         <div style="width:8px;height:8px;border-radius:50%;background:var(--G);margin-top:3px;flex-shrink:0"></div>
-        <div><span style="font-weight:600">${t.lbl}</span>${t.who ? ` — ${esc(t.who)}` : ''}</div>
+        <div><span style="font-weight:600">${t.lbl}</span>${t.who ? ` — ${esc(t.who)}` : ''}${t.note ? `<div style="color:var(--TX3)">${esc(t.note)}</div>` : ''}</div>
       </div>`).join('')}
     </div>
+  </div>`;
+  _srLoadAtts(id, isEditable || (isMine && r.status !== 'rejected'));
+  // คำขอใหม่ที่ส่งแล้วแต่ออกเลขไม่สำเร็จตอนส่ง (server ล่ม/เน็ตหลุด) — ลองออกเลขใหม่ครั้งเดียวต่อการเปิดหน้า
+  if (!r.doc_no && r.status !== 'draft' && (r.ts || 0) >= SR_DOCNO_SINCE && _srCanWrite() && _sr._noTried !== id) {
+    _sr._noTried = id;
+    _srAssignNo(id).then(no => { if (no && _sr.view === 'detail' && _sr.editId === id) _srRenderDetail(id); });
+  }
+}
+function _srTimeline(r) {
+  const nm = u => uidToName(u) || u;
+  return [
+    { st: 'draft',         lbl: 'สร้างคำขอ',          who: r.byName || r.by,     at: r.date },
+    { st: 'pending',       lbl: 'ส่งขออนุมัติ',        who: r.byName || r.by,     at: r.submitted_at ? r.submitted_at.slice(0, 10) : (r.status !== 'draft' ? r.date : null) },
+    { st: 'approved',      lbl: 'อนุมัติ',             who: nm(r.approved_by),    at: r.approved_at?.slice(0, 10) },
+    { st: 'rejected',      lbl: 'ปฏิเสธ',              who: nm(r.rejected_by),    at: r.rejected_at?.slice(0, 10), note: r.reject_reason },
+    { st: 'rd_developing', lbl: 'R&D รับเรื่อง',        who: nm(r.rd_accepted_by), at: r.rd_accepted_at?.slice(0, 10) },
+    { st: 'rd_ready',      lbl: 'R&D ทำตัวอย่างเสร็จ',  who: nm(r.rd_done_by),     at: r.rd_done_at?.slice(0, 10), note: r.rd_note },
+    { st: 'preparing',     lbl: 'เตรียมสินค้า',        who: nm(r.prep_by),        at: r.prep_at?.slice(0, 10) },
+    { st: 'dispatched',    lbl: 'จัดส่งแล้ว',          who: nm(r.disp_by),        at: r.disp_at?.slice(0, 10) },
+    { st: 'received',      lbl: 'รับแล้ว',             who: nm(r.recv_by),        at: r.recv_at?.slice(0, 10) },
+    { st: 'tested',        lbl: 'บันทึกผลทดสอบ',      who: nm(r.testResult?.by), at: r.testResult?.date },
+  ].filter(t => t.at || t.st === r.status);
+}
+function _srNewItemView(it, i) {
+  const spec = [['ประเภท', it.ptype], ['รสชาติ', it.flavor], ['ขนาด/ความหนา/การหั่น', it.size], ['น้ำหนักต่อแพ็ค', it.packWeight],
+    ['บรรจุภัณฑ์', it.pack], ['อุณหภูมิ', it.temp], ['อายุสินค้า', it.shelfLife], ['เมนู/การใช้งาน', it.menu],
+    ['สินค้าอ้างอิง', it.refSku ? `${it.refSku}${it.refName ? ' — ' + it.refName : ''}` : ''], ['ยี่ห้อ/ราคาคู่แข่ง', it.competitor], ['หมายเหตุ', it.note]]
+    .filter(([, v]) => v !== '' && v != null);
+  return `<div style="border:1px solid var(--BD);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--W)">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <b style="font-size:14px">${i + 1}. ${esc(it.name || '—')}</b>
+      <span style="font-size:12.5px">ตัวอย่าง <b>${_srNum(it.qty, Number(it.qty) % 1 ? 2 : 0)}</b> ${esc(it.unit || 'กก.')}
+        · ราคาเป้าหมาย <b>${_srNum(it.targetPrice, 2)}</b> บ./กก. · คาดการณ์ <b>${_srNum(it.forecastKg)}</b> กก./ด. · มูลค่า <b>${_srItemValue(it)}</b> บ./ด.</span>
+    </div>
+    ${spec.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px;font-size:12.5px">
+      ${spec.map(([k, v]) => `<div><span style="color:var(--TX3)">${k}:</span> ${esc(String(v))}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+function _srTestResultView(r) {
+  if (!r.testResult) return '';
+  const tr = r.testResult;
+  const resultStyle = { pass: 'color:var(--G);font-weight:700', fail: 'color:var(--R);font-weight:700', in_progress: 'color:var(--N);font-weight:700' };
+  const resultLbl   = { pass: '✅ ผ่าน', fail: '❌ ไม่ผ่าน', in_progress: '🔄 กำลังทดสอบ' };
+  const decisionLbl = { will_order: '🛒 ตัดสินใจสั่งซื้อ', wont_order: '🚫 ไม่สั่งซื้อ', need_more: '🔁 ต้องการตัวอย่างเพิ่ม', undecided: '⏳ ยังไม่ตัดสินใจ' };
+  const failLbl = (SR_FAIL_REASONS.find(([k]) => k === tr.failReason) || [])[1];
+  const stars = tr.satisfaction ? '⭐'.repeat(tr.satisfaction) + '☆'.repeat(5 - tr.satisfaction) : '—';
+  return `<div style="background:var(--LG);border:1.5px solid var(--G);border-radius:10px;padding:14px;margin-bottom:14px">
+    <div style="font-weight:600;font-size:13px;color:var(--G);margin-bottom:10px">🔬 ผลการทดสอบ</div>
+    <div class="cgrid c2" style="gap:10px 20px">
+      <div><div style="font-size:11px;color:var(--TX3)">วันที่ทดสอบ</div><div style="font-size:13px">${fmtD(tr.date || '')}</div></div>
+      <div><div style="font-size:11px;color:var(--TX3)">ผลการทดสอบ</div><div style="font-size:13px;${resultStyle[tr.result] || ''}">${resultLbl[tr.result] || tr.result || '—'}${failLbl ? ` — ${esc(failLbl)}` : ''}</div></div>
+      <div><div style="font-size:11px;color:var(--TX3)">ความพึงพอใจ</div><div style="font-size:14px">${stars}</div></div>
+      <div><div style="font-size:11px;color:var(--TX3)">การตัดสินใจ</div><div style="font-size:13px;font-weight:600">${decisionLbl[tr.decision] || tr.decision || '—'}</div></div>
+      <div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">ความคิดเห็นลูกค้า</div><div style="font-size:13px">${esc(tr.feedback || '—')}</div></div>
+      ${tr.note ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">หมายเหตุ</div><div style="font-size:13px">${esc(tr.note)}</div></div>` : ''}
+      ${(tr.itemResults || []).some(x => x.result) ? `<div style="grid-column:1/-1">
+        <div style="font-size:11px;color:var(--TX3);margin-bottom:6px">ผลทดสอบรายสินค้า</div>
+        <div class="tw"><table><thead><tr><th>สินค้า</th><th>ผล</th><th>หมายเหตุ</th></tr></thead><tbody>
+          ${(tr.itemResults || []).map(ir => `<tr>
+            <td style="font-size:12px">${esc(ir.skuName || ir.sku || '')}</td>
+            <td>${ir.result === 'pass' ? '<span class="badge bbg">✅ ผ่าน</span>' : ir.result === 'fail' ? '<span class="badge bbr">❌ ไม่ผ่าน</span>' : '<span class="badge bbl">—</span>'}</td>
+            <td style="font-size:12px;color:var(--TX2)">${esc(ir.note || '')}</td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      </div>` : ''}
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--TX3)">บันทึกโดย ${esc(uidToName(tr.by) || tr.by || '')} เมื่อ ${fmtD(tr.date || '')}</div>
   </div>`;
 }
 
@@ -19169,7 +19553,7 @@ function srApprove(id) {
   const r = reqs.find(x => x.id === id); if (!r) return;
   Object.assign(r, { status: 'approved', approved_by: UID, approved_at: new Date().toISOString() });
   saveSR(reqs);
-  SB.upsertSampleRequest(r).catch(e=>console.warn('upsertSampleRequest:',e));
+  SB.upsertSampleRequest(r).catch(e => console.warn('upsertSampleRequest:', e));
   audit('SAMPLE_APPROVE', id, {});
   toast('อนุมัติคำขอแล้ว');
   _sr.view = 'detail'; pgSample();
@@ -19181,7 +19565,7 @@ function srReject(id) {
   const r = reqs.find(x => x.id === id); if (!r) return;
   Object.assign(r, { status: 'rejected', rejected_by: UID, rejected_at: new Date().toISOString(), reject_reason: reason });
   saveSR(reqs);
-  SB.upsertSampleRequest(r).catch(e=>console.warn('upsertSampleRequest:',e));
+  SB.upsertSampleRequest(r).catch(e => console.warn('upsertSampleRequest:', e));
   audit('SAMPLE_REJECT', id, { reason });
   toast('ปฏิเสธคำขอแล้ว');
   _sr.view = 'detail'; pgSample();
@@ -19189,45 +19573,57 @@ function srReject(id) {
 function srSetStatus(id, status) {
   const reqs = getSR();
   const r = reqs.find(x => x.id === id); if (!r) return;
+  let rdNote = null;
+  if (status === 'rd_ready') {
+    rdNote = prompt('หมายเหตุจาก R&D (เช่น สูตร/ล็อตตัวอย่าง, ข้อจำกัด) — เว้นว่างได้, กด Cancel เพื่อยกเลิก:', r.rd_note || '');
+    if (rdNote === null) return;
+  }
   const now = new Date().toISOString();
   r.status = status;
+  if (status === 'rd_developing') { r.rd_accepted_by = UID; r.rd_accepted_at = now; }
+  if (status === 'rd_ready')      { r.rd_done_by = UID; r.rd_done_at = now; r.rd_note = rdNote.trim() || null; }
   if (status === 'preparing')  { r.prep_by  = UID; r.prep_at  = now; }
   if (status === 'dispatched') { r.disp_by  = UID; r.disp_at  = now; }
   if (status === 'received')   { r.recv_by  = UID; r.recv_at  = now; }
   r.updated_by = UID; r.updated_at = now;
   saveSR(reqs);
-  SB.upsertSampleRequest(r).catch(e=>console.warn('upsertSampleRequest:',e));
+  SB.upsertSampleRequest(r).catch(e => console.warn('upsertSampleRequest:', e));
   audit('SAMPLE_STATUS', id, { status });
   toast('อัปเดตสถานะแล้ว');
   _sr.view = 'detail'; pgSample();
 }
-function srSubmitById(id) {
+async function srSubmitById(id) {
   const reqs = getSR();
   const r = reqs.find(x => x.id === id); if (!r) return;
+  if (!(r.items || []).length) { toast('คำขอนี้ยังไม่มีรายการสินค้า — กดแก้ไขก่อน', 'warn'); return; }
   Object.assign(r, { status: 'pending', submitted_at: new Date().toISOString(), updated_by: UID });
-  saveSR(reqs);
-  SB.upsertSampleRequest(r).catch(e=>console.warn('upsertSampleRequest:',e));
+  const ok = await _srSave(r);
   audit('SAMPLE_SUBMIT', id, {});
-  toast('ส่งคำขออนุมัติแล้ว');
+  const no = ok ? await _srAssignNo(id) : null;
+  toast(no ? `ส่งคำขออนุมัติแล้ว — เลขที่ ${no}` : 'ส่งคำขอแล้ว แต่ยังออกเลขที่เอกสารไม่ได้ (จะลองใหม่เมื่อเปิดดูคำขอ)', no ? 'ok' : 'warn');
   _sr.view = 'detail'; pgSample();
 }
 function srDelete(id) {
   if (!confirm('ลบคำขอนี้?')) return;
   saveSR(getSR().filter(r => r.id !== id));
-  SB.deleteSampleRequest(id).catch(e=>console.warn('deleteSampleRequest:',e));
+  SB.deleteSampleRequest(id).catch(e => console.warn('deleteSampleRequest:', e));
   audit('SAMPLE_DELETE', id, {});
   toast('ลบคำขอแล้ว');
   _sr.view = 'home'; pgSample();
 }
 function _srEditExisting(id) {
   const r = getSR().find(x => x.id === id); if (!r) return;
+  const type = srType(r);
+  const ni = srNewInfo(r);
   _sr.editId = id;
   _sr.form = {
+    req_type: type,
     custCode: r.custCode, custName: r.custName,
     contact: r.contact || '', phone: r.phone || '',
     purpose: r.purpose || '', deliveryDate: r.deliveryDate || '',
     address: r.address || '', note: r.note || '',
     items: JSON.parse(JSON.stringify(r.items || [])),
+    new_info: { custGroup: ni.custGroup || '', gpTarget: ni.gpTarget ?? '', costs: JSON.parse(JSON.stringify(ni.costs || [])) },
   };
   _sr.view = 'form';
   pgSample();
@@ -19238,19 +19634,20 @@ function _srRenderTestResult(id) {
   const r = getSR().find(x => x.id === id);
   if (!r) { _sr.view = 'home'; pgSample(); return; }
   const tr = r.testResult || {};
+  const isNew = srType(r) === 'new';
   const inpSt = 'padding:8px 10px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:var(--font);font-size:13px;box-sizing:border-box';
 
-  const starBtns = [1,2,3,4,5].map(n =>
+  const starBtns = [1, 2, 3, 4, 5].map(n =>
     `<button type="button" onclick="document.getElementById('sr-tr-sat').value=${n};document.querySelectorAll('.sr-star').forEach((b,i)=>{b.style.color=i<${n}?'var(--Y)':'var(--TX3)'})"
-      class="sr-star" style="font-size:22px;background:none;border:none;cursor:pointer;color:${(tr.satisfaction||0)>=n?'var(--Y)':'var(--TX3)'};padding:0 2px">⭐</button>`
+      class="sr-star" style="font-size:22px;background:none;border:none;cursor:pointer;color:${(tr.satisfaction || 0) >= n ? 'var(--Y)' : 'var(--TX3)'};padding:0 2px">⭐</button>`
   ).join('');
 
   document.getElementById('ct').innerHTML = `
-  <button onclick="_sr.view='detail';pgSample()" style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-size:12px;cursor:pointer;background:var(--bg2);border:1px solid var(--BD);color:var(--TX2);font-weight:500;margin-bottom:16px">← กลับรายละเอียด</button>
+  ${_srBack('detail', '← กลับรายละเอียด')}
   <div class="card">
     <div class="ch">
       <div class="ct2">🔬 บันทึกผลการทดสอบ</div>
-      <div style="font-size:12px;color:var(--TX3)">${esc(r.custName || '')} — คำขอ ${esc(r.id || '')}</div>
+      <div style="font-size:12px;color:var(--TX3)">${esc(r.custName || '')} — ${esc(srNo(r))}</div>
     </div>
 
     <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px">
@@ -19262,29 +19659,34 @@ function _srRenderTestResult(id) {
         </div>
         <div class="field" style="margin:0">
           <label>ผลการทดสอบ *</label>
-          <select id="sr-tr-result" style="${inpSt}">
+          <select id="sr-tr-result" style="${inpSt}" onchange="const w=document.getElementById('sr-tr-reason-wrap');if(w)w.style.display=this.value==='fail'?'':'none'">
             <option value="">— เลือกผล —</option>
-            <option value="pass"        ${tr.result==='pass'?'selected':''}>✅ ผ่าน</option>
-            <option value="fail"        ${tr.result==='fail'?'selected':''}>❌ ไม่ผ่าน</option>
-            <option value="in_progress" ${tr.result==='in_progress'?'selected':''}>🔄 กำลังทดสอบ</option>
+            <option value="pass"        ${tr.result === 'pass' ? 'selected' : ''}>✅ ผ่าน</option>
+            <option value="fail"        ${tr.result === 'fail' ? 'selected' : ''}>❌ ไม่ผ่าน</option>
+            <option value="in_progress" ${tr.result === 'in_progress' ? 'selected' : ''}>🔄 กำลังทดสอบ</option>
           </select>
         </div>
+        ${isNew ? `<div class="field" id="sr-tr-reason-wrap" style="margin:0;${tr.result === 'fail' ? '' : 'display:none'}">
+          <label>เหตุผลที่ไม่ผ่าน</label>
+          <select id="sr-tr-reason" style="${inpSt}"><option value="">— ระบุเหตุผล —</option>
+            ${SR_FAIL_REASONS.map(([k, l]) => `<option value="${k}" ${tr.failReason === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        </div>` : ''}
         <div class="field" style="margin:0">
           <label>ความพึงพอใจของลูกค้า</label>
           <div style="display:flex;align-items:center;gap:4px;margin-top:4px">
             ${starBtns}
             <input type="hidden" id="sr-tr-sat" value="${tr.satisfaction || 0}">
-            <span id="sr-tr-sat-lbl" style="font-size:12px;color:var(--TX3);margin-left:6px">${tr.satisfaction ? tr.satisfaction+'/5' : 'ยังไม่ให้คะแนน'}</span>
+            <span id="sr-tr-sat-lbl" style="font-size:12px;color:var(--TX3);margin-left:6px">${tr.satisfaction ? tr.satisfaction + '/5' : 'ยังไม่ให้คะแนน'}</span>
           </div>
         </div>
         <div class="field" style="margin:0">
           <label>การตัดสินใจของลูกค้า</label>
           <select id="sr-tr-decision" style="${inpSt}">
             <option value="">— ยังไม่ระบุ —</option>
-            <option value="will_order"  ${tr.decision==='will_order'?'selected':''}>🛒 ตัดสินใจสั่งซื้อ</option>
-            <option value="wont_order"  ${tr.decision==='wont_order'?'selected':''}>🚫 ไม่สั่งซื้อ</option>
-            <option value="need_more"   ${tr.decision==='need_more'?'selected':''}>🔁 ต้องการตัวอย่างเพิ่ม</option>
-            <option value="undecided"   ${tr.decision==='undecided'?'selected':''}>⏳ ยังไม่ตัดสินใจ</option>
+            <option value="will_order"  ${tr.decision === 'will_order' ? 'selected' : ''}>🛒 ตัดสินใจสั่งซื้อ</option>
+            <option value="wont_order"  ${tr.decision === 'wont_order' ? 'selected' : ''}>🚫 ไม่สั่งซื้อ</option>
+            <option value="need_more"   ${tr.decision === 'need_more' ? 'selected' : ''}>🔁 ต้องการตัวอย่างเพิ่ม</option>
+            <option value="undecided"   ${tr.decision === 'undecided' ? 'selected' : ''}>⏳ ยังไม่ตัดสินใจ</option>
           </select>
         </div>
         <div class="field" style="margin:0;grid-column:1/-1">
@@ -19306,15 +19708,15 @@ function _srRenderTestResult(id) {
         return `<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;padding:10px;background:var(--W);border-radius:8px;border:1px solid var(--BD)">
           <div style="flex:2;min-width:160px">
             <div style="font-size:11px;color:var(--TX3);margin-bottom:2px">สินค้า</div>
-            <div style="font-size:13px;font-weight:600">${esc(it.skuName || it.sku || '')}</div>
+            <div style="font-size:13px;font-weight:600">${esc(srItemLabel(it))}</div>
             <div style="font-size:11px;color:var(--TX3)">${it.qty} ${it.unit || 'กก.'}</div>
           </div>
           <div style="width:140px">
             <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">ผลทดสอบ</div>
             <select id="sr-ir-result-${i}" style="padding:6px 8px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:var(--font);font-size:12px">
               <option value="">— ยังไม่ระบุ —</option>
-              <option value="pass" ${ir.result==='pass'?'selected':''}>✅ ผ่าน</option>
-              <option value="fail" ${ir.result==='fail'?'selected':''}>❌ ไม่ผ่าน</option>
+              <option value="pass" ${ir.result === 'pass' ? 'selected' : ''}>✅ ผ่าน</option>
+              <option value="fail" ${ir.result === 'fail' ? 'selected' : ''}>❌ ไม่ผ่าน</option>
             </select>
           </div>
           <div style="flex:3;min-width:160px">
@@ -19329,7 +19731,7 @@ function _srRenderTestResult(id) {
 
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn" onclick="_sr.view='detail';pgSample()">ยกเลิก</button>
-      <button class="btn btn-g" onclick="srSaveTestResult('${String(id).replace(/'/g,"\\'")}')">💾 บันทึกผลทดสอบ</button>
+      <button class="btn btn-g" onclick="srSaveTestResult('${String(id).replace(/'/g, "\\'")}')">💾 บันทึกผลทดสอบ</button>
     </div>
   </div>`;
 }
@@ -19342,22 +19744,199 @@ function srSaveTestResult(id) {
   const decision = document.getElementById('sr-tr-decision')?.value;
   const feedback = document.getElementById('sr-tr-feedback')?.value?.trim() || '';
   const note     = document.getElementById('sr-tr-note')?.value?.trim() || '';
+  const failReason = result === 'fail' ? (document.getElementById('sr-tr-reason')?.value || '') : '';
   if (!date)   { toast('กรุณาระบุวันที่ทดสอบ', 'warn'); return; }
   if (!result) { toast('กรุณาเลือกผลการทดสอบ', 'warn'); return; }
   const itemResults = (r.items || []).map((it, i) => ({
-    sku:     it.sku,
-    skuName: it.skuName || '',
+    sku:     it.sku || '',
+    skuName: srItemLabel(it),
     result:  document.getElementById(`sr-ir-result-${i}`)?.value || '',
     note:    document.getElementById(`sr-ir-note-${i}`)?.value?.trim() || '',
   }));
   const reqs = getSR();
   const rec  = reqs.find(x => x.id === id); if (!rec) return;
-  rec.testResult = { date, result, satisfaction: sat, decision, feedback, note, itemResults, by: UID, updated_at: new Date().toISOString() };
+  rec.testResult = { date, result, failReason, satisfaction: sat, decision, feedback, note, itemResults, by: UID, updated_at: new Date().toISOString() };
   saveSR(reqs);
-  SB.upsertSampleRequest(rec).catch(e=>console.warn('upsertSampleRequest:',e));
-  audit('SAMPLE_TEST_RESULT', id, { result, decision, satisfaction: sat });
+  SB.upsertSampleRequest(rec).catch(e => console.warn('upsertSampleRequest:', e));
+  audit('SAMPLE_TEST_RESULT', id, { result, decision, satisfaction: sat, failReason });
   toast('บันทึกผลทดสอบแล้ว');
   _sr.view = 'detail'; pgSample();
+}
+
+// ── พิมพ์ / PDF ──────────────────────────────────────────────
+// แนวทางเดียวกับ draftPreviewPDF(): เปิดหน้าต่าง HTML (ฟอนต์ Sarabun + หัวกระดาษบริษัท) แล้วสั่งพิมพ์ → "บันทึกเป็น PDF"
+// ต้องเปิดหน้าต่างก่อน await ใดๆ (อยู่ใน click เดียวกัน) ไม่งั้นเบราว์เซอร์บล็อกป็อปอัป
+function _srOpenPrintWindow() {
+  const w = window.open('', '_blank');
+  if (!w) { toast('เบราว์เซอร์บล็อกป็อปอัป กรุณาอนุญาตแล้วลองใหม่', 'warn'); return null; }
+  try { w.document.body && (w.document.body.textContent = 'กำลังสร้างเอกสาร...'); } catch (e) { /* ignore */ }
+  return w;
+}
+function _srWritePrint(w, { title, docNo, orient = 'portrait', body, extraCss = '' }) {
+  const logoSrc = document.querySelector('#ls img')?.src || '';
+  w.document.open();
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Charmonman:wght@700&display=swap">
+  <style>
+    @page{size:A4 ${orient};margin:9mm}
+    body{font-family:'Sarabun',sans-serif;margin:0;color:#111;background:#EEF1F5;font-size:11.5px}
+    .sheet{margin:0 auto;background:#fff}
+    .letterhead{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:2px solid #D4AF37;background:linear-gradient(135deg,#1E3A5F,#28466e);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .letterhead img{width:42px;height:42px;border-radius:50%;background:#fff;padding:3px}
+    .letterhead .co{color:#fff}
+    .letterhead .co .name{font-size:16px;font-weight:700}
+    .letterhead .co .sub{font-size:10.5px;color:#cfe0f5;margin-top:2px}
+    .letterhead .docno{margin-left:auto;text-align:right;color:#fff}
+    .letterhead .docno .lbl{font-size:9.5px;color:#cfe0f5;letter-spacing:.05em}
+    .letterhead .docno .no{font-size:17px;font-weight:700;color:#D4AF37;font-family:monospace}
+    .body{padding:10px 16px}
+    h1{font-size:17px;margin:4px 0 8px;color:#1E3A5F}
+    .meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 22px;border:1px solid #CDD5E0;border-radius:6px;padding:7px 10px;margin-bottom:8px}
+    .meta div{display:flex;gap:6px}.meta b{min-width:92px;color:#475569;font-weight:600}.meta .full{grid-column:1/-1}
+    table{width:100%;border-collapse:collapse;margin:6px 0}
+    th{background:#1E3A5F;color:#fff;font-weight:600;padding:4px 5px;font-size:10.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    td{border:1px solid #CDD5E0;padding:4px 5px;vertical-align:top}
+    td.r,th.r{text-align:right}td.c,th.c{text-align:center}
+    .sec{font-weight:700;color:#1E3A5F;margin:10px 0 3px;font-size:12.5px;border-bottom:1.5px solid #D4AF37;padding-bottom:2px}
+    .spec{font-size:10.5px;color:#334155}.spec span{display:inline-block;margin-right:10px}
+    .muted{color:#64748b}
+    .signs{display:grid;gap:10px;margin-top:16px;break-inside:avoid}
+    .sign{border:1px solid #CDD5E0;border-radius:6px;padding:6px;text-align:center;min-height:92px;display:flex;flex-direction:column;justify-content:flex-end}
+    .sign .role{font-weight:700;color:#1E3A5F;font-size:11px;margin-bottom:auto}
+    .sign img{max-height:38px;max-width:100%;object-fit:contain;mix-blend-mode:multiply;margin:4px auto}
+    .sign .sigtext{font-family:'Charmonman',cursive;font-weight:700;font-size:15px;color:#1a2b4c;margin:6px 0}
+    .sign .line{border-top:1px dotted #64748b;margin-top:4px;padding-top:3px;font-size:10.5px}
+    .sign .dt{font-size:10px;color:#64748b}
+    ${extraCss}
+    @media print{ body{background:#fff} tr{break-inside:avoid} }
+  </style></head><body>
+  <div class="sheet">
+    <div class="letterhead">
+      ${logoSrc ? `<img src="${logoSrc}" alt="โลโก้">` : ''}
+      <div class="co"><div class="name">บริษัท ไทยซอสเซส มาร์เก็ตติ้ง จำกัด</div><div class="sub">Thai Sausage Marketing Co., Ltd. · Est. 1963</div></div>
+      ${docNo ? `<div class="docno"><div class="lbl">เลขที่เอกสาร</div><div class="no">${esc(docNo)}</div></div>` : ''}
+    </div>
+    <div class="body">${body}</div>
+  </div>
+  <script>window.onload=()=>{const go=()=>setTimeout(()=>window.print(),200);document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go();}<` + `/script>
+  </body></html>`);
+  w.document.close();
+}
+const _srPD = d => d ? promoFmtD(d) : '';
+
+// ใบเบิก/ใบขอตัวอย่างทีละใบ (A4 แนวตั้ง) — ช่องลงนามใช้รูปจาก "ลายเซ็นของฉัน" ของผู้ทำแต่ละขั้น (ไม่มีรูป = ชื่อตัวเขียน)
+async function srPrintDoc(id) {
+  const r = getSR().find(x => x.id === id); if (!r) return;
+  const w = _srOpenPrintWindow(); if (!w) return;
+  const isNew = srType(r) === 'new', ni = srNewInfo(r), items = r.items || [];
+  const atts = _sr.attsFor === id ? (_sr.atts || []) : await SB.getSampleRequestAttachments(id);
+  const steps = [
+    { role: 'ผู้ขอ', uid: r.by, at: r.submitted_at || (r.status !== 'draft' ? r.date : null) },
+    { role: r.status === 'rejected' ? 'ผู้ปฏิเสธ' : 'ผู้อนุมัติ', uid: r.status === 'rejected' ? r.rejected_by : r.approved_by, at: r.status === 'rejected' ? r.rejected_at : r.approved_at },
+    ...(isNew ? [{ role: 'R&D', uid: r.rd_done_by || r.rd_accepted_by, at: r.rd_done_at || null }]
+              : [{ role: 'ผู้เตรียมสินค้า', uid: r.prep_by, at: r.prep_at }]),
+    { role: 'ผู้จัดส่ง', uid: r.disp_by, at: r.disp_at },
+  ];
+  const sigMap = await _sigLoadMap(steps.filter(s => s.uid && s.at).map(s => s.uid));
+  const signHtml = `<div class="signs" style="grid-template-columns:repeat(${steps.length},1fr)">${steps.map(s => {
+    const signed = s.uid && s.at, img = signed ? sigMap.get(s.uid) : null, nm = s.uid ? (uidToName(s.uid) || s.uid) : '';
+    return `<div class="sign"><div class="role">${s.role}</div>
+      ${signed ? (img ? `<img src="${esc(img)}" alt="ลายเซ็น">` : `<div class="sigtext">${esc(nm)}</div>`) : ''}
+      <div class="line">${signed ? esc(nm) : '(..............................)'}</div>
+      <div class="dt">วันที่ ${signed ? esc(_srPD(s.at)) : '......../......../........'}</div></div>`;
+  }).join('')}</div>`;
+
+  const itemsHtml = isNew ? items.map((it, i) => {
+    const spec = [['ประเภท', it.ptype], ['รสชาติ', it.flavor], ['ขนาด/ความหนา/การหั่น', it.size], ['น้ำหนัก/แพ็ค', it.packWeight],
+      ['บรรจุภัณฑ์', it.pack], ['อุณหภูมิ', it.temp], ['อายุสินค้า', it.shelfLife], ['เมนู/การใช้งาน', it.menu]].filter(([, v]) => v);
+    const ref = [['สินค้าอ้างอิง', it.refSku ? `${it.refSku}${it.refName ? ' ' + it.refName : ''}` : ''], ['คู่แข่ง', it.competitor], ['หมายเหตุ', it.note]].filter(([, v]) => v);
+    return `<tr><td class="c">${i + 1}</td>
+      <td><b>${esc(it.name || '')}</b>
+        ${spec.length ? `<div class="spec">${spec.map(([k, v]) => `<span><span class="muted">${k}:</span> ${esc(String(v))}</span>`).join('')}</div>` : ''}
+        ${ref.length ? `<div class="spec">${ref.map(([k, v]) => `<span><span class="muted">${k}:</span> ${esc(String(v))}</span>`).join('')}</div>` : ''}</td>
+      <td class="r">${_srNum(it.qty, Number(it.qty) % 1 ? 2 : 0)} ${esc(it.unit || 'กก.')}</td>
+      <td class="r">${_srNum(it.targetPrice, 2)}</td><td class="r">${_srNum(it.forecastKg)}</td><td class="r">${_srItemValue(it)}</td></tr>`;
+  }).join('') : items.map((it, i) => `<tr><td class="c">${i + 1}</td><td style="font-family:monospace">${esc(it.sku || '')}</td><td>${esc(it.skuName || '')}</td>
+      <td class="r">${_srNum(it.qty, Number(it.qty) % 1 ? 2 : 0)}</td><td>${esc(it.unit || 'กก.')}</td><td>${esc(it.note || '')}</td></tr>`).join('');
+  const kg = items.reduce((s, it) => s + (Number(it.forecastKg) || 0), 0);
+  const val = items.reduce((s, it) => s + (Number(it.targetPrice) || 0) * (Number(it.forecastKg) || 0), 0);
+  const costs = ni.costs || [], costTotal = costs.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const tr = r.testResult;
+  const trLbl = tr ? ({ pass: 'ผ่าน', fail: 'ไม่ผ่าน', in_progress: 'กำลังทดสอบ' }[tr.result] || tr.result) : '';
+  const failLbl = tr ? (SR_FAIL_REASONS.find(([k]) => k === tr.failReason) || [])[1] : '';
+
+  _srWritePrint(w, {
+    title: `${isNew ? 'ใบขอตัวอย่างสินค้าใหม่' : 'ใบเบิกตัวอย่างสินค้า'} ${srNo(r)}`,
+    docNo: r.doc_no || r.id, orient: 'portrait',
+    body: `<h1>${isNew ? 'ใบขอตัวอย่างสินค้าใหม่ (New Product Sample Request)' : 'ใบเบิกตัวอย่างสินค้า (Sample Withdrawal)'}</h1>
+    <div class="meta">
+      <div><b>ลูกค้า</b>${esc(r.custName || '')} <span class="muted">${esc(r.custCode || '')}</span></div>
+      <div><b>วันที่ขอ</b>${esc(_srPD(r.date))}</div>
+      ${isNew ? `<div><b>กลุ่มลูกค้า</b>${esc(ni.custGroup || '-')}</div>` : ''}
+      <div><b>ผู้ติดต่อ / โทร</b>${esc(r.contact || '-')}${r.phone ? ' · ' + esc(r.phone) : ''}</div>
+      <div><b>วันที่ต้องการรับ</b>${esc(_srPD(r.deliveryDate) || '-')}</div>
+      <div><b>สถานะ</b>${esc((SR_STATUS[r.status] || {}).lbl || r.status || '')}</div>
+      <div class="full"><b>วัตถุประสงค์</b>${esc(r.purpose || '-')}</div>
+      ${r.address ? `<div class="full"><b>ที่อยู่จัดส่ง</b>${esc(r.address)}</div>` : ''}
+      ${r.note ? `<div class="full"><b>หมายเหตุ</b>${esc(r.note)}</div>` : ''}
+    </div>
+    <div class="sec">${isNew ? 'รายการสินค้าใหม่ / สเปคที่ต้องการ' : 'รายการสินค้าตัวอย่าง'}</div>
+    ${isNew ? `<table><thead><tr><th class="c" style="width:22px">#</th><th>สินค้า / สเปค / อ้างอิง</th><th class="r" style="width:70px">ตัวอย่าง</th>
+        <th class="r" style="width:66px">ราคาเป้าหมาย<br>บ./กก.</th><th class="r" style="width:64px">คาดการณ์<br>กก./ด.</th><th class="r" style="width:74px">มูลค่า<br>บ./ด.</th></tr></thead>
+      <tbody>${itemsHtml}${items.length > 1 ? `<tr><td></td><td><b>รวม</b></td><td></td><td></td><td class="r"><b>${_srNum(kg)}</b></td><td class="r"><b>${_srNum(val)}</b></td></tr>` : ''}</tbody></table>
+      <div class="sec">GP / ค่าใช้จ่ายอื่นๆ</div>
+      <div>GP เป้าหมาย: <b>${ni.gpTarget !== '' && ni.gpTarget != null ? esc(String(ni.gpTarget)) + '%' : '-'}</b></div>
+      ${costs.length ? `<table><thead><tr><th>ค่าใช้จ่าย</th><th class="r" style="width:90px">บาท</th><th>หมายเหตุ</th></tr></thead><tbody>
+        ${costs.map(c => `<tr><td>${esc(c.item || '')}</td><td class="r">${_srNum(c.amount)}</td><td>${esc(c.note || '')}</td></tr>`).join('')}
+        <tr><td><b>รวม</b></td><td class="r"><b>${_srNum(costTotal)}</b></td><td></td></tr></tbody></table>` : ''}
+      ${r.rd_note ? `<div class="sec">หมายเหตุ R&D</div><div>${esc(r.rd_note)}</div>` : ''}`
+    : `<table><thead><tr><th class="c" style="width:22px">#</th><th style="width:80px">รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r" style="width:60px">จำนวน</th><th style="width:46px">หน่วย</th><th>หมายเหตุ</th></tr></thead>
+      <tbody>${itemsHtml}</tbody></table>`}
+    ${atts.length ? `<div class="muted" style="margin-top:6px">ไฟล์แนบ (${atts.length}): ${atts.map(a => esc(a.filename)).join(', ')}</div>` : ''}
+    ${r.status === 'rejected' ? `<div style="margin-top:8px;color:#A32D2D"><b>ปฏิเสธ</b>${r.reject_reason ? ' — ' + esc(r.reject_reason) : ''}</div>` : ''}
+    ${tr ? `<div class="sec">ผลการทดสอบ</div>
+      <div>วันที่ ${esc(_srPD(tr.date))} · ผล <b>${esc(trLbl)}</b>${failLbl ? ` (${esc(failLbl)})` : ''}${tr.satisfaction ? ` · ความพึงพอใจ ${tr.satisfaction}/5` : ''}</div>
+      ${tr.feedback ? `<div>ความคิดเห็นลูกค้า: ${esc(tr.feedback)}</div>` : ''}` : ''}
+    ${signHtml}`,
+  });
+}
+
+// รายงานประวัติตามตัวกรองที่เลือกบนหน้าแรก (A4 แนวนอน) + สรุปจำนวนตามสถานะ
+function srPrintReport() {
+  const rows = _srFilteredRows();
+  if (!rows.length) { toast('ไม่มีรายการตามตัวกรอง', 'warn'); return; }
+  const w = _srOpenPrintWindow(); if (!w) return;
+  const isNew = _sr.type === 'new', f = _sr.f;
+  const tabLbl = { all: 'ทั้งหมด', pending: 'รออนุมัติ', rd: 'งาน R&D', dispatch: 'รอเตรียม/จัดส่ง' }[_sr.tab] || '';
+  const cond = [
+    `ประเภท: ${SR_TYPES[_sr.type].lbl}`, `มุมมอง: ${tabLbl}`,
+    f.from || f.to ? `วันที่ขอ ${_srPD(f.from) || '…'} – ${_srPD(f.to) || '…'}` : '',
+    f.status ? `สถานะ: ${SR_STATUS[f.status]?.lbl || f.status}` : '', f.cust ? `ลูกค้า: ${f.cust}` : '',
+    f.by ? `ผู้ขอ: ${uidToName(f.by) || f.by}` : '', _sr.filter ? `ค้นหา: ${_sr.filter}` : '',
+  ].filter(Boolean).join(' · ');
+  const byStatus = rows.reduce((m, r) => m.set(r.status, (m.get(r.status) || 0) + 1), new Map());
+  const trLbl = { pass: 'ผ่าน', fail: 'ไม่ผ่าน', in_progress: 'กำลังทดสอบ' };
+  const body = rows.map((r, i) => {
+    const items = r.items || [];
+    const itemTxt = items.map(it => isNew ? esc(it.name || '') : `${esc(it.skuName || it.sku || '')} <span class="muted">${_srNum(it.qty, Number(it.qty) % 1 ? 2 : 0)} ${esc(it.unit || '')}</span>`).join('<br>');
+    const tr = r.testResult, fl = tr ? (SR_FAIL_REASONS.find(([k]) => k === tr.failReason) || [])[1] : '';
+    return `<tr><td class="c">${i + 1}</td><td style="font-family:monospace;white-space:nowrap">${esc(srNo(r))}</td><td>${esc(_srPD(r.date))}</td>
+      <td>${esc(r.custName || '')}</td><td>${itemTxt}</td>
+      ${isNew ? `<td class="r">${items.map(it => _srNum(it.targetPrice, 2)).join('<br>')}</td><td class="r">${items.map(it => _srNum(it.forecastKg)).join('<br>')}</td>`
+              : `<td>${esc(r.purpose || '')}</td>`}
+      <td>${esc(uidToName(r.by) || r.by || '')}</td><td>${esc((SR_STATUS[r.status] || {}).lbl || r.status)}</td>
+      <td>${tr ? esc(trLbl[tr.result] || tr.result || '') + (fl ? ` (${esc(fl)})` : '') : ''}</td></tr>`;
+  }).join('');
+  _srWritePrint(w, {
+    title: `รายงานประวัติ${isNew ? 'ขอตัวอย่างสินค้าใหม่' : 'เบิกตัวอย่างสินค้าเดิม'}`, orient: 'landscape',
+    body: `<h1>รายงานประวัติ${isNew ? 'การขอตัวอย่างสินค้าใหม่' : 'การเบิกตัวอย่างสินค้าเดิม'}</h1>
+    <div class="muted" style="margin-bottom:4px">${esc(cond)} · พิมพ์เมื่อ ${esc(_srPD(new Date().toISOString()))} โดย ${esc(UNAME || '')}</div>
+    <div style="margin-bottom:4px">รวม <b>${rows.length}</b> รายการ — ${[...byStatus].map(([s, n]) => `${esc(SR_STATUS[s]?.lbl || s)} <b>${n}</b>`).join(' · ')}</div>
+    <table><thead><tr><th class="c" style="width:24px">#</th><th style="width:100px">เลขที่</th><th style="width:62px">วันที่ขอ</th><th>ลูกค้า</th><th>สินค้า</th>
+      ${isNew ? '<th class="r" style="width:66px">ราคาเป้าหมาย</th><th class="r" style="width:62px">คาดการณ์ กก./ด.</th>' : '<th>วัตถุประสงค์</th>'}
+      <th style="width:90px">ผู้ขอ</th><th style="width:90px">สถานะ</th><th style="width:90px">ผลทดสอบ</th></tr></thead>
+    <tbody>${body}</tbody></table>`,
+  });
 }
 </script>
 </body>

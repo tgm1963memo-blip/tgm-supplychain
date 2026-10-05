@@ -465,6 +465,33 @@ function runMigrations(db) {
     );
   `);
 
+  // ของตัวอย่าง แยก สินค้าเดิม / สินค้าใหม่ (2026-10-05) — คำขอเดิมทั้งหมดเป็น 'existing'
+  // doc_no = เลขที่เอกสาร SE/SN<พ.ศ.>-<เดือน>-<ลำดับ> ออกโดย server ตอนส่งคำขอ (routes/sampleRequests.js)
+  // new_info = ส่วนหัวของคำขอสินค้าใหม่ (กลุ่มลูกค้า, GP เป้าหมาย, ค่าใช้จ่ายอื่นๆ) · rd_* = ขั้น R&D ของสินค้าใหม่
+  addColumnIfMissing(db, 'sample_requests', 'req_type', "req_type TEXT NOT NULL DEFAULT 'existing'");
+  addColumnIfMissing(db, 'sample_requests', 'doc_no', 'doc_no TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'new_info', 'new_info TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_accepted_by', 'rd_accepted_by TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_accepted_at', 'rd_accepted_at TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_done_by', 'rd_done_by TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_done_at', 'rd_done_at TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_note', 'rd_note TEXT');
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_requests_doc_no ON sample_requests(doc_no) WHERE doc_no IS NOT NULL;
+    -- ไฟล์แนบของคำขอตัวอย่าง (รูป/สเปค) — โครงเดียวกับ promo_draft_attachments
+    CREATE TABLE IF NOT EXISTS sample_request_attachments (
+      id          TEXT PRIMARY KEY,
+      request_id  TEXT NOT NULL,
+      filename    TEXT NOT NULL,
+      mime_type   TEXT NOT NULL,
+      content     BLOB NOT NULL,
+      note        TEXT,
+      uploaded_by TEXT,
+      created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sra_request ON sample_request_attachments(request_id);
+  `);
+
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 }
 

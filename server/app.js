@@ -352,11 +352,15 @@ function buildApp(db, opts = {}) {
     fields: ['id', 'cust_code', 'cust_name', 'contact', 'phone', 'purpose', 'delivery_date', 'address', 'note',
       'items', 'test_result', 'status', 'by', 'by_name', 'date', 'ts',
       'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'reject_reason',
-      'prep_by', 'prep_at', 'disp_by', 'disp_at', 'recv_by', 'recv_at', 'submitted_at', 'updated_by'],
-    jsonFields: ['items', 'test_result'],
+      'prep_by', 'prep_at', 'disp_by', 'disp_at', 'recv_by', 'recv_at', 'submitted_at', 'updated_by',
+      // สินค้าเดิม/สินค้าใหม่ + ขั้น R&D (2026-10-05) · doc_no จงใจไม่อยู่ในรายการ — ออกโดย routes/sampleRequests.js เท่านั้น
+      'req_type', 'new_info', 'rd_accepted_by', 'rd_accepted_at', 'rd_done_by', 'rd_done_at', 'rd_note'],
+    jsonFields: ['items', 'test_result', 'new_info'],
     orderBy: 'ts',
     writeRoles: SAMPLE_REQUEST_ROLES,
   }));
+  app.use('/api/sample_request_actions', authed, require('./routes/sampleRequests')(db, SAMPLE_REQUEST_ROLES));
+  app.use('/api/sample_request_attachments', require('./routes/sampleRequestAttachments')(db, SAMPLE_REQUEST_ROLES));
 
   // Workflow อนุมัติแบบ multi-level ใช้ร่วมกันหลาย entity (2026-09) — ดู db/schema.sql
   app.use('/api/approval_workflow_templates', authed, require('./middleware/validateWorkflow')(db), makeCrudRouter(db, 'approval_workflow_templates', {
