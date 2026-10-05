@@ -105,6 +105,8 @@ function buildApp(db, opts = {}) {
   app.use('/api/express_stock_snapshots', authed, require('./routes/expressSnapshots')(db, wms));
   app.use('/api/invoice_detail', authed, require('./routes/invoiceDetail')(db));
   app.use('/api/sales_targets', authed, require('./routes/salesTargets')(db));
+  // Dashboard ผู้บริหาร (2026-10-03): ยอดตามช่วงเวลา / 8 หมวดลูกค้า / Top 20 + KG — routes/dashboardExec.js
+  app.use('/api/dashboard', authed, require('./routes/dashboardExec')(db));
   app.use('/api/sales_teams', require('./routes/salesTeams')(db)); // ทีมขาย + สิทธิ์ดูยอด (2026-10-03)
   // สิทธิ์เขียนใบโปรร่าง (promo_drafts, 2026-09-03) — ให้ตรงกับ role ที่เข้าหน้า promo_history ได้อยู่แล้ว
   // (MASTER_DATA_ROLES ด้านบนไม่มี role ฝ่ายขายเลย ใช้ไม่ได้กับฟีเจอร์นี้)
@@ -254,7 +256,9 @@ function buildApp(db, opts = {}) {
     // gp_pct added 2026-09-16: ใบเคาะราคา's per-line GP% now defaults from here (customer master)
     // instead of being typed from scratch every time — see index.html's draftLineField().
     fields: ['code', 'name', 'corporate', 'category', 'branch', 'slm', 'edited_by', 'gp_pct',
-      'corp_source', 'corp_confidence', 'corp_confirmed', 'corp_confirmed_by', 'corp_confirmed_at', 'updated_at'],
+      'corp_source', 'corp_confidence', 'corp_confirmed', 'corp_confirmed_by', 'corp_confirmed_at', 'updated_at',
+      // หมวดลูกค้าผู้บริหาร (2026-10-03) — ดู lib/execChannel.js
+      'exec_channel', 'exec_channel_source'],
     writeRoles: MASTER_DATA_ROLES,
   }));
 

@@ -1324,6 +1324,75 @@ function refreshSalesRollups(db) {
   console.log(`[importFromExpress] refreshSalesRollups: done in ${Date.now() - t0}ms (${isEmpty ? 'full rebuild, first run' : `rebuilt ym >= ${cutoffYm}`})`);
 }
 
+// ยอดขายรายสินค้าต่อลูกค้า × เดือน จาก STCRD.DBF (2026-10-03, Dashboard ผู้บริหาร — Top 20 ลูกค้า บาท/KG)
+// ARTRN (invoice_sales_monthly) ไม่มีมิติสินค้า และ invoice_lines ไม่เก็บรหัสลูกค้า — แต่ STCRD มี PEOPLE (รหัสลูกค้า)
+// และ SLMCOD ทุกบรรทัด (ตรวจกับ DBF จริง 2026-10-03) จึง rollup จากที่นี่ · ใช้เงื่อนไขเอกสารขายชุดเดียวกับ
+// invoice_lines (WMS_GENERAL_SALE_PREFIXES) และตัดเอกสาร/วันที่ตามกติกาเดียวกับ syncInvoiceSales()
+// KG ไม่หักใบรับคืน/ลดหนี้ (STCRD ไม่มีรหัสเอกสารรับคืนจากลูกค้าที่ระบุได้ชัด) — หน้า Dashboard แจ้งไว้
+// STCRD ของ TSS ใหญ่ (~5 แสนแถว) และแฟ้มปีเก่า (TSS-67/68, TSSN-67/68) ไม่เปลี่ยนแล้ว จึงอ่านซ้ำเฉพาะเมื่อไฟล์
+// เปลี่ยน (mtime) และไม่ถี่กว่า SALES_LINES_MIN_INTERVAL_MIN นาที (ค่าเริ่ม 60) — ยอดบาทใน Dashboard ยังมาจาก
+// invoice_sales_monthly ทุกรอบตามเดิม มีแค่ KG ที่อาจช้ากว่าได้ไม่เกินช่วงนี้
+const SALES_LINES_MIN_INTERVAL_MS = (Number(process.env.SALES_LINES_MIN_INTERVAL_MIN) || 60) * 60 * 1000;
+async function syncSalesLinesMonthly(db) {
+  const getState = db.prepare('SELECT mtime_ms, synced_at FROM sync_file_state WHERE source = ?');
+  const setState = db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
+    ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`);
+  const insert = db.prepare(`INSERT INTO sales_lines_monthly (company, ym, cust_code, slm_code, sku, unit_code, qty, qty_base, amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  let rowsImported = 0;
+  for (const company of SALES_COMPANIES) {
+    const file = findFile(path.join(EXPRESS_ROOT, company), 'STCRD.DBF');
+    if (!file) continue;
+    const source = `${company}/STCRD.DBF`;
+    let mtimeMs;
+    try { mtimeMs = fs.statSync(file).mtimeMs; } catch (e) { console.warn(`[importFromExpress] sales lines: stat ${source} failed: ${e.message}`); continue; }
+    const prev = getState.get(source);
+    if (prev && prev.mtime_ms === mtimeMs) continue;
+    if (prev && prev.synced_at && Date.now() - Date.parse(prev.synced_at) < SALES_LINES_MIN_INTERVAL_MS) continue;
+
+    const rows = await readTable(company, 'STCRD.DBF');
+    // อ่านได้ 0 แถวทั้งที่ไฟล์มีอยู่ = share หลุดกลางรอบ (ดูคอมเมนต์ใน runImport) — ข้ามไว้ อย่าลบของเดิม
+    if (!rows.length) continue;
+    const monthly = new Map();
+    for (const r of rows) {
+      const docNum = cleanText(r.DOCNUM);
+      if (!WMS_GENERAL_SALE_PREFIXES.has(docNum.slice(0, 2))) continue;
+      if (isExcludedSalesDocNum(docNum)) continue;
+      if (!passesCompanyDateCutoff(company, r.DOCDAT)) continue;
+      const period = ym(r.DOCDAT);
+      const sku = cleanText(r.STKCOD);
+      if (!period || !sku) continue;
+      const cust = cleanText(r.PEOPLE) || '(none)';
+      const slm = normalizeSlmCode(r.SLMCOD) || '(none)';
+      const unit = cleanText(r.TQUCOD);
+      const qty = Math.abs(Number(r.XTRNQTY) || Number(r.TRNQTY) || 0);
+      const factor = Number(r.TFACTOR) || 1;
+      const key = [period, cust, slm, sku, unit].join('\u0001');
+      const cur = monthly.get(key) || { qty: 0, qtyBase: 0, amount: 0 };
+      cur.qty += qty;
+      cur.qtyBase += qty * factor;
+      cur.amount += Number(r.TRNVAL) || 0;
+      monthly.set(key, cur);
+    }
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM sales_lines_monthly WHERE company = ?').run(company);
+      for (const [key, v] of monthly) {
+        const [period, cust, slm, sku, unit] = key.split('\u0001');
+        insert.run(company, period, cust, slm, sku, unit, v.qty, v.qtyBase, v.amount);
+        rowsImported++;
+      }
+      setState.run(source, mtimeMs, new Date().toISOString());
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+  console.log(`[importFromExpress] sales lines monthly: ${rowsImported} rows written`);
+  return rowsImported;
+}
+
 async function runImport(db) {
   const startedAt = new Date().toISOString();
   const info = db.prepare('INSERT INTO sync_log (source, started_at, status) VALUES (?, ?, ?)').run(EXPRESS_ROOT, startedAt, 'running');
@@ -1355,6 +1424,8 @@ async function runImport(db) {
     rowsProcessed += await syncInvoiceSales(db);
     rowsProcessed += await syncInvoices(db);
     rowsProcessed += await syncPromoDocs(db);
+    // เสริมสำหรับ KG ใน Dashboard — พังแล้วไม่ควรทำให้ทั้งรอบ sync ถูกนับว่า error (ข้อมูลหลักบันทึกไปแล้ว)
+    try { rowsProcessed += await syncSalesLinesMonthly(db); } catch (e) { console.warn('[importFromExpress] sales lines monthly failed:', e.message); }
 
     // standing tripwire: surface data-quality regressions automatically instead of needing a manual
     // DBF-reading investigation every time someone wonders "is the import still correct" — see
@@ -1373,4 +1444,4 @@ async function runImport(db) {
   }
 }
 
-module.exports = { runImport, refreshSalesRollups, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { runImport, refreshSalesRollups, syncSalesLinesMonthly, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };

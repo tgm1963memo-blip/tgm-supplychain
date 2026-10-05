@@ -412,6 +412,54 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_promo_draft_logs_draft ON promo_draft_logs(draft_no, ts);
   `);
 
+  // หมวดลูกค้าสำหรับผู้บริหาร (2026-10-03) — ดู server/lib/execChannel.js · source 'manual' = คนตั้ง, 'auto' = ระบบเดา
+  addColumnIfMissing(db, 'customer_profiles', 'exec_channel', 'exec_channel TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'exec_channel_source', 'exec_channel_source TEXT');
+  // ยอดขายรายสินค้าต่อลูกค้า × เดือน จาก STCRD (2026-10-03) — invoice_sales_monthly (ARTRN) ไม่มีมิติสินค้า และ
+  // invoice_lines ไม่มีรหัสลูกค้า จึงคำนวณ KG ต่อลูกค้าใน Dashboard ไม่ได้ · qty = จำนวนตามหน่วยขาย (unit_code),
+  // qty_base = qty × TFACTOR (หน่วยสต็อก) — KG คิดตอน query จาก skus.weight_per_unit ของ WMS (routes/dashboardExec.js)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_lines_monthly (
+      company    TEXT NOT NULL,
+      ym         TEXT NOT NULL,
+      cust_code  TEXT NOT NULL,
+      slm_code   TEXT NOT NULL DEFAULT '',
+      sku        TEXT NOT NULL,
+      unit_code  TEXT NOT NULL DEFAULT '',
+      qty        REAL NOT NULL DEFAULT 0,
+      qty_base   REAL NOT NULL DEFAULT 0,
+      amount     REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, ym, cust_code, slm_code, sku, unit_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_lines_monthly_ym ON sales_lines_monthly(ym, company);
+    CREATE INDEX IF NOT EXISTS idx_sales_lines_monthly_cust ON sales_lines_monthly(cust_code);
+    CREATE TABLE IF NOT EXISTS sync_file_state (
+      source     TEXT PRIMARY KEY,
+      mtime_ms   REAL,
+      synced_at  TEXT
+    );
+  `);
+
+  // Bplus ของโรงงาน (2026-10-05) — jobs/importFromBplus.js · ลูกค้าแยกจาก customers (ตาราง mirror ของ Express)
+  // รหัสลูกค้า Bplus ใช้ชุดเดียวกับ Express (เช่น 30-NW-1001) จึงใช้ customer_profiles ร่วมกันได้ ตารางนี้เก็บแค่ชื่อ/ธง
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bplus_customers (
+      code            TEXT PRIMARY KEY,
+      name            TEXT,
+      bp_slm_code     TEXT,
+      is_intercompany INTEGER NOT NULL DEFAULT 0,
+      has_export      INTEGER NOT NULL DEFAULT 0,
+      updated_at      TEXT
+    );
+    CREATE TABLE IF NOT EXISTS bplus_salesman_map (
+      bp_code    TEXT PRIMARY KEY,
+      bp_name    TEXT,
+      slm_code   TEXT,
+      updated_by TEXT,
+      updated_at TEXT
+    );
+  `);
+
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 }
 

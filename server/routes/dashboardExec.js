@@ -1,0 +1,354 @@
+'use strict';
+
+const express = require('express');
+const { DatabaseSync } = require('node:sqlite');
+const { requireRole } = require('../middleware/auth');
+const { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, guessExecChannel } = require('../lib/execChannel');
+
+// Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
+// ตามช่วงเวลาที่เลือก (YTD / เดือน / ไตรมาส / ทั้งปี) เทียบช่วงเดียวกันของปีก่อน:
+//   monthly (ทั้งปีของช่วงที่เลือก + ปีก่อน, แยกบริษัท), kpi, channels (8 หมวด), top (Top 20 รวม / ห้าง / ร้านค้า + KG)
+// ยอดบาท = invoice_sales_monthly (ใบกำกับ ARTRN ก่อน VAT — ตัวเลขเดียวกับ Dashboard/Sales Overview เดิม)
+// KG = sales_lines_monthly (STCRD) × skus.weight_per_unit ของ tgm-wms — ดู syncSalesLinesMonthly()
+
+const YM_RE = /^\d{4}-\d{2}$/;
+const AUTOFILL_ROLES = ['superadmin', 'admin', 'manager', 'sales_manager', 'planning', 'planning_manager'];
+// Express ขึ้นแฟ้มบริษัทใหม่ทุกปี — แฟ้มปีปัจจุบันคือ TSS / TSS-NV ส่วนปีก่อนอยู่ในแฟ้ม archive ตามปี พ.ศ.
+// (TSS-68 = 2568 = ค.ศ. 2025, TSS-67 = 2024) · ตรวจกับข้อมูลจริง 2026-10-03: แฟ้ม archive ซ้อนกันบางช่วง
+// (TSS-67 ซ้ำ TSS-68 ช่วง ม.ค.–เม.ย. 2025 และแฟ้ม TSS มีใบช่วง ต.ค.–ธ.ค. 2025 ที่ซ้ำกับ TSS-68 ราว 70–90%)
+// จึงต้องเลือก "แฟ้มเดียวต่อปีต่อบริษัท" ห้ามบวกทุกแฟ้ม ไม่งั้นยอดปีก่อนบวม · CONSI/TGM ใช้แฟ้มเดียวทุกปี
+const CUTOVER_YEAR = 2026;
+// TGM ตั้งแต่ 2025 ใช้ Bplus ของโรงงาน (BP-TGM) แทนแฟ้ม TGM ของ Express ซึ่งเป็นส่วนย่อยที่ซ้ำกัน — ผู้ใช้ยืนยัน 2026-10-05
+// (jobs/importFromBplus.js) · ยอดขายให้บริษัทในเครือ (BP-TGM-IC) ไม่อยู่ในรายการนี้ จึงไม่ถูกนับเป็นยอดขาย
+const BPLUS_FROM_YEAR = 2025;
+function yearSources(year) {
+  const tgm = year >= BPLUS_FROM_YEAR ? { 'BP-TGM': 'TGM' } : { TGM: 'TGM' };
+  if (year >= CUTOVER_YEAR) return { TSS: 'TSS', 'TSS-NV': 'TSSNV', ...tgm, CONSI: 'CONSI' };
+  const be = String((year + 543) % 100).padStart(2, '0');
+  return { [`TSS-${be}`]: 'TSS', [`TSSN-${be}`]: 'TSSNV', ...tgm, CONSI: 'CONSI' };
+}
+const NET_COMPANIES = new Set(['TSS', 'TSSNV', 'TGM']);
+
+// น้ำหนักต่อหน่วยจาก tgm-wms (skus.weight_per_unit = กก. ต่อ 1 หน่วยสต็อก) — เปิด WMS DB แบบอ่านอย่างเดียว
+// แยกจาก connection หลัก และ cache 10 นาที (ค่าน้ำหนักแทบไม่เปลี่ยน)
+let weightCache = { at: 0, map: null };
+function loadWeights() {
+  if (weightCache.map && Date.now() - weightCache.at < 10 * 60 * 1000) return weightCache.map;
+  const map = new Map();
+  const dbPath = process.env.WMS_DB_PATH;
+  if (dbPath) {
+    let wdb = null;
+    try {
+      wdb = new DatabaseSync(dbPath, { readOnly: true });
+      for (const r of wdb.prepare('SELECT sku_code, weight_per_unit FROM skus WHERE weight_per_unit > 0').all()) {
+        map.set(String(r.sku_code).trim(), Number(r.weight_per_unit));
+      }
+    } catch (e) {
+      console.warn('[dashboardExec] load WMS weights failed:', e.message);
+    } finally {
+      try { wdb && wdb.close(); } catch (_) { /* ignore */ }
+    }
+  }
+  weightCache = { at: Date.now(), map };
+  return map;
+}
+const KG_UNIT_RE = /^(กก|กิโล|kg)/i;
+
+function shiftYear(ym, delta) {
+  return `${Number(ym.slice(0, 4)) + delta}${ym.slice(4)}`;
+}
+function inList(n) {
+  return Array.from({ length: n }, () => '?').join(',');
+}
+
+module.exports = function dashboardExecRoutes(db) {
+  const router = express.Router();
+
+  // ตัวกรองบริษัท (2026-10-05, ผู้ใช้ขอ): all | tss (TSS + TSS-NV + ฝากขาย CONSI จาก Express) | tgm (โรงงานจาก Bplus)
+  // ตั้งค่าที่ต้น handler /exec — handler ทำงานแบบ synchronous ทั้งหมด (ไม่มี await) จึงไม่มีคำขออื่นแทรกระหว่างใช้ค่านี้
+  const CO_GROUPS = { tss: new Set(['TSS', 'TSSNV', 'CONSI']), tgm: new Set(['TGM']) };
+  let reqCo = 'all';
+  function companyFilter(year) {
+    const all = yearSources(year);
+    const keep = CO_GROUPS[reqCo];
+    const src = keep ? Object.fromEntries(Object.entries(all).filter(([, canon]) => keep.has(canon))) : all;
+    return { src, raw: Object.keys(src) };
+  }
+
+  // ยอดรายเดือนทั้งปี แยกบริษัท และแยกหมวดลูกค้า (net/consi) — หมวดคิดจากยอดจริงรายลูกค้า ไม่ได้ประมาณตามสัดส่วน
+  function monthly(year, slmCodes, meta, consiCodes) {
+    const { src, raw } = companyFilter(year);
+    const rows = db.prepare(`SELECT company, ym, cust_code, SUM(amount) AS amount FROM invoice_sales_monthly
+      WHERE company IN (${inList(raw.length)}) AND ym >= ? AND ym <= ?
+      ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}
+      GROUP BY company, ym, cust_code`).all(...raw, `${year}-01`, `${year}-12`, ...slmCodes);
+    const company = {};
+    const channel = {};
+    const chCache = new Map();
+    for (const r of rows) {
+      const amt = Number(r.amount) || 0;
+      const co = src[r.company];
+      const m = (company[r.ym] = company[r.ym] || { TSS: 0, TSSNV: 0, TGM: 0, CONSI: 0 });
+      m[co] += amt;
+      let ch = chCache.get(r.cust_code);
+      if (!ch) { ch = channelOf(meta, r.cust_code, consiCodes.has(r.cust_code)); chCache.set(r.cust_code, ch); }
+      const c = (channel[r.ym] = channel[r.ym] || {});
+      const cc = (c[ch] = c[ch] || { net: 0, consi: 0 });
+      if (co === 'CONSI') cc.consi += amt; else cc.net += amt;
+    }
+    return { company, channel };
+  }
+
+  // ยอดต่อลูกค้าในช่วง → Map(code → { net, consi })
+  function perCustomer(from, to, slmCodes) {
+    const { src, raw } = companyFilter(Number(from.slice(0, 4)));
+    const rows = db.prepare(`SELECT company, cust_code, SUM(amount) AS amount FROM invoice_sales_monthly
+      WHERE company IN (${inList(raw.length)}) AND ym >= ? AND ym <= ?
+      ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}
+      GROUP BY company, cust_code`).all(...raw, from, to, ...slmCodes);
+    const map = new Map();
+    for (const r of rows) {
+      const cur = map.get(r.cust_code) || { net: 0, consi: 0 };
+      if (src[r.company] === 'CONSI') cur.consi += Number(r.amount) || 0;
+      else cur.net += Number(r.amount) || 0;
+      map.set(r.cust_code, cur);
+    }
+    return map;
+  }
+
+  function customerMeta() {
+    const map = new Map();
+    for (const r of db.prepare(`SELECT c.code, c.name, cp.name AS pname, cp.category, cp.corporate, cp.exec_channel, cp.exec_channel_source
+      FROM customers c LEFT JOIN customer_profiles cp ON cp.code = c.code`).all()) map.set(r.code, r);
+    for (const r of db.prepare(`SELECT code, name AS pname, category, corporate, exec_channel, exec_channel_source
+      FROM customer_profiles WHERE code NOT IN (SELECT code FROM customers)`).all()) map.set(r.code, { ...r, name: r.pname });
+    // ลูกค้า Bplus ของโรงงาน — รหัสชุดเดียวกับ Express; รหัสที่ไม่มีใน Express ใช้ชื่อจาก bplus_customers · has_export ช่วยเดาหมวด
+    for (const r of db.prepare('SELECT code, name, has_export FROM bplus_customers').all()) {
+      const cur = map.get(r.code);
+      if (cur) cur.has_export = r.has_export; else map.set(r.code, { code: r.code, name: r.name, has_export: r.has_export });
+    }
+    return map;
+  }
+
+  function channelOf(meta, code, hasConsi) {
+    const m = meta.get(code) || {};
+    if (m.exec_channel && EXEC_CHANNEL_KEYS.has(m.exec_channel)) return m.exec_channel;
+    return guessExecChannel({ name: m.pname || m.name || '', category: m.category || '', corporate: m.corporate || '', hasConsi, hasExport: !!m.has_export });
+  }
+
+  // ขายให้บริษัทในเครือจาก Bplus โรงงาน — แสดงแยก ไม่รวมในยอดขาย (ผู้ใช้ยืนยัน 2026-10-05)
+  function icTotal(from, to, slmCodes) {
+    const r = db.prepare(`SELECT SUM(amount) AS a FROM invoice_sales_monthly WHERE company = 'BP-TGM-IC' AND ym >= ? AND ym <= ?
+      ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}`).get(from, to, ...slmCodes);
+    return Number(r?.a) || 0;
+  }
+
+  // KG ต่อรหัสลูกค้า แยก net/consi สำหรับช่วงที่ระบุ — คืน Map(code → { net, consi, amt, amtKg }) โดย amt/amtKg
+  // ใช้บอกสัดส่วนยอดที่คำนวณน้ำหนักได้ (สินค้าที่ WMS ยังไม่มีน้ำหนัก → ไม่นับ KG)
+  function kgPerCustomer(from, to, codes, slmCodes) {
+    const out = new Map();
+    if (!codes.length) return out;
+    const { src, raw } = companyFilter(Number(from.slice(0, 4)));
+    const weights = loadWeights();
+    const CHUNK = 800;
+    for (let i = 0; i < codes.length; i += CHUNK) {
+      const part = codes.slice(i, i + CHUNK);
+      const rows = db.prepare(`SELECT company, cust_code, sku, unit_code, SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
+        FROM sales_lines_monthly
+        WHERE company IN (${inList(raw.length)}) AND ym >= ? AND ym <= ? AND cust_code IN (${inList(part.length)})
+        ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}
+        GROUP BY company, cust_code, sku, unit_code`).all(...raw, from, to, ...part, ...slmCodes);
+      for (const r of rows) {
+        const cur = out.get(r.cust_code) || { net: 0, consi: 0, amt: 0, amtKg: 0 };
+        let kg = null;
+        if (KG_UNIT_RE.test(r.unit_code || '')) kg = Number(r.qty) || 0;
+        else if (weights.has(r.sku)) kg = (Number(r.qty_base) || 0) * weights.get(r.sku);
+        const amt = Math.abs(Number(r.amount) || 0);
+        cur.amt += amt;
+        if (kg != null) {
+          cur.amtKg += amt;
+          if (src[r.company] === 'CONSI') cur.consi += kg; else cur.net += kg;
+        }
+        out.set(r.cust_code, cur);
+      }
+    }
+    return out;
+  }
+
+  // GET /api/dashboard/exec?from=YYYY-MM&to=YYYY-MM&slm=101,110-1&consi=1&makro_in_mall=0
+  router.get('/exec', (req, res) => {
+    try {
+      const from = String(req.query.from || '');
+      const to = String(req.query.to || '');
+      if (!YM_RE.test(from) || !YM_RE.test(to)) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM' });
+      if (from.slice(0, 4) !== to.slice(0, 4) || from > to) return res.status(400).json({ error: 'from/to ต้องอยู่ในปีเดียวกัน และ from ≤ to' });
+      const year = Number(from.slice(0, 4));
+      if (year < 2020 || year > 2100) return res.status(400).json({ error: 'ปีไม่ถูกต้อง' });
+      const slmCodes = [...new Set(String(req.query.slm || '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 50);
+      const withConsi = req.query.consi !== '0';
+      const makroInMall = req.query.makro_in_mall === '1';
+      const co = String(req.query.co || 'all');
+      if (!['all', 'tss', 'tgm'].includes(co)) return res.status(400).json({ error: 'co ต้องเป็น all, tss หรือ tgm' });
+      reqCo = co;
+      const lyFrom = shiftYear(from, -1);
+      const lyTo = shiftYear(to, -1);
+
+      const ty = perCustomer(from, to, slmCodes);
+      const ly = perCustomer(lyFrom, lyTo, slmCodes);
+      const meta = customerMeta();
+      // ลูกค้าที่เคยมียอดฝากขาย (ทุกปี) — ใช้ชุดเดียวกันทุกส่วนของหน้า ให้หมวดของลูกค้าไม่เปลี่ยนไปตามช่วงเวลาที่เลือก
+      const consiCodes = new Set(db.prepare(`SELECT DISTINCT cust_code FROM invoice_sales_monthly WHERE company = 'CONSI'`).all().map((r) => r.cust_code));
+
+      const sum = (map, k) => [...map.values()].reduce((a, v) => a + v[k], 0);
+      const active = (map) => [...map.values()].filter((v) => v.net + (withConsi ? v.consi : 0) > 0.005).length;
+      const kpi = {
+        ty_net: sum(ty, 'net'), ty_consi: sum(ty, 'consi'), ly_net: sum(ly, 'net'), ly_consi: sum(ly, 'consi'),
+        ty_active: active(ty), ly_active: active(ly),
+        // ยอดในเครือมาจากโรงงาน — เลือก TSS อย่างเดียวไม่ต้องแสดง
+        ty_ic: co === 'tss' ? 0 : icTotal(from, to, slmCodes), ly_ic: co === 'tss' ? 0 : icTotal(lyFrom, lyTo, slmCodes),
+      };
+
+      // หมวด + กลุ่มลูกค้า (Corporate group ก่อน ไม่มีค่อยใช้ชื่อลูกค้า — กติกาเดียวกับ Top 10 ลูกค้าเดิม)
+      const channelAgg = Object.fromEntries(EXEC_CHANNELS.map((c) => [c.key, { ty_net: 0, ty_consi: 0, ly_net: 0, ly_consi: 0 }]));
+      const groups = new Map();
+      const codes = new Set([...ty.keys(), ...ly.keys()]);
+      for (const code of codes) {
+        const t = ty.get(code) || { net: 0, consi: 0 };
+        const l = ly.get(code) || { net: 0, consi: 0 };
+        const ch = channelOf(meta, code, consiCodes.has(code));
+        const a = channelAgg[ch];
+        a.ty_net += t.net; a.ty_consi += t.consi; a.ly_net += l.net; a.ly_consi += l.consi;
+        const m = meta.get(code) || {};
+        // ตัด " (ยอดสั่ง)" ท้ายชื่อกลุ่ม — บัญชีฝากขายของห้างใช้ชื่อกลุ่มแบบนี้ (เช่น 'วิลล่า (ยอดสั่ง)') ส่วนยอดขายจริง
+        // ใช้ 'วิลล่า' — ต้องรวมเป็นแถวเดียวกัน ไม่งั้นตารางห้างจะแยก Consi กับ Net เป็นคนละบรรทัด (ตรวจ 2026-10-03)
+        const gname = String(m.corporate || '').replace(/\s*\(ยอดสั่ง\)\s*$/, '').trim() || String(m.pname || m.name || '').trim() || code;
+        const g = groups.get(gname) || { name: gname, codes: [], ty_net: 0, ty_consi: 0, ly_net: 0, ly_consi: 0, chAmt: {} };
+        g.codes.push(code);
+        g.ty_net += t.net; g.ty_consi += t.consi; g.ly_net += l.net; g.ly_consi += l.consi;
+        g.chAmt[ch] = (g.chAmt[ch] || 0) + Math.abs(t.net + t.consi) + Math.abs(l.net + l.consi);
+        groups.set(gname, g);
+      }
+      for (const g of groups.values()) g.channel = Object.entries(g.chAmt).sort((a, b) => b[1] - a[1])[0]?.[0] || 'general';
+
+      const isMall = (g) => g.channel === 'mall' || (makroInMall && g.channel === 'makro');
+      const list = [...groups.values()];
+      const top = {
+        all: list.filter((g) => g.ty_net + (withConsi ? g.ty_consi : 0) > 0)
+          .sort((a, b) => (b.ty_net + (withConsi ? b.ty_consi : 0)) - (a.ty_net + (withConsi ? a.ty_consi : 0))).slice(0, 20),
+        mall: list.filter((g) => isMall(g) && g.ty_net + g.ty_consi > 0)
+          .sort((a, b) => (b.ty_net + b.ty_consi) - (a.ty_net + a.ty_consi)).slice(0, 20),
+        shop: list.filter((g) => !isMall(g) && g.ty_net > 0).sort((a, b) => b.ty_net - a.ty_net).slice(0, 20),
+      };
+
+      const topCodes = [...new Set([...top.all, ...top.mall, ...top.shop].flatMap((g) => g.codes))];
+      const kgTy = kgPerCustomer(from, to, topCodes, slmCodes);
+      const kgLy = kgPerCustomer(lyFrom, lyTo, topCodes, slmCodes);
+      const shape = (g) => {
+        const k = { ty_net: 0, ty_consi: 0, ly_net: 0, ly_consi: 0, amt: 0, amtKg: 0 };
+        for (const c of g.codes) {
+          const a = kgTy.get(c); const b = kgLy.get(c);
+          if (a) { k.ty_net += a.net; k.ty_consi += a.consi; k.amt += a.amt; k.amtKg += a.amtKg; }
+          if (b) { k.ly_net += b.net; k.ly_consi += b.consi; k.amt += b.amt; k.amtKg += b.amtKg; }
+        }
+        return {
+          name: g.name, channel: g.channel, branches: g.codes.length,
+          ty_net: g.ty_net, ty_consi: g.ty_consi, ly_net: g.ly_net, ly_consi: g.ly_consi,
+          kg_ty_net: k.ty_net, kg_ty_consi: k.ty_consi, kg_ly_net: k.ly_net, kg_ly_consi: k.ly_consi,
+          kg_coverage: k.amt > 0 ? k.amtKg / k.amt : null,
+        };
+      };
+
+      const freshness = db.prepare(`SELECT MAX(ym) AS last_ym FROM invoice_sales_monthly WHERE company IN ('TSS','CONSI')`).get();
+      const linesSync = db.prepare(`SELECT MAX(synced_at) AS at FROM sync_file_state WHERE source LIKE '%/STCRD.DBF'`).get();
+
+      res.json({
+        from, to, ly_from: lyFrom, ly_to: lyTo, with_consi: withConsi, makro_in_mall: makroInMall, co,
+        monthly: { ty: monthly(year, slmCodes, meta, consiCodes), ly: monthly(year - 1, slmCodes, meta, consiCodes) },
+        kpi,
+        channels: EXEC_CHANNELS.map((c) => ({ key: c.key, label: c.label, ...channelAgg[c.key] })),
+        top: { all: top.all.map(shape), mall: top.mall.map(shape), shop: top.shop.map(shape) },
+        last_ym: freshness?.last_ym || null,
+        kg_synced_at: linesSync?.at || null,
+      });
+    } catch (e) {
+      console.error('[dashboardExec] /exec failed:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/dashboard/exec_channel/autofill — ให้ระบบเดาหมวดให้ลูกค้าที่มียอดตั้งแต่ 2024 และยังไม่ถูกตั้งด้วยมือ
+  // ไม่ทับค่าที่ source='manual' เด็ดขาด · ทำใน transaction เดียว
+  router.post('/exec_channel/autofill', requireRole(...AUTOFILL_ROLES), (req, res) => {
+    try {
+      const meta = customerMeta();
+      const consiCodes = new Set(db.prepare(`SELECT DISTINCT cust_code FROM invoice_sales_monthly WHERE company = 'CONSI'`).all().map((r) => r.cust_code));
+      const codes = db.prepare(`SELECT DISTINCT cust_code FROM invoice_sales_monthly WHERE ym >= '2024-01'`).all().map((r) => r.cust_code)
+        .filter((c) => c && c !== '(none)');
+      const known = new Set(db.prepare('SELECT code FROM customers').all().map((r) => r.code));
+      const upsert = db.prepare(`INSERT INTO customer_profiles (code, exec_channel, exec_channel_source, edited_by, updated_at)
+        VALUES (?, ?, 'auto', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        ON CONFLICT(code) DO UPDATE SET exec_channel = excluded.exec_channel, exec_channel_source = 'auto'
+        WHERE COALESCE(customer_profiles.exec_channel_source, '') <> 'manual'`);
+      const counts = {};
+      let updated = 0, skippedManual = 0;
+      db.exec('BEGIN');
+      try {
+        for (const code of codes) {
+          if (!known.has(code)) continue;
+          const m = meta.get(code) || {};
+          if (m.exec_channel_source === 'manual') { skippedManual++; continue; }
+          const ch = guessExecChannel({ name: m.pname || m.name || '', category: m.category || '', corporate: m.corporate || '', hasConsi: consiCodes.has(code), hasExport: !!m.has_export });
+          if (upsert.run(code, ch, req.user?.uid || 'system').changes) { updated++; counts[ch] = (counts[ch] || 0) + 1; }
+        }
+        db.exec('COMMIT');
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+      res.json({ updated, skipped_manual: skippedManual, counts });
+    } catch (e) {
+      console.error('[dashboardExec] autofill failed:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ตารางจับคู่รหัสพนักงานขาย Bplus โรงงาน → รหัส Sales ใน Express (2026-10-05, ผู้ใช้เลือก "จับคู่กับรหัส Express")
+  // GET คืนรายการพร้อมยอดขายตั้งแต่ 2025 ต่อรหัส (ช่วยเลือก) · PUT { rows:[{bp_code, slm_code}] } — slm_code ว่าง = ยกเลิกจับคู่
+  // มีผลในรอบ sync Bplus ถัดไป (ล้างเวลา sync ล่าสุดให้รันในรอบ Express ถัดไปภายใน ~15 นาที)
+  router.get('/bplus/salesmen', (req, res) => {
+    try {
+      const rows = db.prepare(`SELECT m.bp_code, m.bp_name, m.slm_code, m.updated_by, m.updated_at,
+          (SELECT COUNT(*) FROM bplus_customers c WHERE c.bp_slm_code = m.bp_code AND c.is_intercompany = 0) AS customers
+        FROM bplus_salesman_map m
+        WHERE m.slm_code IS NOT NULL OR EXISTS (SELECT 1 FROM bplus_customers c WHERE c.bp_slm_code = m.bp_code)
+        ORDER BY m.bp_code`).all();
+      const sync = db.prepare(`SELECT synced_at FROM sync_file_state WHERE source = 'bplus/TGM'`).get();
+      res.json({ rows, synced_at: sync?.synced_at || null });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  router.put('/bplus/salesmen', requireRole(...AUTOFILL_ROLES), (req, res) => {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+    if (!rows || rows.length > 500) return res.status(400).json({ error: 'rows is required (≤ 500)' });
+    const up = db.prepare(`UPDATE bplus_salesman_map SET slm_code = ?, updated_by = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE bp_code = ?`);
+    try {
+      db.exec('BEGIN');
+      let n = 0;
+      for (const r of rows) {
+        const bp = String(r?.bp_code || '').trim();
+        const slm = String(r?.slm_code || '').trim();
+        if (!bp || slm.length > 40 || /[,\s]/.test(slm)) throw new Error(`แถวไม่ถูกต้อง: ${bp || '(ไม่มีรหัส)'} → ${slm}`);
+        n += up.run(slm || null, req.user?.uid || null, bp).changes;
+      }
+      db.prepare(`UPDATE sync_file_state SET synced_at = NULL WHERE source = 'bplus/TGM'`).run();
+      db.exec('COMMIT');
+      res.json({ updated: n });
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) { /* not in tx */ }
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  return router;
+};
