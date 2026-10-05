@@ -6668,7 +6668,7 @@ function _dxTop(d){
   const cov=rows.filter(x=>x.kg_coverage!=null&&x.kg_coverage<0.9).length;
   let sub,head,body,foot;
   if(t==='mall'){
-    sub=`ลูกค้าหมวดห้าง รวม Makro · บาท / กก. แยกฝากขาย (Consi) และขายจริง (Net)`;
+    sub=`ลูกค้าหมวดห้าง${s.makro?' รวม Makro':' (ไม่รวม Makro)'} · บาท / กก. แยกฝากขาย (Consi) และขายจริง (Net)`;
     head=`<tr><th rowspan="3" style="width:36px"></th><th rowspan="3">ลูกค้า</th><th class="c cn dx-sep" colspan="4">Consi</th><th class="c nt dx-sep" colspan="4">Net</th><th class="dx-n dx-sep" rowspan="3">รวม ${yy} vs ${lyy}</th></tr>
       <tr><th class="c dx-sep" colspan="2">25${lyy}</th><th class="c" colspan="2">25${yy}</th><th class="c dx-sep" colspan="2">25${lyy}</th><th class="c" colspan="2">25${yy}</th></tr>
       <tr><th class="dx-n dx-sep">บาท</th><th class="dx-n">KG</th><th class="dx-n">บาท</th><th class="dx-n">KG</th><th class="dx-n dx-sep">บาท</th><th class="dx-n">KG</th><th class="dx-n">บาท</th><th class="dx-n">KG</th></tr>`;
@@ -6687,7 +6687,7 @@ function _dxTop(d){
   }else{
     const c=s.consi,v=(x,p)=>x[p+'_net']+(c?x[p+'_consi']:0),kg=(x,p)=>x['kg_'+p+'_net']+(c?x['kg_'+p+'_consi']:0);
     const grand=d.kpi.ty_net+(c?d.kpi.ty_consi:0)||1,mxs=Math.max(...rows.map(x=>v(x,'ty')/grand),0.0001);
-    sub=`ทุกหมวด · ${c?'ขายจริง + ฝากขาย':'ขายจริง (Net)'} · สัดส่วนเทียบยอดขายรวมทั้งหมด`;
+    sub=`ทุกหมวด${s.makro?'':' (ไม่รวม Makro)'} · ${c?'ขายจริง + ฝากขาย':'ขายจริง (Net)'} ·สัดส่วนเทียบยอดขายรวมทั้งหมด`;
     head=`<tr><th rowspan="2" style="width:36px"></th><th rowspan="2">ลูกค้า</th><th class="c dx-sep" colspan="2">25${lyy}</th><th class="c" colspan="2">25${yy}</th><th class="dx-n dx-sep" rowspan="2">${yy} vs ${lyy}</th><th class="dx-n" rowspan="2">สัดส่วน</th></tr>
       <tr><th class="dx-n dx-sep">บาท</th><th class="dx-n">KG</th><th class="dx-n">บาท</th><th class="dx-n">KG</th></tr>`;
     body=rows.map((x,i)=>`<tr>${_dxCust(x,i)}<td class="dx-n dx-sep mut">${_dxB(v(x,'ly'))}</td><td class="dx-n mut">${_dxKg(kg(x,'ly'),x.kg_coverage)}</td><td class="dx-n"><b>${_dxB(v(x,'ty'))}</b></td><td class="dx-n mut">${_dxKg(kg(x,'ty'),x.kg_coverage)}</td>
@@ -6695,8 +6695,8 @@ function _dxTop(d){
     const sv=p=>rows.reduce((a,x)=>a+v(x,p),0),sk=p=>rows.reduce((a,x)=>a+kg(x,p),0);
     foot=`<tr class="tot"><td></td><td>รวม Top ${rows.length}</td><td class="dx-n dx-sep">${_dxB(sv('ly'))}</td><td class="dx-n">${_dxB(sk('ly'))}</td><td class="dx-n">${_dxB(sv('ty'))}</td><td class="dx-n">${_dxB(sk('ty'))}</td><td class="dx-n dx-sep">${_dxPill(_dxPct(sv('ty'),sv('ly')))}</td><td class="dx-n">${(sv('ty')/grand*100).toFixed(1)}%</td></tr>`;
   }
-  // (2026-10-05) Makro นับเป็นห้างเสมอ — เอาสวิตช์ "นับ Makro เป็นห้าง" ออก
-  const makroCk='';
+  // (2026-10-05) Makro นับเป็นห้างเสมอ (ไม่อยู่แท็บร้านค้า) · ปุ่มนี้เลือกแสดง/ซ่อน Makro ในแท็บรวมและแท็บห้าง
+  const makroCk=t==='shop'?'':`<label class="dx-sw"><input type="checkbox" ${s.makro?'checked':''} onchange="dxSet('makro',this.checked)"><span class="tr"></span>รวม Makro</label>`;
   return `<div class="dx-card"><div class="dx-ch"><div><div class="t">Top 20 ลูกค้า</div><div class="s">${sub} · ${_dxLabel(r)} เทียบ ${_dxLabel(r,-1)}</div></div>
       <div class="r"><div class="dx-seg" role="group" aria-label="กลุ่มลูกค้า">${tabs}</div>${makroCk}<button class="dx-btn" type="button" onclick="dxExportTop()">⬇ Excel</button></div></div>
     ${rows.length?`<div class="dx-tw"><table class="dx-t"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>`:'<div class="dx-empty">ไม่มีข้อมูลในช่วงนี้</div>'}

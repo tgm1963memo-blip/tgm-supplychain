@@ -242,7 +242,9 @@ module.exports = function dashboardExecRoutes(db) {
       const OFF_TOP_NAMES = new Set(['ไทย-เยอรมัน', 'ทีจีเอ็ม']);
       const OFF_TOP_CHANNELS = new Set(['shop_factory', 'shop_rama3']);
       const allGroups = [...groups.values()];
-      const offTop = allGroups.filter((g) => OFF_TOP_NAMES.has(g.name) || OFF_TOP_CHANNELS.has(g.channel));
+      // ปุ่ม "รวม Makro" (makro_in_mall=1): ปิด = ซ่อน Makro จาก Top 20 ทุกแท็บ (ยังนับใน KPI) · เปิด = แสดงในแท็บรวม/ห้าง
+      // Makro ไม่อยู่แท็บร้านค้าไม่ว่ากรณีใด (ผู้ใช้ยืนยัน 2026-10-05)
+      const offTop = allGroups.filter((g) => OFF_TOP_NAMES.has(g.name) || OFF_TOP_CHANNELS.has(g.channel) || (!makroInMall && g.channel === 'makro'));
       const list = allGroups.filter((g) => !offTop.includes(g));
       const top = {
         all: list.filter((g) => g.ty_net + (withConsi ? g.ty_consi : 0) > 0)
