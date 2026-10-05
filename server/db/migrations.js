@@ -451,6 +451,11 @@ function runMigrations(db) {
       has_export      INTEGER NOT NULL DEFAULT 0,
       updated_at      TEXT
     );
+    CREATE TABLE IF NOT EXISTS bplus_skus (
+      code       TEXT PRIMARY KEY,
+      name       TEXT,
+      updated_at TEXT
+    );
     CREATE TABLE IF NOT EXISTS bplus_salesman_map (
       bp_code    TEXT PRIMARY KEY,
       bp_name    TEXT,

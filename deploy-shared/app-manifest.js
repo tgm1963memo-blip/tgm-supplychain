@@ -38,6 +38,8 @@ const SALES_ONLY = [
   'dashTopTables',
   '_sbInvoiceSalesRows', '_sbInvoiceSalesRowsRange', '_sdScaleProdsToTotal',
   '_sdBuildCustsFromInvoice', '_sdBuildSlmsFromInvoice', '_sdUpdateSlmDrop',
+  // ตัวกรองบริษัท + ยอดโรงงาน (Bplus) ใน Sales Overview (2026-10-05) — เรียก _sbInvoiceSalesRows* ที่เป็น sales-only
+  '_sdCo', '_sdCoLabel', '_sdCosFor', '_sdInvMonth', '_sdInvRange', '_sdBpLines', '_sdProdsMixed', 'sdSetCo',
   '_sdD', '_sdWI', '_sdVs', '_sdBar', 'sdTogOp',
   '_ymAddYear', '_dateAddYear', '_yoyPct', '_sdYoYMaps', '_sdYoYHead', '_sdYoYCell', '_sdLoadYoY', 'sdTogYoY',
   '_dateToYm', 'sdSetDateRange', 'sdApplyCustomRange', 'sdSetDatePreset', 'sdLoadCustom',

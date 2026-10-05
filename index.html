@@ -5562,7 +5562,8 @@ let _salesNameMemo=null,_salesNameMemoAt=0;
 function salesNameFor(code){
   if(!_salesNameMemo||Date.now()-_salesNameMemoAt>5000){_salesNameMemo=new Map(salesMaster().map(x=>[x.code,x.name]));_salesNameMemoAt=Date.now();}
   const k=String(code||'');
-  return _salesNameMemo.get(k)||code||'';
+  // พนักงานขายโรงงานที่ยังไม่จับคู่รหัส Express (BP-K3 ฯลฯ) — ใช้ชื่อจาก Bplus (2026-10-05)
+  return _salesNameMemo.get(k)||(window._bpSlmNames&&window._bpSlmNames[k]?window._bpSlmNames[k]+' (โรงงาน)':'')||code||'';
 }
 // รหัส Sales ใน Express ที่ผูกกับผู้ใช้ (2026-09-28): sc_users.slm_codes "101,110-1" — ยังไม่ผูก = ใช้ slm_id เดิม
 // ค่า "key" ที่ส่งต่อให้ตัวดึง/กรองยอดขาย = รหัสคั่นด้วย , (คนเดียวมีได้หลายรหัส)
@@ -7227,6 +7228,62 @@ function _sdEffSlm(){
   return myScopeKey(); // '' = ทั้งหมด
 }
 function _sdRowSlmMatch(r,s){return slmRowMatch(r,s);}
+// ── ตัวกรองบริษัทของ Sales Overview (2026-10-05, ผู้ใช้ขอ) — all | tss | tgm ───────────────────────────────
+// ยอดใบกำกับ (invoice_sales_monthly) ดึงตามบริษัทที่เลือก และใช้แฟ้มบริษัทตามปีแบบเดียวกับ Dashboard
+// (server/routes/dashboardExec.js yearSources): ปีปัจจุบัน TSS/TSS-NV · 2568 = TSS-68/TSSN-68 · TGM ตั้งแต่ 2568 = Bplus โรงงาน
+// FIXED (2026-10-05): เดิมดึงเฉพาะแฟ้ม 'TSS' ทุกปี — โหมดรายปีเทียบปี 2568 กับแฟ้ม TSS ที่มียอดปีนั้นแค่บางส่วน (ราว 237 ล้าน)
+// ฝากขาย CONSI ไม่รวม (มีหน้า ฝากขาย CONSI แยก) · TGM ใน Express ซ้ำกับ Bplus จึงไม่ใช้ตั้งแต่ 2568
+function _sdCo(){if(_sd.co==null){try{_sd.co=localStorage.getItem('sd_co')||'all';}catch(e){_sd.co='all';}}return ['tss','tgm'].includes(_sd.co)?_sd.co:'all';}
+function _sdCoLabel(){const c=_sdCo();return c==='tss'?'TSS':c==='tgm'?'TGM โรงงาน':'TSS + TGM';}
+function _sdCosFor(ym){
+  const y=Number(String(ym||'').slice(0,4)),co=_sdCo();
+  const tss=y>=2026?['TSS','TSS-NV']:y===2025?['TSS-68','TSSN-68']:['TSS-67','TSSN-67'];
+  const tgm=y>=2025?['BP-TGM']:['TGM'];
+  return co==='tss'?tss:co==='tgm'?tgm:[...tss,...tgm];
+}
+async function _sdInvMonth(ym){
+  const parts=await Promise.all(_sdCosFor(ym).map(c=>_sbInvoiceSalesRows(ym,c).then(rs=>rs.map(r=>({...r,company:c})))));
+  return parts.flat();
+}
+async function _sdInvRange(a,b){
+  const parts=await Promise.all(_sdCosFor(a).map(c=>_sbInvoiceSalesRowsRange(a,b,c).then(rs=>rs.map(r=>({...r,company:c})))));
+  return parts.flat();
+}
+// บรรทัดสินค้าจริงของโรงงาน (Bplus) ในรูปเดียวกับแถวออเดอร์ — ใช้ในแท็บรายสินค้า · พร้อมจำชื่อลูกค้า/พนักงานขายโรงงาน
+async function _sdBpLines(a,b){
+  if(!_sdCosFor(a).includes('BP-TGM')) return [];
+  try{
+    const {data,error}=await apiFetch('/api/dashboard/bplus/sales_lines?from='+encodeURIComponent(a)+'&to='+encodeURIComponent(b));
+    if(error||!data) return [];
+    window._bpCustNames={...(window._bpCustNames||{}),...(data.customers||{})};
+    window._bpSlmNames={...(window._bpSlmNames||{}),...(data.salesmen||{})};
+    return (data.rows||[]).map(r=>({company:'BP-TGM',ym:r.ym,cust_code:r.cust_code,cust_name:window._bpCustNames[r.cust_code]||r.cust_code,
+      slm_id:r.slm_code,slm_owner:r.slm_code,prod_group:r.prod_group,prod_code:r.prod_code,prod_name:r.prod_name,qty:r.qty,amount:r.amount}));
+  }catch(e){console.warn('bplus sales lines',e.message||e);return [];}
+}
+// รายสินค้าผสม: ฝั่ง TSS = แถวออเดอร์ปรับสัดส่วนให้รวมเท่ายอดใบกำกับ TSS (ประมาณการแบบเดิม) · ฝั่ง TGM = บรรทัดสินค้าจริงจาก Bplus
+// ปรับให้รวมเท่ายอดใบกำกับ TGM (หัก CN แล้ว) · แถวออเดอร์บริษัท TGM ใน Express ไม่ใช้ (ซ้ำกับ Bplus)
+function _sdProdsMixed(orderRows,invRows,bpRows){
+  const sum=(a)=>a.reduce((t,r)=>t+(Number(r.amount)||0),0);
+  const inv=invRows||[],isTgm=r=>r.company==='BP-TGM'||r.company==='TGM';
+  const invBp=inv.filter(isTgm),invTss=inv.filter(r=>!isTgm(r));
+  const out=[];
+  if(invTss.length){
+    const ord=(orderRows||[]).filter(r=>_rowCompany(r)!=='TGM'),oT=sum(ord),f=oT?sum(invTss)/oT:0;
+    ord.forEach(r=>out.push({...r,amount:(Number(r.amount)||0)*f}));
+  }
+  if(invBp.length&&(bpRows||[]).length){
+    const bT=sum(bpRows),f=bT?sum(invBp)/bT:0;
+    bpRows.forEach(r=>out.push({...r,amount:(Number(r.amount)||0)*f}));
+  }
+  return _sdBuildProds(out);
+}
+function sdSetCo(c){
+  _sd.co=['tss','tgm'].includes(c)?c:'all';
+  try{localStorage.setItem('sd_co',_sd.co);}catch(e){}
+  _sdApi.loaded=false;_sdApi.yoy=null;
+  pgMySales();
+}
 // ยอด/โครงสร้างหลังกรอง Sales — null = ไม่กรอง (หรือข้อมูลโหลดมาเฉพาะ Sales คนนั้นจาก server แล้ว)
 function _sdFiltered(){
   const s=_sdEffSlm();
@@ -7239,7 +7296,8 @@ function _sdFiltered(){
   const inv=_sdApi.invoiceBased&&Array.isArray(_sdApi._invRows)?_sdApi._invRows.filter(r=>slmKeySet(s).has(String(r.slm_code||'').trim())):null;
   if(inv){
     total=sum(inv,'amount');const ic=sum(inv,'invoice_count');if(ic) invoices=ic;
-    custs=_sdBuildCustsFromInvoice(inv);slms=_sdBuildSlmsFromInvoice(inv);prods=_sdScaleProdsToTotal(prods,total);
+    custs=_sdBuildCustsFromInvoice(inv);slms=_sdBuildSlmsFromInvoice(inv);
+    prods=_sdScaleProdsToTotal(_sdProdsMixed(rows,inv,(_sdApi._bpRows||[]).filter(r=>slmKeySet(s).has(String(r.slm_id||'').trim()))),total);
     extras=_sdInvExtras(inv);x=_sdXOf(inv);
   }else{custs=_sdBuildCusts(rows);slms=_sdBuildSlms(rows,_sdApi.slmList||[]);}
   // กราฟแท่ง/เทียบเดือนก่อน: ใช้ข้อมูลหลายเดือนในเครื่อง (มีเฉพาะโหมดรายเดือน) — ไม่มีเดือนก่อน = แสดง "—"
@@ -7640,10 +7698,13 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
       // fetched even when invRows turns out empty (a small wasted call) in exchange for the common
       // case (invRows non-empty) no longer paying two round-trips back-to-back.
       const prevYm=_ymAdd(activeMonth,-1);
-      const [invRows,prevInv]=await Promise.all([
-        _sbInvoiceSalesRows(activeMonth,'TSS'),
-        getSupabaseClient().from('invoice_sales_monthly').select('amount').eq('company','TSS').eq('ym',prevYm),
+      // (2026-10-05) ตามบริษัทที่เลือก (_sdCosFor) — เดือนก่อนข้ามปีใช้แฟ้มของปีนั้น
+      const [invRows,prevInv,bpRows]=await Promise.all([
+        _sdInvMonth(activeMonth),
+        getSupabaseClient().from('invoice_sales_monthly').select('amount').in('company',_sdCosFor(prevYm)).eq('ym',prevYm),
+        _sdBpLines(activeMonth,activeMonth),
       ]);
+      _sdApi._bpRows=bpRows;
       if(invRows.length){
         const invTotal=invRows.reduce((a,r)=>a+(Number(r.amount)||0),0);
         const invCount=invRows.reduce((a,r)=>a+(Number(r.invoice_count)||0),0);
@@ -7658,7 +7719,7 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
         const invSlms=_sdBuildSlmsFromInvoice(invRows);
         _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
         _sdApi.slms=invSlms;_sdApi._buildCache.slms=invSlms;
-        const scaledProds=_sdScaleProdsToTotal(_sdApi._buildCache.prods||_sdBuildProds(rows),invTotal);
+        const scaledProds=_sdScaleProdsToTotal(_sdProdsMixed(rows,invRows,bpRows),invTotal);
         _sdApi.prods=scaledProds;_sdApi._buildCache.prods=scaledProds;
       }
     }catch(e){console.warn('invoice_sales_monthly unavailable; showing order-based total instead',e.message||e);}
@@ -7794,7 +7855,7 @@ async function sdLoadYear(){
   // ปัจจุบัน+ปีก่อนหน้า (สำหรับเทียบ YoY) พร้อมกัน ซึ่งเป็นข้อมูลก้อนใหญ่มากผ่าน tunnel — วาดจาก snapshot ที่
   // เคยโหลดสำเร็จของปี+เซลส์คนนี้ก่อน (ถ้ามี) ทันที ระหว่างรอข้อมูลสดจริงจบ (stale-while-revalidate แบบ
   // เดียวกับที่ทำใน pgMySales()'s month view และ pgProdSummary())
-  const yearCacheKey=`sd_year_cache_${gy}_${slmId||'ALL'}`;
+  const yearCacheKey=`sd_year_cache_${gy}_${slmId||'ALL'}_${_sdCo()}`;
   const yearCached=DB.get(yearCacheKey);
   if(yearCached){
     Object.assign(_sdApi,yearCached);
@@ -7837,10 +7898,13 @@ async function sdLoadYear(){
       try{
         // FIXED (code review 2026-09-15): same sequential-await regression as the month view above —
         // these two ranges are independent, parallelize them.
-        const [invRows,prevInv]=await Promise.all([
-          _sbInvoiceSalesRowsRange(start,end,'TSS'),
-          _sbInvoiceSalesRowsRange(`${gy-1}-01`,`${gy-1}-12`,'TSS').catch(()=>[]),
+        // (2026-10-05) ตามบริษัทที่เลือก และใช้แฟ้มบริษัทของปีก่อนให้ถูก (ปี 2568 = TSS-68/TSSN-68 + Bplus)
+        const [invRows,prevInv,bpRows]=await Promise.all([
+          _sdInvRange(start,end),
+          _sdInvRange(`${gy-1}-01`,`${gy-1}-12`).catch(()=>[]),
+          _sdBpLines(start,end),
         ]);
+        _sdApi._bpRows=bpRows;
         if(invRows.length){
           const invTotal=invRows.reduce((a,r)=>a+(Number(r.amount)||0),0);
           const invCount=invRows.reduce((a,r)=>a+(Number(r.invoice_count)||0),0);
@@ -7855,7 +7919,7 @@ async function sdLoadYear(){
           const invSlms=_sdBuildSlmsFromInvoice(invRows);
           _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
           _sdApi.slms=invSlms;_sdApi._buildCache.slms=invSlms;
-          const scaledProds=_sdScaleProdsToTotal(_sdApi._buildCache.prods||_sdBuildProds(rows),invTotal);
+          const scaledProds=_sdScaleProdsToTotal(_sdProdsMixed(rows,invRows,bpRows),invTotal);
           _sdApi.prods=scaledProds;_sdApi._buildCache.prods=scaledProds;
         }
       }catch(e){console.warn('invoice_sales_monthly (year) unavailable; showing order-based figures instead',e.message||e);}
@@ -8154,7 +8218,8 @@ function _sdBuildCustsFromInvoice(invRows){
   const m={};
   for(const r of invRows){
     const custCode=r.cust_code||'(ไม่ระบุ)';
-    const rec=custCache[custCode]||{};
+    // ลูกค้าโรงงาน (Bplus) ที่ไม่มีใน Express ใช้ชื่อจาก Bplus แทนรหัส (2026-10-05)
+    const rec=custCache[custCode]||(window._bpCustNames&&window._bpCustNames[custCode]?{name:window._bpCustNames[custCode]}:{});
     const prof=getCustomerProfile({c:custCode,n:rec.name||custCode,ty:rec.cust_group||'ขายจริง',grp:rec.cust_group||'อื่นๆ',slm:rec.slm_id||''});
     const grp=customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
     const cat=prof.category||rec.cust_group||'ขายจริง';
@@ -8187,7 +8252,8 @@ function _sdBuildSlmsFromInvoice(invRows){
     if(!m[sid])m[sid]={code:sid,name:sid==='(ไม่ระบุ)'?'ไม่ระบุพนักงานขาย':(salesNameFor(sid)||sid),_tot:0,custs:{}};
     m[sid]._tot+=Number(r.amount)||0;_sdXAdd(m[sid],r);
     const custCode=r.cust_code||'(ไม่ระบุ)';
-    const rec=custCache[custCode]||{};
+    // ลูกค้าโรงงาน (Bplus) ที่ไม่มีใน Express ใช้ชื่อจาก Bplus แทนรหัส (2026-10-05)
+    const rec=custCache[custCode]||(window._bpCustNames&&window._bpCustNames[custCode]?{name:window._bpCustNames[custCode]}:{});
     const prof=getCustomerProfile({c:custCode,n:rec.name||custCode,ty:rec.cust_group||'ขายจริง',grp:rec.cust_group||'อื่นๆ',slm:rec.slm_id||''});
     const grp=customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
     if(!m[sid].custs[grp])m[sid].custs[grp]={n:grp,ty:prof.category||'ขายจริง',category:prof.category||'ขายจริง',grp,_tot:0,_branches:{}};
@@ -8397,6 +8463,8 @@ function pgMySales(){
       <button class="btn btn-sm" onclick="sdGoNow()" style="font-size:12px">ปัจจุบัน</button>
     </div>
     <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
+    ${[['all','ทุกบริษัท'],['tss','TSS'],['tgm','TGM']].map(([k,l])=>`<button class="btn btn-sm" onclick="sdSetCo('${k}')" title="${k==='tss'?'TSS + TSS-NV':k==='tgm'?'โรงงาน TGM (Bplus)':'TSS + TSS-NV + TGM (ไม่รวมฝากขาย)'}" style="${_sdCo()===k?'background:var(--N);color:#fff;border-color:var(--N);font-weight:600':''}">${l}</button>`).join('')}
+    <div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <button class="btn btn-sm" id="sd-yoy" onclick="sdTogYoY()" style="${_sd.showYoY?'background:var(--T);color:#fff;border-color:var(--T);font-weight:600':''}">📊 เทียบปีที่แล้ว</button>
     ${isAll?`<div style="width:1px;background:var(--BD);align-self:stretch;margin:0 2px"></div>
     <span style="font-size:12px;color:var(--TX2);align-self:center">มุมมอง:</span>
@@ -8528,8 +8596,10 @@ function sdKPI(){
     ?`<div class="kh" style="color:var(--BL);font-weight:600">👤 เฉพาะ Sales: ${esc(_slmFull)}</div>`
     :`<div class="kh" style="color:var(--BL);font-weight:600">👤 เฉพาะ Sales ${_slmCount} รหัส <button type="button" title="ดูรายชื่อ Sales" aria-label="ดูรายชื่อ Sales" aria-expanded="false" onclick="const d=this.nextElementSibling;d.hidden=!d.hidden;this.setAttribute('aria-expanded',String(!d.hidden))" style="border:0;background:none;cursor:pointer;padding:0 2px;font-size:13px;line-height:1">ℹ️</button><div hidden style="margin-top:4px;font-weight:400;color:var(--TX2);background:var(--bg2);border-radius:6px;padding:6px 8px;max-height:140px;overflow:auto">${esc(_slmFull)}</div></div>`)+`${!F.total&&!_sd.slmF?'<div class="kh" style="color:var(--A)">บัญชีนี้ไม่มีรหัส Sales ที่ตรงกับข้อมูลขาย — เลือกรหัส Sales จากตัวกรองด้านล่าง</div>':''}`:'';
   const invoiceBasedNote=_sdApi.invoiceBased
-    ? '<div class="kh" style="color:var(--TX3)">ยอดจากใบกำกับภาษีจริง (TSS) — รายละเอียดสินค้า/ลูกค้าด้านล่างยังอ้างอิงข้อมูลออเดอร์ อาจไม่รวมเท่ายอดนี้</div>'
+    ? `<div class="kh" style="color:var(--TX3)">ยอดจากใบกำกับภาษีจริง (${_sdCoLabel()}) — รายสินค้าฝั่ง TSS ปรับสัดส่วนจากข้อมูลออเดอร์ · ฝั่ง TGM ใช้บรรทัดสินค้าจริงจากโรงงาน</div>`
     : '';
+  // (2026-10-05) โหมดกำหนดเอง / เทียบปีที่แล้ว ยังคิดจากข้อมูลออเดอร์ ซึ่งไม่มียอดโรงงาน — แจ้งไว้จนกว่าจะทำส่วนนี้
+  const coLimitNote=_sdCo()!=='tss'&&(_sd.pt==='custom'||_sd.showYoY)?`<div class="kh" style="color:var(--A)">${_sd.pt==='custom'?'โหมดกำหนดเอง':'ตัวเลขเทียบปีที่แล้ว'}ยังไม่รวมยอด TGM (โรงงาน)</div>`:'';
   const _yoyLine=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${_sdFmtTotal(prev)} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳ กำลังโหลดข้อมูลปีที่แล้ว…':'')}</div>`:'';
   const _yoyLineNum=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${Math.round(prev).toLocaleString()} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳':'')}</div>`:'';
   kr.innerHTML=`
@@ -8537,7 +8607,7 @@ function sdKPI(){
       ${isCustom?`<div class="kh" style="color:var(--TX2)">${customRangeLbl||'ช่วงที่เลือก'}</div>`:vs==null?`<div class="kh" style="color:${vsC}">— ${vsLbl}</div>`:`<div class="kh" style="color:${vsC}">${vs>=0?'▲':'▼'} ${Math.abs(vs)}% ${vsLbl}</div>`}
       ${slmNote}
       ${customGranularityNote}
-      ${invoiceBasedNote}
+      ${invoiceBasedNote}${coLimitNote}
       <div style="display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:8px">${sparks}</div>
       ${_yoyLine(total,yoy?.total||0,'ปีที่แล้ว')}</div>
     <div class="kpi g"><div class="kl">ปริมาณขาย (กก./ถุง)</div><div class="kv">${Math.round(qty).toLocaleString()}</div>

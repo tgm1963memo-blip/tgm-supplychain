@@ -82,7 +82,9 @@ async function fetchFromBplus() {
       WHERE ${WHERE_DOCS}
       GROUP BY r.AR_CODE, r.AR_NAME, r.AR_SLMNCODE`)).recordset;
     const salesmen = (await pool.request().query('SELECT RTRIM(SLMN_CODE) AS code, RTRIM(SLMN_NAME) AS name FROM SALESMAN')).recordset;
-    return { monthly, lines, customers, salesmen };
+    // ชื่อสินค้า (2026-10-05) — Sales Overview แท็บรายสินค้าแสดงชื่อสินค้าโรงงาน (รหัสอย่าง 20394-177 ไม่มีใน products ของ Express)
+    const skus = (await pool.request().query('SELECT RTRIM(SKU_CODE) AS code, RTRIM(SKU_NAME) AS name FROM SKUMASTER')).recordset;
+    return { monthly, lines, customers, salesmen, skus };
   } finally {
     await pool.close().catch(() => {});
   }
@@ -150,6 +152,10 @@ async function runBplusImport(db, { force = false } = {}) {
       // ตาราง SALESMAN ของ Bplus มีรายการที่ไม่ใช่คน (เช่น สาขาบิ๊กซี B01–B9x) — เก็บเฉพาะรหัสที่ผูกกับลูกค้าที่มียอดจริง
       const usedSlm = new Set(data.customers.map((c) => c.slmn).filter(Boolean));
       for (const s of data.salesmen) if (s.code && usedSlm.has(s.code)) upSlm.run(s.code, s.name || '');
+      const usedSku = new Set(data.lines.map((l) => l.sku));
+      const upSku = db.prepare(`INSERT INTO bplus_skus (code, name, updated_at) VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        ON CONFLICT(code) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`);
+      for (const s of data.skus || []) if (s.code && usedSku.has(s.code)) upSku.run(s.code, s.name || '');
       db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, NULL, ?)
         ON CONFLICT(source) DO UPDATE SET synced_at = excluded.synced_at`).run(STATE_KEY, new Date().toISOString());
       db.exec('COMMIT');
