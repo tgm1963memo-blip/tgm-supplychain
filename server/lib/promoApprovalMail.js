@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { sendMail, COMPANY, escapeHtml } = require('./mailer');
+const { ccEmailsOf } = require('./promoApproval');
 
 // แจ้งอนุมัติใบเคาะราคาทางอีเมล (2026-09-23, แบบเดียวกับ e-memo):
 // - เอกสารเข้าขั้นอนุมัติใหม่ (ส่งอนุมัติ / ผ่านขั้นก่อนหน้า / escalate ผู้บริหาร) → ส่งอีเมลถึงผู้อนุมัติของขั้นนั้น
@@ -158,11 +159,34 @@ async function notifyCurrentApprovers(db, header, baseUrl) {
 
 async function notifyCreator(db, header, outcome, byUid, comment) {
   const creator = db.prepare('SELECT email FROM sc_users WHERE uid = ?').get(header.created_by);
-  if (!creator?.email) return { sent: false, reason: 'NO_EMAIL' };
+  // CC ของเส้นทาง (2026-10-06) — ผู้จัดทำไม่มีอีเมล ยังส่งถึง CC (ใส่เป็น to) · ตัดอีเมลผู้จัดทำออกจาก cc กันได้ซ้ำ
+  const cc = ccEmailsOf(db, header.route_id).filter(x => x.toLowerCase() !== String(creator?.email || '').toLowerCase());
+  if (!creator?.email && !cc.length) return { sent: false, reason: 'NO_EMAIL' };
   const byName = byUid ? (db.prepare('SELECT name FROM sc_users WHERE uid = ?').get(byUid)?.name || byUid) : '';
   const mail = renderResultEmail({ header, sum: docSummary(db, header), outcome, byName, comment,
     openUrl: `${appUrl()}/?draft=${encodeURIComponent(header.draft_no)}` });
-  return sendMail({ to: creator.email, ...mail });
+  return creator?.email ? sendMail({ to: creator.email, cc, ...mail }) : sendMail({ to: cc.join(', '), ...mail });
+}
+
+// แจ้ง CC ของเส้นทางเมื่อส่งอนุมัติ (2026-10-06) — อีเมลแจ้งเพื่อทราบ ไม่มีลิงก์อนุมัติ/ไม่อนุมัติ
+// (ลิงก์ token ผูกกับผู้อนุมัติแต่ละคน ส่งต่อให้ CC ไม่ได้ ไม่งั้นผู้รับ CC กดอนุมัติแทนได้)
+async function notifyCcSubmitted(db, header) {
+  const cc = ccEmailsOf(db, header.route_id);
+  if (!cc.length) return { sent: false, reason: 'NO_CC' };
+  const sum = docSummary(db, header);
+  const levels = parse(header.levels_json);
+  const openUrl = openUrlOf(header);
+  const subject = `[แจ้งเพื่อทราบ] ส่งอนุมัติใบเคาะราคา ${header.doc_no || header.draft_no} — ${header.promo_name || ''}`.trim();
+  const html = shell(`<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#111">แจ้งเพื่อทราบ — มีใบเคาะราคาส่งเข้าขั้นอนุมัติ${header.route_name ? ` (เส้นทาง <b>${e(header.route_name)}</b>)` : ''}</p>
+    ${summaryBlockHtml(header, sum, '')}
+    ${itemsTableHtml(sum.items)}
+    ${levels.length ? `<div style="font-size:13px;margin:8px 0"><b>ลำดับการอนุมัติ:</b> ${levels.map((lv, i) => `${i + 1}. ${e(lv.label || 'ขั้นที่ ' + (i + 1))} (${(lv.approvers || []).map(a => e(a.name || a.uid)).join(', ')})`).join(' → ')}</div>` : ''}
+    <div style="text-align:center;margin:18px 0 4px">
+      <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">🔎 เปิดดูในระบบ</a>
+    </div>
+    <p style="margin:6px 0 0;font-size:11.5px;color:#6B7280;text-align:center">ท่านได้รับอีเมลนี้ในฐานะผู้รับสำเนา (CC) ของเส้นทางอนุมัติ — จะได้รับแจ้งอีกครั้งเมื่ออนุมัติครบหรือไม่อนุมัติ</p>`);
+  return sendMail({ to: cc.join(', '), subject, html, text: `${subject}
+เปิดในระบบ: ${openUrl}` });
 }
 
 // เรียกหลังบันทึกการเปลี่ยนแปลงหัวเอกสาร (PATCH ปกติ หรืออนุมัติผ่านอีเมล) — before/after เป็น row ที่ parse แล้ว
@@ -171,6 +195,7 @@ async function afterChange(db, before, after, baseUrl) {
   const pending = ['pending_approval', 'pending_exec_approval'];
   const levelChanged = before.status !== after.status || (before.current_level || 0) !== (after.current_level || 0);
   if (pending.includes(after.status) && levelChanged) await notifyCurrentApprovers(db, after, baseUrl);
+  if (after.status === 'pending_approval' && !pending.includes(before.status)) await notifyCcSubmitted(db, after);
   if (before.status !== after.status && (after.status === 'approved' || after.status === 'rejected')) {
     const acted = [...parse(after.approval_history_json), ...parse(after.levels_json)].flatMap(l => l.approvers || [])
       .filter(a => a.ts).sort((x, y) => String(y.ts).localeCompare(String(x.ts)))[0];
@@ -214,4 +239,4 @@ async function notifyRecall(db, header, uids, byName, note) {
   return out;
 }
 
-module.exports = { notifyCancelRequest, notifyCancelDecision, notifyRecall, afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };
+module.exports = { notifyCcSubmitted, notifyCancelRequest, notifyCancelDecision, notifyRecall, afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };

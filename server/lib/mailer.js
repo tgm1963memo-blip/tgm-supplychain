@@ -91,14 +91,14 @@ async function sendResetPasswordEmail({ to, name, resetLink }) {
 
 // ส่งอีเมลทั่วไป (ใช้กับแจ้งอนุมัติใบเคาะราคา — lib/promoApprovalMail.js) — SMTP ยังไม่ตั้งค่าก็ไม่ error
 // แค่ log หัวเรื่อง/ผู้รับไว้ เหมือน sendResetPasswordEmail
-async function sendMail({ to, subject, html, text }) {
+async function sendMail({ to, cc, subject, html, text }) {
   const t = getTransporter();
   if (!t) {
     console.warn(`[mailer] SMTP ยังไม่ได้ตั้งค่า — ไม่ได้ส่ง "${subject}" ถึง ${to}`);
     return { sent: false, reason: 'SMTP_CONFIG_MISSING' };
   }
   try {
-    await t.sendMail({ from: process.env.SMTP_FROM || `"TSS Supply Chain" <${process.env.SMTP_USER}>`, to, subject, html, text });
+    await t.sendMail({ from: process.env.SMTP_FROM || `"TSS Supply Chain" <${process.env.SMTP_USER}>`, to, ...(cc && cc.length ? { cc } : {}), subject, html, text });
     return { sent: true };
   } catch (e) {
     console.error(`[mailer] sendMail "${subject}" -> ${to} failed:`, e.message);

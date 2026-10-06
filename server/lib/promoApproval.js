@@ -167,4 +167,28 @@ function validateChange(db, old, change, user) {
   if (status && status !== old.status && !(old.status === 'approved' && status === 'keyed_to_express') && !(old.status === 'rejected' && status === 'draft')) throw new Error('ไม่สามารถเปลี่ยนสถานะข้ามขั้นอนุมัติ');
   if (['levels_json', 'current_level', 'approvers_json'].some(k => change[k] !== undefined)) throw new Error('ไม่สามารถแก้ข้อมูลขั้นอนุมัติโดยตรง');
 }
-module.exports = { validateChange, template, ROUTES_ENTITY, validateRoutes };
+// อีเมล CC ของแต่ละเส้นทางอนุมัติ (2026-10-06) — แถว entity_type='promo_draft_cc', levels_json = { "<route_id>": [email,...] }
+// ("" = เส้นทางมาตรฐาน) · ผู้รับ CC ได้อีเมลแจ้งเพื่อทราบตอนส่งอนุมัติ (ไม่มีลิงก์อนุมัติ) และ CC ในอีเมลผลอนุมัติสุดท้าย
+const CC_ENTITY = 'promo_draft_cc';
+const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
+function validateCc(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return 'รูปแบบรายการอีเมล CC ไม่ถูกต้อง';
+  for (const [k, list] of Object.entries(map)) {
+    if (k !== '' && !ROUTE_ID_RE.test(k)) return 'รหัสเส้นทางอนุมัติของอีเมล CC ไม่ถูกต้อง';
+    if (!Array.isArray(list)) return 'รูปแบบรายการอีเมล CC ไม่ถูกต้อง';
+    if (list.length > 20) return 'อีเมล CC ได้ไม่เกิน 20 รายการต่อเส้นทาง';
+    const bad = list.find(x => typeof x !== 'string' || x.length > 120 || !EMAIL_RE.test(x));
+    if (bad !== undefined) return `อีเมล CC ไม่ถูกต้อง: ${String(bad).slice(0, 60)}`;
+  }
+  return null;
+}
+function ccEmailsOf(db, routeId) {
+  try {
+    const row = db.prepare('SELECT levels_json FROM approval_workflow_templates WHERE entity_type=?').get(CC_ENTITY);
+    const map = row ? parse(row.levels_json) : null;
+    const list = map && !Array.isArray(map) ? map[routeId || ''] : null;
+    return Array.isArray(list) ? [...new Set(list.filter(x => typeof x === 'string' && EMAIL_RE.test(x)).map(x => x.trim()))] : [];
+  } catch { return []; }
+}
+
+module.exports = { validateChange, template, ROUTES_ENTITY, validateRoutes, CC_ENTITY, validateCc, ccEmailsOf };

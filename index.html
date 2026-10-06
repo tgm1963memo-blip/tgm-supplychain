@@ -17475,21 +17475,28 @@ function _draftSuggestRoute(routes, facts) {
 let _pdWfRoutes = [];
 let _pdWfRouteId = ''; // เส้นทางที่กำลังแก้ในหน้าตั้งค่า ('' = มาตรฐาน)
 let _pdWfCorpOpts = null;
+// อีเมล CC ของแต่ละเส้นทาง (2026-10-06) — entity 'promo_draft_cc' = { "<route_id>": [email] } ("" = มาตรฐาน)
+// server: lib/promoApproval.js validateCc / lib/promoApprovalMail.js (แจ้งเพื่อทราบตอนส่ง + CC อีเมลผลสุดท้าย)
+const PROMO_DRAFT_CC_ENTITY = 'promo_draft_cc';
+const _PD_EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
+let _pdWfCc = {};
 let _pdWfDirty = false; // มีการแก้เส้นทางที่เปิดอยู่ (ชื่อ/เงื่อนไข/ขั้น/ผู้อนุมัติ) ที่ยังไม่ได้บันทึก
 async function pgPromoDraftWorkflowSettings(skipFetch) {
   if (!skipFetch) {
-    const [routes, normal, exec, users] = await Promise.all([
+    const [routes, normal, exec, users, cc] = await Promise.all([
       _draftLoadRoutes().catch(() => null),
       SB.getApprovalWorkflowTemplate(_draftRouteEntity(_pdWfRouteId)),
       SB.getApprovalWorkflowTemplate(PROMO_DRAFT_EXEC_WF_ENTITY),
       CACHE.get('users', () => SB.getUsers()).catch(() => DB.get('users') || []),
+      SB.getApprovalWorkflowTemplate(PROMO_DRAFT_CC_ENTITY),
     ]);
-    if (routes === null || normal === null || exec === null) {
+    if (routes === null || normal === null || exec === null || cc === null) {
       document.getElementById('ct').innerHTML = `<div class="ch" style="margin-bottom:10px"><button class="btn btn-sm" onclick="_pdListView='list';pgPromoDrafts()">← กลับ</button></div>
         <div class="al alw">โหลดเส้นทางอนุมัติไม่สำเร็จ — ยังไม่เปิดให้แก้ไข เพื่อไม่ให้บันทึกทับเส้นทางที่มีอยู่ <button class="btn btn-sm" onclick="pgPromoDraftWorkflowSettings()">ลองใหม่</button></div>`;
       return;
     }
     _pdWfRoutes = routes;
+    _pdWfCc = cc && typeof cc === 'object' && !Array.isArray(cc) ? cc : {};
     _pdWfDirty = false;
     _pdCodeMap = null; _pdCodeMapDraft = null; _pdRenumberPlan = null;
     if (_pdWfRouteId && !routes.some(r => r.id === _pdWfRouteId)) { _pdWfRouteId = ''; return pgPromoDraftWorkflowSettings(); }
@@ -17554,6 +17561,7 @@ async function pgPromoDraftWorkflowSettings(skipFetch) {
     <div class="ch"><div class="ct2">🧭 ${cur ? `เส้นทาง: ${esc(cur.name || cur.id)}` : 'เส้นทางมาตรฐาน'}</div>
       <button class="btn btn-sm" onclick="pdWfCopyRoute()" title="สร้างเส้นทางใหม่ที่มีขั้นอนุมัติ/ผู้อนุมัติ/เงื่อนไขเหมือนเส้นทางนี้">📋 คัดลอกเป็นเส้นทางใหม่</button></div>
     ${condHtml}
+    ${_pdWfCcHtml()}
     <div id="pdwf-normal-lvls">${lvlHtml(_pdWfNormalLevels, 'normal')}</div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-sm btn-t" onclick="pdWfAddLevel('normal')">+ เพิ่มขั้น</button>
@@ -17677,6 +17685,42 @@ async function pdRenumberAllApply(btn) {
   toast(`ออกเลขใหม่แล้ว ${r.data?.changed || 0} ใบ`);
   _pdRenumberPlan = null; CACHE.clear('promo_draft_headers');
   pgPromoDraftWorkflowSettings(true);
+}
+function _pdWfCcHtml() {
+  const list = _pdWfCc[_pdWfRouteId] || [];
+  const opts = _pdWfUsers.filter(u => u.email).map(u => `<option value="${esc(u.email)}">${esc(u.name || u.uid)}</option>`).join('');
+  return `<div style="background:var(--bg2);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12.5px">
+    <b style="color:var(--TX2)">📧 อีเมล CC</b> <span style="color:var(--TX3);font-size:11.5px">(ได้อีเมลแจ้งเพื่อทราบตอนส่งอนุมัติ และสำเนาอีเมลผลอนุมัติครบ/ไม่อนุมัติ — ไม่มีลิงก์อนุมัติ · ไม่เกิน 20 อีเมล)</span>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">
+      ${list.map((m, i) => `<span style="font-size:11.5px;background:var(--LBL);color:var(--BL);border-radius:4px;padding:2px 8px">${esc(m)} <button onclick="pdWfCcRem(${i})" style="background:none;border:0;cursor:pointer;color:var(--TX3);padding:0">✕</button></span>`).join('') || '<span style="color:var(--TX3)">ยังไม่มี</span>'}
+      <input type="text" id="pdwf-cc-inp" list="pdwf-cc-opts" placeholder="+ พิมพ์อีเมล หรือเลือกผู้ใช้" style="width:230px;padding:3px 7px;font-size:12px" onkeydown="if(event.key==='Enter')pdWfCcAdd()">
+      <button class="btn btn-xs" onclick="pdWfCcAdd()">เพิ่ม</button>
+      <datalist id="pdwf-cc-opts">${opts}</datalist>
+    </div></div>`;
+}
+function pdWfCcAdd() {
+  const inp = document.getElementById('pdwf-cc-inp');
+  const vals = String(inp?.value || '').split(/[\s,;]+/).map(x => x.trim()).filter(Boolean);
+  if (!vals.length) return;
+  const bad = vals.find(v => !_PD_EMAIL_RE.test(v));
+  if (bad) { toast('อีเมลไม่ถูกต้อง: ' + bad, 'warn'); return; }
+  const cur = _pdWfCc[_pdWfRouteId] || [];
+  const next = [...cur, ...vals.filter(v => !cur.some(c => c.toLowerCase() === v.toLowerCase()))];
+  if (next.length > 20) { toast('อีเมล CC ได้ไม่เกิน 20 รายการต่อเส้นทาง', 'warn'); return; }
+  _pdWfCc = { ..._pdWfCc, [_pdWfRouteId]: next };
+  _pdWfDirty = true;
+  pgPromoDraftWorkflowSettings(true);
+  toast('เพิ่มแล้ว — กด "💾 บันทึกเส้นทางนี้" เพื่อบันทึก');
+}
+function pdWfCcRem(i) {
+  _pdWfCc = { ..._pdWfCc, [_pdWfRouteId]: (_pdWfCc[_pdWfRouteId] || []).filter((_, k) => k !== i) };
+  _pdWfDirty = true;
+  pgPromoDraftWorkflowSettings(true);
+}
+// เก็บเฉพาะเส้นทางที่ยังมีอยู่ ("" = มาตรฐาน) — เส้นทางที่ถูกลบไปแล้วไม่ค้างในรายการ CC
+function _pdWfCcClean() {
+  const ids = new Set(['', ..._pdWfRoutes.map(r => r.id)]);
+  return Object.fromEntries(Object.entries(_pdWfCc).filter(([k, v]) => ids.has(k) && Array.isArray(v) && v.length));
 }
 function _pdWfCurRoute() { return _pdWfRoutes.find(r => r.id === _pdWfRouteId) || null; }
 function pdWfSelectRoute(id) {
@@ -17836,7 +17880,10 @@ function pdWfSave(kind) {
   if (route && !String(route.name || '').trim()) { toast('กรุณาตั้งชื่อเส้นทาง', 'warn'); return; }
   const entityType = kind === 'exec' ? PROMO_DRAFT_EXEC_WF_ENTITY : _draftRouteEntity(_pdWfRouteId);
   // เส้นทางเพิ่มเติม: บันทึกชื่อ/เงื่อนไขแนะนำ (รายการเส้นทาง) ไปพร้อมกับขั้นอนุมัติ
-  Promise.all([SB.saveApprovalWorkflowTemplate(entityType, levels), route ? SB.saveApprovalWorkflowTemplate(PROMO_DRAFT_ROUTES_ENTITY, _pdWfRoutes) : true]).then(([ok, ok2]) => {
+  // อีเมล CC บันทึกไปพร้อมกับเส้นทาง (ปกติ/เพิ่มเติม) — ขั้นผู้บริหารไม่มี CC แยก
+  Promise.all([SB.saveApprovalWorkflowTemplate(entityType, levels), route ? SB.saveApprovalWorkflowTemplate(PROMO_DRAFT_ROUTES_ENTITY, _pdWfRoutes) : true,
+    kind === 'exec' ? true : SB.saveApprovalWorkflowTemplate(PROMO_DRAFT_CC_ENTITY, _pdWfCcClean())]).then(([ok, ok2, ok3]) => {
+    ok2 = ok2 && ok3;
     const label = kind === 'exec' ? 'ผู้บริหาร' : route ? ` "${route.name}"` : 'มาตรฐาน';
     toast(ok && ok2 ? `บันทึกเส้นทาง${label}แล้ว — ${levels.length} ขั้นตอน` : 'บันทึกไม่สำเร็จ ลองใหม่', ok && ok2 ? undefined : 'warn');
     if (ok && ok2 && kind !== 'exec') _pdWfDirty = false;

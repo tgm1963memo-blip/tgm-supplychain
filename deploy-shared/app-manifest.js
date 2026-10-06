@@ -96,7 +96,7 @@ const SALES_ONLY = [
   // ใบเคาะราคา v3 (2026-09-24): สินค้า NPD / ค่าใช้จ่ายนอกสัญญา, Pro Period ก่อน / Pro No. ล่าสุด, เส้นทางอนุมัติหลายแบบ
   '_draftFormExtraHtml', '_draftOtherCostSum', '_draftBranchesFrom', '_draftIsOffContract', 'draftOffContractChanged', '_draftDocDate', '_draftPickSetRoute',
   'PROMO_DRAFT_ROUTES_ENTITY', '_draftRouteEntity', '_draftLoadRoutes', '_draftNorm', '_draftDocRouteFacts', '_draftRouteMatch', '_draftSuggestRoute',
-  '_pdWfRoutes', '_pdWfRouteId', '_pdWfCorpOpts', '_pdWfCurRoute', 'pdWfSelectRoute', 'pdWfAddRoute', 'pdWfDelRoute',
+  '_pdWfRoutes', '_pdWfRouteId', '_pdWfCorpOpts', '_pdWfCurRoute', 'PROMO_DRAFT_CC_ENTITY', '_PD_EMAIL_RE', '_pdWfCc', '_pdWfCcHtml', 'pdWfCcAdd', 'pdWfCcRem', '_pdWfCcClean', 'pdWfSelectRoute', 'pdWfAddRoute', 'pdWfDelRoute',
   'pdWfRouteName', 'pdWfRouteMatch', 'pdWfRouteType', 'pdWfRouteCorpAdd', 'pdWfRouteCorpRem',
   '_draftEquipKeep', '_draftDiscScopeKeep', '_draftSpecialDistKeep', '_draftOtherCostDetailDefault', 'draftNpdChanged', '_draftSyncOtherCostBox', 'DRAFT_LINE_COL_KEYS', 'DRAFT_LINE_COL_KEYS_V2', '_pdWfDirty',
   '_draftCorpBase', '_draftOverlap', '_draftRenderOverlapMarks', 'draftShowOverlap', '_draftCopyHeader', '_draftCopySrcNo', '_draftLinesFromRows', 'pdWfCopyRoute',
