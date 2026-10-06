@@ -5,6 +5,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { requireRole } = require('../middleware/auth');
 const { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, guessExecChannel } = require('../lib/execChannel');
 const { groupNameOf } = require('../lib/customerGroup');
+const { resolveScope, factSql } = require('../lib/customerScope');
 
 // Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
 // ตามช่วงเวลาที่เลือก (YTD / เดือน / ไตรมาส / ทั้งปี) เทียบช่วงเดียวกันของปีก่อน:
@@ -87,8 +88,8 @@ module.exports = function dashboardExecRoutes(db) {
     const { src, raw } = companyFilter(year);
     const rows = db.prepare(`SELECT company, ym, cust_code, SUM(amount) AS amount FROM invoice_sales_monthly
       WHERE company IN (${inList(raw.length)}) AND ym >= ? AND ym <= ?
-      ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}
-      GROUP BY company, ym, cust_code`).all(...raw, `${year}-01`, `${year}-12`, ...slmCodes);
+      ${slmCodes.sql}
+      GROUP BY company, ym, cust_code`).all(...raw, `${year}-01`, `${year}-12`, ...slmCodes.params);
     const company = {};
     const channel = {};
     const chCache = new Map();
@@ -126,8 +127,8 @@ module.exports = function dashboardExecRoutes(db) {
     const { src, raw } = companyFilter(Number(from.slice(0, 4)));
     const rows = parts(from, to, raw).flatMap((p) => db.prepare(`SELECT company, cust_code, SUM(amount) AS amount FROM ${p.t.inv}
       WHERE company IN (${inList(p.cos.length)}) AND ${p.t.col} >= ? AND ${p.t.col} <= ?
-      ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}
-      GROUP BY company, cust_code`).all(...p.cos, p.lo, p.hi, ...slmCodes));
+      ${slmCodes.sql}
+      GROUP BY company, cust_code`).all(...p.cos, p.lo, p.hi, ...slmCodes.params));
     const map = new Map();
     for (const r of rows) {
       // tgm = ส่วนที่ขายผ่านโรงงาน (Bplus) — ใช้แสดงยอดแยกบริษัทใต้ชื่อเครือใน Top 20
@@ -165,7 +166,7 @@ module.exports = function dashboardExecRoutes(db) {
   function icTotal(from, to, slmCodes) {
     const [p] = parts(from, to, ['BP-TGM-IC']);
     const r = db.prepare(`SELECT SUM(amount) AS a FROM ${p.t.inv} WHERE company = 'BP-TGM-IC' AND ${p.t.col} >= ? AND ${p.t.col} <= ?
-      ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}`).get(p.lo, p.hi, ...slmCodes);
+      ${slmCodes.sql}`).get(p.lo, p.hi, ...slmCodes.params);
     return Number(r?.a) || 0;
   }
 
@@ -182,8 +183,8 @@ module.exports = function dashboardExecRoutes(db) {
       const rows = parts(from, to, raw).flatMap((p) => db.prepare(`SELECT company, cust_code, sku, unit_code, SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
         FROM ${p.t.lines}
         WHERE company IN (${inList(p.cos.length)}) AND ${p.t.col} >= ? AND ${p.t.col} <= ? AND cust_code IN (${inList(part.length)})
-        ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}
-        GROUP BY company, cust_code, sku, unit_code`).all(...p.cos, p.lo, p.hi, ...part, ...slmCodes));
+        ${slmCodes.sql}
+        GROUP BY company, cust_code, sku, unit_code`).all(...p.cos, p.lo, p.hi, ...part, ...slmCodes.params));
       for (const r of rows) {
         const cur = out.get(r.cust_code) || { net: 0, consi: 0, amt: 0, amtKg: 0 };
         let kg = null;
@@ -212,7 +213,15 @@ module.exports = function dashboardExecRoutes(db) {
       if (from.slice(0, 4) !== to.slice(0, 4) || from > to) return res.status(400).json({ error: 'from/to ต้องอยู่ในปีเดียวกัน และ from ≤ to' });
       const year = Number(from.slice(0, 4));
       if (year < 2020 || year > 2100) return res.status(400).json({ error: 'ปีไม่ถูกต้อง' });
-      const slmCodes = [...new Set(String(req.query.slm || '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 50);
+      // ตัวกรอง Sales + สิทธิ์ (2026-10-06, lib/customerScope.js): slmCodes เป็น {sql, params} ที่ต่อท้าย WHERE ได้เลย
+      //   · ไม่จำกัด: เลือก Sales มา = slm_code IN (…) · ไม่เลือก = ทั้งหมด
+      //   · ถูกจำกัด: เลือก Sales มา = ตัดให้เหลือเฉพาะรหัสที่ดูได้ (ไม่เหลือ = ว่าง) · ไม่เลือก = รหัสที่ดูได้ + ลูกค้าเจ้า MT
+      const scope = resolveScope(db, req.user);
+      let wantSlm = [...new Set(String(req.query.slm || '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 50);
+      if (!scope.all && wantSlm.length) wantSlm = wantSlm.filter((c) => scope.slmCodes.includes(c));
+      const slmCodes = req.query.slm && (scope.all || wantSlm.length || String(req.query.slm).trim())
+        ? (wantSlm.length ? { sql: `AND slm_code IN (${inList(wantSlm.length)})`, params: wantSlm } : { sql: 'AND 0', params: [] })
+        : scope.all ? { sql: '', params: [] } : (() => { const x = factSql(scope, { cust: 'cust_code', slm: 'slm_code' }); return { sql: `AND ${x.sql}`, params: x.params }; })();
       const withConsi = req.query.consi !== '0';
       const makroInMall = req.query.makro_in_mall === '1';
       const co = String(req.query.co || 'all');

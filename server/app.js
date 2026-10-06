@@ -150,10 +150,17 @@ function buildApp(db, opts = {}) {
     readOnly: true,
   }));
 
+  // สิทธิ์การเห็นลูกค้า/ยอดขาย/ใบโปร ฝั่ง server (2026-10-06) — ดู lib/customerScope.js
+  const cs = require('./lib/customerScope');
+  const scopeOf = req => cs.resolveScope(db, req.user);
+  const factScope = cols => req => cs.factSql(scopeOf(req), cols);
+  const custScope = col => req => cs.custSql(scopeOf(req), col);
+
   app.use('/api/customers', authed, makeCrudRouter(db, 'customers', {
     pk: 'code',
     fields: ['code', 'name', 'cust_group', 'slm_id', 'is_active'],
     readOnly: true,
+    scope: factScope({ cust: 'code', slm: 'slm_id' }),
   }));
 
   app.use('/api/salesmen', authed, makeCrudRouter(db, 'salesmen', {
@@ -260,6 +267,7 @@ function buildApp(db, opts = {}) {
       // หมวดลูกค้าผู้บริหาร (2026-10-03) — ดู lib/execChannel.js
       'exec_channel', 'exec_channel_source'],
     writeRoles: MASTER_DATA_ROLES,
+    scope: custScope('code'),
   }));
 
   app.use('/api/salesmen_profiles', authed, makeCrudRouter(db, 'salesmen_profiles', {
@@ -475,8 +483,10 @@ function buildApp(db, opts = {}) {
     const cols = { ref: ['doc_ref'], doc: ['sonum'], cust: ['cust_code', 'cust_name'], sku: ['sku', 'sku_name'] }[String(req.query.field || 'ref')] || ['doc_ref'];
     const like = '%' + q.replace(/[\\%_]/g, m => '\\' + m) + '%';
     const where = cols.map(c => `lower(coalesce(${c}, '')) LIKE ? ESCAPE '\\'`).join(' OR ');
-    const row = db.prepare(`SELECT MIN(create_date) AS min_create, MAX(create_date) AS max_create, COUNT(*) AS lines, COUNT(DISTINCT sonum) AS docs FROM promo_docs WHERE ${where}`).get(...cols.map(() => like));
-    const samples = db.prepare(`SELECT DISTINCT ${cols[0]} AS v FROM promo_docs WHERE ${where} LIMIT 5`).all(...cols.map(() => like)).map(r => r.v);
+    const sc = cs.custSql(scopeOf(req), 'cust_code');
+    const w2 = sc ? `(${where}) AND ${sc.sql}` : where, p2 = [...cols.map(() => like), ...(sc ? sc.params : [])];
+    const row = db.prepare(`SELECT MIN(create_date) AS min_create, MAX(create_date) AS max_create, COUNT(*) AS lines, COUNT(DISTINCT sonum) AS docs FROM promo_docs WHERE ${w2}`).get(...p2);
+    const samples = db.prepare(`SELECT DISTINCT ${cols[0]} AS v FROM promo_docs WHERE ${w2} LIMIT 5`).all(...p2).map(r => r.v);
     res.json({ ...row, samples });
   });
   app.use('/api/promo_docs', authed, makeCrudRouter(db, 'promo_docs', {
@@ -484,6 +494,7 @@ function buildApp(db, opts = {}) {
     fields: ['company', 'sonum', 'seqnum', 'cust_code', 'cust_name', 'sku', 'sku_name', 'unit_price', 'start_date', 'due_date', 'docstat', 'create_date', 'doc_ref', 'updated_at'],
     orderBy: 'start_date',
     readOnly: true,
+    scope: custScope('cust_code'),
   }));
 
   // "ใบเคาะราคา" v2 (2026-09-11) — header/lines split (ดู server/db/schema.sql's comment บน
@@ -568,6 +579,8 @@ function buildApp(db, opts = {}) {
       'estimated_qty', 'start_date', 'due_date', 'is_sub_item', 'bill_disc_pct', 'bill_disc_pct_promo', 'compensate'],
     orderBy: 'created_at',
     writeRoles: PROMO_DRAFT_ROLES,
+    // บรรทัดของใบเคาะที่มองเห็นเท่านั้น (ส่งทั้งใบเสมอ ไม่ตัดบางสาขา) — ดู customerScope.visibleDraftNos
+    scope: req => { const nos = cs.visibleDraftNos(db, scopeOf(req), req.user.uid); return nos ? { sql: 'draft_no IN (SELECT value FROM json_each(?))', params: [JSON.stringify(nos)] } : null; },
   }));
 
   app.use('/api/v_sc_dashboard_sales_monthly', authed, makeCrudRouter(db, 'v_sc_dashboard_sales_monthly', {
@@ -588,6 +601,7 @@ function buildApp(db, opts = {}) {
     pk: 'cust_code',
     fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count', 'cn_count', 'cn_amount', 'vat_amount', 'gross_amount', 'cn_vat'],
     readOnly: true,
+    scope: factScope({ cust: 'cust_code', slm: 'slm_code' }),
   }));
 
   app.get('/api/dashboard_sales_summary', authed, (req, res) => {
@@ -606,11 +620,18 @@ function buildApp(db, opts = {}) {
     // are intentionally excluded here; this Dashboard endpoint is for the current operating year.
     const where = ['ym >= ?', 'ym <= ?'];
     const params = [startYm, endYm];
-    if (slmId) {
+    // สิทธิ์ (2026-10-06): ผู้ที่ถูกจำกัด — เลือก Sales มา = ตัดให้เหลือเฉพาะรหัสที่ดูได้ · ไม่เลือก = รหัสที่ดูได้ + ลูกค้าเจ้า MT
+    const scope = scopeOf(req);
+    let reqCodes = slmId ? [...new Set(slmId.split(',').map(s => s.trim()).filter(Boolean))] : [];
+    if (!scope.all && reqCodes.length) reqCodes = reqCodes.filter(c => scope.slmCodes.includes(c));
+    if (slmId || (!scope.all && reqCodes.length)) {
       // ผู้ใช้หนึ่งคนผูกได้หลายรหัส Express (sc_users.slm_codes) — client ส่งมาเป็น "101,110-1"
-      const codes = [...new Set(slmId.split(',').map(s => s.trim()).filter(Boolean))];
-      where.push(`slm_owner IN (${codes.map(() => '?').join(',')})`);
-      params.push(...codes);
+      where.push(reqCodes.length ? `slm_owner IN (${reqCodes.map(() => '?').join(',')})` : '0');
+      params.push(...reqCodes);
+    } else if (!scope.all) {
+      const fs2 = cs.factSql(scope, { cust: 'cust_code', slm: 'slm_owner' });
+      where.push(fs2.sql);
+      params.push(...fs2.params);
     }
     const whereSql = `WHERE ${where.join(' AND ')}`;
     const archiveListSql = `'TSS-67','TSS-68','TSSN-67','TSSN-68','CONSI-67'`;
@@ -663,7 +684,8 @@ function buildApp(db, opts = {}) {
     // Top 10 สินค้า (2026-09-30, ผู้ใช้ขอ "คำนวณจากสินค้าย่อยทั้งหมด"): บรรทัดออเดอร์ของสินค้าชุด (มี item ย่อยใน
     // sales_line_components เช่น 90022-x / 90021-x) → หักยอดออกจากรหัสชุด แล้วกระจายให้สินค้าย่อยตามสัดส่วนจำนวนแพ็ค
     // (ราคาต่อหน่วยของสินค้าย่อยใน Express มีไม่ครบ จึงแบ่งตามจำนวน) · ช่วงเดือน/Sales/บริษัท ตามเงื่อนไขเดียวกับด้านบน
-    const slmList = slmId ? [...new Set(slmId.split(',').map(s => s.trim()).filter(Boolean))] : [];
+    const slmList = reqCodes;
+    const setScope = !scope.all && !slmId ? cs.factSql(scope, { cust: 'o.cust_code', slm: 'o.slm_id' }) : null;
     let setRows = [];
     try {
       setRows = db.prepare(`
@@ -674,7 +696,8 @@ function buildApp(db, opts = {}) {
           JOIN outbound_orders o ON o.id = l.order_id
           WHERE substr(o.order_date, 1, 7) >= ? AND substr(o.order_date, 1, 7) <= ?
             AND UPPER(TRIM(o.company)) NOT IN (${archiveListSql})
-            ${slmList.length ? `AND o.slm_id IN (${slmList.map(() => '?').join(',')})` : ''}
+            ${slmList.length ? `AND o.slm_id IN (${slmList.map(() => '?').join(',')})` : slmId && !scope.all ? 'AND 0' : ''}
+            ${setScope ? `AND ${setScope.sql}` : ''}
         )
         SELECT 'p' AS k, ln.sku AS code, NULL AS name, SUM(ln.line_value) AS amt FROM ln GROUP BY ln.sku
         UNION ALL
@@ -682,7 +705,7 @@ function buildApp(db, opts = {}) {
         FROM ln JOIN sales_line_components c ON c.order_id = ln.order_id AND c.seq_num = ln.seq_num
         JOIN cl ON cl.order_id = ln.order_id AND cl.seq_num = ln.seq_num
         GROUP BY c.child_code
-      `).all(startYm, endYm, ...slmList);
+      `).all(startYm, endYm, ...slmList, ...(setScope ? setScope.params : []));
     } catch (e) { console.warn('[dashboard] set explode:', e.message); }
     const prodMap = new Map(topProducts.map(r => [r.prod_code, { ...r, from_sets: 0 }]));
     for (const r of setRows) {
@@ -744,17 +767,19 @@ function buildApp(db, opts = {}) {
     fields: ['ym', 'company', 'slm_owner', 'category', 'corporate', 'cust_code', 'cust_name',
       'prod_group', 'prod_code', 'prod_name', 'qty', 'amount', 'invoice_count'],
     readOnly: true,
+    scope: factScope({ cust: 'cust_code', slm: 'slm_owner' }),
   }));
 
   // รายชื่อลูกค้า CONSI (2026-09-29): getConsiCustomerRows() เดิมดึง v_sc_consi_monthly ทั้งตาราง (select ถูกละเลย
   // → ทุกคอลัมน์ ~9MB ต่อหน้า × หลายหน้า) แค่เพื่อเอารหัส/ชื่อลูกค้า — สรุปที่ server ให้เหลือแถวละลูกค้า
   app.get('/api/consi_customers', authed, (req, res) => {
+    const sc = cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_owner' });
     res.json(db.prepare(`
       SELECT cust_code, MAX(cust_name) AS cust_name, MAX(slm_owner) AS slm_owner
       FROM v_sales_overview_sales_monthly
-      WHERE company = 'CONSI' AND cust_code IS NOT NULL AND cust_code <> '' AND cust_code <> '(none)'
+      WHERE company = 'CONSI' AND cust_code IS NOT NULL AND cust_code <> '' AND cust_code <> '(none)' ${sc ? `AND ${sc.sql}` : ''}
       GROUP BY cust_code
-    `).all());
+    `).all(...(sc ? sc.params : [])));
   });
 
   // item ย่อยของสินค้าชุด CONSI (2026-09-29, เช่น 90022-x "กิจเอ็มอาหารพร้อมทาน") — จาก sales_line_components
@@ -821,6 +846,7 @@ function buildApp(db, opts = {}) {
     fields: ['ym', 'company', 'slm_owner', 'category', 'corporate', 'cust_code', 'cust_name',
       'prod_group', 'prod_code', 'prod_name', 'qty', 'amount', 'invoice_count'],
     readOnly: true,
+    scope: factScope({ cust: 'cust_code', slm: 'slm_owner' }),
   }));
 
   app.use('/api/v_sc_data_confidence', authed, makeCrudRouter(db, 'v_sc_data_confidence', {

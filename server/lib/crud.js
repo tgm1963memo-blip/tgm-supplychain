@@ -34,6 +34,14 @@ function makeCrudRouter(db, table, options = {}) {
   const jsonFields = options.jsonFields || [];
   const router = express.Router();
 
+  // สิทธิ์การเห็นแถว (2026-10-06, lib/customerScope.js) — options.scope(req) คืน {sql, params} หรือ null (ไม่กรอง)
+  // AND เข้ากับเงื่อนไขของคำขอ ทั้ง GET (รวม count) / PATCH / DELETE — ผู้ใช้แก้/ลบแถวที่มองไม่เห็นไม่ได้
+  function scoped(req, w) {
+    const s = options.scope ? options.scope(req) : null;
+    if (!s) return w;
+    return { where: w.where ? `WHERE (${w.where.slice(6)}) AND ${s.sql}` : `WHERE ${s.sql}`, params: [...w.params, ...s.params] };
+  }
+
   function parseJsonFields(row) {
     if (!row) return row;
     for (const f of jsonFields) {
@@ -45,7 +53,7 @@ function makeCrudRouter(db, table, options = {}) {
   }
 
   router.get('/', (req, res) => {
-    const { where, params } = buildWhere(req.query, fields);
+    const { where, params } = scoped(req, buildWhere(req.query, fields));
     const orderClause = buildOrderBy(req.query, fields, options.orderBy || pk);
     const limit = Math.min(parseInt(req.query.limit, 10) || 5000, 20000);
     const offset = parseInt(req.query.offset, 10) || 0;
@@ -136,7 +144,7 @@ function makeCrudRouter(db, table, options = {}) {
   });
 
   router.patch('/', (req, res) => {
-    const { where, params } = buildWhere(req.query, fields);
+    const { where, params } = scoped(req, buildWhere(req.query, fields));
     if (!where) return res.status(400).json({ error: 'update requires at least one filter' });
     const body = { ...req.body };
     for (const col of touch) body[col] = nowIso();
@@ -158,7 +166,7 @@ function makeCrudRouter(db, table, options = {}) {
   });
 
   router.delete('/', (req, res) => {
-    const { where, params } = buildWhere(req.query, fields);
+    const { where, params } = scoped(req, buildWhere(req.query, fields));
     if (!where) return res.status(400).json({ error: 'delete requires at least one filter' });
     db.prepare(`DELETE FROM ${table} ${where}`).run(...params);
     res.status(204).end();

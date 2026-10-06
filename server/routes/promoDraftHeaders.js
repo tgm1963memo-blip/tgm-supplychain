@@ -4,6 +4,7 @@ const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 const { genId } = require('../lib/crud');
 const { validateChange, holdOf, completeAfterHold } = require('../lib/promoApproval');
 const { overlapsFor } = require('../lib/promoOverlap');
+const cs = require('../lib/customerScope');
 const promoMail = require('../lib/promoApprovalMail');
 const promoNo = require('../lib/promoNumber');
 const { nextPromoNoFor, nextDocNoFor, docCustCodes, ruleForCodes, loadCodeMap, docNoBase } = promoNo;
@@ -91,6 +92,14 @@ function parseRow(row) {
 module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   const router = express.Router();
   router.use(requireAuth(db));
+  // สิทธิ์การเห็นใบเคาะ (2026-10-06, lib/customerScope.js): ผู้สร้าง/ผู้อนุมัติ/ผู้เกี่ยวข้องการยกเลิก หรือมีสาขาที่มองเห็น
+  // ผู้ที่ไม่จำกัด (admin/ผู้บริหาร/ฝ่ายแผน ฯลฯ) เห็นทั้งหมด · ใบที่มองไม่เห็น = 404 สำหรับ endpoint ราย draft_no
+  const visibleSet = req => { const nos = cs.visibleDraftNos(db, cs.resolveScope(db, req.user), req.user.uid); return nos ? new Set(nos) : null; };
+  router.param('draftNo', (req, res, next, no) => {
+    const vis = visibleSet(req);
+    if (vis && !vis.has(no) && db.prepare('SELECT 1 FROM promo_draft_headers WHERE draft_no = ?').get(no)) return res.status(404).json({ error: 'ไม่พบเอกสาร หรือไม่มีสิทธิ์เห็นเอกสารนี้' });
+    next();
+  });
 
   // ── ตารางรหัสเอกสารตามรหัสลูกค้า (2026-10-03) — นำเข้าจาก Excel ในหน้าตั้งค่า ─────────────────────────
   const MAP_ADMIN = ['admin', 'superadmin'];
@@ -135,8 +144,10 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     const orderClause = buildOrderBy(req.query, [...FIELDS, 'draft_no', 'doc_no', 'created_by', 'created_at'], 'created_at');
     const limit = Math.min(parseInt(req.query.limit, 10) || 5000, 20000);
     const offset = parseInt(req.query.offset, 10) || 0;
-    const rows = db.prepare(`SELECT * FROM promo_draft_headers ${where} ${orderClause} LIMIT ? OFFSET ?`)
-      .all(...params, limit, offset).map(parseRow);
+    const vis = visibleSet(req);
+    const visSql = vis ? `${where ? ' AND' : 'WHERE'} draft_no IN (SELECT value FROM json_each(?))` : '';
+    const rows = db.prepare(`SELECT * FROM promo_draft_headers ${where}${visSql} ${orderClause} LIMIT ? OFFSET ?`)
+      .all(...params, ...(vis ? [JSON.stringify([...vis])] : []), limit, offset).map(parseRow);
     // old_nos: เลขที่เดิมก่อนออกเลขใหม่ (log renumber) — ให้ค้นด้วยเลขเดิมได้ (2026-10-03)
     const old = new Map();
     db.prepare("SELECT draft_no, detail_json FROM promo_draft_logs WHERE action = 'renumber'").all().forEach(l => {
@@ -201,7 +212,9 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     if (!where) return res.status(400).json({ error: 'update requires at least one filter' });
     try {
       db.exec('BEGIN IMMEDIATE');
-      const targets = db.prepare(`SELECT * FROM promo_draft_headers ${where}`).all(...params);
+      const vis = visibleSet(req);
+      const targets = db.prepare(`SELECT * FROM promo_draft_headers ${where}`).all(...params).filter(t => !vis || vis.has(t.draft_no));
+      if (!targets.length) { db.exec('ROLLBACK'); return res.status(404).json({ error: 'ไม่พบเอกสาร หรือไม่มีสิทธิ์เห็นเอกสารนี้' }); }
       const saved = targets.map(target => applyHeaderChange(db, target, req.body || {}, req.user));
       db.exec('COMMIT');
       // แจ้งอีเมลผู้อนุมัติขั้นถัดไป / ผู้จัดทำเมื่อจบ (หลัง COMMIT, ไม่บล็อก response)
@@ -217,9 +230,11 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   router.delete('/', requireRole(...writeRoles), (req, res) => {
     const { where, params } = buildWhere(req.query, [...FIELDS, 'draft_no', 'doc_no', 'created_by']);
     if (!where) return res.status(400).json({ error: 'delete requires at least one filter' });
-    db.prepare(`SELECT draft_no, doc_no, promo_name, status FROM promo_draft_headers ${where}`).all(...params)
-      .forEach(t => logDraft(db, t.draft_no, 'delete', req.user, { doc_no: t.doc_no, name: t.promo_name, status: t.status }));
-    db.prepare(`DELETE FROM promo_draft_headers ${where}`).run(...params);
+    const vis = visibleSet(req);
+    const del = db.prepare(`SELECT draft_no, doc_no, promo_name, status FROM promo_draft_headers ${where}`).all(...params).filter(t => !vis || vis.has(t.draft_no));
+    del.forEach(t => logDraft(db, t.draft_no, 'delete', req.user, { doc_no: t.doc_no, name: t.promo_name, status: t.status }));
+    const delNo = db.prepare('DELETE FROM promo_draft_headers WHERE draft_no = ?');
+    del.forEach(t => delNo.run(t.draft_no));
     res.status(204).end();
   });
 

@@ -73,7 +73,7 @@ test('recall returns a pending document to draft and logs it', async t => {
   const no = await mk('recall', ['P1']);
   await call(r(no), 'PATCH', { status: 'pending_approval' });
   await call(r(no), 'PATCH', { status: 'pending_approval' }, 'M');
-  assert.equal((await call(`/promo_draft_headers/${no}/recall`, 'POST', { note: 'แก้ราคา' }, 'S2')).status, 403); // ไม่ใช่ผู้ส่ง
+  assert.equal((await call(`/promo_draft_headers/${no}/recall`, 'POST', { note: 'แก้ราคา' }, 'S2')).status, 404); // ไม่ใช่ผู้ส่ง — (2026-10-06) Sales อื่นที่ไม่มีสิทธิ์เห็นสาขาของเอกสาร ได้ 404 (มองไม่เห็นเลย)
   const rc = await call(`/promo_draft_headers/${no}/recall`, 'POST', { note: 'แก้ราคา' });
   assert.equal(rc.status, 200, JSON.stringify(rc.data));
   assert.equal(rc.data.status, 'draft');

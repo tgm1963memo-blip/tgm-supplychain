@@ -30,7 +30,10 @@ function parseCodeMap(rows) {
     else if ((m = t.match(/^([A-Z0-9]+-[A-Z0-9]+-)(\d+) ?ถึง ?สุดท้าย$/))) rule = { prefix: m[1], from: +m[2], to: 999999 };
     else if ((m = t.match(CODE_RE))) rule = { prefix: m[1], from: +m[2], to: +m[2] };
     if (!rule || rule.to < rule.from) { skipped.push({ row: r?.row, name, cls: s('F'), reason: `อ่านช่วงรหัสลูกค้าไม่ได้ "${src}"`, label }); continue; }
-    rules.push({ row: r?.row, name, code, type: s('E'), cls: s('F'), src, ...rule, kc: kc[1], pm: pm[1] });
+    // ชื่อเซลล์ (N) / ชื่อผู้จัดการ (O) (2026-10-06) — master สิทธิ์การเห็นเจ้า MT (lib/customerScope.js) · หลายชื่อคั่น , / ·
+    // เก็บชื่อตามไฟล์ ไม่ตัด 'คุณ' ออก (ปู กับ คุณปู เป็นคนละคน) — จับคู่ชื่อ→ผู้ใช้ในหน้า ทีมขาย
+    const names = k => s(k).split(/[,，/]+/).map(x => x.trim()).filter(x => x && x !== '-');
+    rules.push({ row: r?.row, name, code, type: s('E'), cls: s('F'), src, ...rule, kc: kc[1], pm: pm[1], sales: names('N'), manager: names('O') });
   }
   return { rules, skipped };
 }

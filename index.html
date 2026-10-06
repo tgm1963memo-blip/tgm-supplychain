@@ -5646,7 +5646,19 @@ try{_myScope=JSON.parse(localStorage.getItem('tgm_scope')||'null');}catch(e){_my
 async function loadMyScope(){
   try{
     const r=await Promise.race([apiFetch('/api/sales_teams/me'),new Promise(res=>setTimeout(()=>res(null),4000))]);
-    if(r&&!r.error&&r.data){_myScope={...r.data,uid:UID};try{localStorage.setItem('tgm_scope',JSON.stringify(_myScope));}catch(e){}}
+    if(r&&!r.error&&r.data){
+      _myScope={...r.data,uid:UID};try{localStorage.setItem('tgm_scope',JSON.stringify(_myScope));}catch(e){}
+      // สิทธิ์การเห็นลูกค้าเปลี่ยน (2026-10-06, server กรองตาม lib/customerScope.js) → ล้างรายชื่อลูกค้าที่ cache ไว้ (อาจเป็นชุดเก่าที่กว้างกว่า)
+      try{
+        const ver=`${UID}|${r.data.scope_version||''}`;
+        if(localStorage.getItem('tgm_scope_ver')!==ver){
+          ['remote_customers_cache','remote_customers_cache_ts','remote_consi_customers_cache','remote_consi_customers_cache_ts','customer_profiles','customer_profiles_ts'].forEach(k=>{localStorage.removeItem('tgm3_'+k);_dbMem.delete(k);});
+          Object.keys(localStorage).filter(k=>k.startsWith(CACHE.PREFIX)).forEach(k=>localStorage.removeItem(k));
+          _customerProfilesMemo=null;
+          localStorage.setItem('tgm_scope_ver',ver);
+        }
+      }catch(e){console.warn('scope cache reset',e);}
+    }
   }catch(e){console.warn('loadMyScope',e);}
 }
 function _scopeNow(){return _myScope&&_myScope.uid===UID?_myScope:null;}
@@ -5655,6 +5667,8 @@ function myScopeKey(){
   const s=_scopeNow();
   if(!s) return isSales()?mySlmKey():'';
   if(s.all) return '';
+  // server กรองตามสิทธิ์ให้แล้ว (รหัส Sales ที่ดูแล + เจ้า Modern Trade) — ไม่ส่งรหัสไปจำกัดซ้ำ ไม่งั้นยอดเจ้า MT หาย
+  if(s.restricted) return '';
   return (s.codes||[]).join(',')||'(ไม่มีรหัส)';
 }
 // ดูได้มากกว่าตัวเอง (ทั้งหมด/ทั้งทีม/ทั้งแผนก/ลูกทีม) → มี dropdown เลือกพนักงานขาย
@@ -10919,6 +10933,7 @@ function _crCk(id){return _cr.data[id]?'checked':'';}
 
 function crVisibleCustomerRows(){
   const rows=allCustomerRows();
+  if(_scopeNow()?.restricted) return rows; // server ส่งเฉพาะลูกค้าที่มีสิทธิ์เห็นมาแล้ว (2026-10-06)
   const me=(DB.get('users')||[]).find(u=>u.uid===UID)||{};
   const mySlm=mySlmKey();
   if(isManager()) return rows;
@@ -12267,7 +12282,57 @@ async function renderSalesTeams(force){
     <div style="display:flex;gap:6px">${_stmCanEdit()?`<button class="btn btn-sm" onclick="stmAutoMatch()">🔗 จับคู่รหัส Sales จากชื่อเล่น</button><button class="btn btn-sm btn-g" onclick="stmSave(this)">💾 บันทึก</button>`:''}</div></div>
     <div class="tw"><table class="draft-trail"><thead><tr><th>ชื่อ</th><th>แผนก</th><th>รหัส Sales (Express)</th><th>สิทธิ์ดูยอดขาย</th><th>ดูยอดของ</th></tr></thead><tbody>
     ${groups.filter(g=>g.us.length).map(g=>`<tr><td colspan="5" class="l" style="background:var(--LBL);font-weight:700;color:var(--BL)">${esc(g.title)} (${g.us.length} คน)</td></tr>`+g.us.map(userRow).join('')).join('')}
-    </tbody></table></div></div>`;
+    </tbody></table></div></div>
+  <div class="card" id="stm-mt">${_stmMtHtml()}</div>`;
+  if(!_stmMt) stmMtLoad();
+}
+// ── เจ้า Modern Trade (2026-10-06): ชื่อเซลล์/ผู้จัดการจากไฟล์ "รหัสใบเคาะ ใบโปร Modern trade" → ผู้ใช้ ─────────
+// server บังคับสิทธิ์จริง (lib/customerScope.js): เซลล์เห็นเจ้าของตัวเอง · ผู้จัดการเห็นเจ้าที่ตัวเองเป็นผู้จัดการ + ของลูกทีม
+let _stmMt=null,_stmMtEdits={};
+async function stmMtLoad(){
+  const r=await apiFetch('/api/sales_teams/mt');
+  _stmMt=r.error?{error:r.error.message}:r.data;_stmMtEdits={};
+  const el=document.getElementById('stm-mt');if(el)el.innerHTML=_stmMtHtml();
+}
+function _stmMtVal(n){return n.key in _stmMtEdits?_stmMtEdits[n.key]:(_stmMt.map[n.key]??n.suggest?.uid??'');}
+function _stmMtHtml(){
+  const head='<div class="ch"><div class="ct2">🏬 เจ้า Modern Trade — ใครเห็นเจ้าไหน</div>';
+  if(!_stmMt) return head+'</div><div class="al ali">⏳ กำลังโหลด…</div>';
+  if(_stmMt.error) return head+`</div><div class="al alw">โหลดไม่สำเร็จ: ${esc(_stmMt.error)}</div>`;
+  const m=_stmMt,dis=_stmCanEdit()?'':'disabled';
+  if(!m.rules.length||!m.has_names) return head+`</div><div class="al alw">ยังไม่มีข้อมูลชื่อเซลล์/ผู้จัดการ — นำเข้าไฟล์ "รหัสใบเคาะ ใบโปร Modern trade" (ชีต รหัสใบโปรโมชั่น) ใหม่ที่ ใบเคาะราคา › ⚙️ ตั้งค่าเส้นทางอนุมัติ › ตารางรหัสเอกสาร ระบบจะอ่านคอลัมน์ N (ชื่อเซลล์) และ O (ชื่อผู้จัดการ) เพิ่ม</div>`;
+  const uName=uid=>{const u=m.users.find(x=>x.uid===uid);return u?u.name:'';};
+  const nick=uid=>{const n=uName(uid);return (n.match(/\(([^)]+)\)\s*$/)||[,n])[1];};
+  const opts=sel=>'<option value="">— ไม่จับคู่ —</option>'+m.users.slice().sort((a,b)=>(a.department||'').localeCompare(b.department||'','th')||a.name.localeCompare(b.name,'th'))
+    .map(u=>`<option value="${esc(u.uid)}"${u.uid===sel?' selected':''}>${esc(u.name)} · ${esc(u.department||u.role)}</option>`).join('');
+  const st=n=>{const v=_stmMtVal(n),saved=m.map[n.key];
+    if(!v) return '<span class="badge bbr">ยังไม่จับคู่</span>';
+    if(n.key in _stmMtEdits&&_stmMtEdits[n.key]!==(saved||'')) return '<span class="badge bba">แก้แล้ว ยังไม่บันทึก</span>';
+    if(saved) return '<span class="badge bbg">บันทึกแล้ว</span>';
+    return n.suggest?.conf==='near'?'<span class="badge bba">ระบบแนะนำ (ใกล้เคียง) — ตรวจก่อนบันทึก</span>':'<span class="badge bbl">ระบบแนะนำ</span>';};
+  const unmatched=m.names.filter(n=>!_stmMtVal(n)).length;
+  const names=m.names.slice().sort((a,b)=>a.role.localeCompare(b.role)||a.name.localeCompare(b.name,'th'));
+  const who=(list,role)=>(list||[]).map(n=>{const v=_stmMtVal({key:`${role}:${n}`,suggest:(m.names.find(x=>x.key===`${role}:${n}`)||{}).suggest});return v?`${esc(n)} → <b>${esc(nick(v))}</b>`:`<span style="color:var(--R)">${esc(n)} → ?</span>`;}).join(', ')||'—';
+  return head+`<div style="display:flex;gap:6px">${_stmCanEdit()?`<button class="btn btn-sm" onclick="stmMtLoad()">🔄</button><button class="btn btn-sm btn-g" onclick="stmMtSave(this)">💾 บันทึกการจับคู่</button>`:''}</div></div>
+    <div class="al ali" style="font-size:12px;margin-bottom:8px">ตามไฟล์ ${esc(m.file||'รหัสใบเคาะ ใบโปร')} (นำเข้า ${esc(promoFmtD(m.imported_at))}) · <b>เซลล์</b> เห็นยอดขาย ใบโปร/ใบเคาะ และข้อมูลลูกค้าของเจ้าที่มีชื่อตัวเอง · <b>ผู้จัดการ</b> เห็นเจ้าที่ตัวเองเป็นผู้จัดการ + ของลูกทีม (ตามสิทธิ์ทีมขายด้านบน) · ใช้ร่วมกับรหัส Sales ใน Express เดิม (ร้านค้าทั่วไปยังตามรหัส Sales) · ผู้บริหาร/admin/ฝ่ายแผน เห็นทั้งหมด</div>
+    ${unmatched?`<div class="al alw" style="font-size:12px">ยังไม่จับคู่ ${unmatched} ชื่อ — เจ้าของชื่อนั้นจะยังไม่มีใครในฝ่ายขายเห็น (ยกเว้นผู้ที่เห็นทั้งหมด)</div>`:''}
+    <div class="tw"><table class="draft-trail"><thead><tr><th>ชื่อในไฟล์</th><th>คอลัมน์</th><th>จำนวนแถว</th><th>ผู้ใช้ในระบบ</th><th>สถานะ</th></tr></thead><tbody>
+    ${names.map(n=>`<tr><td class="l"><b>${esc(n.name)}</b></td><td>${n.role==='mgr'?'ผู้จัดการ':'เซลล์'}</td><td>${n.rows}</td>
+      <td class="l"><select ${dis} onchange="_stmMtEdits['${esc(n.key)}']=this.value;document.getElementById('stm-mt').innerHTML=_stmMtHtml()" style="font-size:12px;padding:3px 6px;max-width:360px">${opts(_stmMtVal(n))}</select></td><td>${st(n)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">ดูรายการเจ้า/ช่วงรหัสลูกค้าทั้งหมด (${m.rules.length} แถว)</summary>
+    <div class="tw" style="margin-top:6px"><table class="draft-trail"><thead><tr><th>เจ้า</th><th>ประเภท</th><th>ช่วงรหัสลูกค้า</th><th>ลูกค้าในระบบ</th><th>เซลล์</th><th>ผู้จัดการ</th></tr></thead><tbody>
+    ${m.rules.map(r=>`<tr><td class="l">${esc(r.name)}</td><td class="l" style="font-size:12px">${esc(r.cls||'')}</td><td class="mono" style="font-size:11.5px">${esc(r.src)}</td><td>${r.codes} รหัส</td><td class="l" style="font-size:12px">${who(r.sales,'sales')}</td><td class="l" style="font-size:12px">${who(r.manager,'mgr')}</td></tr>`).join('')}
+    </tbody></table></div></details>`;
+}
+async function stmMtSave(btn){
+  const map={};_stmMt.names.forEach(n=>{const v=_stmMtVal(n);if(v)map[n.key]=v;});
+  btn.disabled=true;
+  const r=await apiFetch('/api/sales_teams/mt',{method:'PUT',body:JSON.stringify({map})});
+  btn.disabled=false;
+  if(r.error){toast('บันทึกไม่สำเร็จ: '+r.error.message,'warn');return;}
+  toast(`บันทึกการจับคู่แล้ว ${r.data.count} ชื่อ — มีผลกับสิทธิ์การเห็นทันที`);
+  stmMtLoad();
 }
 function stmCodes(uid,v){_stm.edits.codes[uid]=[...new Set(String(v||'').split(',').map(x=>x.trim()).filter(Boolean))].join(',');renderSalesTeams();}
 function stmScope(uid,v){const cur=_stm.edits.scopes[uid]??_stm.scopes[uid];_stm.edits.scopes[uid]=v?{scope:v,members:cur?.members||[],teams:cur?.teams||[]}:null;renderSalesTeams();}
@@ -17753,7 +17818,7 @@ function pdCodeMapImport(input) {
       if (!name) { toast('ไม่พบชีตที่มีคอลัมน์ "รหัสใบเคาะโปรโมชั่น" (คอลัมน์ L) ในไฟล์', 'warn'); return; }
       const raw = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 'A', defval: '', raw: false }).map(r => ({ ...r, row: r.__rowNum__ + 1 }));
       const hi = raw.findIndex(r => /รหัสใบเคาะ/.test(String(r.L || '')));
-      const rows = raw.slice(hi + 1).map(r => { const o = { row: r.row }; 'ABCDEFGHIJKLM'.split('').forEach(k => { if (String(r[k] ?? '').trim() !== '') o[k] = String(r[k]); }); return o; });
+      const rows = raw.slice(hi + 1).map(r => { const o = { row: r.row }; 'ABCDEFGHIJKLMNO'.split('').forEach(k => { if (String(r[k] ?? '').trim() !== '') o[k] = String(r[k]); }); return o; });
       const pv = await apiFetch('/api/promo_draft_headers/code-map/preview', { method: 'POST', body: JSON.stringify({ rows }) });
       if (pv.error) throw new Error(pv.error.message);
       _pdCodeMapDraft = { rows, file: `${file.name} · ชีต ${name}`, ...pv.data };
