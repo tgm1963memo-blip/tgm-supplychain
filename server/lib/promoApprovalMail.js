@@ -168,6 +168,14 @@ async function notifyCreator(db, header, outcome, byUid, comment) {
   return creator?.email ? sendMail({ to: creator.email, cc, ...mail }) : sendMail({ to: cc.join(', '), ...mail });
 }
 
+async function notifyOverlapHold(db, header, hold) {
+  const creator = db.prepare('SELECT name, email, is_active FROM sc_users WHERE uid = ?').get(header.created_by);
+  if (!creator?.email || !creator.is_active) return { sent: false, reason: 'NO_EMAIL' };
+  const rows = (hold.docs || []).map(o => [o.kind === 'draft' ? 'ใบเคาะในระบบ' : 'ใบโปร Express', `${o.ref} · ${fmtD(o.start)} – ${fmtD(o.due)} · ${o.skus.length} สินค้า ${o.branches.length} สาขา`]);
+  return sendMail({ to: creator.email, ...simpleMail(header, '⏸ ต้องยกเลิกโปรเก่าที่ช่วงเวลาซ้อนก่อนส่งต่อผู้อนุมัติ',
+    [['เอกสาร', header.doc_no || header.draft_no], ...rows, ['ขั้นตอน', 'ยกเลิกโปรเก่าให้เรียบร้อย แล้วกด "ยืนยันยกเลิกครบ" ในใบเคาะ']], openUrlOf(header)) });
+}
+
 // แจ้ง CC ของเส้นทางเมื่อส่งอนุมัติ (2026-10-06) — อีเมลแจ้งเพื่อทราบ ไม่มีลิงก์อนุมัติ/ไม่อนุมัติ
 // (ลิงก์ token ผูกกับผู้อนุมัติแต่ละคน ส่งต่อให้ CC ไม่ได้ ไม่งั้นผู้รับ CC กดอนุมัติแทนได้)
 async function notifyCcSubmitted(db, header) {
@@ -194,6 +202,10 @@ async function afterChange(db, before, after, baseUrl) {
   if (!after) return;
   const pending = ['pending_approval', 'pending_exec_approval'];
   const levelChanged = before.status !== after.status || (before.current_level || 0) !== (after.current_level || 0);
+  const holdNow = (() => { const v = after.overlap_hold_json; const h = v && typeof v === 'string' ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v; return h && !h.cleared_at ? h : null; })();
+  const holdBefore = (() => { const v = before.overlap_hold_json; return !!v && v !== 'null'; })();
+  // พักรอ Sales ยกเลิกโปรเก่าที่ซ้อน (2026-10-06) — ยังไม่แจ้งผู้อนุมัติลำดับถัดไป แจ้งผู้จัดทำแทน
+  if (holdNow && !holdBefore) { await notifyOverlapHold(db, after, holdNow); return; }
   if (pending.includes(after.status) && levelChanged) await notifyCurrentApprovers(db, after, baseUrl);
   if (after.status === 'pending_approval' && !pending.includes(before.status)) await notifyCcSubmitted(db, after);
   if (before.status !== after.status && (after.status === 'approved' || after.status === 'rejected')) {

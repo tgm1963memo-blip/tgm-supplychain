@@ -492,6 +492,9 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_sra_request ON sample_request_attachments(request_id);
   `);
 
+  // ใบเคาะโปรซ้อน (2026-10-06) — พักให้ Sales ยกเลิกโปรเก่าก่อนเดินขั้นถัดไป (lib/promoApproval.js holdPointHit)
+  addColumnIfMissing(db, 'promo_draft_headers', 'overlap_hold_json', 'overlap_hold_json TEXT');
+
   // ยอดขายรายวัน (2026-10-06, Dashboard เลือกช่วงวันที่ได้) — คู่ขนานกับ invoice_sales_monthly / sales_lines_monthly
   // (สร้างจากรอบอ่านไฟล์เดียวกันใน importFromExpress.js / importFromBplus.js) · d = YYYY-MM-DD วันที่เอกสาร
   // ตารางรายเดือนยังเป็นแหล่งหลักของหน้าอื่นทั้งหมด — ตารางรายวันใช้เฉพาะเมื่อ Dashboard ขอช่วงแบบวันที่

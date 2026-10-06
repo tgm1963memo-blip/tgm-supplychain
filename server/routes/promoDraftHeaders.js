@@ -2,7 +2,8 @@ const express = require('express');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 const { genId } = require('../lib/crud');
-const { validateChange } = require('../lib/promoApproval');
+const { validateChange, holdOf, completeAfterHold } = require('../lib/promoApproval');
+const { overlapsFor } = require('../lib/promoOverlap');
 const promoMail = require('../lib/promoApprovalMail');
 const promoNo = require('../lib/promoNumber');
 const { nextPromoNoFor, nextDocNoFor, docCustCodes, ruleForCodes, loadCodeMap, docNoBase } = promoNo;
@@ -24,6 +25,8 @@ const FIELDS = [
   'route_id', 'route_name',
   // approval_history_json ถูกเขียนโดย validateChange เท่านั้น (client ส่งมาก็ถูก reject — ดู promoApproval.js)
   'approval_history_json',
+  // overlap_hold_json (2026-10-06) — เขียนโดย validateChange เท่านั้น (client ส่งมาถูก reject)
+  'overlap_hold_json',
   'levels_json', 'current_level', 'approvers_json', 'status', 'keyed_by', 'keyed_at',
   // updated_by ยังรับจาก client ได้ (client ส่ง UID ของตัวเองมาบอกว่า "ฉันเป็นคนแก้ไขล่าสุด") ต่างจาก
   // created_by/doc_no ที่ห้ามเชื่อ เพราะ updated_by ไม่ใช่ช่องทางปลอมตัวเป็นคนอื่น (แค่บันทึกว่าใครกดล่าสุด
@@ -36,7 +39,7 @@ const FIELDS = [
 // already used for other_costs_json/levels_json/approvers_json below.
 const JSON_FIELDS = ['other_costs_json', 'levels_json', 'approvers_json', 'item_type', 'approval_history_json', 'form_extra_json',
   // ยกเลิก (2026-09-30) — parse ตอนอ่านเท่านั้น (ไม่อยู่ใน FIELDS → PATCH ปกติเขียนไม่ได้ ต้องผ่าน endpoint ยกเลิก)
-  'cancel_request_json', 'cancel_history_json', 'cancelled_skus_json'];
+  'cancel_request_json', 'cancel_history_json', 'cancelled_skus_json', 'overlap_hold_json'];
 
 // FIXED (2026-09-13, /code-review): used to redefine its own copy of lib/crud.js's genId here —
 // same algorithm, byte-for-byte, kept in sync by hand across 3 files. Import it instead.
@@ -245,12 +248,55 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     try {
       db.exec('BEGIN IMMEDIATE');
       db.prepare(`UPDATE promo_draft_headers SET status = 'draft', levels_json = '[]', current_level = 0, approvers_json = '[]',
-        approval_history_json = '[]', updated_by = ?, updated_at = ? WHERE draft_no = ?`).run(req.user.uid, new Date().toISOString(), t.draft_no);
+        approval_history_json = '[]', overlap_hold_json = NULL, updated_by = ?, updated_at = ? WHERE draft_no = ?`).run(req.user.uid, new Date().toISOString(), t.draft_no);
       logDraft(db, t.draft_no, 'recall', req.user, { note, from_status: t.status, approvals_done: done });
       db.exec('COMMIT');
     } catch (e) { if (db.isTransaction) db.exec('ROLLBACK'); return res.status(400).json({ error: e.message }); }
     mailLater(promoMail.notifyRecall(db, t, pendingUids, userName(req.user.uid), note));
     res.json(parseRow(getRaw(t.draft_no)));
+  });
+
+  // ── โปรซ้อน: Sales ยืนยันยกเลิกโปรเก่าครบ → เดินขั้นถัดไป (2026-10-06, ผู้ใช้ขอ) ───────────────────────────
+  // GET = รายการซ้อนปัจจุบัน (คำนวณใหม่) · POST {confirm:[key], note} — ใบเคาะในระบบต้องยกเลิกจริงแล้ว,
+  // ใบ Express ต้องติ๊กยืนยันครบทุกใบ (ระบบเขียน Express ไม่ได้) · ผู้สร้างเอกสาร หรือ admin เท่านั้น
+  router.get('/:draftNo/overlap', (req, res) => {
+    const t = getRaw(req.params.draftNo);
+    if (!t) return res.status(404).json({ error: 'ไม่พบเอกสาร' });
+    res.json({ hold: holdOf(t), current: overlapsFor(db, t) });
+  });
+  router.post('/:draftNo/overlap_clear', (req, res) => {
+    const t = getRaw(req.params.draftNo);
+    if (!t) return res.status(404).json({ error: 'ไม่พบเอกสาร' });
+    if (t.created_by !== req.user.uid && !['admin', 'superadmin'].includes(req.user.role)) return res.status(403).json({ error: 'ยืนยันได้เฉพาะผู้สร้างเอกสาร (Sales)' });
+    const h = holdOf(t);
+    if (!h || h.cleared_at) return res.status(400).json({ error: 'เอกสารนี้ไม่ได้รอยกเลิกโปรเก่าที่ซ้อน' });
+    if (!['pending_approval', 'pending_exec_approval'].includes(t.status)) return res.status(400).json({ error: 'เอกสารไม่ได้อยู่ระหว่างรออนุมัติ' });
+    const now = overlapsFor(db, t);
+    const drafts = now.filter(o => o.kind === 'draft');
+    if (drafts.length) return res.status(400).json({ error: `ยังมีใบเคาะในระบบที่ช่วงซ้อนและยังไม่ถูกยกเลิก: ${drafts.map(o => o.ref).join(', ')} — กรุณาขอยกเลิกให้อนุมัติก่อน`, current: now });
+    const confirm = new Set((Array.isArray(req.body?.confirm) ? req.body.confirm : []).map(String));
+    const missing = now.filter(o => o.kind === 'express' && !confirm.has(o.key));
+    if (missing.length) return res.status(400).json({ error: `กรุณาติ๊กยืนยันว่ายกเลิกใน Express แล้วทุกใบ (ยังขาด ${missing.map(o => o.ref).join(', ')})`, current: now });
+    const at = new Date().toISOString();
+    const hold = { ...h, current_at_clear: now, confirmed: Object.fromEntries(now.map(o => [o.key, { by: req.user.uid, by_name: userName(req.user.uid), at, ref: o.ref }])),
+      cleared_at: at, cleared_by: req.user.uid, cleared_by_name: userName(req.user.uid), note: String(req.body?.note || '').trim().slice(0, 1000) };
+    let saved;
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      const fin = completeAfterHold(db, t);
+      const set = { overlap_hold_json: JSON.stringify(hold), ...fin, updated_by: req.user.uid, updated_at: at };
+      if (set.status === 'approved' && !t.promo_no) set.promo_no = nextPromoNoFor(db, t);
+      const cols = Object.keys(set);
+      db.prepare(`UPDATE promo_draft_headers SET ${cols.map(c => `${c} = ?`).join(', ')} WHERE draft_no = ?`).run(...cols.map(c => set[c]), t.draft_no);
+      logDraft(db, t.draft_no, 'overlap_clear', req.user, { docs: now.map(o => o.ref), note: hold.note, status_after: set.status || t.status });
+      db.exec('COMMIT');
+      saved = parseRow(getRaw(t.draft_no));
+    } catch (e) { if (db.isTransaction) db.exec('ROLLBACK'); return res.status(400).json({ error: e.message }); }
+    // แจ้งผู้อนุมัติลำดับถัดไป (หรือผู้จัดทำเมื่ออนุมัติครบ / ผู้บริหารเมื่อเข้าขั้นผู้บริหาร)
+    const before = parseRow({ ...t });
+    if (saved.status !== t.status) mailLater(promoMail.afterChange(db, before, saved, publicBaseUrl(req)));
+    else mailLater(promoMail.notifyCurrentApprovers(db, saved, publicBaseUrl(req)));
+    res.json(saved);
   });
 
   // ออกเลขใบเคาะใหม่เมื่อสาขาเปลี่ยนเป็นลูกค้าคนละรหัส (2026-10-03, ผู้ใช้ยืนยัน) — เฉพาะร่างที่ยังไม่เคยส่งอนุมัติ

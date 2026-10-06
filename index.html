@@ -15511,7 +15511,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
   <div class="draft-fp-footer">
     <button class="btn" onclick="draftClose()">ยกเลิก</button>
     ${draftCanEditStatus(_draftEditStatus) && (_draftEditStatus === 'draft' || _draftEditStatus === 'rejected' || !_draftEditStatus) && draftNo ? `<button class="btn" onclick="draftSubmitForApproval('${esc(draftNo)}')">ส่งอนุมัติ</button>` : ''}
-    ${isPendingApproval && _draftCanApprove(header) ? `<button class="btn btn-r" onclick="draftApprove('${esc(draftNo)}',false)">ไม่อนุมัติ</button><button class="btn btn-g" onclick="draftApprove('${esc(draftNo)}',true)">อนุมัติ</button>` : ''}
+    ${isPendingApproval && _draftCanApprove(header) ? `<button class="btn btn-r" onclick="draftApprove('${esc(draftNo)}',false)">ไม่อนุมัติ</button>${_draftHoldActive(header) ? '<button class="btn btn-g" disabled title="รอ Sales ยกเลิกโปรเก่าที่ช่วงเวลาซ้อนก่อน">⏸ อนุมัติ</button>' : `<button class="btn btn-g" onclick="draftApprove('${esc(draftNo)}',true)">อนุมัติ</button>`}` : ''}
     ${isExecPending && _draftCanApprove(header) ? `<button class="btn btn-r" onclick="draftExecApprove('${esc(draftNo)}',false)">ผู้บริหาร: ไม่อนุมัติ</button><button class="btn btn-g" onclick="draftExecApprove('${esc(draftNo)}',true)">ผู้บริหาร: อนุมัติ</button>` : ''}
     ${canEdit ? `<button class="btn btn-p" id="draft-save-btn" onclick="saveDraftPromo()">บันทึกร่าง</button><button class="btn btn-g" id="draft-save-submit-btn" onclick="saveDraftPromo(true)">บันทึกและส่งอนุมัติ</button>` : ''}
   </div>`;
@@ -16679,6 +16679,47 @@ function draftSetLineVerdict(i, v) {
 }
 // ── ลำดับการอนุมัติในหน้าเอกสาร (2026-09-24) — ทุกขั้น (ผ่านแล้ว/ปัจจุบัน) พร้อมสถานะ เวลา ความเห็น
 // ให้ผู้อนุมัติขั้นถัดไปเห็นความเห็นของขั้นก่อนหน้าตั้งแต่เปิดเอกสาร
+// ── โปรซ้อน: พักให้ Sales ยกเลิกโปรเก่าก่อนส่งต่อผู้อนุมัติลำดับถัดไป (2026-10-06, server: lib/promoApproval.js) ──
+function _draftHoldOf(h) { const v = h?.overlap_hold_json; if (!v) return null; if (typeof v === 'string') { try { return JSON.parse(v); } catch { return null; } } return v; }
+function _draftHoldActive(h) { const x = _draftHoldOf(h); return !!(x && !x.cleared_at); }
+function _draftHoldBoxHtml(h, hold) {
+  const mine = h.created_by === UID || ['admin', 'superadmin'].includes(ROLE);
+  const no = _promoJsKey(h.draft_no);
+  const docs = (window._draftHoldCurrent?.no === h.draft_no ? window._draftHoldCurrent.docs : null) || hold.docs || [];
+  if (window._draftHoldCurrent?.no !== h.draft_no) draftHoldRefresh(h.draft_no);
+  const row = o => `<tr><td class="l">${o.kind === 'draft'
+      ? `ใบเคาะในระบบ <span class="doc-link" onclick="showPromoDraftModal('${_promoJsKey(o.draft_no)}')">${esc(o.ref)}</span><div style="font-size:10.5px;color:var(--R)">ต้องขอยกเลิกในระบบ (ทั้งใบ หรือสินค้าที่ซ้อน) ให้อนุมัติก่อน</div>`
+      : `ใบโปร Express <b class="mono">${esc(o.ref)}</b>`}</td>
+    <td>${esc(promoFmtD(o.start))} – ${esc(promoFmtD(o.due))}</td><td class="l" style="font-size:11.5px">${o.skus.map(esc).join(', ')} · ${o.branches.length} สาขา</td>
+    <td>${o.kind === 'express' ? (mine ? `<label style="display:inline-flex;gap:5px;align-items:center;white-space:nowrap"><input type="checkbox" class="draft-hold-ck" value="${esc(o.key)}">ยกเลิกใน Express แล้ว</label>` : '—') : '<span class="badge bbr">รอยกเลิก</span>'}</td></tr>`;
+  return `<div class="al alw" style="display:block;margin:10px">
+    <b>⏸ รอ Sales ยกเลิกโปรเก่าที่ช่วงเวลาซ้อน</b> — ผ่านขั้นที่ ${hold.level + 1} แล้ว แต่ยังมีโปรเดิมที่ทับช่วงนี้ ต้องยกเลิกให้เรียบร้อยก่อน ผู้อนุมัติลำดับถัดไปจึงอนุมัติต่อได้
+    <div class="tw" style="margin-top:8px;background:var(--W)"><table class="draft-trail"><thead><tr><th>เอกสารที่ซ้อน</th><th style="width:170px">ช่วงวันที่</th><th>สินค้า · สาขา</th><th style="width:170px">ยืนยัน</th></tr></thead>
+      <tbody>${docs.length ? docs.map(row).join('') : '<tr><td colspan="4" style="color:var(--G)">ไม่พบช่วงซ้อนแล้ว — กดยืนยันเพื่อส่งต่อได้</td></tr>'}</tbody></table></div>
+    ${mine ? `<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <input id="draft-hold-note" type="text" placeholder="หมายเหตุ (เช่น ยกเลิกใบ LT-0154 ใน Express แล้ว วันที่…)" style="flex:1;min-width:240px;padding:6px 9px;border:1px solid var(--BD);border-radius:6px">
+      <button class="btn btn-g" onclick="draftHoldClear('${no}')">✔ ยืนยันยกเลิกครบ — ส่งต่อผู้อนุมัติ</button></div>`
+      : `<div style="margin-top:6px;font-size:12px">รอ ${esc(uidToName(h.created_by) || 'Sales')} ดำเนินการ</div>`}
+  </div>`;
+}
+// คำนวณรายการซ้อนปัจจุบันจาก server (ใบที่ยกเลิกแล้ว/แก้วันที่แล้วหลุดออกเอง)
+async function draftHoldRefresh(draftNo) {
+  window._draftHoldCurrent = { no: draftNo, docs: null };
+  const { data, error } = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(draftNo)}/overlap`);
+  if (error || _draftHeader?.draft_no !== draftNo) return;
+  window._draftHoldCurrent = { no: draftNo, docs: data?.current || [] };
+  draftRenderApprovalTrail();
+}
+async function draftHoldClear(draftNo) {
+  const confirm = [...document.querySelectorAll('.draft-hold-ck:checked')].map(el => el.value);
+  const note = (document.getElementById('draft-hold-note')?.value || '').trim();
+  const { data, error } = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(draftNo)}/overlap_clear`, { method: 'POST', body: JSON.stringify({ confirm, note }) });
+  if (error) { toast(error.message || 'ยืนยันไม่สำเร็จ', 'warn'); window._draftHoldCurrent = null; draftRenderApprovalTrail(); return; }
+  audit('PROMO_DRAFT_OVERLAP_CLEAR', draftNo, { docs: confirm.length });
+  toast(data?.status === 'approved' ? 'ยืนยันแล้ว — เอกสารอนุมัติครบ' : 'ยืนยันแล้ว — ส่งต่อผู้อนุมัติลำดับถัดไป');
+  window._draftHoldCurrent = null;
+  _draftAfterStatusChange(draftNo);
+}
 function draftRenderApprovalTrail() {
   const box = document.getElementById('draft-approval-trail');
   if (!box) return;
@@ -16694,6 +16735,11 @@ function draftRenderApprovalTrail() {
   // v3 (2026-09-24, ตาม mockup): ตารางแถวเตี้ย ผู้จัดทำ + ผู้อนุมัติทุกคนทุกขั้น — คอลัมน์ความเห็นกว้างที่สุด
   const rows = [`<tr><td>1</td><td class="l"><b>ผู้จัดทำ</b></td><td class="l">${esc(uidToName(h.created_by) || h.created_by || '—')}</td>
     <td><span class="badge bbg">ส่งอนุมัติ</span></td><td class="l">—</td></tr>`];
+  const hold = _draftHoldOf(h);
+  const holdRow = () => rows.push(`<tr${hold.cleared_at ? '' : ' style="background:var(--LY)"'}><td>${rows.length + 1}</td><td class="l"><b>Sales ยืนยันยกเลิกโปรเก่าที่ช่วงซ้อน</b><div style="font-size:10.5px;color:var(--TX3)">${(hold.docs || []).length} เอกสาร</div></td>
+    <td class="l">${esc(hold.cleared_by_name || uidToName(h.created_by) || '')}</td>
+    <td style="white-space:nowrap">${hold.cleared_at ? `<span class="badge bbg">ยืนยันแล้ว</span> <span style="color:var(--TX3);font-size:11px">${fmtTs(hold.cleared_at)}</span>` : '<span class="badge bba">⏸ รอดำเนินการ</span>'}</td>
+    <td class="l" style="white-space:pre-wrap">${esc((hold.current_at_clear || hold.docs || []).map(o => o.ref).join(', '))}${hold.note ? '\n' + esc(hold.note) : ''}</td></tr>`);
   levels.forEach((lv, i) => lv.skipped ? rows.push(`<tr style="color:var(--TX3)"><td>${rows.length + 1}</td><td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b><div style="font-size:10.5px;color:var(--O)">⚠️ เฉพาะเมื่อมีรายการขาดทุน</div></td>
       <td class="l">—</td><td><span class="badge bbgr">⏭️ ข้าม</span></td><td class="l">ไม่มีรายการขาดทุน — ไม่ต้องผ่านขั้นนี้</td></tr>`) : (lv.approvers || []).forEach(a => {
     const [t, cls] = st[a.status] || st.pending;
@@ -16704,7 +16750,13 @@ function draftRenderApprovalTrail() {
       <td style="white-space:nowrap"><span class="badge ${cls}">${t}</span>${a.ts ? ` <span style="color:var(--TX3);font-size:11px">${fmtTs(a.ts)}</span>` : ''}</td>
       <td class="l" style="white-space:pre-wrap">${_draftVerdictSummary(a.line_verdicts)}${a.comment ? esc(a.comment) : (lv.audit_verdict && a.status === 'pending' ? '<span style="font-size:11px;color:var(--TX3)">🔍 ขั้นตรวจสอบ — เลือกผล ขายได้/ขาดทุน ในคอลัมน์ "ผลตรวจสอบ" ของตารางสินค้า</span>' : '')}</td></tr>`);
   }));
-  box.innerHTML = `${h.route_name ? `<div style="font-size:12px;color:var(--TX2);margin:6px 10px 0">เส้นทางอนุมัติ: <b>${esc(h.route_name)}</b></div>` : ''}
+  // แถว "Sales ยืนยันยกเลิกโปรเก่า" ต่อท้ายขั้นที่เป็นจุดพัก (ผู้จัดทำ = แถวแรก จึงนับขั้นละแถวผู้อนุมัติ)
+  if (hold) {
+    let at = 1;
+    levels.forEach((lv, i) => { if (i <= hold.level) at += lv.skipped ? 1 : (lv.approvers || []).length; });
+    const before = rows.length; holdRow(); const r = rows.pop(); rows.splice(Math.min(at, before), 0, r);
+  }
+  box.innerHTML = `${hold && !hold.cleared_at ? _draftHoldBoxHtml(h, hold) : ''}${h.route_name ? `<div style="font-size:12px;color:var(--TX2);margin:6px 10px 0">เส้นทางอนุมัติ: <b>${esc(h.route_name)}</b></div>` : ''}
     <div class="tw" style="margin:6px 10px 10px"><table class="draft-trail"><thead><tr><th style="width:44px">ลำดับ</th><th style="width:210px">ขั้น</th><th style="width:180px">ผู้ลงนาม</th><th style="width:210px">สถานะ · วันเวลา</th><th>ความเห็น</th></tr></thead>
     <tbody>${rows.join('')}</tbody></table></div>${planning ? `<div style="margin:0 10px;font-size:12px;font-weight:700;color:var(--TX2)">ส่งอนุมัติรอบใหม่</div>${_draftPlanHtml()}` : ''}`;
 }
@@ -17155,14 +17207,14 @@ async function pgPromoDraftsRenderBody() {
     const canEdit = draftCanEditStatus(h.status);
     return `<div class="card" style="margin-bottom:10px;background:var(--bg2)">
       <div class="ch" style="margin-bottom:8px">
-        <div><b>${esc(h.promo_name || h.draft_no)}</b> ${draftStatusBadgeHtml(h.status || 'draft')}${_draftCancelBadges(h)}
+        <div><b>${esc(h.promo_name || h.draft_no)}</b> ${draftStatusBadgeHtml(h.status || 'draft')}${_draftCancelBadges(h)}${_draftHoldActive(h) ? ' <span class="badge bba" title="รอ Sales ยกเลิกโปรเก่าที่ช่วงเวลาซ้อน">⏸ รอยกเลิกโปรซ้อน</span>' : ''}
           <div style="font-size:11px;color:var(--TX3)"><span class="mono">${esc(h.doc_no || h.draft_no)}</span>${h.promo_no ? ` · <b style="color:var(--G)">🎫 ใบโปร <span class="mono">${esc(h.promo_no)}</span></b>` : ''} · ${esc(h.condition_type || '')} · ${esc(_draftItemTypesArr(h.item_type).join(', '))} · สร้างโดย ${esc(uidToName(h.created_by))}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${canEdit ? `<button class="btn btn-xs" onclick="showPromoDraftModal('${esc(h.draft_no)}')">แก้ไข</button>` : `<button class="btn btn-xs" onclick="showPromoDraftModal('${esc(h.draft_no)}')">ดู</button>`}
           <button class="btn btn-xs" onclick="draftCopyFrom('${esc(h.draft_no)}')">📋 คัดลอก</button>
           ${(h.status === 'draft' || h.status === 'rejected' || !h.status) ? `<button class="btn btn-xs" onclick="draftSubmitForApproval('${esc(h.draft_no)}')">ส่งอนุมัติ</button>` : ''}
-          ${h.status === 'pending_approval' && _draftCanApprove(h) ? `<button class="btn btn-xs btn-r" onclick="draftApprove('${esc(h.draft_no)}',false)">ไม่อนุมัติ</button><button class="btn btn-xs btn-g" onclick="draftApprove('${esc(h.draft_no)}',true)">อนุมัติ</button>` : ''}
+          ${h.status === 'pending_approval' && _draftCanApprove(h) ? `<button class="btn btn-xs btn-r" onclick="draftApprove('${esc(h.draft_no)}',false)">ไม่อนุมัติ</button>${_draftHoldActive(h) ? '<button class="btn btn-xs btn-g" disabled title="รอ Sales ยกเลิกโปรเก่าที่ช่วงเวลาซ้อนก่อน">⏸ อนุมัติ</button>' : `<button class="btn btn-xs btn-g" onclick="draftApprove('${esc(h.draft_no)}',true)">อนุมัติ</button>`}` : ''}
           ${h.status === 'pending_exec_approval' && _draftCanApprove(h) ? `<button class="btn btn-xs btn-r" onclick="draftExecApprove('${esc(h.draft_no)}',false)">ผู้บริหาร: ไม่อนุมัติ</button><button class="btn btn-xs btn-g" onclick="draftExecApprove('${esc(h.draft_no)}',true)">ผู้บริหาร: อนุมัติ</button>` : ''}
           ${h.status !== 'keyed_to_express' && h.status !== 'cancelled' ? `<button class="btn btn-xs btn-p" onclick="draftMarkKeyed('${esc(h.draft_no)}')">คีย์เข้า Express แล้ว</button>` : ''}
           ${_draftCancelButtons(h)}
@@ -18439,6 +18491,11 @@ async function draftPreviewPDF(orient = 'landscape') {
     }
     acted.forEach(a => signRows.push({ step, uid: a.uid, name: a.name, signature: a.signature || null, comment: a.comment || '', lineVerdicts: a.line_verdicts || null,
       state: a.status === 'approved' ? 'signed' : 'rejected', ts: fmtTs(a.ts), status: a.status === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ' }));
+    // โปรซ้อน (2026-10-06): แถว "Sales ยืนยันยกเลิกโปรเก่า" ต่อจากขั้นที่เป็นจุดพัก
+    const hold = _draftHoldOf(_draftHeader);
+    if (hold && i === hold.level) signRows.push({ step: 'Sales ยืนยันยกเลิกโปรเก่าที่ช่วงซ้อน', uid: hold.cleared_at ? hold.cleared_by : null,
+      name: hold.cleared_at ? (hold.cleared_by_name || uidToName(hold.cleared_by)) : '', state: hold.cleared_at ? 'signed' : 'pending', ts: hold.cleared_at ? fmtTs(hold.cleared_at) : '',
+      status: hold.cleared_at ? 'ยืนยันแล้ว' : 'รอยกเลิกโปรเก่า', comment: `${(hold.current_at_clear || hold.docs || []).map(o => o.ref).join(', ')}${hold.note ? ' · ' + hold.note : ''}` });
   });
   // ตารางสินค้าสร้างหลังรู้เส้นทาง — มีขั้นตรวจสอบในเส้นทาง = มีคอลัมน์ผลตรวจสอบรายสินค้า
   pdfAudit = !offContract && [...history, ...current, ...upcoming].some(lv => lv.audit_verdict);

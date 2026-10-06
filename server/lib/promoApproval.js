@@ -1,4 +1,5 @@
 const workflow = require('../../shared/approval-workflow');
+const { overlapsFor } = require('./promoOverlap');
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 // เส้นทางอนุมัติหลายแบบ (2026-09-24): รายชื่อเส้นทางเก็บเป็นแถว entity_type='promo_draft_routes'
 // (levels_json = [{id, name, match:{corps,item_types,npd,off_contract,marketing}}]) ส่วนขั้นอนุมัติของแต่ละเส้นทาง
@@ -61,9 +62,36 @@ function hasLoss(levels) {
 function history(old) {
   try { return parse(old.approval_history_json || '[]') || []; } catch { return []; }
 }
+function holdOf(row) {
+  const v = row && row.overlap_hold_json;
+  if (!v) return null;
+  if (typeof v !== 'string') return v;
+  try { return JSON.parse(v); } catch { return null; }
+}
+function holdActive(row) { const h = holdOf(row); return !!(h && !h.cleared_at); }
+// จุดพักเฉพาะเส้นทางปกติ (pending_approval) · มีขั้นตรวจสอบ = หลังขั้นตรวจสอบ, ไม่มี = หลังขั้นแรก · พักครั้งเดียวต่อรอบส่ง
+function holdPointHit(old, levels, result) {
+  if (old.status !== 'pending_approval' || !result.levelDone || holdOf(old)) return false;
+  const L = old.current_level || 0;
+  return levels.some(lv => lv.audit_verdict) ? !!levels[L]?.audit_verdict : L === 0;
+}
+// หลัง Sales ยืนยันยกเลิกโปรเก่าครบ: เอกสารที่ผ่านครบทุกขั้นแล้วระหว่างพัก → อนุมัติ หรือเข้าขั้นผู้บริหาร (กติกาเดียวกับ advance)
+// คืน change สำหรับ UPDATE · ยังไม่ครบ = คืน {} (ขั้นปัจจุบันถูกเลื่อนไปแล้วตอนพัก)
+function completeAfterHold(db, old) {
+  const h = holdOf(old);
+  if (!h || !h.final) return {};
+  if (needsExec(old)) {
+    const exec = template(db, 'promo_draft_exec');
+    return { status: 'pending_exec_approval', approval_history_json: JSON.stringify([...history(old), ...parse(old.levels_json || '[]')]),
+      levels_json: JSON.stringify(exec), current_level: 0, approvers_json: JSON.stringify(exec.flatMap(l => l.approvers)) };
+  }
+  return { status: 'approved' };
+}
 function validateChange(db, old, change, user) {
   // ประวัติขั้นอนุมัติเขียนโดย server เท่านั้น
   if (change.approval_history_json !== undefined) throw new Error('ไม่สามารถแก้ข้อมูลขั้นอนุมัติโดยตรง');
+  // สถานะ "รอ Sales ยกเลิกโปรเก่าที่ซ้อน" เขียนโดย server เท่านั้น (ดู holdPointHit ด้านล่าง / POST /:draftNo/overlap_clear)
+  if (change.overlap_hold_json !== undefined) throw new Error('ไม่สามารถแก้สถานะโปรซ้อนโดยตรง');
   // ความเห็นผู้อนุมัติ (ไม่ใช่คอลัมน์ — เก็บลง approver entry ผ่าน workflow.advance)
   const comment = String(change.approval_comment || '').slice(0, 1000);
   delete change.approval_comment;
@@ -105,10 +133,13 @@ function validateChange(db, old, change, user) {
     if (route.entity !== 'promo_draft' && !levels.length) throw new Error(`เส้นทาง "${route.name}" ยังไม่ได้ตั้งขั้นอนุมัติ กรุณาเลือกเส้นทางอื่นหรือให้แอดมินตั้งค่า`);
     assign(levels);
     change.approval_history_json = '[]'; // ส่งอนุมัติรอบใหม่ เริ่มประวัติใหม่
+    change.overlap_hold_json = null;
     return;
   }
   if (active && (status || change.levels_json !== undefined || change.current_level !== undefined || change.approvers_json !== undefined)) {
     const levels = parse(old.levels_json);
+    // ระหว่างรอ Sales ยกเลิกโปรเก่าที่ซ้อน ผู้อนุมัติลำดับถัดไปกดอนุมัติไม่ได้ (ไม่อนุมัติได้)
+    if (holdActive(old) && status !== 'rejected') throw new Error('รอ Sales ยกเลิกโปรเก่าที่ช่วงเวลาซ้อนให้เรียบร้อยก่อน จึงอนุมัติขั้นถัดไปได้');
     let result;
     if (!levels.length && old.status === 'pending_approval') {
       if (!['manager', 'sales_manager', 'admin', 'superadmin'].includes(user.role)) throw new Error('คุณไม่มีสิทธิ์อนุมัติ');
@@ -154,6 +185,17 @@ function validateChange(db, old, change, user) {
       }
     }
     assign(result.levels, result.current);
+    // โปรซ้อน (2026-10-06, ผู้ใช้ขอ): ผ่านขั้นตรวจสอบ (หรือขั้นแรกถ้าเส้นทางไม่มีขั้นตรวจสอบ) แล้วยังมีโปรเก่าที่ซ้อน
+    // → พักให้ Sales ยกเลิกโปรเก่าก่อน (POST /:draftNo/overlap_clear) จึงเดินขั้นถัดไป · ผ่านครบทุกขั้นแล้ว = พักก่อนอนุมัติ/เข้าขั้นผู้บริหาร
+    if (!result.rejected && holdPointHit(old, levels, result)) {
+      const docs = overlapsFor(db, old);
+      if (docs.length) {
+        change.overlap_hold_json = JSON.stringify({ at: new Date().toISOString(), level: old.current_level || 0, final: !!result.complete,
+          docs, confirmed: {}, cleared_at: null, cleared_by: null, note: '' });
+        change.status = old.status;
+        return;
+      }
+    }
     if (result.rejected) change.status = 'rejected';
     else if (!result.complete) change.status = old.status;
     else if (old.status === 'pending_approval' && needsExec(old)) {
@@ -191,4 +233,4 @@ function ccEmailsOf(db, routeId) {
   } catch { return []; }
 }
 
-module.exports = { validateChange, template, ROUTES_ENTITY, validateRoutes, CC_ENTITY, validateCc, ccEmailsOf };
+module.exports = { validateChange, template, ROUTES_ENTITY, validateRoutes, CC_ENTITY, validateCc, ccEmailsOf, holdOf, holdActive, completeAfterHold };
