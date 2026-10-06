@@ -1142,7 +1142,7 @@ const SB = {
 
   // ปริมาณขายจริงต่อคู่ (cust_code, sku) ในช่วงวันที่ระบุ — ใช้แสดง "ปริมาณขายในช่วงเวลาเดียวกัน" ในตาราง
   // สินค้าของหน้าสร้างใบโปร (query แบบ batched ครั้งเดียวทั้งตาราง ไม่ query ทีละแถว) sum ต่อคู่ทำ client-side
-  async getSalesQtyForPairs(custCodes = [], skus = [], dateFrom = '', dateTo = '') {
+  async getSalesQtyForPairs(custCodes = [], skus = [], dateFrom = '', dateTo = '', company = '') {
     if (!custCodes.length || !skus.length || !dateFrom || !dateTo) return [];
     // FIXED (code review 2026-09-15): same silent-truncation risk as getPromoDocsForOverlap above —
     // without pagination this undercounted "ปริมาณขายในช่วงเวลาเดียวกัน" for a broad selection.
@@ -1153,11 +1153,13 @@ const SB = {
       const codes = custCodes.slice(i, i + 150);
       let from = 0;
       while (true) {
-        const { data: page, error } = await getSupabaseClient()
+        let q = getSupabaseClient()
           .from('sales_transactions').select('cust_code,sku,qty,amount,tx_date,company')
           .in('cust_code', codes).in('sku', skus)
-          .gte('tx_date', dateFrom).lte('tx_date', dateTo)
-          .range(from, from + pageSize - 1);
+          .gte('tx_date', dateFrom).lte('tx_date', dateTo);
+        // company (2026-10-06): 'CONSI' = ยอดส่งสินค้าเข้าฝากขาย (ข้อมูลเดียวกับหน้า ฝากขาย CONSI)
+        if (company) q = q.eq('company', company);
+        const { data: page, error } = await q.range(from, from + pageSize - 1);
         if (error) throw error;
         data = data.concat(page || []);
         if (!page || page.length < pageSize) break;
@@ -5052,13 +5054,17 @@ function _dedupeArchiveSalesRows(rows=[], keyParts=['ym','prod_code']){
 // live to freeze the tab into Chrome's "page unresponsive" dialog. DB.set() must invalidate this memo
 // whenever 'customer_profiles' itself is written, or callers would keep seeing stale data forever.
 let _customerProfilesMemo=null;
+// สำเนาในหน่วยความจำ (2026-10-06): localStorage เต็ม (รายชื่อลูกค้า ~2 หมื่นแถว) ทำให้ set ล้มเงียบๆ แล้ว get คืนค่าเก่า/ว่าง
+// → ตัวเลือกสาขาในใบเคาะขึ้นแต่รหัสไม่มีชื่อ · เก็บค่าล่าสุดไว้ในหน่วยความจำเสมอ อ่านจากที่นี่ก่อน localStorage
+const _dbMem=new Map();
 const DB={
-  get(k){try{return JSON.parse(localStorage.getItem('tgm3_'+k)||'null')}catch{return null}},
+  get(k){if(_dbMem.has(k))return _dbMem.get(k);try{return JSON.parse(localStorage.getItem('tgm3_'+k)||'null')}catch{return null}},
   // ไม่มี try/catch มาก่อน — localStorage เต็มโควต้า (เช่น cache รายชื่อลูกค้า 15,000+ แถวทีเดียว) ทำให้
   // setItem throw ออกมาตรงๆ ไม่มีใครจับ พังฟังก์ชันเรียกใช้ทั้งฟังก์ชัน (เช่น SB.getCustomers() ที่เรียก
   // DB.set(...) ก่อน return ผลลัพธ์ — reject ทิ้งทั้งฟังก์ชัน ไม่ได้ข้อมูลกลับไปเลยทั้งที่ query จริงสำเร็จแล้ว)
   // การ cache ไว้ใน localStorage เป็นแค่ optimization รอบหน้า พลาดได้ไม่กระทบความถูกต้องของรอบนี้
   set(k,v){
+    _dbMem.set(k,v);
     try{localStorage.setItem('tgm3_'+k,JSON.stringify(v))}catch(e){console.warn('DB.set (localStorage เต็ม?):',k,e.message||e)}
     if(k==='customer_profiles') _customerProfilesMemo=null;
   },
@@ -6363,7 +6369,10 @@ function _dxState(){
     const n=new Date();
     let saved={};
     try{saved=JSON.parse(localStorage.getItem('dx_prefs')||'{}')||{};}catch(e){}
+    const iso=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
     window._dx={mode:'ytd',year:n.getFullYear(),month:n.getMonth()+1,q:Math.floor(n.getMonth()/3)+1,
+      // ช่วงวันที่ (2026-10-06, ผู้ใช้ขอ) — ค่าเริ่ม = วันที่ 1 ของเดือนนี้ ถึงวันนี้
+      dFrom:iso(new Date(n.getFullYear(),n.getMonth(),1)),dTo:iso(n),
       consi:saved.consi!==false,by:saved.by==='ch'?'ch':'co',top:'all',makro:saved.makro===true,
       // ตัวกรองบริษัท (2026-10-05): all | tss (TSS+TSS-NV+CONSI) | tgm (โรงงาน Bplus)
       co:['tss','tgm'].includes(saved.co)?saved.co:'all'};
@@ -6374,6 +6383,11 @@ function _dxSavePrefs(){const s=_dxState();try{localStorage.setItem('dx_prefs',J
 function _dxRange(){
   const s=_dxState(),n=new Date(),cy=n.getFullYear(),cm=n.getMonth()+1;
   let y=s.year,a,b;
+  if(s.mode==='range'){
+    // ช่วงวันที่ — server ใช้ตารางรายวัน (from/to แบบ YYYY-MM-DD) · ต้องอยู่ในปีเดียวกัน (dxSet บังคับไว้แล้ว)
+    const df=s.dFrom,dt=s.dTo;
+    return {y:Number(df.slice(0,4)),a:Number(df.slice(5,7)),b:Number(dt.slice(5,7)),from:df,to:dt,range:true};
+  }
   if(s.mode==='ytd'){y=cy;a=1;b=cm;}
   else if(s.mode==='month'){a=b=s.month;}
   else if(s.mode==='quarter'){a=s.q*3-2;b=s.q*3;}
@@ -6381,9 +6395,14 @@ function _dxRange(){
   // ปีปัจจุบันยังไม่มีเดือนในอนาคต — ตัดให้จบที่เดือนนี้ (ตัวเลือกเดือน/ไตรมาสในอนาคตถูกปิดไว้แล้วใน UI)
   if(y===cy){b=Math.min(b,cm);a=Math.min(a,b);}
   const p=m=>String(m).padStart(2,'0');
+  // ช่วงที่รวมเดือนปัจจุบัน (ยังไม่จบเดือน) → ส่งเป็นช่วงวันที่ถึง "วันนี้" ให้ปีก่อนถูกตัดที่วันที่เดียวกันด้วย
+  // (2026-10-06, ผู้ใช้ขอ: 6 ต.ค. 69 ต้องเทียบถึง 6 ต.ค. 68 ไม่ใช่ทั้งเดือน ต.ค. 68) — server ใช้ตารางรายวัน
+  if(y===cy&&b===cm)return {y,a,b,from:`${y}-${p(a)}-01`,to:`${y}-${p(b)}-${p(n.getDate())}`,range:true,toDate:true};
   return {y,a,b,from:`${y}-${p(a)}`,to:`${y}-${p(b)}`};
 }
-function _dxLabel(r,dy=0){const yy=String((r.y+dy+543)%100).padStart(2,'0');return r.a===r.b?`${DX_MONTHS[r.a-1]} ${yy}`:`${DX_MONTHS[r.a-1]}–${DX_MONTHS[r.b-1]} ${yy}`;}
+function _dxLabel(r,dy=0){const yy=String((r.y+dy+543)%100).padStart(2,'0');
+  if(r.range){const dm=x=>`${Number(x.slice(8,10))} ${DX_MONTHS[Number(x.slice(5,7))-1]}`;return r.from===r.to?`${dm(r.from)} ${yy}`:`${dm(r.from)} – ${dm(r.to)} ${yy}`;}
+  return r.a===r.b?`${DX_MONTHS[r.a-1]} ${yy}`:`${DX_MONTHS[r.a-1]}–${DX_MONTHS[r.b-1]} ${yy}`;}
 function _dxSlm(){const k=window._dashSlmF||myScopeKey();return k?[...slmKeySet(k)].join(','):'';}
 function _dxQuery(){
   const r=_dxRange(),s=_dxState();
@@ -6414,7 +6433,19 @@ async function loadDashExec(force=false){
 }
 async function dxSet(k,v){
   const s=_dxState();
-  if(k==='mode'||k==='year'||k==='month'||k==='q') s[k]=(k==='mode')?v:Number(v);
+  if(k==='dFrom'||k==='dTo'){
+    // ช่วงวันที่: ไม่เกินวันนี้ · เริ่ม ≤ สิ้นสุด (สลับให้) · ต้องอยู่ปีเดียวกัน (เทียบปีก่อนช่วงเดียวกัน) — ข้ามปีตัดให้จบสิ้นปี/เริ่มต้นปี
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||'')))return;
+    const t=new Date(),today=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+    s[k]=v>today?today:v;
+    // ข้ามปี → คงช่องที่เพิ่งแก้ไว้ แล้วย้ายอีกช่องมาอยู่ปีเดียวกัน (ก่อนสลับลำดับ ไม่งั้นช่องที่แก้ถูกสลับทิ้ง)
+    if(s.dFrom.slice(0,4)!==s.dTo.slice(0,4)){
+      if(k==='dFrom'){const e=`${s.dFrom.slice(0,4)}-12-31`;s.dTo=e>today?today:e;}else s.dFrom=`${s.dTo.slice(0,4)}-01-01`;
+      if(typeof toast==='function')toast('ช่วงวันที่ต้องอยู่ในปีเดียวกัน — ปรับให้แล้ว');
+    }
+    if(s.dFrom>s.dTo){const x=s.dFrom;s.dFrom=s.dTo;s.dTo=x;}
+  }
+  else if(k==='mode'||k==='year'||k==='month'||k==='q') s[k]=(k==='mode')?v:Number(v);
   else if(k==='consi'||k==='makro'){s[k]=!!v;_dxSavePrefs();}
   else if(k==='co'){s.co=['tss','tgm'].includes(v)?v:'all';_dxSavePrefs();}
   else if(k==='by'||k==='top'){s[k]=v;if(k==='by')_dxSavePrefs();dashExecRender();return;}
@@ -6458,6 +6489,8 @@ function _dxEnsureCss(){
   .dx-seg button:hover{color:var(--dx-ink)}
   .dx-seg button.on{background:#fff;color:var(--dx-ink);font-weight:600;box-shadow:0 1px 2px rgba(20,35,58,.12)}
   .dx-ctl select{height:32px;padding:0 8px;border:1px solid var(--dx-line);border-radius:8px;font-size:12.5px;font-family:var(--font);background:#fff;color:var(--dx-ink)}
+  .dx-range{display:inline-flex;align-items:center;gap:4px}.dx-range span{color:var(--dx-mut)}
+  .dx-range input{height:32px;padding:0 6px;border:1px solid var(--dx-line);border-radius:8px;font-size:12.5px;font-family:var(--font);background:#fff;color:var(--dx-ink)}
   .dx-sw{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dx-ink);cursor:pointer;user-select:none;height:32px;padding:0 4px}
   .dx-sw input{position:absolute;opacity:0;pointer-events:none}
   .dx-sw .tr{width:30px;height:17px;border-radius:9px;background:#C9D2DE;position:relative;transition:.15s;flex:none}
@@ -6561,16 +6594,18 @@ function _dxEnsureCss(){
 }
 function _dxHead(){
   const s=_dxState(),r=_dxRange(),n=new Date(),cy=n.getFullYear(),cm=n.getMonth()+1;
-  const seg=[['ytd','YTD'],['month','เดือน'],['quarter','ไตรมาส'],['year','ทั้งปี']].map(([k,l])=>`<button type="button" class="${s.mode===k?'on':''}" aria-pressed="${s.mode===k}" onclick="dxSet('mode','${k}')">${l}</button>`).join('');
+  const seg=[['ytd','YTD'],['month','เดือน'],['quarter','ไตรมาส'],['year','ทั้งปี'],['range','ช่วงวันที่']].map(([k,l])=>`<button type="button" class="${s.mode===k?'on':''}" aria-pressed="${s.mode===k}" onclick="dxSet('mode','${k}')">${l}</button>`).join('');
   const coSeg=[['all','ทุกบริษัท'],['tss','TSS'],['tgm','TGM']].map(([k,l])=>`<button type="button" class="${(s.co||'all')===k?'on':''}" aria-pressed="${(s.co||'all')===k}" onclick="dxSet('co','${k}')" title="${k==='tss'?'TSS + TSS-NV + ฝากขาย (Express)':k==='tgm'?'โรงงาน TGM (Bplus)':'ทุกบริษัท'}">${l}</button>`).join('');
   const years=[cy,cy-1,cy-2];
-  const yearSel=s.mode==='ytd'?'':`<select aria-label="ปี" onchange="dxSet('year',this.value)">${years.map(y=>`<option value="${y}"${y===s.year?' selected':''}>${y+543}</option>`).join('')}</select>`;
+  const todayIso=`${cy}-${String(cm).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+  const rangeSel=s.mode!=='range'?'':`<span class="dx-range"><input type="date" aria-label="ตั้งแต่วันที่" value="${s.dFrom}" max="${todayIso}" onchange="dxSet('dFrom',this.value)"><span>–</span><input type="date" aria-label="ถึงวันที่" value="${s.dTo}" max="${todayIso}" onchange="dxSet('dTo',this.value)"></span>`;
+  const yearSel=s.mode==='ytd'||s.mode==='range'?'':`<select aria-label="ปี" onchange="dxSet('year',this.value)">${years.map(y=>`<option value="${y}"${y===s.year?' selected':''}>${y+543}</option>`).join('')}</select>`;
   const monthSel=s.mode!=='month'?'':`<select aria-label="เดือน" onchange="dxSet('month',this.value)">${DX_MONTHS.map((m,i)=>`<option value="${i+1}"${i+1===s.month?' selected':''}${s.year===cy&&i+1>cm?' disabled':''}>${m}</option>`).join('')}</select>`;
   const qSel=s.mode!=='quarter'?'':`<select aria-label="ไตรมาส" onchange="dxSet('q',this.value)">${[1,2,3,4].map(q=>`<option value="${q}"${q===s.q?' selected':''}${s.year===cy&&q*3-2>cm?' disabled':''}>ไตรมาส ${q}</option>`).join('')}</select>`;
   return `<div class="dx-head">
     <div><div class="dx-title">ภาพรวมยอดขาย${s.co==='tss'?' · TSS':s.co==='tgm'?' · TGM (โรงงาน)':''}</div>
       <div class="dx-sub"><b>${_dxLabel(r)}</b> เทียบ ${_dxLabel(r,-1)} · ยอดใบกำกับก่อน VAT${window._dxLoading?' · <span class="dx-load">กำลังโหลด…</span>':''}</div></div>
-    <div class="dx-ctl"><div class="dx-seg" role="group" aria-label="บริษัท">${coSeg}</div><div class="dx-seg" role="group" aria-label="ช่วงเวลา">${seg}</div>${yearSel}${monthSel}${qSel}
+    <div class="dx-ctl"><div class="dx-seg" role="group" aria-label="บริษัท">${coSeg}</div><div class="dx-seg" role="group" aria-label="ช่วงเวลา">${seg}</div>${yearSel}${monthSel}${qSel}${rangeSel}
       ${s.co==='tgm'?'':`<label class="dx-sw"><input type="checkbox" ${s.consi?'checked':''} onchange="dxSet('consi',this.checked)"><span class="tr"></span>รวมฝากขาย (Consi)</label>`}</div>
   </div>`;
 }
@@ -6614,7 +6649,7 @@ function _dxKpis(d){
     <div class="dx-kpi" data-dxtip="${esc(`฿${_dxB(k.ty_consi)}<br>${_dxLabel(r,-1)}: ฿${_dxB(k.ly_consi)}`)}"><div class="l"><i style="background:#eb6834"></i>ฝากขาย (Consi)</div><div class="v">${_dxMil(k.ty_consi)}<small>ล้านบาท</small></div><div class="d">${_dxPill(_dxPct(k.ty_consi,k.ly_consi))} ${share}% ของยอดรวม</div>${_dxSpark(consiM,'#eb6834')}</div>
     <div class="dx-kpi"><div class="l"><i style="background:#1baf7a"></i>ลูกค้าที่มียอด</div><div class="v">${fmt(k.ty_active)}<small>ราย</small></div><div class="d"><span class="dx-pill ${dAct>=0?'dx-pill-up':'dx-pill-dn'}">${dAct>=0?'▲':'▼'} ${fmt(Math.abs(dAct))} ราย</span> จาก ${fmt(k.ly_active)} ราย</div></div>
     ${k4}
-  </div>${k.ty_ic||k.ly_ic?`<div style="font-size:12px;color:var(--dx-mut);margin:-4px 2px 12px">โรงงานขายให้บริษัทในเครือ (ไทยซอสเซสมาร์เก็ตติ้ง) ${_dxMil(k.ty_ic)} ล้าน · ${_dxLabel(r,-1)} ${_dxMil(k.ly_ic)} ล้าน — <b>ไม่รวม</b>ในยอดขายด้านบน</div>`:''}`;
+  </div>${k.ty_ic||k.ly_ic?`<div style="font-size:12px;color:var(--dx-mut);margin:-4px 2px 12px">โรงงานขายให้บริษัทในเครือ (ไทยซอสเซสมาร์เก็ตติ้ง) ${_dxMil(k.ty_ic)} ล้าน · ${_dxLabel(r,-1)} ${_dxMil(k.ly_ic)} ล้าน — <b>ไม่รวม</b>ในยอดขายด้านบน</div>`:''}${d.tgm_daily_missing&&(s.co||'all')!=='tss'?`<div style="font-size:11.5px;color:#B45309;margin:-6px 2px 12px">⚠ ยอดโรงงาน TGM ยังไม่มีข้อมูลรายวัน — ช่วงนี้ใช้ยอดทั้งเดือนของ TGM ชั่วคราว (ระบบสลับเป็นรายวันเองเมื่อดึงข้อมูลจากโรงงานได้)</div>`:''}`;
 }
 // เส้นเป้าบนกราฟรายเดือน — ย้ายมาจากกราฟเดิม (commit f653a64 "Dashboard เส้นเป้าบนกราฟรายเดือน", 2026-10-03) เมื่อ
 // Dashboard ถูกออกแบบใหม่ (กราฟเดิม dashValueChartHtml ไม่ถูกวาดแล้ว) · เป้าตั้งต่อรหัส Sales รวมทุกบริษัท จึงแสดงเฉพาะ "ทุกบริษัท"
@@ -15427,7 +15462,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
           <th colspan="3" class="dl-prev dl-start" title="โปรล่าสุดของสาขาที่เลือก + สินค้านี้ ที่เริ่มโปรก่อนวันทำเอกสาร">Pro before period</th>
           <th colspan="3" class="dl-last dl-start" title="โปรของสาขาที่เลือก + สินค้านี้ ที่ช่วงโปรอยู่หลังวันทำเอกสาร (เลือกใบที่เริ่มช้าที่สุด)">Pro last confirm</th>
           <th colspan="4" class="dl-norm dl-start">ราคาปกติ</th><th colspan="5" class="dl-promo dl-start">ราคาโปรโมชั่น</th>
-          <th rowspan="2" class="dl-start">ปริมาณการขาย · Pro ก่อน<br><span style="font-weight:400;color:var(--TX3)">สาขาที่เลือก → CONSI → ทั้งกลุ่ม</span></th><th rowspan="2">Forecast<br><span style="font-weight:400;color:var(--TX3)">ประมาณการจำนวน</span></th><th rowspan="2" class="dl-start" title="ผู้อนุมัติขั้นตรวจสอบเลือก ขายได้ / ขาดทุน ทุกรายการ">🔍 ผลตรวจสอบ</th><th rowspan="2"></th><th rowspan="2"></th></tr>
+          <th rowspan="2" class="dl-start">ปริมาณการส่ง · Pro ก่อน<br><span style="font-weight:400;color:var(--TX3)">ยอดส่งสินค้า CONSI (สาขาคู่ BB-)</span></th><th rowspan="2">Forecast<br><span style="font-weight:400;color:var(--TX3)">ประมาณการจำนวน</span></th><th rowspan="2" class="dl-start" title="ผู้อนุมัติขั้นตรวจสอบเลือก ขายได้ / ขาดทุน ทุกรายการ">🔍 ผลตรวจสอบ</th><th rowspan="2"></th><th rowspan="2"></th></tr>
         <tr><th class="dl-prev dl-start">เลขที่</th><th class="dl-prev">ราคา</th><th class="dl-prev">ช่วงวันที่</th>
           <th class="dl-last dl-start">เลขที่</th><th class="dl-last">ราคา</th><th class="dl-last">ช่วงวันที่</th>
           <th class="dl-norm dl-start">ราคาขาย</th><th class="dl-norm">GP %</th><th class="dl-norm">ท้ายบิล %</th><th class="dl-norm">ราคาทุนสุทธิ</th>
@@ -15764,7 +15799,7 @@ function draftMsLabel() {
 function draftMsButton() {
   return `<div class="ms-drop" id="draft-ms">
     <button class="btn btn-sm" style="width:100%;text-align:left" onclick="toggleMsPanel('draft-ms')">🏪 <b id="draft-ms-label">${esc(draftMsLabel())}</b> ▾</button>
-    <div class="ms-panel hidden" id="draft-ms-panel">
+    <div class="ms-panel hidden" id="draft-ms-panel" style="min-width:380px">
       <input type="text" id="draft-ms-q" value="${esc(_draftMsQ)}" placeholder="พิมพ์ชื่อห้าง/รหัส/ชื่อสาขา..." oninput="draftMsSearch(this.value)"
         style="width:100%;padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12px;margin-bottom:4px;box-sizing:border-box">
       <div id="draft-ms-list" style="max-height:260px;overflow-y:auto">${draftMsItems()}</div>
@@ -15776,6 +15811,30 @@ function draftMsButton() {
     </div>
   </div>`;
 }
+// ชื่อลูกค้า/สาขาที่อ่านง่าย (2026-10-06, ผู้ใช้ขอ): ชื่อใน Express ยาวและมีขยะ (".ไม่ใช้ๆๆๆ", "..???", "จำกัด")
+// สาขา: จัดการกลุ่ม (customer_profiles.branch) → คำหลัง "สาขา" ในชื่อลูกค้า → ชื่อสาขาจากที่อยู่จัดส่งในใบกำกับ
+let _draftShipBranch = null, _draftShipBranchLoading = false;
+function _draftLoadShipBranch() {
+  if (_draftShipBranch || _draftShipBranchLoading) return;
+  _draftShipBranchLoading = true;
+  CACHE.get('ship_branch_names', async () => { const r = await apiFetch('/api/invoice_detail/branch_names'); if (r.error) throw new Error(r.error.message); return r.data || {}; }, { ttl: 60 * 60 * 1000 })
+    .then(m => { _draftShipBranch = m || {}; const l = document.getElementById('draft-ms-list'); if (l) l.innerHTML = draftMsItems(); })
+    .catch(e => { console.warn('branch names', e.message || e); _draftShipBranch = {}; })
+    .finally(() => { _draftShipBranchLoading = false; });
+}
+function _custNameParts(code, rawName) {
+  const prof = customerProfiles()[code] || {};
+  let raw = String(prof.name || rawName || '').trim();
+  if (raw === code) raw = '';
+  const inactive = /ไม่ใช้|ยกเลิก/.test(raw);
+  const clean = x => String(x || '').replace(/[.\s]*ไม่ใช้[ๆ.\s]*/g, ' ').replace(/[.?ๆ\s]+$/g, '').replace(/\s+/g, ' ').trim();
+  raw = clean(raw);
+  const m = raw.match(/^(.*?)\s*\(?\s*สาขา\s*(?:ที่\s*)?(.+?)\)?$/);
+  const company = clean((m ? m[1] : raw).replace(/\(?มหาชน\)?|บริษัท|บจ\.|จำกัด/g, ' '));
+  let branch = clean(prof.branch) || (m ? clean(m[2]) : '');
+  if (!branch) { _draftLoadShipBranch(); branch = clean((_draftShipBranch || {})[code]); }
+  return { company, branch, inactive };
+}
 function draftMsItems() {
   const q = _msSearchText(_draftMsQ).trim();
   const groups = _draftBranchGroups().filter(([corp]) => !_draftSelGroups.size || _draftSelGroups.has(corp));
@@ -15784,7 +15843,7 @@ function draftMsItems() {
   let total = 0, rendered = 0;
   for (const [corp, branches] of groups) {
     let shown = branches.filter(c => !_draftSelCats.size || _draftSelCats.has(c.category || 'ไม่ระบุประเภท'));
-    if (q) shown = shown.filter(c => _msSearchText(corp + ' ' + c.c + ' ' + c.n + ' ' + (c.branch || '')).includes(q));
+    if (q) shown = shown.filter(c => { const p = _custNameParts(c.c, c.n); return _msSearchText(corp + ' ' + c.c + ' ' + c.n + ' ' + (c.branch || '') + ' ' + p.branch + ' ' + p.company).includes(q); });
     total += shown.length;
     shown = shown.slice(0, Math.max(0, MAX_ITEMS - rendered));
     rendered += shown.length;
@@ -15792,10 +15851,13 @@ function draftMsItems() {
       if (rendered >= MAX_ITEMS) break;
       continue;
     }
-    const items = shown.map(c => `<div class="ms-item${_draftSelectedBranches.has(c.c) ? ' sel' : ''}" onclick="draftMsToggle('${_promoJsKey(c.c)}')">
-      <input type="checkbox" ${_draftSelectedBranches.has(c.c) ? 'checked' : ''}>
-      <span style="font-size:12px">${esc(c.c)} — ${esc(c.n || '—')}</span>
-    </div>`).join('');
+    const items = shown.map(c => { const p = _custNameParts(c.c, c.n);
+      return `<div class="ms-item${_draftSelectedBranches.has(c.c) ? ' sel' : ''}" onclick="draftMsToggle('${_promoJsKey(c.c)}')" title="${esc(c.c + ' ' + (c.n || ''))}" style="align-items:flex-start${p.inactive ? ';opacity:.55' : ''}">
+      <input type="checkbox" ${_draftSelectedBranches.has(c.c) ? 'checked' : ''} style="margin-top:2px">
+      <span style="font-size:12px;line-height:1.3;min-width:0"><span class="mono" style="font-size:11.5px">${esc(c.c)}</span>
+        ${p.branch ? `<b>สาขา${esc(p.branch)}</b>` : ''}${p.inactive ? ' <span style="font-size:10px;color:var(--R)">ไม่ใช้งาน</span>' : ''}
+        <div style="font-size:11px;color:var(--TX3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.company || (p.branch ? '' : 'ไม่มีชื่อในระบบ'))}</div></span>
+    </div>`; }).join('');
     chunks.push(`<div style="font-size:11px;font-weight:600;color:var(--TX2);padding:5px 4px 2px">${esc(corp)}</div>${items}`);
     if (rendered >= MAX_ITEMS) break;
   }
@@ -16306,10 +16368,10 @@ async function _draftRefreshLineRefDataNow() {
       byPeriod.get(k).push(sku);
     });
     const sumBySku = rows => rows.reduce((m, r) => m.set(r.sku, (m.get(r.sku) || 0) + (Number(r.qty) || 0)), new Map());
-    const cachedQty = (codes, skuList, from, to) => {
-      const key = `${from}|${to}|${skuList.join(',')}|${codes.join(',')}`;
+    const cachedQty = (codes, skuList, from, to, company = '') => {
+      const key = `${company}|${from}|${to}|${skuList.join(',')}|${codes.join(',')}`;
       if (!_draftPrevSalesCache.has(key)) {
-        const fetchRows = SB.getSalesQtyForPairs(codes, skuList, from, to);
+        const fetchRows = SB.getSalesQtyForPairs(codes, skuList, from, to, company);
         _draftPrevSalesCache.set(key, fetchRows.then(sumBySku)
           .catch(e => { _draftPrevSalesCache.delete(key); throw e; }));
       }
@@ -16324,18 +16386,17 @@ async function _draftRefreshLineRefDataNow() {
       const found = new Map(); // sku -> {qty, source, note}
       const take = (map, source, note) => skuList.forEach(sku => { if (!found.has(sku) && map.get(sku) > 0) found.set(sku, { qty: map.get(sku), source, note }); });
       const pending = () => skuList.filter(s => !found.has(s));
+      // ปริมาณการส่ง (2026-10-06, ผู้ใช้ขอ): เดิม = ยอดขาย TSS → CONSI → ทั้งกลุ่ม · ตอนนี้ใช้ "ยอดส่งสินค้าเข้าฝากขาย CONSI"
+      // อย่างเดียว (ข้อมูลเดียวกับหน้า ฝากขาย CONSI) ของสาขาที่เลือกที่เป็น BB- เอง + สาขาคู่ CONSI (เปลี่ยนต้นรหัสเป็น BB-)
+      const shipCodes = [...new Set([...custCodes.filter(c => /^BB-/i.test(c)), ...consiCodes])];
       try {
-        if (custCodes.length) take(await cachedQty(custCodes, skuList, from, to), '', `ยอดขาย TSS สาขาที่เลือก ${period}`);
-        if (pending().length && consiCodes.length) take(await cachedQty(consiCodes, pending(), from, to), 'CONSI', `ไม่มียอดขาย TSS — ใช้ยอดฝากขาย CONSI (สาขาคู่ BB-) ${period}`);
-        // (2026-09-24) ห้างที่บิลขายฝั่ง TSS เข้ารหัสสำนักงานใหญ่ (เช่น โลตัส = 30-NU เอก-ชัย) สาขาไม่มียอดเลย →
-        // ใช้ยอดขายทั้งกลุ่มลูกค้าเดียวกัน (รหัสเดียวกับที่ใช้หาใบโปร) แสดงป้าย "ทั้งกลุ่ม" ให้รู้ว่าไม่ใช่ยอดรายสาขา
-        if (pending().length && groupOnly.length) take(await cachedQty(groupOnly, pending(), from, to), 'ทั้งกลุ่ม', `สาขาที่เลือกไม่มียอด — ใช้ยอดขายทั้งกลุ่มลูกค้า (${groupOnly.length} รหัส เช่น ${groupOnly.slice(0, 2).join(', ')}) ${period}`);
-      } catch (e) { console.warn('prev period sales:', e.message || e); }
+        if (shipCodes.length) take(await cachedQty(shipCodes, skuList, from, to, 'CONSI'), 'CONSI', `ยอดส่งสินค้า CONSI (${shipCodes.length} สาขา) ${period}`);
+      } catch (e) { console.warn('prev period consi shipments:', e.message || e); }
       skuList.forEach(sku => {
         const ref = next.get(sku), f = found.get(sku);
         ref.prevPeriodFrom = from; ref.prevPeriodTo = to;
         if (f) { ref.prevPeriodQty = f.qty; ref.prevPeriodSource = f.source; ref.prevPeriodNote = f.note; }
-        else { ref.prevPeriodQty = 0; ref.prevPeriodNote = `ไม่มียอดขายสินค้านี้ทั้งสาขาที่เลือก สาขาคู่ CONSI และทั้งกลุ่มลูกค้า ใน${period}`; }
+        else { ref.prevPeriodQty = 0; ref.prevPeriodNote = shipCodes.length ? `ไม่มียอดส่งสินค้านี้เข้า CONSI ของสาขาที่เลือก ใน${period}` : `สาขาที่เลือกไม่มีสาขาคู่ฝากขาย CONSI (BB-) — ไม่มียอดส่ง ${period}`; }
       });
     }));
     if (seq !== _draftRefSeq) return; // มีรอบใหม่กว่าเริ่มไปแล้ว
@@ -16663,7 +16724,7 @@ const DRAFT_LINE_COL_KEYS_V2 = ['num', 'sku', 'name', 'set', 'pp_doc', 'pp_price
 const DRAFT_LINE_COL_LABELS = ['ลำดับ', 'รหัสสินค้า', 'ชื่อสินค้า', 'RTE-Set', 'Pro before period · เลขที่', 'Pro before period · ราคา', 'Pro before period · ช่วงวันที่',
   'Pro last confirm · เลขที่', 'Pro last confirm · ราคา', 'Pro last confirm · ช่วงวันที่',
   'ราคาปกติ · ราคาขาย', 'ราคาปกติ · GP%', 'ราคาปกติ · ท้ายบิล%', 'ราคาปกติ · ทุนสุทธิ', 'Compensate', 'ราคาโปร · ราคาขาย', 'ราคาโปร · GP%',
-  'ราคาโปร · ท้ายบิล%', 'ราคาโปร · ทุนสุทธิ', 'ปริมาณการขาย · Pro ก่อน', 'Forecast', 'ผลตรวจสอบ'];
+  'ราคาโปร · ท้ายบิล%', 'ราคาโปร · ทุนสุทธิ', 'ปริมาณการส่ง · Pro ก่อน', 'Forecast', 'ผลตรวจสอบ'];
 function _draftAnchorFor(el) {
   const td = el.closest('#draft-lines-tbody td');
   if (td) {
@@ -18256,6 +18317,16 @@ async function draftPreviewPDF(orient = 'landscape') {
   };
   const pdfCx = _draftCancelSet(_draftHeader);
   const cxTag = sku => pdfCx.has(sku) ? ' <b class="cxtag">ยกเลิก</b>' : '';
+  // ช่วงเวลาซ้อนทับ (2026-10-06, ผู้ใช้ขอ) — หมายเหตุตัวเล็ก 1 บรรทัดใต้ชื่อสินค้า ให้สั้นที่สุดไม่ล้นตาราง:
+  // "⚠ ซ้อน LT-0154 1/10–11/11" · หลายเอกสาร = เอกสารแรก + "+N" · ตัดท้ายด้วย … ถ้ายังยาวเกินช่อง
+  const dm = d => { const [, m, dd] = String(d || '').split('-'); return m ? `${Number(dd)}/${Number(m)}` : ''; };
+  const ovlNote = sku => {
+    const m = _draftOverlap.get(sku);
+    if (!m || !m.size) return '';
+    const list = [...m.values()].sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    const o = list[0], all = list.map(x => `${x.ref || x.sonum || x.draftNo} ${promoFmtD(x.start)} – ${promoFmtD(x.due)}`).join(', ');
+    return `<div class="ovl" title="${esc(all)}">⚠ ซ้อน ${esc(o.ref || o.sonum || o.draftNo)} ${dm(o.start)}–${dm(o.due)}${list.length > 1 ? ` +${list.length - 1}` : ''}</div>`;
+  };
   const buildRows = lines => lines.map(({ l, num }) => {
     const level = l.subLevel || 0;
     const ref = _draftRefData.get(l.sku);
@@ -18269,7 +18340,7 @@ async function draftPreviewPDF(orient = 'landscape') {
       const dl = _draftRefDocLabel(ref, k);
       return `<td class="mono docc ${cls} gs">${esc(dl.code || '—')}${dl.co ? `<div class="sub">${esc(dl.co)}</div>` : ''}</td><td class="n ${cls}">${fmt2(pp.sell)}</td><td class="${cls} period">${periodHtml(k)}</td>`; };
     return `<tr class="${level ? 'subrow' : ''}${pdfCx.has(l.sku) ? ' cx' : ''}">
-    <td class="num n">${esc(num)}</td><td class="mono n">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}${cxTag(l.sku)}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
+    <td class="num n">${esc(num)}</td><td class="mono n">${esc(l.sku)}</td><td class="sku-name" style="padding-left:${5 + level * 10}px">${esc(l.skuName || '')}${cxTag(l.sku)}${ovlNote(l.sku)}</td><td>${esc(l.equipmentSet || '—')}</td>${promoCells('prev', 'g-prev')}${promoCells('last', 'g-last')}
     <td class="n g-norm gs">${fmt2(l.normalPrice)}</td><td class="n g-norm">${pct(l.gpPct)}</td><td class="n g-norm">${pct(l.billDiscPct)}</td><td class="n g-norm strong">${fmt2(l.costPrice)}</td>
     <td class="n g-promo gs">${fmt2(l.compensate)}</td><td class="n g-promo">${fmt2(l.unitPrice)}</td><td class="n g-promo">${pct(l.gpPctPromo)}</td><td class="n g-promo">${pct(l.billDiscPctPromo)}</td><td class="n g-promo strong${hasCompensate ? ' x-na' : ''}">${hasCompensate ? '—' : fmt2(l.costPricePromo)}</td>
     <td class="n gs pq">${prevPeriodQty}</td><td class="n">${l.estimatedQty !== '' && l.estimatedQty != null ? Number(l.estimatedQty).toLocaleString('th-TH') : '—'}</td>${vCell(l.sku)}
@@ -18289,7 +18360,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     const kv = (sell, gp, bill, cost, noCost = false) => `<div class="kv"><span>ขาย</span><b>${fmt2(sell)}</b><span>GP</span><b>${pct(gp)}</b><span>ท้ายบิล</span><b>${pct(bill)}</b>${noCost ? '' : `<span class="tot">ทุนสุทธิ</span><b class="tot">${fmt2(cost)}</b>`}</div>`;
     return `<tr class="${level ? 'subrow' : ''}${pdfCx.has(l.sku) ? ' cx' : ''}">
     <td class="num">${esc(num)}</td>
-    <td class="sku-name" style="padding-left:${5 + level * 10}px"><b class="mono">${esc(l.sku)}</b>${cxTag(l.sku)}<br>${esc(l.skuName || '')}<div class="sub">RTE-Set ${esc(l.equipmentSet || '—')}</div></td>
+    <td class="sku-name" style="padding-left:${5 + level * 10}px"><b class="mono">${esc(l.sku)}</b>${cxTag(l.sku)}<br>${esc(l.skuName || '')}<div class="sub">RTE-Set ${esc(l.equipmentSet || '—')}</div>${ovlNote(l.sku)}</td>
     ${promoCell('prev', 'g-prev')}${promoCell('last', 'g-last')}
     <td class="g-norm gs">${kv(l.normalPrice, l.gpPct, l.billDiscPct, l.costPrice)}</td>
     <td class="g-promo gs">${fmt2(l.compensate)}</td>
@@ -18324,6 +18395,9 @@ async function draftPreviewPDF(orient = 'landscape') {
   // เปิดหน้าต่างก่อน (ต้องอยู่ใน click เดียวกัน ไม่งั้นโดนบล็อกป็อปอัป) แล้วค่อยโหลดเส้นทางอนุมัติ/ลายเซ็น
   // รอข้อมูลอ้างอิง (โปรสุดท้าย/ยอดขาย) ให้โหลดเสร็จก่อนสร้างตาราง — ถ้ายังไม่มีของ SKU ไหนเลยสั่งโหลดใหม่
   try { if (_draftRefPromise) await _draftRefPromise; } catch (e) { /* ignore */ }
+  // ตรวจช่วงเวลาซ้อนทับรอบล่าสุดก่อนพิมพ์ (หมายเหตุใต้ชื่อสินค้า) — กดพิมพ์ทันทีหลังแก้วันที่/สาขา รอบ debounce อาจยังไม่รัน
+  clearTimeout(_draftOverlapDebounce);
+  try { await _draftCheckOverlapNow(); } catch (e) { /* ignore — ไม่มีหมายเหตุก็พิมพ์ได้ */ }
   if (_draftLines.some(l => l.sku && !_draftRefData.has(l.sku))) { try { await draftRefreshLineRefData(); } catch (e) { /* ignore */ } }
   const lines = _draftLines.map((l, i) => ({ l, num: draftNums[i] })).filter(x => x.l.sku);
   const loadTpl = entity => SB.getApprovalWorkflowTemplate(entity).then(l => Array.isArray(l) ? l : []).catch(() => []);
@@ -18498,6 +18572,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     .row .none,.notefull .none{color:#8896A5}
     table.items td.pq .sub{font-size:8.4px;letter-spacing:-.2px;line-height:1.1}
     table.items tr.cx td{text-decoration:line-through;color:#9AA5B1}
+    table.items td .ovl{font-size:7.6px;line-height:1.1;color:#B45309;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:1px}
     table.items tr.cx td .cxtag,.cxtag{text-decoration:none;display:inline-block;font-size:8.6px;color:#A32D2D;border:1px solid #EFC4C4;background:#FBEAEA;border-radius:8px;padding:0 5px;margin-left:3px}
     .doctitle .stamp.cxs{background:#FBEAEA;color:#A32D2D;border-color:#EFC4C4}
     .cxnote{font-size:10.4px;color:#A32D2D;background:#FBEAEA;border:1px solid #EFC4C4;border-radius:6px;padding:4px 10px;margin-bottom:6px}
@@ -18524,7 +18599,7 @@ async function draftPreviewPDF(orient = 'landscape') {
         ${_draftAttachments.length ? `<div class="atts"><b>ไฟล์แนบ (${_draftAttachments.length})</b>${_draftAttachments.map(a => `<div>📎 ${esc(a.filename)}</div>`).join('')}</div>` : ''}</div>`
       : portrait ? `<table class="items portrait">
         <colgroup><col style="width:22px"><col><col style="width:80px"><col style="width:80px"><col style="width:96px"><col style="width:40px"><col style="width:96px"><col style="width:60px"><col style="width:44px">${pdfAudit ? '<col style="width:58px">' : ''}</colgroup>
-        <thead><tr class="grp"><th colspan="4" class="blank"></th><th colspan="3" style="white-space:nowrap">Promotion ปัจจุบัน${curPeriod ? ` <span class="per">${esc(curPeriod)}</span>` : ''}</th><th colspan="2">ปริมาณการขาย</th>${pdfAudit ? '<th class="blank"></th>' : ''}</tr>
+        <thead><tr class="grp"><th colspan="4" class="blank"></th><th colspan="3" style="white-space:nowrap">Promotion ปัจจุบัน${curPeriod ? ` <span class="per">${esc(curPeriod)}</span>` : ''}</th><th colspan="2">ปริมาณการส่ง</th>${pdfAudit ? '<th class="blank"></th>' : ''}</tr>
           <tr class="cols"><th style="font-size:7.5px;padding-left:1px;padding-right:1px">ลำดับ</th><th>สินค้า</th><th class="gs">Pro before<br>period</th><th class="gs">Pro last<br>confirm</th>
           <th class="gs">ราคาปกติ</th><th class="gs">Comp-<br>ensate</th><th>ราคาโปรโมชั่น</th>
           <th class="gs">Pro ก่อน</th><th style="font-size:8px;letter-spacing:-.2px;padding-left:1px;padding-right:1px">Forecast</th>${pdfAudit ? '<th class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr></thead>
@@ -18541,7 +18616,7 @@ async function draftPreviewPDF(orient = 'landscape') {
         </colgroup>
         <thead>
           <tr class="grp sup"><th colspan="10" class="blank"></th><th colspan="9">Promotion ปัจจุบัน${curPeriod ? ` <span class="per">${esc(curPeriod)}</span>` : ''}</th><th colspan="2" class="blank"></th>${pdfAudit ? '<th class="blank"></th>' : ''}</tr>
-          <tr class="grp"><th colspan="4"></th><th colspan="3">Pro before period</th><th colspan="3">Pro last confirm</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th colspan="2">ปริมาณการขาย</th>${pdfAudit ? '<th rowspan="2" class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr>
+          <tr class="grp"><th colspan="4"></th><th colspan="3">Pro before period</th><th colspan="3">Pro last confirm</th><th colspan="4">ราคาปกติ</th><th colspan="5">ราคาโปรโมชั่น</th><th colspan="2">ปริมาณการส่ง</th>${pdfAudit ? '<th rowspan="2" class="gs">ผล<br>ตรวจสอบ</th>' : ''}</tr>
           <tr class="cols"><th>ลำดับ</th><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th>RTE-<br>Set</th>
             <th class="gs">เลขที่</th><th>ราคาปลีก</th><th>ช่วงวันที่</th>
             <th class="gs">เลขที่</th><th>ราคาปลีก</th><th>ช่วงวันที่</th>

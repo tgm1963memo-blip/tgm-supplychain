@@ -13,6 +13,12 @@ const { groupNameOf } = require('../lib/customerGroup');
 // KG = sales_lines_monthly (STCRD) × skus.weight_per_unit ของ tgm-wms — ดู syncSalesLinesMonthly()
 
 const YM_RE = /^\d{4}-\d{2}$/;
+// ช่วงวันที่ (2026-10-06, ผู้ใช้ขอเลือกเป็นช่วงวันได้) — from/to แบบ YYYY-MM-DD ใช้ตารางรายวัน (invoice_sales_daily /
+// sales_lines_daily) แทนรายเดือน · กราฟรายเดือนยังเป็นรายเดือนทั้งปีเหมือนเดิม
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+const tablesFor = (from) => (from.length === 10
+  ? { inv: 'invoice_sales_daily', lines: 'sales_lines_daily', col: 'd' }
+  : { inv: 'invoice_sales_monthly', lines: 'sales_lines_monthly', col: 'ym' });
 const AUTOFILL_ROLES = ['superadmin', 'admin', 'manager', 'sales_manager', 'planning', 'planning_manager'];
 // Express ขึ้นแฟ้มบริษัทใหม่ทุกปี — แฟ้มปีปัจจุบันคือ TSS / TSS-NV ส่วนปีก่อนอยู่ในแฟ้ม archive ตามปี พ.ศ.
 // (TSS-68 = 2568 = ค.ศ. 2025, TSS-67 = 2024) · ตรวจกับข้อมูลจริง 2026-10-03: แฟ้ม archive ซ้อนกันบางช่วง
@@ -100,13 +106,28 @@ module.exports = function dashboardExecRoutes(db) {
     return { company, channel };
   }
 
+  // แหล่งข้อมูลของช่วง (2026-10-06): ช่วงวันที่ใช้ตารางรายวัน — แต่ถ้ายอดโรงงาน (BP-TGM*) ยังไม่มีแถวรายวัน
+  // (Bplus sync ยังไม่สำเร็จหลังเพิ่มตารางรายวัน) ให้ส่วนของ BP-* อ่านจากรายเดือนของเดือนที่อยู่ในช่วงแทนชั่วคราว
+  // ไม่งั้นยอด "ทุกบริษัท" หายทั้งก้อนของโรงงาน · หน้า Dashboard แสดงหมายเหตุจาก tgm_daily_missing
+  let reqBpDailyMissing = false;
+  function parts(from, to, companies) {
+    const t = tablesFor(from);
+    if (t.col !== 'd' || !reqBpDailyMissing) return [{ t, lo: from, hi: to, cos: companies }];
+    const bp = companies.filter((c) => c.startsWith('BP-'));
+    const rest = companies.filter((c) => !c.startsWith('BP-'));
+    const out = [];
+    if (rest.length) out.push({ t, lo: from, hi: to, cos: rest });
+    if (bp.length) out.push({ t: tablesFor(from.slice(0, 7)), lo: from.slice(0, 7), hi: to.slice(0, 7), cos: bp });
+    return out;
+  }
+
   // ยอดต่อลูกค้าในช่วง → Map(code → { net, consi })
   function perCustomer(from, to, slmCodes) {
     const { src, raw } = companyFilter(Number(from.slice(0, 4)));
-    const rows = db.prepare(`SELECT company, cust_code, SUM(amount) AS amount FROM invoice_sales_monthly
-      WHERE company IN (${inList(raw.length)}) AND ym >= ? AND ym <= ?
+    const rows = parts(from, to, raw).flatMap((p) => db.prepare(`SELECT company, cust_code, SUM(amount) AS amount FROM ${p.t.inv}
+      WHERE company IN (${inList(p.cos.length)}) AND ${p.t.col} >= ? AND ${p.t.col} <= ?
       ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}
-      GROUP BY company, cust_code`).all(...raw, from, to, ...slmCodes);
+      GROUP BY company, cust_code`).all(...p.cos, p.lo, p.hi, ...slmCodes));
     const map = new Map();
     for (const r of rows) {
       // tgm = ส่วนที่ขายผ่านโรงงาน (Bplus) — ใช้แสดงยอดแยกบริษัทใต้ชื่อเครือใน Top 20
@@ -142,8 +163,9 @@ module.exports = function dashboardExecRoutes(db) {
 
   // ขายให้บริษัทในเครือจาก Bplus โรงงาน — แสดงแยก ไม่รวมในยอดขาย (ผู้ใช้ยืนยัน 2026-10-05)
   function icTotal(from, to, slmCodes) {
-    const r = db.prepare(`SELECT SUM(amount) AS a FROM invoice_sales_monthly WHERE company = 'BP-TGM-IC' AND ym >= ? AND ym <= ?
-      ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}`).get(from, to, ...slmCodes);
+    const [p] = parts(from, to, ['BP-TGM-IC']);
+    const r = db.prepare(`SELECT SUM(amount) AS a FROM ${p.t.inv} WHERE company = 'BP-TGM-IC' AND ${p.t.col} >= ? AND ${p.t.col} <= ?
+      ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}`).get(p.lo, p.hi, ...slmCodes);
     return Number(r?.a) || 0;
   }
 
@@ -157,11 +179,11 @@ module.exports = function dashboardExecRoutes(db) {
     const CHUNK = 800;
     for (let i = 0; i < codes.length; i += CHUNK) {
       const part = codes.slice(i, i + CHUNK);
-      const rows = db.prepare(`SELECT company, cust_code, sku, unit_code, SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
-        FROM sales_lines_monthly
-        WHERE company IN (${inList(raw.length)}) AND ym >= ? AND ym <= ? AND cust_code IN (${inList(part.length)})
+      const rows = parts(from, to, raw).flatMap((p) => db.prepare(`SELECT company, cust_code, sku, unit_code, SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
+        FROM ${p.t.lines}
+        WHERE company IN (${inList(p.cos.length)}) AND ${p.t.col} >= ? AND ${p.t.col} <= ? AND cust_code IN (${inList(part.length)})
         ${slmCodes.length ? `AND slm_code IN (${inList(slmCodes.length)})` : ''}
-        GROUP BY company, cust_code, sku, unit_code`).all(...raw, from, to, ...part, ...slmCodes);
+        GROUP BY company, cust_code, sku, unit_code`).all(...p.cos, p.lo, p.hi, ...part, ...slmCodes));
       for (const r of rows) {
         const cur = out.get(r.cust_code) || { net: 0, consi: 0, amt: 0, amtKg: 0 };
         let kg = null;
@@ -184,7 +206,9 @@ module.exports = function dashboardExecRoutes(db) {
     try {
       const from = String(req.query.from || '');
       const to = String(req.query.to || '');
-      if (!YM_RE.test(from) || !YM_RE.test(to)) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM' });
+      const daily = YMD_RE.test(from) && YMD_RE.test(to);
+      if (!daily && !(YM_RE.test(from) && YM_RE.test(to))) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM หรือ YYYY-MM-DD (ทั้งคู่แบบเดียวกัน)' });
+      if (daily && [from, to].some((x) => Number.isNaN(Date.parse(x + 'T00:00:00Z')) || new Date(x + 'T00:00:00Z').toISOString().slice(0, 10) !== x)) return res.status(400).json({ error: 'วันที่ไม่ถูกต้อง' });
       if (from.slice(0, 4) !== to.slice(0, 4) || from > to) return res.status(400).json({ error: 'from/to ต้องอยู่ในปีเดียวกัน และ from ≤ to' });
       const year = Number(from.slice(0, 4));
       if (year < 2020 || year > 2100) return res.status(400).json({ error: 'ปีไม่ถูกต้อง' });
@@ -194,6 +218,7 @@ module.exports = function dashboardExecRoutes(db) {
       const co = String(req.query.co || 'all');
       if (!['all', 'tss', 'tgm'].includes(co)) return res.status(400).json({ error: 'co ต้องเป็น all, tss หรือ tgm' });
       reqCo = co;
+      reqBpDailyMissing = daily && !db.prepare("SELECT 1 FROM invoice_sales_daily WHERE company = 'BP-TGM' LIMIT 1").get();
       const lyFrom = shiftYear(from, -1);
       const lyTo = shiftYear(to, -1);
 
@@ -275,6 +300,7 @@ module.exports = function dashboardExecRoutes(db) {
       };
 
       const freshness = db.prepare(`SELECT MAX(ym) AS last_ym FROM invoice_sales_monthly WHERE company IN ('TSS','CONSI')`).get();
+      const lastDay = daily ? db.prepare(`SELECT MAX(d) AS d FROM invoice_sales_daily WHERE company IN ('TSS','CONSI')`).get() : null;
       const linesSync = db.prepare(`SELECT MAX(synced_at) AS at FROM sync_file_state WHERE source LIKE '%/STCRD.DBF'`).get();
 
       res.json({
@@ -286,6 +312,7 @@ module.exports = function dashboardExecRoutes(db) {
         top_excluded: offTop.map((g) => ({ name: g.name, channel: g.channel, ty: g.ty_net + (withConsi ? g.ty_consi : 0) }))
           .filter((x) => Math.abs(x.ty) > 0.5).sort((a, b) => b.ty - a.ty),
         last_ym: freshness?.last_ym || null,
+        daily, last_d: lastDay?.d || null, tgm_daily_missing: reqBpDailyMissing,
         kg_synced_at: linesSync?.at || null,
       });
     } catch (e) {

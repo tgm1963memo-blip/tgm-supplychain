@@ -55,7 +55,7 @@ async function fetchFromBplus() {
   try {
     const q = (text) => pool.request().input('from', sql.Date, FROM_DATE).query(text);
     const monthly = (await q(`
-      SELECT CONVERT(char(7), d.DI_DATE, 120) AS ym, RTRIM(r.AR_CODE) AS cust_code, ISNULL(RTRIM(r.AR_SLMNCODE), '') AS slmn, ${IS_IC} AS ic,
+      SELECT CONVERT(char(10), d.DI_DATE, 120) AS d, RTRIM(r.AR_CODE) AS cust_code, ISNULL(RTRIM(r.AR_SLMNCODE), '') AS slmn, ${IS_IC} AS ic,
         SUM(${SIGN} * (a.ARD_B_SV + a.ARD_B_SNV)) AS amount,
         SUM(CASE WHEN ${IS_CN} THEN 0 ELSE 1 END) AS invoice_count,
         SUM(CASE WHEN ${IS_CN} THEN 1 ELSE 0 END) AS cn_count,
@@ -64,17 +64,17 @@ async function fetchFromBplus() {
         SUM(CASE WHEN ${IS_CN} THEN a.ARD_B_VAT ELSE 0 END) AS cn_vat
       FROM ARDETAIL a JOIN DOCINFO d ON d.DI_KEY = a.ARD_DI JOIN DOCTYPE dt ON dt.DT_KEY = d.DI_DT JOIN ARFILE r ON r.AR_KEY = a.ARD_AR
       WHERE ${WHERE_DOCS}
-      GROUP BY CONVERT(char(7), d.DI_DATE, 120), r.AR_CODE, r.AR_SLMNCODE, r.AR_NAME`)).recordset;
+      GROUP BY CONVERT(char(10), d.DI_DATE, 120), r.AR_CODE, r.AR_SLMNCODE, r.AR_NAME`)).recordset;
     // บรรทัดสินค้าเฉพาะเอกสารขาย (ไม่หักรับคืน — กติกาเดียวกับ KG ฝั่ง Express)
     const lines = (await q(`
-      SELECT CONVERT(char(7), d.DI_DATE, 120) AS ym, RTRIM(r.AR_CODE) AS cust_code, ISNULL(RTRIM(r.AR_SLMNCODE), '') AS slmn, ${IS_IC} AS ic,
+      SELECT CONVERT(char(10), d.DI_DATE, 120) AS d, RTRIM(r.AR_CODE) AS cust_code, ISNULL(RTRIM(r.AR_SLMNCODE), '') AS slmn, ${IS_IC} AS ic,
         RTRIM(s.SKU_CODE) AS sku, ISNULL(RTRIM(t.TRD_UTQNAME), '') AS unit,
         SUM(t.TRD_QTY) AS qty, SUM(t.TRD_QTY * ISNULL(NULLIF(t.TRD_UTQQTY, 0), 1)) AS qty_base, SUM(t.TRD_B_SELL) AS amount
       FROM TRANSTKD t JOIN TRANSTKH h ON h.TRH_KEY = t.TRD_TRH JOIN DOCINFO d ON d.DI_KEY = h.TRH_DI JOIN DOCTYPE dt ON dt.DT_KEY = d.DI_DT
       JOIN (SELECT ARD_DI, MIN(ARD_AR) AS ARD_AR FROM ARDETAIL GROUP BY ARD_DI) a ON a.ARD_DI = d.DI_KEY
       JOIN ARFILE r ON r.AR_KEY = a.ARD_AR JOIN SKUMASTER s ON s.SKU_KEY = t.TRD_SKU
       WHERE ${WHERE_DOCS} AND dt.DT_PROPERTIES IN (302, 307)
-      GROUP BY CONVERT(char(7), d.DI_DATE, 120), r.AR_CODE, r.AR_SLMNCODE, r.AR_NAME, s.SKU_CODE, t.TRD_UTQNAME`)).recordset;
+      GROUP BY CONVERT(char(10), d.DI_DATE, 120), r.AR_CODE, r.AR_SLMNCODE, r.AR_NAME, s.SKU_CODE, t.TRD_UTQNAME`)).recordset;
     const customers = (await q(`
       SELECT RTRIM(r.AR_CODE) AS code, RTRIM(r.AR_NAME) AS name, ISNULL(RTRIM(r.AR_SLMNCODE), '') AS slmn, ${IS_IC} AS ic,
         MAX(CASE WHEN RTRIM(dt.DT_DOCCODE) LIKE 'EX%' THEN 1 ELSE 0 END) AS has_export
@@ -108,24 +108,35 @@ async function runBplusImport(db, { force = false } = {}) {
     const companyOf = (ic) => (ic ? COMPANY_IC : COMPANY);
 
     // รวมซ้ำฝั่ง JS อีกชั้น เผื่อรหัสลูกค้า '0' หลายตัว/ชื่อซ้ำทำให้ key ชนกันหลังแปลงรหัส
+    // (2026-10-06) SQL คืนรายวัน (d = YYYY-MM-DD) → รวมเป็นรายเดือน (ym = 7 ตัวแรก) และรายวันพร้อมกัน
     const inv = new Map();
+    const invDaily = new Map();
     for (const r of data.monthly) {
-      const key = [companyOf(r.ic), r.ym, custCodeOf(r.cust_code), slmOf(r.slmn)].join('\u0001');
-      const cur = inv.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, cn_vat: 0 };
-      for (const k of Object.keys(cur)) cur[k] += Number(r[k]) || 0;
-      inv.set(key, cur);
+      const base = [companyOf(r.ic), custCodeOf(r.cust_code), slmOf(r.slmn)];
+      for (const [map, period] of [[inv, String(r.d).slice(0, 7)], [invDaily, String(r.d).slice(0, 10)]]) {
+        const key = [base[0], period, base[1], base[2]].join('\u0001');
+        const cur = map.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, cn_vat: 0 };
+        for (const k of Object.keys(cur)) cur[k] += Number(r[k]) || 0;
+        map.set(key, cur);
+      }
     }
     const lines = new Map();
+    const linesDaily = new Map();
     for (const r of data.lines) {
-      const key = [companyOf(r.ic), r.ym, custCodeOf(r.cust_code), slmOf(r.slmn), r.sku, r.unit].join('\u0001');
-      const cur = lines.get(key) || { qty: 0, qty_base: 0, amount: 0 };
-      cur.qty += Number(r.qty) || 0; cur.qty_base += Number(r.qty_base) || 0; cur.amount += Number(r.amount) || 0;
-      lines.set(key, cur);
+      for (const [map, period] of [[lines, String(r.d).slice(0, 7)], [linesDaily, String(r.d).slice(0, 10)]]) {
+        const key = [companyOf(r.ic), period, custCodeOf(r.cust_code), slmOf(r.slmn), r.sku, r.unit].join('\u0001');
+        const cur = map.get(key) || { qty: 0, qty_base: 0, amount: 0 };
+        cur.qty += Number(r.qty) || 0; cur.qty_base += Number(r.qty_base) || 0; cur.amount += Number(r.amount) || 0;
+        map.set(key, cur);
+      }
     }
 
     const insInv = db.prepare(`INSERT INTO invoice_sales_monthly (company, ym, cust_code, slm_code, amount, invoice_count, cn_count, cn_amount, vat_amount, gross_amount, cn_vat)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const insLine = db.prepare(`INSERT INTO sales_lines_monthly (company, ym, cust_code, slm_code, sku, unit_code, qty, qty_base, amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insInvDaily = db.prepare('INSERT INTO invoice_sales_daily (company, d, cust_code, slm_code, amount, invoice_count) VALUES (?, ?, ?, ?, ?, ?)');
+    const insLineDaily = db.prepare(`INSERT INTO sales_lines_daily (company, d, cust_code, slm_code, sku, unit_code, qty, qty_base, amount)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const upCust = db.prepare(`INSERT INTO bplus_customers (code, name, bp_slm_code, is_intercompany, has_export, updated_at)
       VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -139,6 +150,8 @@ async function runBplusImport(db, { force = false } = {}) {
       for (const c of [COMPANY, COMPANY_IC]) {
         db.prepare('DELETE FROM invoice_sales_monthly WHERE company = ?').run(c);
         db.prepare('DELETE FROM sales_lines_monthly WHERE company = ?').run(c);
+        db.prepare('DELETE FROM invoice_sales_daily WHERE company = ?').run(c);
+        db.prepare('DELETE FROM sales_lines_daily WHERE company = ?').run(c);
       }
       for (const [key, v] of inv) {
         const [company, ym, cust, slm] = key.split('\u0001');
@@ -147,6 +160,14 @@ async function runBplusImport(db, { force = false } = {}) {
       for (const [key, v] of lines) {
         const [company, ym, cust, slm, sku, unit] = key.split('\u0001');
         insLine.run(company, ym, cust, slm, sku, unit, v.qty, v.qty_base, v.amount);
+      }
+      for (const [key, v] of invDaily) {
+        const [company, day, cust, slm] = key.split('\u0001');
+        insInvDaily.run(company, day, cust, slm, v.amount, v.invoice_count);
+      }
+      for (const [key, v] of linesDaily) {
+        const [company, day, cust, slm, sku, unit] = key.split('\u0001');
+        insLineDaily.run(company, day, cust, slm, sku, unit, v.qty, v.qty_base, v.amount);
       }
       for (const c of data.customers) upCust.run(custCodeOf(c.code), c.name || '', c.slmn || '', c.ic ? 1 : 0, c.has_export ? 1 : 0);
       // ตาราง SALESMAN ของ Bplus มีรายการที่ไม่ใช่คน (เช่น สาขาบิ๊กซี B01–B9x) — เก็บเฉพาะรหัสที่ผูกกับลูกค้าที่มียอดจริง

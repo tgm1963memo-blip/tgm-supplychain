@@ -492,6 +492,41 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_sra_request ON sample_request_attachments(request_id);
   `);
 
+  // ยอดขายรายวัน (2026-10-06, Dashboard เลือกช่วงวันที่ได้) — คู่ขนานกับ invoice_sales_monthly / sales_lines_monthly
+  // (สร้างจากรอบอ่านไฟล์เดียวกันใน importFromExpress.js / importFromBplus.js) · d = YYYY-MM-DD วันที่เอกสาร
+  // ตารางรายเดือนยังเป็นแหล่งหลักของหน้าอื่นทั้งหมด — ตารางรายวันใช้เฉพาะเมื่อ Dashboard ขอช่วงแบบวันที่
+  const hadDailyLines = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sales_lines_daily'").get();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_sales_daily (
+      company        TEXT NOT NULL,
+      d              TEXT NOT NULL,
+      cust_code      TEXT NOT NULL,
+      slm_code       TEXT NOT NULL DEFAULT '',
+      amount         REAL NOT NULL DEFAULT 0,
+      invoice_count  INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, d, cust_code, slm_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_invoice_sales_daily_d ON invoice_sales_daily(d, company);
+    CREATE TABLE IF NOT EXISTS sales_lines_daily (
+      company    TEXT NOT NULL,
+      d          TEXT NOT NULL,
+      cust_code  TEXT NOT NULL,
+      slm_code   TEXT NOT NULL DEFAULT '',
+      sku        TEXT NOT NULL,
+      unit_code  TEXT NOT NULL DEFAULT '',
+      qty        REAL NOT NULL DEFAULT 0,
+      qty_base   REAL NOT NULL DEFAULT 0,
+      amount     REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, d, cust_code, slm_code, sku, unit_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_lines_daily_cust ON sales_lines_daily(cust_code, d);
+  `);
+  // ตารางรายวันเพิ่งสร้าง → ล้างสถานะไฟล์ STCRD / Bplus ให้รอบ sync ถัดไปอ่านใหม่ทั้งหมด (ปกติอ่านซ้ำเฉพาะเมื่อไฟล์เปลี่ยน)
+  // ไม่งั้นแฟ้มปีเก่าที่ไม่เปลี่ยนแล้ว (TSS-67/68) จะไม่มีวันถูกเขียนลงตารางรายวัน · ARTRN อ่านใหม่ทุกรอบอยู่แล้ว
+  if (!hadDailyLines) {
+    try { db.exec("DELETE FROM sync_file_state WHERE source LIKE '%/STCRD.DBF' OR source = 'bplus/TGM'"); } catch (_) { /* ตารางยังไม่มี = ยังไม่เคย sync */ }
+  }
+
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 }
 

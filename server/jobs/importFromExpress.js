@@ -1002,6 +1002,8 @@ async function syncInvoiceSales(db) {
     INSERT INTO invoice_sales_monthly (company, ym, cust_code, slm_code, amount, invoice_count, cn_count, cn_amount, vat_amount, gross_amount, cn_vat)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  // รายวัน (2026-10-06) — กติกาเดียวกับรายเดือนทุกข้อ แค่แยกตามวันที่เอกสาร (Dashboard เลือกช่วงวันที่)
+  const insertDaily = db.prepare('INSERT INTO invoice_sales_daily (company, d, cust_code, slm_code, amount, invoice_count) VALUES (?, ?, ?, ?, ?, ?)');
   // Include RECTYP='0' as revenue-bearing AI invoices. Confirmed from live TSS ARTRN on
   // 2026-09-18: Express's 2026 year-to-date sales total includes these February AI69...
   // records, and excluding them leaves the dashboard short by ~300,949 THB.
@@ -1011,6 +1013,7 @@ async function syncInvoiceSales(db) {
   for (const company of SALES_COMPANIES) {
     const rows = await readTable(company, 'ARTRN.DBF');
     const monthly = new Map(); // `${ym}|${cust_code}|${slm_code}` -> {amount, invoice_count}
+    const daily = new Map(); // `${YYYY-MM-DD}|${cust_code}|${slm_code}` -> {amount, invoice_count}
 
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
@@ -1035,6 +1038,13 @@ async function syncInvoiceSales(db) {
       cur.gross_amount += sign * ((Number(r.NETVAL) || 0) + vat);
       if (r.RECTYP === '5') { cur.cn_count += 1; cur.cn_amount += Number(r.NETVAL) || 0; cur.cn_vat += vat; }
       monthly.set(key, cur);
+      // วันที่แปลงด้วย toIsoDate() — วิธีเดียวกับ ym() ด้านบน ยอดรายวันจึงรวมกลับเป็นรายเดือนได้ตรงกันทุกบาท
+      const day = toIsoDate(r.DOCDAT);
+      const dk = `${day}|${custCode}|${slmCode}`;
+      const dc = daily.get(dk) || { amount: 0, invoice_count: 0 };
+      dc.amount += signedNetVal;
+      if (r.RECTYP !== '5') dc.invoice_count += 1;
+      daily.set(dk, dc);
     }
 
     db.exec('BEGIN');
@@ -1044,6 +1054,11 @@ async function syncInvoiceSales(db) {
         const [period, custCode, slmCode] = key.split('|');
         insert.run(company, period, custCode, slmCode, agg.amount, agg.invoice_count, agg.cn_count, agg.cn_amount, agg.vat_amount, agg.gross_amount, agg.cn_vat);
         rowsImported++;
+      }
+      db.prepare('DELETE FROM invoice_sales_daily WHERE company = ?').run(company);
+      for (const [key, agg] of daily) {
+        const [day, custCode, slmCode] = key.split('|');
+        insertDaily.run(company, day, custCode, slmCode, agg.amount, agg.invoice_count);
       }
 
       db.exec('COMMIT');
@@ -1339,6 +1354,9 @@ async function syncSalesLinesMonthly(db) {
     ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`);
   const insert = db.prepare(`INSERT INTO sales_lines_monthly (company, ym, cust_code, slm_code, sku, unit_code, qty, qty_base, amount)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  // รายวัน (2026-10-06) — KG ของ Dashboard เมื่อเลือกช่วงวันที่ · เขียนใน transaction เดียวกับรายเดือน
+  const insertDaily = db.prepare(`INSERT INTO sales_lines_daily (company, d, cust_code, slm_code, sku, unit_code, qty, qty_base, amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   let rowsImported = 0;
   for (const company of SALES_COMPANIES) {
     const file = findFile(path.join(EXPRESS_ROOT, company), 'STCRD.DBF');
@@ -1354,6 +1372,7 @@ async function syncSalesLinesMonthly(db) {
     // อ่านได้ 0 แถวทั้งที่ไฟล์มีอยู่ = share หลุดกลางรอบ (ดูคอมเมนต์ใน runImport) — ข้ามไว้ อย่าลบของเดิม
     if (!rows.length) continue;
     const monthly = new Map();
+    const daily = new Map();
     for (const r of rows) {
       const docNum = cleanText(r.DOCNUM);
       if (!WMS_GENERAL_SALE_PREFIXES.has(docNum.slice(0, 2))) continue;
@@ -1373,6 +1392,12 @@ async function syncSalesLinesMonthly(db) {
       cur.qtyBase += qty * factor;
       cur.amount += Number(r.TRNVAL) || 0;
       monthly.set(key, cur);
+      const dk = [toIsoDate(r.DOCDAT), cust, slm, sku, unit].join('\u0001');
+      const dc = daily.get(dk) || { qty: 0, qtyBase: 0, amount: 0 };
+      dc.qty += qty;
+      dc.qtyBase += qty * factor;
+      dc.amount += Number(r.TRNVAL) || 0;
+      daily.set(dk, dc);
     }
     db.exec('BEGIN');
     try {
@@ -1381,6 +1406,11 @@ async function syncSalesLinesMonthly(db) {
         const [period, cust, slm, sku, unit] = key.split('\u0001');
         insert.run(company, period, cust, slm, sku, unit, v.qty, v.qtyBase, v.amount);
         rowsImported++;
+      }
+      db.prepare('DELETE FROM sales_lines_daily WHERE company = ?').run(company);
+      for (const [key, v] of daily) {
+        const [day, cust, slm, sku, unit] = key.split('\u0001');
+        insertDaily.run(company, day, cust, slm, sku, unit, v.qty, v.qtyBase, v.amount);
       }
       setState.run(source, mtimeMs, new Date().toISOString());
       db.exec('COMMIT');
