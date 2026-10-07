@@ -6253,7 +6253,12 @@ async function loadDashboardInvoiceSummary(){
   const chunks=await Promise.all(defs.map(([company])=>_sbInvoiceSalesMonthlyRowsRange(range.currentStart,range.currentEnd,company,slmId)));
   if(!slmId) window._dashSlmCodes=[...new Set(chunks.flatMap(c=>c.slmCodes||[]))];
   const bySlm={};
-  chunks.forEach(c=>Object.entries(c.bySlm||{}).forEach(([code,m])=>Object.entries(m).forEach(([ym,a])=>{(bySlm[code]=bySlm[code]||{})[ym]=(bySlm[code][ym]||0)+a;})));
+  const swap=await _chainSwap(range.currentStart,range.currentEnd).catch(()=>null);
+  const ranges=swap?.ranges||[];
+  chunks.forEach(c=>Object.entries(ranges.length&&c.bySlmSwap?c.bySlmSwap(ranges):(c.bySlm||{})).forEach(([code,m])=>Object.entries(m).forEach(([ym,a])=>{(bySlm[code]=bySlm[code]||{})[ym]=(bySlm[code][ym]||0)+a;})));
+  for(const r of swap?.rows||[]){const c=String(r.slm_code||'').trim(),ym=String(r.period||'').slice(0,7);if(!c||!ym)continue;(bySlm[c]=bySlm[c]||{})[ym]=(bySlm[c][ym]||0)+(Number(r.amount)||0);}
+  // ยอดรายเดือนของ Sales ที่เลือก (เป้า vs ยอดจริง) — จาก bySlm ที่แทน DC แล้ว
+  const amountMonthlySlm=slmId?[...slmKeySet(slmId)].reduce((acc,code)=>{Object.entries(bySlm[code]||{}).forEach(([ym,a])=>{acc[ym]=(acc[ym]||0)+a;});return acc;},{}):null;
   const companySales={},amountMonthly={},invoiceMonthly={},amountMonthlyByCompany={},invoiceMonthlyByCompany={};
   let totalAmount=0,totalInvoices=0;
   defs.forEach(([,key],i)=>{
@@ -6274,7 +6279,7 @@ async function loadDashboardInvoiceSummary(){
     }
     companySales[key]={amount,count,qty:0};
   });
-  window._dashInvoiceSummary={companySales,amountMonthly,invoiceMonthly,amountMonthlyByCompany,invoiceMonthlyByCompany,totalAmount,totalInvoices,bySlm};
+  window._dashInvoiceSummary={companySales,amountMonthly,invoiceMonthly,amountMonthlyByCompany,invoiceMonthlyByCompany,totalAmount,totalInvoices,bySlm,amountMonthlySlm};
   return window._dashInvoiceSummary;
 }
 // Builds everything the dashboard shows from whatever 6 data parts are handed to it — cached/peeked
@@ -7347,6 +7352,35 @@ function _sdCosFor(ym){
   const tgm=y>=2025?['BP-TGM']:['TGM'];
   return co==='tss'?tss:co==='tgm'?tgm:[...tss,...tgm];
 }
+// ── ยอดสาขาห้าง (ห้อง SKU) แทนยอด DC ในมุมมองราย Sales (2026-10-07, server: lib/chainSales.js) ─────────
+// ยอดบริษัท/ภาพรวมไม่แตะ · ใช้กับแท็บรายพนักงานขาย, การกรอง Sales, ผู้ใช้ที่ถูกจำกัดสิทธิ์ และเป้ายอดขาย
+const _chainSwapCache={};
+async function _chainSwap(from,to){
+  const key=`${from}|${to}`,hit=_chainSwapCache[key];
+  if(hit&&Date.now()-hit.at<5*60*1000) return hit.data;
+  const r=await apiFetch(`/api/chain_sales/swap?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+  const data=!r.error&&r.data?r.data:{ranges:[],rows:[]};
+  _chainSwapCache[key]={at:Date.now(),data};
+  return data;
+}
+function _chainIsReplaced(code,ranges){
+  const c=String(code||'').toUpperCase();
+  for(const r of ranges||[]){if(c.startsWith(r.prefix)){const n=parseInt(c.slice(r.prefix.length),10);if(n>=r.from&&n<=r.to)return true;}}
+  return false;
+}
+// แถวใบกำกับ (invoice_sales_monthly) → ตัดรหัส DC ที่ถูกแทน + เพิ่มยอดสาขาห้อง (ติดแท็กบริษัทตามรายการบริษัทที่เลือก)
+function _chainSwapInvRows(invRows,swap,cos){
+  if(!swap||!(swap.ranges||[]).length) return invRows;
+  const out=invRows.filter(r=>!_chainIsReplaced(r.cust_code,swap.ranges));
+  const list=cos||[];
+  const tssTag=list.find(c=>/^TSS(-\d+)?$/.test(c)),tgmTag=list.find(c=>c==='BP-TGM'||c==='TGM');
+  for(const r of swap.rows||[]){
+    const company=r.company==='TGM'?tgmTag:tssTag;
+    if(!company) continue;
+    out.push({company,ym:String(r.period||'').slice(0,7),cust_code:r.cust_code,slm_code:r.slm_code||'',amount:r.amount,invoice_count:r.invoice_count,_chain:r.chain,_name:r.cust_name,_corp:r.corp});
+  }
+  return out;
+}
 async function _sdInvMonth(ym){
   const parts=await Promise.all(_sdCosFor(ym).map(c=>_sbInvoiceSalesRows(ym,c).then(rs=>rs.map(r=>({...r,company:c})))));
   return parts.flat();
@@ -7391,15 +7425,24 @@ function sdSetCo(c){
   pgMySales();
 }
 // ยอด/โครงสร้างหลังกรอง Sales — null = ไม่กรอง (หรือข้อมูลโหลดมาเฉพาะ Sales คนนั้นจาก server แล้ว)
+// ผู้ใช้ที่ถูกจำกัดสิทธิ์ (server กรองให้แล้ว) — ทั้งหน้าคือมุมมองของตัวเอง จึงใช้ยอดที่แทน DC ทั้งหมด
+function _sdUseSwapAll(swapRows,rows,bpRows){
+  const tot=swapRows.reduce((a,r)=>a+(Number(r.amount)||0),0);
+  _sdApi.total=tot;_sdApi._invRows=swapRows;
+  _sdApi.extras=_sdInvExtras(swapRows);_sdApi.x=_sdXOf(swapRows);
+  const c=_sdBuildCustsFromInvoice(swapRows);_sdApi.custs=c;_sdApi._buildCache.custs=c;
+  const p=_sdScaleProdsToTotal(_sdProdsMixed(rows,swapRows,bpRows),tot);_sdApi.prods=p;_sdApi._buildCache.prods=p;
+}
 function _sdFiltered(){
   const s=_sdEffSlm();
   if(!s||!_sdApi.loaded||s===String(_sdApi._slmId||'')||!Array.isArray(_sdApi._rows)) return null;
-  const key=[s,_sdApi._buildCacheKey,_sdApi.invoiceBased?1:0,_sdApi._rows.length,(_sdApi._invRows||[]).length,_sdApi.yoy?(_sdApi.yoy._rows||[]).length:-1].join('|');
+  const key=[s,_sdApi._buildCacheKey,_sdApi.invoiceBased?1:0,_sdApi._rows.length,(_sdApi._invRowsSlm||_sdApi._invRows||[]).length,_sdApi.yoy?(_sdApi.yoy._rows||[]).length:-1].join('|');
   if(_sdApi._filt&&_sdApi._filt.key===key) return _sdApi._filt;
   const rows=_sdApi._rows.filter(r=>_sdRowSlmMatch(r,s));
   const sum=(a,k)=>a.reduce((t,r)=>t+(Number(r[k])||0),0);
   let total=sum(rows,'amount'),invoices=rows.length,custs,slms,prods=_sdBuildProds(rows),extras=null,x=null;
-  const inv=_sdApi.invoiceBased&&Array.isArray(_sdApi._invRows)?_sdApi._invRows.filter(r=>slmKeySet(s).has(String(r.slm_code||'').trim())):null;
+  const invSrc=_sdApi._invRowsSlm||_sdApi._invRows;
+  const inv=_sdApi.invoiceBased&&Array.isArray(invSrc)?invSrc.filter(r=>slmKeySet(s).has(String(r.slm_code||'').trim())):null;
   if(inv){
     total=sum(inv,'amount');const ic=sum(inv,'invoice_count');if(ic) invoices=ic;
     custs=_sdBuildCustsFromInvoice(inv);slms=_sdBuildSlmsFromInvoice(inv);
@@ -7752,7 +7795,7 @@ function _applySalesRowsToSd(rows,activeMonth,slmId=''){
   const prev=prevYm?monthly.find(m=>m.ym===prevYm):null;
   _sdApi.vs=prev&&prev.total?Math.round((_sdApi.total/prev.total-1)*100):0;
   _sdApi._rows=monthRows;
-  _sdApi._invRows=null;
+  _sdApi._invRows=null;_sdApi._invRowsSlm=null;
   _sdApi._slmId=slmId||'';
   _sdResetBuildCache();
   _sdApi.slmList=_sdSalesListFromRows(monthRows);
@@ -7822,11 +7865,15 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
         _sdApi._invRows=invRows;
         _sdApi.extras=_sdInvExtras(invRows);_sdApi.x=_sdXOf(invRows);
         const invCusts=_sdBuildCustsFromInvoice(invRows);
-        const invSlms=_sdBuildSlmsFromInvoice(invRows);
         _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
+        // แท็บรายพนักงานขาย / การกรอง Sales ใช้ยอดที่แทน DC ด้วยยอดสาขาห้องแล้ว (ยอดรวมบริษัทด้านบนยังเป็นยอดเดิม)
+        const swapRows=_chainSwapInvRows(invRows,await _chainSwap(activeMonth,activeMonth).catch(()=>null),_sdCosFor(activeMonth));
+        _sdApi._invRowsSlm=swapRows;
+        const invSlms=_sdBuildSlmsFromInvoice(swapRows);
         _sdApi.slms=invSlms;_sdApi._buildCache.slms=invSlms;
         const scaledProds=_sdScaleProdsToTotal(_sdProdsMixed(rows,invRows,bpRows),invTotal);
         _sdApi.prods=scaledProds;_sdApi._buildCache.prods=scaledProds;
+        if(_scopeNow()?.restricted) _sdUseSwapAll(swapRows,rows,bpRows);
       }
     }catch(e){console.warn('invoice_sales_monthly unavailable; showing order-based total instead',e.message||e);}
   }
@@ -7965,7 +8012,7 @@ async function sdLoadYear(){
   const yearCached=DB.get(yearCacheKey);
   if(yearCached){
     Object.assign(_sdApi,yearCached);
-    _sdApi._rows=null;_sdApi._invRows=null;_sdApi._filt=null; // snapshot ไม่มีข้อมูลรายแถว — กรอง Sales ได้หลังโหลดสดจบ
+    _sdApi._rows=null;_sdApi._invRows=null;_sdApi._invRowsSlm=null;_sdApi._filt=null; // snapshot ไม่มีข้อมูลรายแถว — กรอง Sales ได้หลังโหลดสดจบ
     _sdApi.loaded=true;
     sdRender();
   }
@@ -7973,7 +8020,7 @@ async function sdLoadYear(){
   badge.id='sd-loading';badge.style.cssText='position:fixed;top:54px;right:16px;background:var(--N);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;z-index:200;opacity:.9';
   badge.textContent='Loading yearly sales...';document.body.appendChild(badge);
   _sdApi.invoiceBased=false; // was left stale from whatever view loaded before this one
-  _sdApi._invRows=null;_sdApi.extras=null;
+  _sdApi._invRows=null;_sdApi._invRowsSlm=null;_sdApi.extras=null;
   try{
     const start=`${gy}-01`,end=`${gy}-12`;
     // current year and prior year are independent — prevRows only feeds the YoY % below — so fetch
@@ -8022,11 +8069,14 @@ async function sdLoadYear(){
           _sdApi._invRows=invRows;
           _sdApi.extras=_sdInvExtras(invRows);_sdApi.x=_sdXOf(invRows);
           const invCusts=_sdBuildCustsFromInvoice(invRows);
-          const invSlms=_sdBuildSlmsFromInvoice(invRows);
           _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
+          const swapRows=_chainSwapInvRows(invRows,await _chainSwap(start,end).catch(()=>null),_sdCosFor(start));
+          _sdApi._invRowsSlm=swapRows;
+          const invSlms=_sdBuildSlmsFromInvoice(swapRows);
           _sdApi.slms=invSlms;_sdApi._buildCache.slms=invSlms;
           const scaledProds=_sdScaleProdsToTotal(_sdProdsMixed(rows,invRows,bpRows),invTotal);
           _sdApi.prods=scaledProds;_sdApi._buildCache.prods=scaledProds;
+          if(_scopeNow()?.restricted) _sdUseSwapAll(swapRows,rows,bpRows);
         }
       }catch(e){console.warn('invoice_sales_monthly (year) unavailable; showing order-based figures instead',e.message||e);}
     }
@@ -8201,7 +8251,7 @@ async function _sbInvoiceSalesMonthlyRowsRange(startYm,endYm,company='TSS',slmKe
   while(true){
     let q=getSupabaseClient()
       .from('invoice_sales_monthly')
-      .select('ym,amount,invoice_count,slm_code')
+      .select('ym,amount,invoice_count,slm_code,cust_code')
       .eq('company',company).gte('ym',startYm).lte('ym',endYm);
     if(codes.length) q=codes.length>1?q.in('slm_code',codes):q.eq('slm_code',codes[0]);
     const{data,error}=await q.range(from,from+PAGE-1);
@@ -8223,6 +8273,8 @@ async function _sbInvoiceSalesMonthlyRowsRange(startYm,endYm,company='TSS',slmKe
   // bySlm: { [slm_code]: { [ym]: amount } } — Dashboard "ยอดขาย vs เป้า"
   out.bySlm={};
   for(const r of rows){const c=String(r.slm_code||'').trim(),ym=String(r.ym||'');if(!c||!ym)continue;(out.bySlm[c]=out.bySlm[c]||{})[ym]=(out.bySlm[c][ym]||0)+(Number(r.amount)||0);}
+  // bySlmSwap (2026-10-07): ยอดราย Sales ที่ตัดรหัส DC ซึ่งแทนด้วยยอดสาขาห้อง (ห้อง SKU) — เป้า vs ยอดจริง
+  out.bySlmSwap=(ranges)=>{const m={};for(const r of rows){if(_chainIsReplaced(r.cust_code,ranges))continue;const c=String(r.slm_code||'').trim(),ym=String(r.ym||'');if(!c||!ym)continue;(m[c]=m[c]||{})[ym]=(m[c][ym]||0)+(Number(r.amount)||0);}return m;};
   return out;
 }
 // Year view: sum across all 12 months instead of one — same table, just a wider ym range. Collapses
@@ -8325,9 +8377,9 @@ function _sdBuildCustsFromInvoice(invRows){
   for(const r of invRows){
     const custCode=r.cust_code||'(ไม่ระบุ)';
     // ลูกค้าโรงงาน (Bplus) ที่ไม่มีใน Express ใช้ชื่อจาก Bplus แทนรหัส (2026-10-05)
-    const rec=custCache[custCode]||(window._bpCustNames&&window._bpCustNames[custCode]?{name:window._bpCustNames[custCode]}:{});
+    const rec=custCache[custCode]||(r._name?{name:r._name}:null)||(window._bpCustNames&&window._bpCustNames[custCode]?{name:window._bpCustNames[custCode]}:{});
     const prof=getCustomerProfile({c:custCode,n:rec.name||custCode,ty:rec.cust_group||'ขายจริง',grp:rec.cust_group||'อื่นๆ',slm:rec.slm_id||''});
-    const grp=customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
+    const grp=r._corp||customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
     const cat=prof.category||rec.cust_group||'ขายจริง';
     // FIXED (code review 2026-09-15): same corp-group/category bug as _sdBuildCusts — see that
     // function's note. Track per-branch, derive corp-level category from the top branch below.
@@ -8359,9 +8411,9 @@ function _sdBuildSlmsFromInvoice(invRows){
     m[sid]._tot+=Number(r.amount)||0;_sdXAdd(m[sid],r);
     const custCode=r.cust_code||'(ไม่ระบุ)';
     // ลูกค้าโรงงาน (Bplus) ที่ไม่มีใน Express ใช้ชื่อจาก Bplus แทนรหัส (2026-10-05)
-    const rec=custCache[custCode]||(window._bpCustNames&&window._bpCustNames[custCode]?{name:window._bpCustNames[custCode]}:{});
+    const rec=custCache[custCode]||(r._name?{name:r._name}:null)||(window._bpCustNames&&window._bpCustNames[custCode]?{name:window._bpCustNames[custCode]}:{});
     const prof=getCustomerProfile({c:custCode,n:rec.name||custCode,ty:rec.cust_group||'ขายจริง',grp:rec.cust_group||'อื่นๆ',slm:rec.slm_id||''});
-    const grp=customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
+    const grp=r._corp||customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
     if(!m[sid].custs[grp])m[sid].custs[grp]={n:grp,ty:prof.category||'ขายจริง',category:prof.category||'ขายจริง',grp,_tot:0,_branches:{}};
     const c=m[sid].custs[grp];c._tot+=Number(r.amount)||0;_sdXAdd(c,r);
     if(!c._branches[custCode])c._branches[custCode]={n:prof.branch||prof.n||rec.name||custCode,c:custCode,_tot:0,g:[]};
@@ -8516,7 +8568,7 @@ async function sdLoadCustom(){
   try{
     const rows=await _sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,dateFrom:_sd.dateFrom,dateTo:_sd.dateTo});
     const monthly=_sdKpiFromRows(rows);
-    _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;_sdApi.invoiceBased=false;_sdApi._invRows=null;
+    _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;_sdApi.invoiceBased=false;_sdApi._invRows=null;_sdApi._invRowsSlm=null;
     _sdApi.rangeMode=rows.some(r=>r.doc_date)?'daily':'monthly';
     _sdApi.monthly=monthly;
     _sdApi.total=rows.reduce((a,r)=>a+(Number(r.amount)||0),0);
@@ -12283,8 +12335,74 @@ async function renderSalesTeams(force){
     <div class="tw"><table class="draft-trail"><thead><tr><th>ชื่อ</th><th>แผนก</th><th>รหัส Sales (Express)</th><th>สิทธิ์ดูยอดขาย</th><th>ดูยอดของ</th></tr></thead><tbody>
     ${groups.filter(g=>g.us.length).map(g=>`<tr><td colspan="5" class="l" style="background:var(--LBL);font-weight:700;color:var(--BL)">${esc(g.title)} (${g.us.length} คน)</td></tr>`+g.us.map(userRow).join('')).join('')}
     </tbody></table></div></div>
-  <div class="card" id="stm-mt">${_stmMtHtml()}</div>`;
+  <div class="card" id="stm-mt">${_stmMtHtml()}</div>
+  <div class="card" id="stm-chain">${_chmHtml()}</div>`;
   if(!_stmMt) stmMtLoad();
+  if(!_chm) chmLoad();
+}
+// ── ยอดห้อง SKU (TOPS-53 / MAKRO / GOWHOLES) → ยอดราย Sales ตามรหัสลูกค้า (2026-10-07, server: lib/chainSales.js) ──
+let _chm=null,_chmEd={};
+const _CHM_NAME={TOPS:'Tops (ห้อง TOPS-53)',MAKRO:'Makro (ห้อง MAKRO)',GO:'GO Wholesale (ห้อง GOWHOLES)'};
+async function chmLoad(){
+  const r=await apiFetch('/api/chain_sales/map');
+  _chm=r.error?{error:r.error.message}:r.data;_chmEd={};
+  const el=document.getElementById('stm-chain');if(el)el.innerHTML=_chmHtml();
+}
+function _chmVal(k,f){return k in _chmEd&&f in _chmEd[k]?_chmEd[k][f]:_chm.chains[k][f];}
+function chmSet(k,f,v){(_chmEd[k]=_chmEd[k]||{})[f]=v;}
+function _chmHtml(){
+  const head='<div class="ch"><div class="ct2">🛒 ยอดห้อง SKU ห้าง → ยอดราย Sales</div>';
+  if(!_chm) return head+'</div><div class="al ali">⏳ กำลังโหลด…</div>';
+  if(_chm.error) return head+`</div><div class="al alw">โหลดไม่สำเร็จ: ${esc(_chm.error)}</div>`;
+  const dis=_stmCanEdit()?'':'disabled';
+  const card=k=>{
+    const c=_chm.chains[k],st=_chm.stats[k]||{},al={...(c.aliases||{}),...((_chmEd[k]||{}).aliases||{})};
+    const labels=Object.entries(st.labels||{});
+    const bySlm=Object.entries(st.ytd_by_slm||{}).sort((a,b)=>b[1]-a[1]);
+    return `<div style="border:1px solid var(--BD);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:14px">${esc(_CHM_NAME[k])}</b>
+        <span style="font-size:12px;color:var(--TX3)">ข้อมูล ${st.first?`${esc(st.first)} – ${esc(st.last)} · ${fmt(st.branches)} สาขา`:'ยังไม่ได้ดึง (รอรอบ sync)'}${st.synced_at?` · ดึงล่าสุด ${esc(promoFmtD(st.synced_at))}`:''}</span>
+        ${_stmCanEdit()?`<label class="btn btn-sm" style="margin-left:auto;cursor:pointer">📥 นำเข้าไฟล์จับคู่ (Excel)<input type="file" accept=".xlsx,.xls" style="display:none" onchange="chmImport('${k}',this)"></label>`:''}</div>
+      <div style="font-size:12px;color:var(--TX2);margin:4px 0 8px">ไฟล์: ${c.file?`${esc(c.file)} · นำเข้า ${esc(promoFmtD(c.imported_at))} · ${fmt(Object.keys(c.cust||{}).length)} สาขา`:'<span style="color:var(--A)">ยังไม่ได้นำเข้า — ทุกสาขาจะเป็นรหัสออฟฟิศ</span>'}</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:12.5px">
+        <label><input type="checkbox" ${dis} ${_chmVal(k,'replace')?'checked':''} onchange="chmSet('${k}','replace',this.checked)"> แทนยอดรหัส DC ห้อง VAT ในมุมมองราย Sales</label>
+        <label>รหัส Sales สำหรับสาขา "ออฟฟิศ"/ไม่มีในไฟล์ <input type="text" ${dis} value="${esc(_chmVal(k,'office_slm')||'')}" placeholder="เช่น 201" onchange="chmSet('${k}','office_slm',this.value.trim())" style="width:80px;padding:3px 6px"></label>
+        ${_stmCanEdit()?`<button class="btn btn-sm btn-g" onclick="chmSave('${k}',this)">💾 บันทึก</button>`:''}</div>
+      ${labels.length?`<div style="margin-top:8px;font-size:12px"><b>ค่า "เขต Sale" ที่ไม่ใช่รหัส Sales</b> — ระบุรหัสให้ (ว่าง = ใช้รหัสออฟฟิศ):
+        ${labels.map(([lb,n])=>`<span style="display:inline-flex;gap:4px;align-items:center;margin:3px 10px 3px 0">${esc(lb)} (${n} สาขา) → <input type="text" ${dis} value="${esc(al[lb]||'')}" onchange="(_chmEd['${k}']=_chmEd['${k}']||{}).aliases={...(_chm.chains['${k}'].aliases||{}),...((_chmEd['${k}']||{}).aliases||{}),['${esc(lb)}']:this.value.trim()}" style="width:70px;padding:2px 6px"></span>`).join('')}</div>`:''}
+      ${(c.groups||[]).length?`<div style="margin-top:6px;font-size:12px;color:var(--TX2)">ห้อง SKU ↔ รหัส DC ห้อง VAT ที่ถูกแทน: ${c.groups.map(g=>`<b>${esc(g.skus.join('/'))}</b> ↔ ${esc(g.src)}${g.company==='TGM'?' (TGM)':''}`).join(' · ')}</div>`:''}
+      ${bySlm.length?`<div style="margin-top:6px;font-size:12px">ยอดปีนี้ตาม Sales (ห้อง SKU): ${bySlm.map(([code,a])=>`<span style="margin-right:10px"><b>${esc(code)}</b> ${esc(salesNameFor(code)||'')} ${_sdF(a)}</span>`).join('')}</div>`:''}
+    </div>`;
+  };
+  return head+`</div><div class="al ali" style="font-size:12px;margin-bottom:8px">ห้อง SKU บันทึกยอดตามสาขาห้าง ขณะที่ห้อง VAT วางบิลเข้ารหัส DC · ยอดห้อง SKU <b>ไม่รวมในยอดบริษัท</b> — ใช้เฉพาะมุมมองราย Sales (Sales Overview แท็บพนักงานขาย/กรอง Sales, Dashboard เมื่อเลือก Sales, เป้ายอดขาย) โดยตัดยอดรหัส DC ที่จับคู่ไว้ออกแล้วใช้ยอดสาขาแทน · ไฟล์จับคู่ = Excel ที่มีชีต "รหัสลูกค้า Express … เขต Sale" และชีต "ห้อง SKU | ห้อง VAT"</div>
+    ${['TOPS','MAKRO','GO'].map(card).join('')}`;
+}
+function chmImport(k,input){
+  const file=input.files[0];if(!file)return;input.value='';
+  const rd=new FileReader();
+  rd.onload=async e=>{
+    try{
+      await ensureXLSX();
+      const wb=XLSX.read(e.target.result,{type:'binary'});const sheets={};
+      wb.SheetNames.forEach(n=>{sheets[n]=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,defval:'',raw:false});});
+      const pv=await apiFetch('/api/chain_sales/map/preview',{method:'POST',body:JSON.stringify({sheets})});
+      if(pv.error) throw new Error(pv.error.message);
+      const p=pv.data;
+      if(!p.custCount){toast(p.warnings[0]||'ไม่พบชีตจับคู่สาขาในไฟล์','warn');return;}
+      if(!confirm(`${_CHM_NAME[k]}: พบ ${p.custCount} สาขา · ชีตเทียบห้อง ${p.groups.length} กลุ่ม${p.warnings.length?'\nคำเตือน: '+p.warnings.join(' / '):''}\n\nบันทึกแทนตารางเดิม?`))return;
+      const r=await apiFetch('/api/chain_sales/map/'+k,{method:'PUT',body:JSON.stringify({sheets,file:file.name})});
+      if(r.error) throw new Error(r.error.message);
+      toast('นำเข้าแล้ว');chmLoad();
+    }catch(err){toast('นำเข้าไม่สำเร็จ: '+(err.message||err),'warn');}
+  };
+  rd.readAsBinaryString(file);
+}
+async function chmSave(k,btn){
+  const body={replace:!!_chmVal(k,'replace'),office_slm:_chmVal(k,'office_slm')||'',aliases:{...(_chm.chains[k].aliases||{}),...((_chmEd[k]||{}).aliases||{})}};
+  btn.disabled=true;const r=await apiFetch('/api/chain_sales/map/'+k,{method:'PUT',body:JSON.stringify(body)});btn.disabled=false;
+  if(r.error){toast('บันทึกไม่สำเร็จ: '+r.error.message,'warn');return;}
+  Object.keys(_chainSwapCache).forEach(x=>delete _chainSwapCache[x]);window._dxCache={};
+  toast('บันทึกแล้ว — มีผลกับยอดราย Sales ทันที');chmLoad();
 }
 // ── เจ้า Modern Trade (2026-10-06): ชื่อเซลล์/ผู้จัดการจากไฟล์ "รหัสใบเคาะ ใบโปร Modern trade" → ผู้ใช้ ─────────
 // server บังคับสิทธิ์จริง (lib/customerScope.js): เซลล์เห็นเจ้าของตัวเอง · ผู้จัดการเห็นเจ้าที่ตัวเองเป็นผู้จัดการ + ของลูกทีม
@@ -12477,7 +12595,7 @@ async function dashRenderTargets(){
   if(slmF){
     // เลือก Sales แล้ว: รายเดือน ยอด / เป้า / % ของคนนั้น
     const months=Array.from({length:now.getMonth()+1},(_,i)=>`${y}-${String(i+1).padStart(2,'0')}`);
-    const act=ym=>Number(inv?.amountMonthly?.[ym])||0;
+    const act=ym=>Number((inv?.amountMonthlySlm||inv?.amountMonthly)?.[ym])||0;
     const rows=months.map(ym=>{const t=salesTargetSum(map,slmF,ym,ym),a=act(ym);return `<tr><td>${_ST_MTH[Number(ym.slice(5))-1]}</td><td class="r">${_sdF(a)}</td><td class="r">${t==null?'—':_sdF(t)}</td><td class="r">${bar(pct(a,t))}</td></tr>`;}).join('');
     const tt=salesTargetSum(map,slmF,ytdFrom,curYm),ta=months.reduce((s2,ym)=>s2+act(ym),0);
     box.innerHTML=`<table style="font-size:12.5px"><thead><tr><th>เดือน</th><th class="r">ยอดขาย</th><th class="r">เป้า</th><th class="r">% บรรลุ</th></tr></thead><tbody>${rows}

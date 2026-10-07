@@ -492,6 +492,26 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_sra_request ON sample_request_attachments(request_id);
   `);
 
+  // ยอดขายรายสาขาห้องจาก "ห้อง SKU" ใน Express (2026-10-07) — jobs/importChainRooms.js · ไม่รวมยอดบริษัท ใช้แทนยอด DC
+  // ในมุมมองราย Sales เท่านั้น (lib/chainSales.js) · raw_slm = SLMCOD ในห้อง SKU (มักเป็นชื่อคน ใช้อ้างอิงเท่านั้น)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chain_sales_monthly (
+      chain TEXT NOT NULL, ym TEXT NOT NULL, cust_code TEXT NOT NULL, raw_slm TEXT NOT NULL DEFAULT '',
+      amount REAL NOT NULL DEFAULT 0, invoice_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (chain, ym, cust_code, raw_slm)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chain_sales_monthly_ym ON chain_sales_monthly(ym);
+    CREATE TABLE IF NOT EXISTS chain_sales_daily (
+      chain TEXT NOT NULL, d TEXT NOT NULL, cust_code TEXT NOT NULL, raw_slm TEXT NOT NULL DEFAULT '',
+      amount REAL NOT NULL DEFAULT 0, invoice_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (chain, d, cust_code, raw_slm)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chain_sales_daily_d ON chain_sales_daily(d);
+    CREATE TABLE IF NOT EXISTS chain_customers (
+      code TEXT PRIMARY KEY, chain TEXT NOT NULL, name TEXT, raw_slm TEXT, updated_at TEXT
+    );
+  `);
+
   // ใบเคาะโปรซ้อน (2026-10-06) — พักให้ Sales ยกเลิกโปรเก่าก่อนเดินขั้นถัดไป (lib/promoApproval.js holdPointHit)
   addColumnIfMissing(db, 'promo_draft_headers', 'overlap_hold_json', 'overlap_hold_json TEXT');
 

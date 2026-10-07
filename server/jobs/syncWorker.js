@@ -20,6 +20,8 @@ const { DB_PATH } = require('../db/init');
 const { runImport } = require('./importFromExpress');
 // Bplus ของโรงงาน (2026-10-05) — รันต่อท้าย Express ใน worker เดียวกัน ไม่ให้สองงานเขียน SQLite พร้อมกัน
 const { runBplusImport } = require('./importFromBplus');
+const { runChainImport } = require('./importChainRooms');
+const { EXPRESS_ROOT } = require('./importFromExpress');
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL');
@@ -43,6 +45,8 @@ parentPort.on('message', async (msg) => {
   await runImport(db); // runImport already logs its own progress/errors and never throws
   // ทำไม่ถี่กว่า BPLUS_SYNC_MIN_INTERVAL_MIN (ค่าเริ่ม 30 นาที) · 'run-bplus' = บังคับรอบทันที (หลังแก้ตารางจับคู่พนักงานขาย)
   await runBplusImport(db, { force: msg === 'run-bplus' }); // never throws
+  // ยอดรายสาขาห้องจากห้อง SKU (TOPS-53/MAKRO/GOWHOLES, 2026-10-07) — อ่านเฉพาะเมื่อไฟล์เปลี่ยน ดู jobs/importChainRooms.js
+  await runChainImport(db, EXPRESS_ROOT); // never throws
   db.exec('PRAGMA wal_checkpoint(PASSIVE)');
   parentPort.postMessage('done');
 });

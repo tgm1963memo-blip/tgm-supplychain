@@ -6,6 +6,8 @@ const { requireRole } = require('../middleware/auth');
 const { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, guessExecChannel } = require('../lib/execChannel');
 const { groupNameOf } = require('../lib/customerGroup');
 const { resolveScope, factSql } = require('../lib/customerScope');
+const chainSales = require('../lib/chainSales');
+const CHAIN_CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
 
 // Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
 // ตามช่วงเวลาที่เลือก (YTD / เดือน / ไตรมาส / ทั้งปี) เทียบช่วงเดียวกันของปีก่อน:
@@ -104,6 +106,15 @@ module.exports = function dashboardExecRoutes(db) {
       const cc = (c[ch] = c[ch] || { net: 0, consi: 0 });
       if (co === 'CONSI') cc.consi += amt; else cc.net += amt;
     }
+    for (const r of chainRows(`${year}-01`, `${year}-12`)) {
+      const m = (company[r.period] = company[r.period] || { TSS: 0, TSSNV: 0, TGM: 0, CONSI: 0 });
+      m[r.company] = (m[r.company] || 0) + r.amount;
+      let ch = chCache.get(r.cust_code);
+      if (!ch) { ch = channelOf(meta, r.cust_code, false); chCache.set(r.cust_code, ch); }
+      const c = (channel[r.period] = channel[r.period] || {});
+      const cc = (c[ch] = c[ch] || { net: 0, consi: 0 });
+      cc.net += r.amount;
+    }
     return { company, channel };
   }
 
@@ -111,6 +122,15 @@ module.exports = function dashboardExecRoutes(db) {
   // (Bplus sync ยังไม่สำเร็จหลังเพิ่มตารางรายวัน) ให้ส่วนของ BP-* อ่านจากรายเดือนของเดือนที่อยู่ในช่วงแทนชั่วคราว
   // ไม่งั้นยอด "ทุกบริษัท" หายทั้งก้อนของโรงงาน · หน้า Dashboard แสดงหมายเหตุจาก tgm_daily_missing
   let reqBpDailyMissing = false;
+  // มุมมองราย Sales (2026-10-07, lib/chainSales.js): เลือก Sales หรือผู้ใช้ถูกจำกัดสิทธิ์ → ตัดรหัส DC ห้อง VAT ที่ถูกแทน
+  // แล้วเพิ่มยอดสาขาห้องจากห้อง SKU ที่จับคู่ Sales ได้ (เฉพาะรหัส Sales ในชุด reqChain.slms) · ภาพรวมบริษัทไม่แตะ
+  let reqChain = null; // { map, slms: Set } | null
+  function chainRows(from, to) {
+    if (!reqChain) return [];
+    const keep = CO_GROUPS[reqCo];
+    return chainSales.chainFacts(db, reqChain.map, from, to)
+      .filter((r) => reqChain.slms.has(r.slm_code) && (!keep || keep.has(r.company)));
+  }
   function parts(from, to, companies) {
     const t = tablesFor(from);
     if (t.col !== 'd' || !reqBpDailyMissing) return [{ t, lo: from, hi: to, cos: companies }];
@@ -139,6 +159,12 @@ module.exports = function dashboardExecRoutes(db) {
       if (src[r.company] === 'TGM') cur.tgm += amt;
       map.set(r.cust_code, cur);
     }
+    for (const r of chainRows(from, to)) {
+      const cur = map.get(r.cust_code) || { net: 0, consi: 0, tgm: 0 };
+      cur.net += r.amount;
+      if (r.company === 'TGM') cur.tgm += r.amount;
+      map.set(r.cust_code, cur);
+    }
     return map;
   }
 
@@ -149,6 +175,12 @@ module.exports = function dashboardExecRoutes(db) {
     for (const r of db.prepare(`SELECT code, name AS pname, category, corporate, exec_channel, exec_channel_source
       FROM customer_profiles WHERE code NOT IN (SELECT code FROM customers)`).all()) map.set(r.code, { ...r, name: r.pname });
     // ลูกค้า Bplus ของโรงงาน — รหัสชุดเดียวกับ Express; รหัสที่ไม่มีใน Express ใช้ชื่อจาก bplus_customers · has_export ช่วยเดาหมวด
+    // สาขาห้างจากห้อง SKU (รหัสไม่มีใน customers ของห้อง VAT) — corporate ตามห้างให้รวมเครือ/หมวดถูก
+    for (const r of db.prepare('SELECT code, chain, name FROM chain_customers').all()) {
+      const cur = map.get(r.code);
+      if (!cur) map.set(r.code, { code: r.code, name: r.name, corporate: CHAIN_CORP[r.chain] || r.chain });
+      else if (!cur.corporate) cur.corporate = CHAIN_CORP[r.chain] || r.chain;
+    }
     for (const r of db.prepare('SELECT code, name, has_export FROM bplus_customers').all()) {
       const cur = map.get(r.code);
       if (cur) cur.has_export = r.has_export; else map.set(r.code, { code: r.code, name: r.name, has_export: r.has_export });
@@ -227,6 +259,17 @@ module.exports = function dashboardExecRoutes(db) {
       const co = String(req.query.co || 'all');
       if (!['all', 'tss', 'tgm'].includes(co)) return res.status(400).json({ error: 'co ต้องเป็น all, tss หรือ tgm' });
       reqCo = co;
+      {
+        const salesView = !!String(req.query.slm || '').trim() || !scope.all;
+        const cmap = salesView ? chainSales.loadChainMap(db) : null;
+        const slms = new Set(String(req.query.slm || '').trim() ? wantSlm : (scope.slmCodes || []));
+        reqChain = cmap && chainSales.replacedRanges(cmap).length ? { map: cmap, slms } : null;
+        if (reqChain) {
+          const nr = chainSales.notReplacedSql(cmap, 'cust_code');
+          slmCodes.sql += ` ${nr.sql}`;
+          slmCodes.params = [...slmCodes.params, ...nr.params];
+        }
+      }
       reqBpDailyMissing = daily && !db.prepare("SELECT 1 FROM invoice_sales_daily WHERE company = 'BP-TGM' LIMIT 1").get();
       const lyFrom = shiftYear(from, -1);
       const lyTo = shiftYear(to, -1);
