@@ -5754,22 +5754,32 @@ function _scopeFilterOptions(){
 // (2026-10-05, ผู้ใช้ขอ) dropdown พนักงานขาย: แสดงรายชื่อใต้แผนกของตัวเอง แทนการต่อท้ายเป็นรายการยาว
 // แผนกของรหัส Sales มาจาก filters ของ scope (server/lib/salesTeams.js → codes = slm_codes ของผู้ใช้ในแผนกนั้น)
 // รหัสที่ไม่อยู่แผนกไหน (ยังไม่ผูกผู้ใช้ / ตัวเลือก "อื่นๆ") ไปรวมท้ายใต้ "ไม่ระบุแผนก" · value ทุกตัวเลือกเหมือนเดิม
+// ตัวกรองพนักงานขาย (2026-10-07, ผู้ใช้ขอ): เลือก "คน" = ยอดของทุกรหัสที่ตั้งให้ผู้ใช้นั้น (รหัส Express + รหัส Bplus โรงงาน "BP-xx")
+// รายชื่อคนมาจาก /api/sales_teams/me (people) · จัดใต้แผนกตามตัวกรองทีม/แผนก · รหัสที่ไม่ผูกกับผู้ใช้ใดแสดงเป็นรหัสเดี่ยวท้ายรายการ
 function _slmGroupedOptionsHtml(list,selected,allLabel){
   const s=_scopeNow(),sel=String(selected||'');
   const opt=(v,l,dis)=>`<option value="${esc(v)}"${!dis&&String(v)===sel?' selected':''}${dis?' disabled':''}>${esc(l)}</option>`;
+  const people=((s&&s.people)||[]).filter(p=>(p.codes||[]).length).slice().sort((x,y)=>x.name.localeCompare(y.name,'th'));
+  const short=n=>{const m=String(n||'').match(/\(([^)]+)\)\s*$/);return m?`${String(n).replace(/\s*\([^)]*\)\s*$/,'').trim()} (${m[1]})`:String(n||'');};
+  const personOpt=(p,indent)=>opt(p.codes.join(','),`${indent}👤 ${short(p.name)} · ${p.codes.join(', ')}`);
   let h=opt('',allLabel);
-  const placed=new Set();
+  const placedCodes=new Set(),shown=new Set();
   ((s&&s.filters)||[]).filter(f=>f.codes&&f.codes.length).forEach(f=>{
     h+=opt(f.codes.join(','),(f.kind==='team'?'👥 ':'　· ')+f.label);
     if(f.kind==='team') return;
-    const set=new Set(f.codes.map(String));
-    list.filter(x=>!x.other&&set.has(String(x.code))&&!placed.has(String(x.code))).forEach(x=>{placed.add(String(x.code));h+=opt(x.code,'　　　'+x.name);});
+    people.filter(p=>p.department===f.label&&!shown.has(p.uid)).forEach(p=>{shown.add(p.uid);p.codes.forEach(c=>placedCodes.add(String(c)));h+=personOpt(p,'　　　');});
   });
-  if(s&&!s.all)(s.members||[]).filter(m=>m.codes.length).forEach(m=>{h+=opt(m.codes.join(','),'👤 '+m.name);});
-  const rest=list.filter(x=>!placed.has(String(x.code)));
+  // คนที่ไม่อยู่แผนกในทีมขาย / ผู้ใช้ที่ดูได้เฉพาะคนในความดูแล
+  const others=people.filter(p=>!shown.has(p.uid));
+  if(others.length){
+    if(shown.size) h+=opt('__people','── พนักงานขายอื่น ──',true);
+    others.forEach(p=>{shown.add(p.uid);p.codes.forEach(c=>placedCodes.add(String(c)));h+=personOpt(p,shown.size>others.length?'　　　':'');});
+  }
+  people.forEach(p=>p.codes.forEach(c=>placedCodes.add(String(c))));
+  const rest=list.filter(x=>!placedCodes.has(String(x.code)));
   if(rest.length){
-    if(placed.size) h+=opt('__no_dept','── ไม่ระบุแผนก ──',true);
-    rest.forEach(x=>{h+=opt(x.code,(placed.size?'　　　':'')+x.name);});
+    if(shown.size) h+=opt('__no_user','── รหัสที่ยังไม่ผูกผู้ใช้ ──',true);
+    rest.forEach(x=>{h+=opt(x.code,(shown.size?'　　　':'')+x.name);});
   }
   return h;
 }

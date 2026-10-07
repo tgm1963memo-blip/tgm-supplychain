@@ -40,7 +40,10 @@ module.exports = function salesTeamsRoutes(db) {
     const sc = st.scopeFor(db, req.user.uid, cfg, users);
     // สิทธิ์ที่ server บังคับจริง (2026-10-06, lib/customerScope.js) — restricted = server กรองข้อมูลให้แล้ว
     const vs = cs.resolveScope(db, req.user);
-    res.json({ ...sc, filters: st.teamFilters(cfg, users, sc), restricted: !!vs.restricted, scope_version: vs.version || '',
+    // รายชื่อผู้ใช้พร้อมรหัสทั้งหมด (Express + Bplus 'BP-xx') สำหรับตัวกรองพนักงานขาย — เลือกคน = ยอดของทุกรหัสที่ผูกกับคนนั้น (2026-10-07)
+    const pool = sc.all ? users.filter(u => u.is_active !== 0 && u.role !== 'service_readonly') : users.filter(u => (sc.uids || []).includes(u.uid));
+    const people = pool.map(u => ({ uid: u.uid, name: u.name, department: u.department || '', codes: st.codesOf(u) })).filter(p => p.codes.length);
+    res.json({ ...sc, people, filters: st.teamFilters(cfg, users, sc), restricted: !!vs.restricted, scope_version: vs.version || '',
       mt_chains: vs.chains || [], mt_cust_count: (vs.mtCodes || []).length });
   });
 
