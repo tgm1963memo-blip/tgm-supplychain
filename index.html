@@ -4876,9 +4876,13 @@ function usersRenderBody(users) {
       <button class="btn btn-sm btn-p" onclick="showAddUser()">+ เพิ่มผู้ใช้</button>
     </div>
   </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+    <input type="text" id="users-q" value="${esc(window._usersQ||'')}" placeholder="🔍 ค้นหา UID / ชื่อ / แผนก / ตำแหน่ง / Role / อีเมล / รหัส Sales / รหัส Bplus" oninput="window._usersQ=this.value;usersFilterRows()" style="flex:1;max-width:520px;padding:7px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px">
+    <span id="users-q-n" style="font-size:12px;color:var(--TX3)"></span>
+  </div>
   <div class="card"><div class="tw tw-scroll"><table>
-    <thead><tr><th>UID</th><th>ชื่อ</th><th>แผนก</th><th>ตำแหน่ง</th><th>Role</th><th>SLM ID</th><th>อีเมล</th><th>รหัส Sales (Express)</th><th>สถานะ</th><th></th></tr></thead>
-    <tbody>${users.map((u,i) => `<tr>
+    <thead><tr><th>UID</th><th>ชื่อ</th><th>แผนก</th><th>ตำแหน่ง</th><th>Role</th><th>SLM ID</th><th>อีเมล</th><th>รหัส Sales (Express)</th><th>รหัส Bplus (โรงงาน)</th><th>สถานะ</th><th></th></tr></thead>
+    <tbody id="users-tbody">${users.map((u,i) => `<tr data-q="${esc([u.uid,u.name,u.department,u.position,userRoleLabel(u.role),u.role,u.email,u.slm_id,u.slm_codes,u.slm_codes?slmKeyName(u.slm_codes):'',u.bplus_codes,_userBpName(u.bplus_codes)].filter(Boolean).join(' ').toLowerCase())}">
       <td><b class="mono">${esc(u.uid)}</b></td>
       <td>${esc(u.name)}</td>
       <td>${esc(u.department||'—')}</td>
@@ -4887,6 +4891,7 @@ function usersRenderBody(users) {
       <td class="mono" style="font-size:12px">${esc(u.slm_id||'—')}</td>
       <td style="font-size:12px">${esc(u.email||'—')}</td>
       <td style="font-size:12px">${u.slm_codes?esc(slmKeyName(u.slm_codes)):'<span style="color:var(--TX3)">— ยังไม่ผูก</span>'}</td>
+      <td style="font-size:12px">${u.bplus_codes?esc(_userBpName(u.bplus_codes)):'<span style="color:var(--TX3)">—</span>'}</td>
       <td>${(u.active||u.is_active)?'<span class="badge bbg">Active</span>':'<span class="badge bbgr">Inactive</span>'}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-xs" onclick="showEditUser(${i})">แก้ไข</button>
@@ -4894,6 +4899,36 @@ function usersRenderBody(users) {
       </td>
     </tr>`).join('')}</tbody>
   </table></div></div>`;
+  usersFilterRows();
+  // ชื่อพนักงาน Bplus โหลดครั้งแรก → วาดตารางใหม่ให้เห็นชื่อ (ครั้งเดียว)
+  if(!_userBpList) _userBpLoad().then(()=>{if(_isActivePage('users')) usersRenderBody(users);});
+}
+// ค้นหาผู้ใช้ (2026-10-07) — กรองแถวในตาราง (ไม่วาดใหม่ ปุ่มแก้ไขยังอ้าง index เดิมได้)
+function usersFilterRows(){
+  const q=String(window._usersQ||'').trim().toLowerCase(),rows=[...document.querySelectorAll('#users-tbody tr')];
+  let n=0;rows.forEach(tr=>{const ok=!q||q.split(/\s+/).every(w=>(tr.dataset.q||'').includes(w));tr.style.display=ok?'':'none';if(ok)n++;});
+  const el=document.getElementById('users-q-n');if(el)el.textContent=q?`พบ ${n} จาก ${rows.length} คน`:'';
+}
+// รายชื่อพนักงานขาย Bplus โรงงาน (bplus_salesman_map) — สำหรับแสดงชื่อและช่องเลือกรหัส
+let _userBpList=null;
+async function _userBpLoad(force){
+  if(_userBpList&&!force) return _userBpList;
+  const r=await apiFetch('/api/dashboard/bplus/salesmen');
+  _userBpList=r.error?[]:(r.data?.rows||[]).map(x=>({code:String(x.bp_code||'').trim(),name:String(x.bp_name||''),slm:x.slm_code||'',customers:x.customers||0}));
+  return _userBpList;
+}
+function _userBpName(codes){
+  return String(codes||'').split(',').map(x=>x.trim()).filter(Boolean).map(c=>{const m=(_userBpList||[]).find(x=>x.code===c);return m?`${c} ${m.name}`:c;}).join(', ');
+}
+function _userBplusField(cur){
+  const sel=new Set(String(cur||'').split(',').map(x=>x.trim()).filter(Boolean));
+  const list=[...(_userBpList||[])];
+  [...sel].forEach(c=>{if(!list.some(x=>x.code===c))list.unshift({code:c,name:'(ไม่พบใน Bplus)',customers:0});});
+  list.sort((a,b)=>(sel.has(b.code)?1:0)-(sel.has(a.code)?1:0)||a.code.localeCompare(b.code,'th',{numeric:true}));
+  const opts=list.map(x=>`<label class="slmc-it" title="${esc(x.code+' '+x.name)}"><input type="checkbox" class="u-bpc" value="${esc(x.code)}" ${sel.has(x.code)?'checked':''}><span class="mono">${esc(x.code)}</span><span class="nm">${esc(x.name)}${x.slm?` → ${esc(x.slm)}`:''}${x.customers?` · ${x.customers} ลูกค้า`:''}</span></label>`).join('');
+  return `<div class="field" style="grid-column:1/-1"><label>รหัสพนักงานขายใน Bplus (โรงงาน TGM) — ยอดโรงงานของรหัสนี้นับเป็นของผู้ใช้นี้ (เลือกได้หลายรหัส)</label>
+    <input type="text" placeholder="🔍 ค้นหารหัส/ชื่อ" oninput="const q=this.value.toLowerCase();this.nextElementSibling.querySelectorAll('label').forEach(l=>l.style.display=l.innerText.toLowerCase().includes(q)?'':'none')" style="margin-bottom:4px">
+    <div class="slmc-list">${opts||'<span style="color:var(--TX3);font-size:12px">ยังไม่มีรายชื่อพนักงานขายจาก Bplus</span>'}</div></div>`;
 }
 
 // Stale-while-revalidate (2026-08-27, "เข้าหน้าไหนก็ไม่ต้องรอโหลดข้อมูล"): Phase 1 paints the
@@ -5626,9 +5661,12 @@ function salesNameFor(code){
 }
 // รหัส Sales ใน Express ที่ผูกกับผู้ใช้ (2026-09-28): sc_users.slm_codes "101,110-1" — ยังไม่ผูก = ใช้ slm_id เดิม
 // ค่า "key" ที่ส่งต่อให้ตัวดึง/กรองยอดขาย = รหัสคั่นด้วย , (คนเดียวมีได้หลายรหัส)
+// + รหัสพนักงาน Bplus โรงงาน (2026-10-07, sc_users.bplus_codes "05") → "BP-05" = รหัสของยอดโรงงานที่ยังไม่จับคู่รหัส Express
+function _userBpCodes(u){return String(u?.bplus_codes||'').split(',').map(x=>x.trim()).filter(Boolean).map(x=>'BP-'+x);}
 function userSlmCodes(u){
   const raw=String(u?.slm_codes||'').trim();
-  if(raw) return [...new Set(raw.split(',').map(x=>x.trim()).filter(Boolean))];
+  if(raw) return [...new Set([...raw.split(',').map(x=>x.trim()).filter(Boolean),..._userBpCodes(u)])];
+  if(_userBpCodes(u).length) return _userBpCodes(u);
   const legacy=String(u?.slm_id||'').trim();
   if(!legacy) return [];
   const known=(DB.get('remote_salesmen_cache')||[]).some(x=>String(x.slm_id||'').trim()===legacy);
@@ -10726,6 +10764,7 @@ function showAddUser(){
     <div class="field"><label>Role</label><select id="u-role">${userRoleOptions('sales')}</select></div>
     <div class="field"><label>SLM ID (สำหรับ Sales)</label><input type="text" id="u-slm" placeholder="เช่น 210"></div>
     ${_userSlmCodesField('')}
+    ${_userBplusField('')}
     <div class="field"><label>รหัสผ่าน</label><input type="password" id="u-pwd" value="1234"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email"></div>
   </div>
@@ -10758,6 +10797,7 @@ function showEditUser(i){
     <div class="field"><label>Role</label><select id="u-role">${userRoleOptions(u.role)}</select></div>
     <div class="field"><label>SLM ID</label><input type="text" id="u-slm" value="${u.slm_id||''}"></div>
     ${_userSlmCodesField(u.slm_codes||'')}
+    ${_userBplusField(u.bplus_codes||'')}
     <div class="field"><label>รหัสผ่านใหม่ (ว่าง=ไม่เปลี่ยน)</label><input type="password" id="u-pwd" placeholder="(ว่าง=ไม่เปลี่ยน)"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email" value="${u.email||''}"></div>
   </div>
@@ -10786,7 +10826,8 @@ async function saveUser(idx){
   // ADD_USER/EDIT_USER to audit_log itself, see server/routes/users.js), then pgUsers() re-hydrates
   // the local cache from the server so this save is visible to every other page/device that reads it.
   const slmCodes=[...document.querySelectorAll('.u-slmc:checked')].map(x=>x.value).join(',');
-  const payload={uid,name,role,department:department||null,position:position||null,slm_id:slm||null,slm_codes:slmCodes||null,email:email||null};
+  const bpCodes=[...document.querySelectorAll('.u-bpc:checked')].map(x=>x.value).join(',');
+  const payload={uid,name,role,department:department||null,position:position||null,slm_id:slm||null,slm_codes:slmCodes||null,bplus_codes:bpCodes||null,email:email||null};
   if(pwd) payload.pwd=pwd; // ว่าง = ไม่เปลี่ยนรหัสผ่าน (เฉพาะตอนแก้ไข); SB.upsertUser map เป็น pwd_hash ให้ server ไป hash เอง
   try{
     await SB.upsertUser(payload);

@@ -512,6 +512,9 @@ function runMigrations(db) {
     );
   `);
 
+  // รหัสพนักงานขายใน Bplus โรงงานของผู้ใช้ (2026-10-07) — "05,12" · นับเป็นรหัส Sales "BP-05" (lib/salesTeams.js codesOf)
+  addColumnIfMissing(db, 'sc_users', 'bplus_codes', 'bplus_codes TEXT');
+
   // ใบเคาะโปรซ้อน (2026-10-06) — พักให้ Sales ยกเลิกโปรเก่าก่อนเดินขั้นถัดไป (lib/promoApproval.js holdPointHit)
   addColumnIfMissing(db, 'promo_draft_headers', 'overlap_hold_json', 'overlap_hold_json TEXT');
 

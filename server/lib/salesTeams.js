@@ -16,10 +16,12 @@ const DEFAULT_TEAMS = [
 ];
 const ALL_ROLES = new Set(['superadmin', 'admin', 'manager', 'planning_manager']);
 const parse = v => { try { return typeof v === 'string' ? JSON.parse(v) : v; } catch { return null; } };
+// + รหัสพนักงาน Bplus โรงงาน (2026-10-07, sc_users.bplus_codes "05") → "BP-05" = รหัส Sales ของยอดโรงงานที่ยังไม่จับคู่รหัส Express
 const codesOf = u => {
   const raw = String(u?.slm_codes || '').trim();
   const list = raw ? raw.split(',') : (u?.slm_id ? [u.slm_id] : []);
-  return [...new Set(list.map(x => String(x).trim()).filter(Boolean))];
+  const bp = String(u?.bplus_codes || '').split(',').map(x => x.trim()).filter(Boolean).map(x => `BP-${x}`);
+  return [...new Set([...list, ...bp].map(x => String(x).trim()).filter(Boolean))];
 };
 
 function loadConfig(db) {
@@ -64,7 +66,7 @@ function defaultScope(u, teams) {
 }
 
 function usersOf(db) {
-  return db.prepare('SELECT uid, name, role, department, position, slm_id, slm_codes, is_active FROM sc_users').all();
+  return db.prepare('SELECT uid, name, role, department, position, slm_id, slm_codes, bplus_codes, is_active FROM sc_users').all();
 }
 
 // สิทธิ์ดูยอดของผู้ใช้: {scope, source, all, uids, codes, members, team}
