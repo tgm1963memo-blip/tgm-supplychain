@@ -2749,6 +2749,12 @@ async function doLogin() {
       }
     }
 
+    // ผู้ใช้คนละคนกับรอบก่อน (เช่น session หมดอายุแล้ว login ด้วยบัญชีอื่นโดยไม่ได้กด logout) → ล้าง cache ของคนก่อน
+    try {
+      if (localStorage.getItem('tgm_last_uid') !== String(user.uid)) _clearUserScopedCaches();
+      localStorage.setItem('tgm_last_uid', String(user.uid));
+    } catch (_) { /* ignore */ }
+
     // เซ็ต global vars (ให้ตรงกับ HTML เดิม)
     CURRENT_USER = user;
     ROLE   = user.role;
@@ -5275,7 +5281,34 @@ function _roleDeptExclusive(role){
   if(role==='planning_manager'||role==='planning_officer'||role==='planning_worker'||role==='planning'||role==='warehouse') return 'planning';
   return null;
 }
-function doLogout(){_mySigCache=undefined;audit('LOGOUT','system',{});SB.logout().catch(console.warn);localStorage.removeItem('tgm_session');document.getElementById('ls').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('l-err').textContent='';}
+// ล้างข้อมูลที่ผูกกับผู้ใช้ (2026-10-07, ผู้ใช้แจ้ง "logout แล้ว login คนอื่น ข้อมูลค้างของคนก่อน") — ตั้งแต่ server กรองข้อมูล
+// ตามสิทธิ์รายคน (lib/customerScope.js) ข้อมูลที่ cache ไว้ (ยอดขาย/ลูกค้า/Dashboard) เป็นของผู้ใช้คนนั้นเท่านั้น ห้ามใช้ข้ามคน
+// ล้างทั้ง CACHE (หน่วยความจำ + localStorage) และ cache รายชื่อลูกค้า/ยอดใน localStorage · ค่าตั้งค่าทั่วไป (สิทธิ์เมนู, SKU) ไม่แตะ
+function _clearUserScopedCaches(){
+  try{
+    CACHE._store={};CACHE._time={};CACHE._pending={};
+    Object.keys(localStorage).forEach(k=>{
+      if(k.startsWith(CACHE.PREFIX)||k.startsWith('tgm3_sd_year_cache_')||k==='tgm_scope'||k==='tgm_scope_ver') localStorage.removeItem(k);
+    });
+    ['remote_customers_cache','remote_customers_cache_ts','remote_consi_customers_cache','remote_consi_customers_cache_ts','customer_profiles','customer_profiles_ts',
+     'sample_requests','remote_salesmen_cache'].forEach(k=>{localStorage.removeItem('tgm3_'+k);if(typeof _dbMem!=='undefined')_dbMem.delete(k);});
+    _customerProfilesMemo=null;_myScope=null;
+    ['_dxCache','_dxData','_dashSalesRows','_dashSalesHistCache','_dashCustRows','_dashInvoiceSummary','_dashSummary','_dashSlmF','_salesRows2Y','_dashSlmCodes']
+      .forEach(k=>{try{delete window[k];}catch(_){window[k]=undefined;}});
+    if(typeof _sdResetBuildCache==='function')_sdResetBuildCache();
+    if(typeof _sdApi!=='undefined'){_sdApi.loaded=false;_sdApi._rows=null;_sdApi._invRows=null;_sdApi._invRowsSlm=null;_sdApi._filt=null;}
+    if(typeof _chainSwapCache!=='undefined')Object.keys(_chainSwapCache).forEach(k=>delete _chainSwapCache[k]);
+  }catch(e){console.warn('clearUserScopedCaches',e);}
+}
+async function doLogout(){
+  _mySigCache=undefined;audit('LOGOUT','system',{});
+  try{await SB.logout();}catch(e){console.warn(e);}
+  localStorage.removeItem('tgm_session');
+  _clearUserScopedCaches();
+  // โหลดหน้าใหม่ทั้งหน้า — ตัวแปรในหน่วยความจำทุกตัว (ตัวกรอง Sales, ตารางที่วาดค้าง ฯลฯ) หายหมด ไม่เหลือของผู้ใช้ก่อนหน้า
+  try{sessionStorage.removeItem('_pg');}catch(_){}
+  location.reload();
+}
 async function restoreSession(){
   try{
     const s=JSON.parse(localStorage.getItem('tgm_session')||'null');
