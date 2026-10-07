@@ -81,7 +81,10 @@ async function syncChain(db, root, chain) {
     if (custs.length) {
       const uc = db.prepare(`INSERT INTO chain_customers (code, chain, name, raw_slm, updated_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
         ON CONFLICT(code) DO UPDATE SET chain = excluded.chain, name = excluded.name, raw_slm = excluded.raw_slm, updated_at = excluded.updated_at`);
-      for (const c of custs) { const code = clean(c.CUSCOD); if (code) uc.run(code, chain.key, clean(c.CUSNAM), clean(c.SLMCOD)); }
+      // เฉพาะรหัสที่มียอดในห้องนี้จริง (2026-10-07 แก้บั๊ก): ARMAS ของห้อง MAKRO มีรหัสสาขา Tops (30-TS/30-KK/30-TG …) ด้วย
+      // เดิมเขียนทุกรหัส → ห้อง MAKRO ที่ดึงทีหลังทับสาขา Tops เป็นเครือ Makro (Dashboard รายพนักงานขายเห็น Makro ทั้งที่เป็นยอด Tops)
+      const sold = new Set([...monthly.keys()].map((k) => k.split('\u0001')[1]));
+      for (const c of custs) { const code = clean(c.CUSCOD); if (code && sold.has(code)) uc.run(code, chain.key, clean(c.CUSNAM), clean(c.SLMCOD)); }
     }
     db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
       ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`).run(source, mtimeMs, new Date().toISOString());
