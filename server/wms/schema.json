@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-02T01:51:52.101Z",
+ "generatedAt": "2026-10-08T08:08:51.353Z",
  "source": "supabase qncfkletcnncutyhjjfb",
  "tables": {
   "adjust_requests": {
@@ -7109,6 +7109,13 @@
       "kind": "now"
      },
      "array": false
+    },
+    {
+     "name": "unit_weight_kg",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
     }
    ],
    "pk": [
@@ -7187,6 +7194,20 @@
       "kind": "now"
      },
      "array": false
+    },
+    {
+     "name": "loss_limit_pct",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "scrap_types",
+     "type": "json",
+     "nullable": true,
+     "default": null,
+     "array": false
     }
    ],
    "pk": [
@@ -7224,14 +7245,14 @@
     {
      "name": "sku_id",
      "type": "uuid",
-     "nullable": false,
+     "nullable": true,
      "default": null,
      "array": false
     },
     {
      "name": "sku_code",
      "type": "text",
-     "nullable": false,
+     "nullable": true,
      "default": null,
      "array": false
     },
@@ -7302,6 +7323,27 @@
     {
      "name": "note",
      "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "weight_kg",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "set_no",
+     "type": "int",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "pieces",
+     "type": "num",
      "nullable": true,
      "default": null,
      "array": false
@@ -7486,6 +7528,191 @@
      "nullable": true,
      "default": null,
      "array": false
+    },
+    {
+     "name": "request_source",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "requested_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "requested_by_name",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "request_reason",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "needed_date",
+     "type": "date",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "is_custom",
+     "type": "bool",
+     "nullable": false,
+     "default": {
+      "kind": "value",
+      "value": false
+     },
+     "array": false
+    },
+    {
+     "name": "loss_limit_pct",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "express_doc_no",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "express_check_status",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "express_recorded_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "express_recorded_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "produced_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "produced_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "confirmed_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "confirmed_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "send_back_reason",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cancelled_by",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cancelled_at",
+     "type": "ts",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "cancel_reason",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "shift",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "production_line",
+     "type": "text",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "input_kg",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "output_kg",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "scrap_kg",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "loss_kg",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
+    },
+    {
+     "name": "yield_pct",
+     "type": "num",
+     "nullable": true,
+     "default": null,
+     "array": false
     }
    ],
    "pk": [
@@ -7521,6 +7748,14 @@
      "name": "idx_wms_conv_docs_created",
      "columns": [
       "created_at"
+     ],
+     "unique": false,
+     "where": null
+    },
+    {
+     "name": "idx_wms_conv_docs_express",
+     "columns": [
+      "express_doc_no"
      ],
      "unique": false,
      "where": null
