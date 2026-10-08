@@ -554,6 +554,25 @@ function runMigrations(db) {
   }
 
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
+
+  // conversion_doc_lines (2026-10-08): เอกสารแปลงสินค้า FF จาก STCRD รายบรรทัด — tgm-wms ใช้ตรวจเลข FF
+  // ในใบสั่งแปลง (มีจริงไหม / จำนวนตรงไหม) · direction: out = วัตถุดิบ, in = ผลผลิต · เขียนใหม่ทุกรอบ sync
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversion_doc_lines (
+      doc_num    TEXT NOT NULL,
+      seq_num    TEXT NOT NULL DEFAULT '',
+      doc_date   TEXT,
+      sku        TEXT NOT NULL,
+      sku_name   TEXT,
+      warehouse  TEXT NOT NULL DEFAULT '',
+      direction  TEXT NOT NULL,
+      qty        REAL NOT NULL DEFAULT 0,
+      unit_code  TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (doc_num, seq_num, sku, warehouse, direction)
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversion_doc_lines_doc ON conversion_doc_lines(doc_num);
+  `);
 }
 
 module.exports = { runMigrations, columnExists, addColumnIfMissing };

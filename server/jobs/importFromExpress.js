@@ -634,6 +634,9 @@ async function syncStockMovements(db) {
   const daily = new Map(); // `${sku}|${warehouse}|${day}` -> {received,sold,converted,transferred,other}
   const wmsDaily = new Map(); // `${sku}|${day}` -> {received,general_sale,consi,transfer,converted,reserved,return,writeoff,received_value}
   const invoiceLines = new Map(); // `${doc}|${seq}|${sku}|${warehouse}` -> invoice item line from STCRD
+  // เอกสารแปลงสินค้า (FF) รายบรรทัด (2026-10-08) — tgm-wms ใช้ตรวจเลข FF ที่ธุรการคลังกรอกในใบสั่งแปลง
+  // ว่ามีจริงและจำนวนตรงกับใบสั่ง/ผลจริง · ยอดรายวันด้านล่างยังคิดแบบเดิม ตารางนี้เป็นข้อมูลเพิ่มเท่านั้น
+  const conversionLines = new Map(); // `${doc}|${seq}|${sku}|${warehouse}|${dir}` -> FF line
   // Bundle/promo codes (e.g. 20284-A = "1 แถม 1" of 20284-5) get a header line on every document plus
   // component lines carrying PSTKCOD = the bundle code. Express moves stock only on the components, so
   // the header line must not count as a stock movement for the bundle code.
@@ -679,6 +682,16 @@ async function syncStockMovements(db) {
     // direction, so use it; the category only decides which bucket the signed amount lands in.
     const isBundleHeader = bundleParentsByDoc.get((r.DOCNUM || '').trim())?.has(sku);
     const signed = stcrdSignedQty(r.POSOPR, qty);
+    if (prefix === 'FF' && !isBundleHeader && signed !== 0) {
+      const docNum = cleanText(r.DOCNUM);
+      const seqNum = cleanText(r.SEQNUM);
+      const direction = signed < 0 ? 'out' : 'in'; // out = วัตถุดิบที่ตัดออก (POSOPR 8), in = ผลผลิตที่รับเข้า (POSOPR 1)
+      const ck = `${docNum}|${seqNum}|${sku}|${warehouse}|${direction}`;
+      if (!conversionLines.has(ck)) {
+        conversionLines.set(ck, { docNum, seqNum, docDate: day, sku, skuName: cleanText(r.STKDES), warehouse, direction, qty: 0, unitCode: cleanText(r.TQUCOD) });
+      }
+      conversionLines.get(ck).qty += Math.abs(signed);
+    }
     if (!isBundleHeader && signed !== 0) {
       const category = STCRD_CATEGORY[prefix] || STCRD_CATEGORY_BY_POSOPR[String(r.POSOPR || '').trim()] || 'other';
       const key = `${sku}|${warehouse}|${day}`;
@@ -773,6 +786,17 @@ async function syncStockMovements(db) {
       nInvoiceLineComponents++;
     }
 
+    db.exec('DELETE FROM conversion_doc_lines');
+    const insertConversionLine = db.prepare(`
+      INSERT INTO conversion_doc_lines (doc_num, seq_num, doc_date, sku, sku_name, warehouse, direction, qty, unit_code, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    `);
+    let nConversionLines = 0;
+    for (const c of conversionLines.values()) {
+      insertConversionLine.run(c.docNum, c.seqNum, c.docDate, c.sku, c.skuName, c.warehouse, c.direction, c.qty, c.unitCode);
+      nConversionLines++;
+    }
+
     db.exec('DELETE FROM stock_movements_wms_daily');
     const insertWms = db.prepare(`
       INSERT INTO stock_movements_wms_daily (sku, day, received_qty, general_sale_qty, consi_qty, transfer_qty, converted_qty, reserved_qty, return_qty, writeoff_qty, received_value, dispatched_qty)
@@ -786,7 +810,7 @@ async function syncStockMovements(db) {
     }
 
     db.exec('COMMIT');
-    console.log(`[importFromExpress] stock movements: ${n} sku/warehouse/day rows, ${nWms} sku/day WMS rows, ${nInvoiceLines} invoice lines, ${nInvoiceLineComponents} invoice line components`);
+    console.log(`[importFromExpress] stock movements: ${n} sku/warehouse/day rows, ${nWms} sku/day WMS rows, ${nInvoiceLines} invoice lines, ${nInvoiceLineComponents} invoice line components, ${nConversionLines} FF conversion lines`);
     return n;
   } catch (e) {
     db.exec('ROLLBACK');

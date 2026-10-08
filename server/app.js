@@ -251,6 +251,13 @@ function buildApp(db, opts = {}) {
     readOnly: true,
   }));
 
+  // FF (แปลงสินค้า) document lines from STCRD — tgm-wms checks the FF number on a conversion order.
+  app.use('/api/conversion_doc_lines', authed, makeCrudRouter(db, 'conversion_doc_lines', {
+    pk: 'doc_num',
+    fields: ['doc_num', 'seq_num', 'doc_date', 'sku', 'sku_name', 'warehouse', 'direction', 'qty', 'unit_code', 'updated_at'],
+    readOnly: true,
+  }));
+
   // Child SKU rows parsed from ARTRNRM for invoice 90022 parent lines.
   app.use('/api/invoice_line_components', authed, makeCrudRouter(db, 'invoice_line_components', {
     pk: 'id',
