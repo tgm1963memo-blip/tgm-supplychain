@@ -1142,7 +1142,12 @@ SELECT
   -- of 4,947 stock rows carry a LMOVDAT in the future (max seen: 2026-07-22, 5 days ahead of a
   -- 2026-07-17 sync), which made "Express Sync ล่าสุด" show an impossible future date. sync_log
   -- is the actual record of when runImport() executed, so use its most recent successful run.
-  (SELECT finished_at FROM sync_log WHERE status = 'ok' ORDER BY finished_at DESC LIMIT 1) AS synced_at;
+  -- 2026-10-09: แยก Bplus (โรงงาน TGM, source='bplus') ออก — เดิมรอบ Bplus ที่สำเร็จทีหลังทำให้ "Express Sync ล่าสุด"
+  -- แสดงเวลาของ Bplus แทน · bplus_* = รอบ Bplus ล่าสุดที่สำเร็จ + สถานะ/ข้อความของรอบล่าสุด (ผู้ใช้ขอให้แสดงบน Dashboard)
+  (SELECT finished_at FROM sync_log WHERE status = 'ok' AND source <> 'bplus' ORDER BY finished_at DESC LIMIT 1) AS synced_at,
+  (SELECT finished_at FROM sync_log WHERE status = 'ok' AND source = 'bplus' ORDER BY finished_at DESC LIMIT 1) AS bplus_synced_at,
+  (SELECT status FROM sync_log WHERE source = 'bplus' ORDER BY started_at DESC LIMIT 1) AS bplus_status,
+  (SELECT message FROM sync_log WHERE source = 'bplus' ORDER BY started_at DESC LIMIT 1) AS bplus_message;
 
 -- one row per Express company book — a cheap standing tripwire so a future "does this company's data
 -- look sane" question can be answered by glancing at this instead of re-opening DBF files by hand.

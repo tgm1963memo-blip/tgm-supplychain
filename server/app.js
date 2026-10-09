@@ -866,7 +866,8 @@ function buildApp(db, opts = {}) {
   app.use('/api/v_sc_data_confidence', authed, makeCrudRouter(db, 'v_sc_data_confidence', {
     pk: 'so_count',
     fields: ['so_count', 'line_count', 'active_booking_count', 'orders_without_line',
-      'active_product_count', 'orphan_sku_sales_count', 'orphan_sku_consi_count', 'orphan_sku_stock_count', 'synced_at'],
+      'active_product_count', 'orphan_sku_sales_count', 'orphan_sku_consi_count', 'orphan_sku_stock_count', 'synced_at',
+      'bplus_synced_at', 'bplus_status', 'bplus_message'],
     readOnly: true,
   }));
 

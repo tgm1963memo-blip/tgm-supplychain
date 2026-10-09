@@ -25,6 +25,8 @@
 }
 body{font-family:var(--font);background:var(--bg);color:var(--TX);font-size:13.5px;line-height:1.5}
 #app{display:flex;height:100vh;overflow:hidden}
+/* หน้าแอปเลื่อนภายใน #ct เท่านั้น — กัน element ตำแหน่ง absolute ที่หลุดออกนอก #app ดันหน้าให้มีพื้นที่ว่างด้านล่าง (2026-10-08) */
+body:has(#app:not(.hidden)){overflow:hidden}
 #sb{width:224px;background:var(--N);color:#fff;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;transition:width .18s ease}
 #app.sb-collapsed #sb{width:0}
 .hb-btn{background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;padding:4px 9px;border-radius:6px;transition:.12s;flex-shrink:0;line-height:1;font-family:inherit}
@@ -1545,7 +1547,7 @@ const SB = {
     try {
       const { data, error } = await sb
         .from('v_sc_data_confidence')
-        .select('so_count,line_count,active_booking_count,orders_without_line,synced_at')
+        .select('so_count,line_count,active_booking_count,orders_without_line,synced_at,bplus_synced_at,bplus_status,bplus_message')
         .maybeSingle();
       if (error) throw error;
       if (data) {
@@ -1557,6 +1559,10 @@ const SB = {
         else if (soCount > lineCount) warnings.push('จำนวน SO มากกว่า line ตรวจสอบความครบถ้วนของ outbound_lines');
         return {
           syncedAt: data.synced_at || null,
+          // Bplus โรงงาน TGM (2026-10-09) — ดึงไม่ถี่กว่า 30 นาที (jobs/importFromBplus.js) แยกจากรอบ Express 5 นาที
+          bplusSyncedAt: data.bplus_synced_at || null,
+          bplusStatus: data.bplus_status || null,
+          bplusMessage: data.bplus_message || null,
           soCount,
           lineCount,
           activeBookingCount: Number(data.active_booking_count || 0),
@@ -6415,7 +6421,9 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
   const confWarnings=confidence?.warnings||[];
   const confSync=confidence?.syncedAt?new Date(confidence.syncedAt).toLocaleString('th-TH'):'-';
   const confidenceHtml=confidence?`<div class="krow">
-    <div class="kpi t"><div class="kl">Express Sync ล่าสุด</div><div class="kv" style="font-size:15px">${esc(confSync)}</div></div>
+    <div class="kpi t"><div class="kl">Express Sync ล่าสุด</div><div class="kv" style="font-size:15px">${esc(confSync)}</div>
+      <div class="kl" style="margin-top:8px">Bplus (โรงงาน TGM) ล่าสุด</div><div class="kv" style="font-size:15px">${esc(confidence.bplusSyncedAt?new Date(confidence.bplusSyncedAt).toLocaleString('th-TH'):'-')}</div>
+      ${confidence.bplusStatus==='error'?`<div class="kh" style="color:var(--R)" title="${esc(confidence.bplusMessage||'')}">⚠ รอบล่าสุดดึงไม่สำเร็จ — แสดงข้อมูลรอบก่อนหน้า</div>`:''}</div>
     <div class="kpi b"><div class="kl">SO</div><div class="kv">${fmt(confidence.soCount)}</div></div>
     <div class="kpi g"><div class="kl">SO Lines</div><div class="kv">${fmt(confidence.lineCount)}</div></div>
     <div class="kpi ${confWarnings.length?'r':'a'}"><div class="kl">Booking Active</div><div class="kv">${fmt(confidence.activeBookingCount)}</div><div class="kh">${confWarnings.length?esc(confWarnings.join(' | ')):'ข้อมูลเชื่อมครบ'}</div></div>
@@ -6597,8 +6605,8 @@ function _dxEnsureCss(){
   .dx-ctl select{height:32px;padding:0 8px;border:1px solid var(--dx-line);border-radius:8px;font-size:12.5px;font-family:var(--font);background:#fff;color:var(--dx-ink)}
   .dx-range{display:inline-flex;align-items:center;gap:4px}.dx-range span{color:var(--dx-mut)}
   .dx-range input{height:32px;padding:0 6px;border:1px solid var(--dx-line);border-radius:8px;font-size:12.5px;font-family:var(--font);background:#fff;color:var(--dx-ink)}
-  .dx-sw{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dx-ink);cursor:pointer;user-select:none;height:32px;padding:0 4px}
-  .dx-sw input{position:absolute;opacity:0;pointer-events:none}
+  .dx-sw{position:relative;display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dx-ink);cursor:pointer;user-select:none;height:32px;padding:0 4px}
+  .dx-sw input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;margin:0;left:0;top:0}
   .dx-sw .tr{width:30px;height:17px;border-radius:9px;background:#C9D2DE;position:relative;transition:.15s;flex:none}
   .dx-sw .tr::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
   .dx-sw input:checked+.tr{background:var(--N)}
