@@ -5,6 +5,8 @@ const { DatabaseSync } = require('node:sqlite');
 const { requireRole } = require('../middleware/auth');
 const { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, guessExecChannel } = require('../lib/execChannel');
 const { groupNameOf } = require('../lib/customerGroup');
+const { autofillBusinessTypes } = require('../lib/businessType');
+const { cacheJson } = require('../lib/responseCache');
 const { resolveScope, factSql } = require('../lib/customerScope');
 const chainSales = require('../lib/chainSales');
 const CHAIN_CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
@@ -283,6 +285,8 @@ module.exports = function dashboardExecRoutes(db) {
   }
 
   // GET /api/dashboard/exec?from=YYYY-MM&to=YYYY-MM&slm=101,110-1&consi=1&makro_in_mall=0
+  // แคชผลลัพธ์ /exec (2026-10-09, ผู้ใช้ขอให้ระบบเร็วขึ้น — วัดจริง 0.6–1.5 วิ/ครั้ง) — ดู lib/responseCache.js
+  router.get('/exec', cacheJson(db));
   router.get('/exec', (req, res) => {
     try {
       const from = String(req.query.from || '');

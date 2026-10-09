@@ -14,6 +14,7 @@
  * already ran once via the main thread's openDb() before this worker is ever created, so this
  * just opens the existing database and sets the per-connection PRAGMAs it needs.
  */
+const fs = require('fs');
 const { parentPort } = require('worker_threads');
 const { DatabaseSync } = require('node:sqlite');
 const { DB_PATH } = require('../db/init');
@@ -39,6 +40,27 @@ db.exec('PRAGMA busy_timeout = 30000');
 // nothing else needs the lock, and PASSIVE mode never blocks readers/writers by design — worst
 // case it just checkpoints less than fully and tries again next cycle.
 db.exec('PRAGMA wal_autocheckpoint = 0');
+// FIXED (2026-10-09, ผู้ใช้: "ทำให้ระบบรันไวขึ้น"): PASSIVE อย่างเดียวไม่เคย reset WAL ถ้ามีคนอ่านค้างอยู่ตอนนั้น และไม่เคยหดไฟล์ —
+// วัดจริงบนเครื่อง DB: tgm.db-wal 2.0 GB (ใหญ่กว่าตัว DB 1.68 GB) · ทุกการอ่านต้องค้นผ่าน WAL index ก้อนใหญ่นี้
+// → WAL เกิน 256 MB ให้ TRUNCATE (เขียนทุกหน้ากลับ DB แล้วตัด WAL เหลือ 0) โดยรอคนอ่านไม่เกิน 3 วิ
+//   (ระหว่างรอ การเขียนฝั่ง main thread ต้องรอด้วย จึงไม่ใช้ busy_timeout 30 วิตามปกติ) · ไม่สำเร็จ = ลองใหม่รอบหน้า
+// journal_size_limit: หลัง reset ให้ SQLite ตัดไฟล์ WAL ที่เหลือลงเหลือไม่เกิน 64 MB เอง
+db.exec('PRAGMA journal_size_limit = 67108864');
+const WAL_TRUNCATE_BYTES = 256 * 1024 * 1024;
+function checkpoint() {
+  let walBytes = 0;
+  try { walBytes = fs.statSync(DB_PATH + '-wal').size; } catch { /* ไม่มีไฟล์ WAL = ไม่ต้องทำ */ }
+  if (walBytes < WAL_TRUNCATE_BYTES) { db.exec('PRAGMA wal_checkpoint(PASSIVE)'); return; }
+  try {
+    db.exec('PRAGMA busy_timeout = 3000');
+    const r = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
+    console.log(`[syncWorker] WAL ${Math.round(walBytes / 1048576)} MB → checkpoint(TRUNCATE) busy=${r?.busy} log=${r?.log} done=${r?.checkpointed}`);
+  } catch (e) {
+    console.warn('[syncWorker] checkpoint(TRUNCATE) failed:', e.message);
+  } finally {
+    db.exec('PRAGMA busy_timeout = 30000');
+  }
+}
 
 parentPort.on('message', async (msg) => {
   if (msg !== 'run' && msg !== 'run-bplus') return;
@@ -47,6 +69,6 @@ parentPort.on('message', async (msg) => {
   await runBplusImport(db, { force: msg === 'run-bplus' }); // never throws
   // ยอดรายสาขาห้องจากห้อง SKU (TOPS-53/MAKRO/GOWHOLES, 2026-10-07) — อ่านเฉพาะเมื่อไฟล์เปลี่ยน ดู jobs/importChainRooms.js
   await runChainImport(db, EXPRESS_ROOT); // never throws
-  db.exec('PRAGMA wal_checkpoint(PASSIVE)');
+  checkpoint();
   parentPort.postMessage('done');
 });

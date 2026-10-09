@@ -4,6 +4,7 @@ const compression = require('compression');
 const path = require('path');
 
 const { makeCrudRouter } = require('./lib/crud');
+const { cacheJson } = require('./lib/responseCache');
 const { requireAuth, requireRole } = require('./middleware/auth');
 const usersRoutes = require('./routes/users');
 
@@ -620,7 +621,8 @@ function buildApp(db, opts = {}) {
     scope: factScope({ cust: 'cust_code', slm: 'slm_code' }),
   }));
 
-  app.get('/api/dashboard_sales_summary', authed, (req, res) => {
+  // แคชตาม version ข้อมูล (2026-10-09 — วัดจริง 2–4.6 วิ/ครั้ง) ดู lib/responseCache.js
+  app.get('/api/dashboard_sales_summary', authed, cacheJson(db), (req, res) => {
     const startYm = String(req.query.startYm || '').slice(0, 7);
     const endYm = String(req.query.endYm || '').slice(0, 7);
     const slmId = String(req.query.slmId || '').trim();
@@ -865,7 +867,8 @@ function buildApp(db, opts = {}) {
     scope: factScope({ cust: 'cust_code', slm: 'slm_owner' }),
   }));
 
-  app.use('/api/v_sc_data_confidence', authed, makeCrudRouter(db, 'v_sc_data_confidence', {
+  // นับแถวตารางใหญ่ 0.5 วิ/ครั้ง และ Dashboard เรียกทุกครั้งที่เปิด — แคช 60 วิ (จำนวนการจองเปลี่ยนนอกรอบ sync จึงไม่ใช้ version)
+  app.use('/api/v_sc_data_confidence', authed, cacheJson(db, { ttlMs: 60 * 1000, versioned: false }), makeCrudRouter(db, 'v_sc_data_confidence', {
     pk: 'so_count',
     fields: ['so_count', 'line_count', 'active_booking_count', 'orders_without_line',
       'active_product_count', 'orphan_sku_sales_count', 'orphan_sku_consi_count', 'orphan_sku_stock_count', 'synced_at',

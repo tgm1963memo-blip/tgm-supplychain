@@ -25,6 +25,8 @@ function openDb() {
   // 5s timeout, so any request landing mid-transaction failed outright instead of just waiting a
   // bit. 30s comfortably covers the worst single-transaction duration seen in production logs.
   db.exec('PRAGMA busy_timeout = 30000');
+  // WAL หดกลับเองหลัง checkpoint reset (ดู jobs/syncWorker.js checkpoint(), 2026-10-09)
+  db.exec('PRAGMA journal_size_limit = 67108864');
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);

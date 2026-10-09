@@ -47,6 +47,7 @@ test('chain sales: parse mapping file, company total unchanged, salesperson view
   assert.deepEqual(sw.rows.map(r => r.slm_code), ['207'], 'Sales เห็นเฉพาะสาขาของตัวเอง');
   assert.equal(sw.ranges.length, 3, 'KK 2 ช่วง + NW 1 ช่วง');
   // ปิดการแทน → ไม่ตัด DC และไม่เพิ่มสาขา
-  db.prepare("UPDATE approval_workflow_templates SET levels_json = ? WHERE entity_type = 'chain_sales_map'").run(JSON.stringify({ chains: { TOPS: { replace: false, cust: p.cust, groups: p.groups } } }));
+  // ตั้ง updated_at แบบเดียวกับ PUT /chain_sales/map จริง — /dashboard/exec แคชตาม version นี้ (lib/responseCache.js)
+  db.prepare("UPDATE approval_workflow_templates SET levels_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now', '+1 second') WHERE entity_type = 'chain_sales_map'").run(JSON.stringify({ chains: { TOPS: { replace: false, cust: p.cust, groups: p.groups } } }));
   assert.equal((await dx('&slm=207')).kpi.ty_net, 50);
 });
