@@ -126,6 +126,8 @@ Express (Business Plus) ERP           tgm-supplychain (this repo)              t
 ### 14) จัดการกลุ่ม
 - **I/O**: กลุ่มลูกค้า/เซลส์ sync จริง (`customer_profiles`, `salesmen_profiles`); **กลุ่มสินค้า (STKGRP mapping) เป็น local-only ทั้งหมด**
 - **Dependency**: กลุ่มสินค้า local-only นี้ป้อนกราฟ Dashboard #1 — ตั้งใจแยกจาก Sales Overview ตามที่ระบุในโค้ด
+- **(2026-10-07) กลุ่มลูกค้ามี 3 มิติแยกกัน**: Corporate group (เครือ/บริษัทแม่, ข้อความอิสระ) · **ประเภทธุรกิจ** (`customer_profiles.business_type` — รายการตายตัวใน `server/lib/businessType.js`: Modern Trade/ร้านอาหาร/โรงแรม/เบเกอรี่/Catering/ผู้ผลิต/ร้านค้าทั่วไป/เอเย่นต์/ส่งออก/Online/ไดเร็คเซลส์/พนักงาน/Shop บริษัท/บริษัทในเครือ/อื่นๆ, ปุ่ม "🍽️ เดาประเภทธุรกิจ" ไม่ทับค่าที่ตั้งเอง) · หมวดผู้บริหาร (`exec_channel`, 8 หมวดของ Dashboard ผู้บริหาร) — ช่อง Category เดิมยังเป็นข้อความอิสระ (ใบเคาะราคาใช้อยู่)
+- **(2026-10-07) ตัด FK `customer_profiles.code → customers(code)`** (`server/db/customerProfilesV2.js`) — เดิมลูกค้า Bplus โรงงาน/สาขาห้างจากห้อง SKU ไม่มีแถวใน `customers` จึงบันทึกกลุ่มไม่ได้เลย (เป็นเหตุที่ NSL/TOA/BP-POS ค้าง "ยังไม่ถูกระบุ") · รอบเดียวกันจัดกลุ่มลูกค้าที่มียอดตั้งแต่ 2025 แต่ยังไม่มีกลุ่ม 331 ราย (`server/db/data/customer-regroup-20261007.json`, edited_by `regroup-2026-10-07`)
 
 ### 15) Reports
 - **I/O**: export hub (delegate ไปฟังก์ชัน export ของหน้าอื่น) + import CSV "รายงาน 73" ของ Express แบบ manual พร้อม cross-check สูตร (เงินสด+เครดิต+ค้าง−คืน เทียบยอดสุทธิ)

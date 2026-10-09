@@ -9,7 +9,9 @@
 //     → ผู้ใช้ตัดสินใจ 2026-10-05: ตั้งแต่ 2025 ใช้ Bplus แทน TGM ของ Express ทั้งหมด (ดู routes/dashboardExec.js yearSources)
 // กติกาที่ผู้ใช้ยืนยัน 2026-10-05:
 //   · ขายให้ "ไทยซอสเซสมาร์เก็ตติ้ง" (บริษัทในเครือ ~4,100 ล้าน) เก็บแยกเป็นบริษัท BP-TGM-IC — ดูได้แต่ไม่นับเป็นยอดขาย
-//   · ไม่นับใบยืมสินค้า (IVP./IVZ/EB), รายได้อื่น (IQOA/IQOB), ขายทรัพย์สิน (SF/SFN)
+//   · ไม่นับใบยืมสินค้า (IVZ/EB), รายได้อื่น (IQOA/IQOB), ขายทรัพย์สิน (SF/SFN)
+//   · ใบ IVP. (Bplus ตั้งชื่อ "ใบยืมสินค้าIVP") นับเป็นยอดขาย — 2026-10-08 ผู้ใช้ยืนยัน: Excel ฝ่ายขายนับเป็นยอดเอเย่น
+//     (เช่น SMN-02-PC นายสมนึก ออก IVP. ทุกสัปดาห์ ~80k) · ปี 2025 มี IVP. รวม 41.3 ล้าน
 //   · นับ: ใบกำกับ/ขายสด (DT_PROPERTIES 307/302) + ใบเพิ่มหนี้ (402) − ใบรับคืน/ลดหนี้ (308/403/337)
 //   · รหัสพนักงานขายของโรงงานจับคู่กับรหัส Express ผ่านตาราง bplus_salesman_map (ยังไม่จับคู่ = 'BP-<รหัส>')
 // เอกสารใน Bplus ไม่มีรหัสพนักงานขาย (AROE ว่าง) — ใช้ ARFILE.AR_SLMNCODE (ผู้ดูแลลูกค้าปัจจุบัน) แทน
@@ -20,7 +22,7 @@ const sql = require('mssql');
 const FROM_DATE = '2025-01-01';
 const COMPANY = 'BP-TGM';
 const COMPANY_IC = 'BP-TGM-IC';
-const EXCLUDED_DOCCODES = ['IVP.', 'IVZ', 'EB', 'IQOA', 'IQOB', 'SF', 'SFN'];
+const EXCLUDED_DOCCODES = ['IVZ', 'EB', 'IQOA', 'IQOB', 'SF', 'SFN'];
 const MIN_INTERVAL_MS = (Number(process.env.BPLUS_SYNC_MIN_INTERVAL_MIN) || 30) * 60 * 1000;
 const STATE_KEY = 'bplus/TGM';
 

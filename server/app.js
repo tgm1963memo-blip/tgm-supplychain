@@ -274,7 +274,9 @@ function buildApp(db, opts = {}) {
     fields: ['code', 'name', 'corporate', 'category', 'branch', 'slm', 'edited_by', 'gp_pct',
       'corp_source', 'corp_confidence', 'corp_confirmed', 'corp_confirmed_by', 'corp_confirmed_at', 'updated_at',
       // หมวดลูกค้าผู้บริหาร (2026-10-03) — ดู lib/execChannel.js
-      'exec_channel', 'exec_channel_source'],
+      'exec_channel', 'exec_channel_source',
+      // ประเภทธุรกิจ (2026-10-07) — ดู lib/businessType.js
+      'business_type', 'business_type_source'],
     writeRoles: MASTER_DATA_ROLES,
     scope: custScope('code'),
   }));

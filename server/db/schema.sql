@@ -47,7 +47,8 @@ CREATE INDEX IF NOT EXISTS idx_customers_group ON customers(cust_group);
 
 -- extra per-customer metadata edited from the web app (corporate/category/slm overrides)
 CREATE TABLE IF NOT EXISTS customer_profiles (
-  code             TEXT PRIMARY KEY REFERENCES customers(code),
+  -- ไม่มี FK ไป customers: ลูกค้า Bplus/สาขาห้างไม่มีแถวใน customers (ดู db/customerProfilesV2.js)
+  code             TEXT PRIMARY KEY,
   name             TEXT,
   corporate        TEXT,
   category         TEXT,

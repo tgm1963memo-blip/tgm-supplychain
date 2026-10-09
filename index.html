@@ -1339,6 +1339,8 @@ const SB = {
     if (profile.corp_confidence !== undefined) payload.corp_confidence = profile.corp_confidence;
     if (profile.exec_channel !== undefined) payload.exec_channel = profile.exec_channel || null;
     if (profile.exec_channel_source !== undefined) payload.exec_channel_source = profile.exec_channel_source || null;
+    if (profile.business_type !== undefined) payload.business_type = profile.business_type || null;
+    if (profile.business_type_source !== undefined) payload.business_type_source = profile.business_type_source || null;
     try {
       const { error } = await getSupabaseClient()
         .from('customer_profiles')
@@ -6477,6 +6479,9 @@ const DX_MONTHS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','�
 const DX_COMPANIES=[{k:'TSS',c:'#2a78d6'},{k:'CONSI',c:'#eb6834',consi:true},{k:'TSSNV',c:'#1baf7a'},{k:'TGM',c:'#eda100'}];
 const DX_CH_COLORS={general:'#2a78d6',mall:'#eb6834',makro:'#1baf7a',local_agent:'#eda100',export_agent:'#e87ba4',shop_factory:'#008300',shop_rama3:'#4a3aa7',online:'#e34948'};
 // ต้องตรงกับ EXEC_CHANNELS ใน server/lib/execChannel.js (ใช้ในหน้า จัดการกลุ่ม › กลุ่มลูกค้า)
+// ประเภทธุรกิจลูกค้า (2026-10-07) — key/label ต้องตรงกับ server/lib/businessType.js
+const BIZ_TYPES=[['modern_trade','Modern Trade (ห้าง/ซูเปอร์ฯ)'],['restaurant','ร้านอาหาร/คาเฟ่'],['hotel','โรงแรม/รีสอร์ท/คลับ'],['bakery','เบเกอรี่'],['catering','Catering/จัดเลี้ยง'],['food_processor','ผู้ผลิต/แปรรูปอาหาร'],['retail','ร้านค้าทั่วไป/ค้าส่ง'],['agent','เอเย่นต์/ตัวแทนจำหน่าย'],['export','ส่งออก/ต่างประเทศ'],['online','Online'],['direct','ไดเร็คเซลส์/รายบุคคล'],['employee','พนักงาน'],['company_shop','Shop ของบริษัท'],['affiliate','บริษัทในเครือ'],['other','อื่นๆ (ตัวอย่าง/ออกบูธ)']];
+const bizTypeLabel=k=>(BIZ_TYPES.find(t=>t[0]===k)||[])[1]||'';
 const DX_CHANNELS=[['general','ร้านค้าทั่วไป'],['mall','ห้าง (ไม่รวม Makro)'],['makro','Makro'],['local_agent','Local Agent'],['export_agent','Export Agent'],['shop_factory','Shop โรงงาน'],['shop_rama3','Shop พระราม 3'],['online','Online']];
 function _dxState(){
   if(!window._dx){
@@ -6763,7 +6768,7 @@ function _dxKpis(d){
     <div class="dx-kpi" data-dxtip="${esc(`฿${_dxB(k.ty_consi)}<br>${_dxLabel(r,-1)}: ฿${_dxB(k.ly_consi)}`)}"><div class="l"><i style="background:#eb6834"></i>ฝากขาย (Consi)</div><div class="v">${_dxMil(k.ty_consi)}<small>ล้านบาท</small></div><div class="d">${_dxPill(_dxPct(k.ty_consi,k.ly_consi))} ${share}% ของยอดรวม</div>${_dxSpark(consiM,'#eb6834')}</div>
     <div class="dx-kpi"><div class="l"><i style="background:#1baf7a"></i>ลูกค้าที่มียอด</div><div class="v">${fmt(k.ty_active)}<small>ราย</small></div><div class="d"><span class="dx-pill ${dAct>=0?'dx-pill-up':'dx-pill-dn'}">${dAct>=0?'▲':'▼'} ${fmt(Math.abs(dAct))} ราย</span> จาก ${fmt(k.ly_active)} ราย</div></div>
     ${k4}
-  </div>${k.ty_ic||k.ly_ic?`<div style="font-size:12px;color:var(--dx-mut);margin:-4px 2px 12px">โรงงานขายให้บริษัทในเครือ (ไทยซอสเซสมาร์เก็ตติ้ง) ${_dxMil(k.ty_ic)} ล้าน · ${_dxLabel(r,-1)} ${_dxMil(k.ly_ic)} ล้าน — <b>ไม่รวม</b>ในยอดขายด้านบน</div>`:''}${d.tgm_daily_missing&&(s.co||'all')!=='tss'?`<div style="font-size:11.5px;color:#B45309;margin:-6px 2px 12px">⚠ ยอดโรงงาน TGM ยังไม่มีข้อมูลรายวัน — ช่วงนี้ใช้ยอดทั้งเดือนของ TGM ชั่วคราว (ระบบสลับเป็นรายวันเองเมื่อดึงข้อมูลจากโรงงานได้)</div>`:''}`;
+  </div>${k.ty_ic||k.ly_ic?`<div style="font-size:12px;color:var(--dx-mut);margin:-4px 2px 12px">ขายให้บริษัทในเครือ (โรงงาน→ไทยซอสเซสมาร์เก็ตติ้ง, TSS→ไทย-เยอรมัน) ${_dxMil(k.ty_ic)} ล้าน · ${_dxLabel(r,-1)} ${_dxMil(k.ly_ic)} ล้าน — <b>ไม่รวม</b>ในยอดขายด้านบน</div>`:''}${d.tgm_daily_missing&&(s.co||'all')!=='tss'?`<div style="font-size:11.5px;color:#B45309;margin:-6px 2px 12px">⚠ ยอดโรงงาน TGM ยังไม่มีข้อมูลรายวัน — ช่วงนี้ใช้ยอดทั้งเดือนของ TGM ชั่วคราว (ระบบสลับเป็นรายวันเองเมื่อดึงข้อมูลจากโรงงานได้)</div>`:''}`;
 }
 // เส้นเป้าบนกราฟรายเดือน — ย้ายมาจากกราฟเดิม (commit f653a64 "Dashboard เส้นเป้าบนกราฟรายเดือน", 2026-10-03) เมื่อ
 // Dashboard ถูกออกแบบใหม่ (กราฟเดิม dashValueChartHtml ไม่ถูกวาดแล้ว) · เป้าตั้งต่อรหัส Sales รวมทุกบริษัท จึงแสดงเฉพาะ "ทุกบริษัท"
@@ -6856,7 +6861,7 @@ function _dxChannels(d){
   const tot=rows.reduce((a,x)=>a+Math.max(x.ty,0),0)||1;
   const mx=Math.max(...rows.map(x=>Math.max(x.ty,x.ly)),1);
   const list=rows.map(x=>{const g=_dxPct(x.ty,x.ly),zero=x.ty<=0&&x.ly<=0;
-    const tip=`<b>${esc(x.n)}</b><div class="r"><span>${_dxLabel(r)}</span><b>${_dxMil(x.ty)} ล.</b></div><div class="r"><span>${_dxLabel(r,-1)}</span><span>${_dxMil(x.ly)} ล.</span></div><div class="r"><span>ผลต่าง</span><b>${x.ty-x.ly>=0?'+':'−'}${(Math.abs(x.ty-x.ly)).toLocaleString('en-US',{maximumFractionDigits:0})} บาท</b></div>`;
+    const tip=`<b>${esc(x.n)}</b><div class="r"><span>${_dxLabel(r)}</span><b>${_dxB(x.ty)} บาท</b></div><div class="r"><span>${_dxLabel(r,-1)}</span><span>${_dxB(x.ly)} บาท</span></div><div class="r"><span>ผลต่าง</span><b>${x.ty-x.ly>=0?'+':'−'}${(Math.abs(x.ty-x.ly)).toLocaleString('en-US',{maximumFractionDigits:0})} บาท</b></div>`;
     const df=x.ty-x.ly,dfTxt=`${df>=0?'+':'−'}${_dxMil(Math.abs(df))}`;
     return `<div class="dx-chr${zero?' zero':''}" data-dxtip="${esc(tip)}"><div class="nm"><i style="background:${x.c}"></i><span>${esc(x.n)}</span></div>
       <div class="dx-trk">${x.ty>0?`<div class="f" style="width:${x.ty/mx*100}%;background:${x.c}"></div>`:''}${x.ly>0?`<div class="ly" style="left:calc(${x.ly/mx*100}% - 1px)"></div>`:''}</div>
@@ -13134,16 +13139,18 @@ function _cgFilter(){
   const catF=document.getElementById('cg-cat')?.value||'';
   const slmF=document.getElementById('cg-slm')?.value||'';
   const statF=document.getElementById('cg-stat')?.value||'';
+  const bizF=document.getElementById('cg-biz')?.value||'';
   const rows=[...document.querySelectorAll('#cg-tbody tr')];
   rows.forEach(tr=>{
     const d=tr.dataset;
-    const code=d['0']||'', name=d['1']||'', corp=d['2']||'', cat=d['3']||'', slm=d['4']||'', stat=d['5']||'';
+    const code=d['0']||'', name=d['1']||'', corp=d['2']||'', cat=d['3']||'', slm=d['4']||'', stat=d['5']||'', biz=d['6']||'';
     let show=true;
     if(q&&!`${code} ${name}`.toLowerCase().includes(q))show=false;
     if(corpF&&corp!==corpF)show=false;
     if(catF&&cat!==catF)show=false;
     if(slmF&&slm!==slmF)show=false;
     if(statF&&stat!==statF)show=false;
+    if(bizF&&biz!==bizF)show=false;
     tr.style.display=show?'':'none';
   });
   const vis=rows.filter(r=>r.style.display!=='none').length;
@@ -13160,6 +13167,7 @@ function _renderCustGroupsTable(rows,profs,loading){
   const prevCat=document.getElementById('cg-cat')?.value||'';
   const prevSlm=document.getElementById('cg-slm')?.value||'';
   const prevStat=document.getElementById('cg-stat')?.value||'';
+  const prevBiz=document.getElementById('cg-biz')?.value||'';
   document.getElementById('grp-body').innerHTML=`
   <div class="frow" style="flex-wrap:wrap;gap:8px">
     <input type="file" id="cg-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importCustomerGroupsFile()">
@@ -13168,8 +13176,9 @@ function _renderCustGroupsTable(rows,profs,loading){
     <button class="btn btn-sm btn-g" onclick="expCustomerGroups()">Export</button>
     <button class="btn btn-sm btn-t" onclick="runAiCorporateGrouping()">🤖 ให้ AI ช่วยจัดกลุ่ม</button>
     <button class="btn btn-sm btn-g" onclick="autofillExecChannels()" title="เดาหมวดผู้บริหารจาก Category/Corporate ให้ลูกค้าที่ยังไม่ได้ตั้งเอง (ไม่ทับค่าที่ตั้งเองแล้ว)">🏷️ เดาหมวดผู้บริหาร</button>
+    <button class="btn btn-sm btn-g" onclick="autofillBusinessTypes()" title="เดาประเภทธุรกิจ (ร้านอาหาร / Modern Trade / โรงแรม …) จากชื่อ/Category/Corporate ให้ลูกค้าที่ยังไม่ได้ตั้งเอง (ไม่ทับค่าที่ตั้งเองแล้ว)">🍽️ เดาประเภทธุรกิจ</button>
     <button class="btn btn-sm" onclick="_cgExtraCodes=null;_cgExtraCodesPromise=null;renderCustGroups()">🔄 Reload</button>
-    <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / สาขา / Category แล้วระบบจะบันทึกทันที</span>
+    <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / สาขา / Category / ประเภทธุรกิจ แล้วระบบจะบันทึกทันที</span>
   </div>
   <div class="frow" style="margin-bottom:8px">
     <input id="cg-q" type="text" value="${esc(prevQ)}" placeholder="ค้นหารหัส / ชื่อลูกค้า..." style="width:220px" oninput="_cgFilter()">
@@ -13180,6 +13189,10 @@ function _renderCustGroupsTable(rows,profs,loading){
     <label style="font-size:12px;font-weight:600;color:var(--TX2)">Category:</label>
     <select id="cg-cat" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
       <option value="">ทั้งหมด</option>${cats.map(g=>`<option value="${esc(g)}" ${prevCat===g?'selected':''}>${esc(g)}</option>`).join('')}
+    </select>
+    <label style="font-size:12px;font-weight:600;color:var(--TX2)">ประเภทธุรกิจ:</label>
+    <select id="cg-biz" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
+      <option value="">ทั้งหมด</option><option value="none" ${prevBiz==='none'?'selected':''}>— ยังไม่ระบุ —</option>${BIZ_TYPES.map(([k,l])=>`<option value="${k}" ${prevBiz===k?'selected':''}>${esc(l)}</option>`).join('')}
     </select>
     <label style="font-size:12px;font-weight:600;color:var(--TX2)">Sales:</label>
     <select id="cg-slm" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
@@ -13202,7 +13215,7 @@ function _renderCustGroupsTable(rows,profs,loading){
       </div>
     </div>
     <div class="tw tw-scroll"><table>
-      <thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th style="min-width:200px">Corporate group</th><th style="min-width:160px">สาขา</th><th style="min-width:160px">Category</th><th style="min-width:150px" title="ใช้แบ่งยอดขายใน Dashboard ผู้บริหาร">หมวดผู้บริหาร</th><th style="min-width:200px">Sales</th><th style="min-width:80px">GP% (ใบเคาะราคา)</th><th>สถานะ</th><th>แก้ไขโดย</th></tr></thead>
+      <thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th style="min-width:200px">Corporate group</th><th style="min-width:160px">สาขา</th><th style="min-width:160px" title="ข้อความอิสระเดิม (ใบเคาะราคาใช้แยกประเภทลูกค้า)">Category</th><th style="min-width:170px" title="ร้านอาหาร / Modern Trade / โรงแรม … — เลือกจากรายการ">ประเภทธุรกิจ</th><th style="min-width:150px" title="ใช้แบ่งยอดขายใน Dashboard ผู้บริหาร">หมวดผู้บริหาร</th><th style="min-width:200px">Sales</th><th style="min-width:80px">GP% (ใบเคาะราคา)</th><th>สถานะ</th><th>แก้ไขโดย</th></tr></thead>
       <tbody id="cg-tbody">${rows.map(c=>{
         const p=profs[c.c]||{};
         // p.code only exists when this customer has a real customer_profiles row (from
@@ -13219,12 +13232,13 @@ function _renderCustGroupsTable(rows,profs,loading){
           : needsReview
             ? `<span class="badge bba">🤖 AI แนะนำ${confPct?' ('+confPct+')':''}</span> <button class="btn btn-xs btn-g" onclick="confirmCustomerGroup('${esc(c.c)}')">✓ ยืนยัน</button>`
             : `<span class="badge bbgr">ยังไม่ระบุ</span>`;
-        return `<tr data-0="${esc(c.c)}" data-1="${esc(c.n)}" data-2="${esc(c.corp||'อื่นๆ')}" data-3="${esc(c.category||'ไม่ระบุ')}" data-4="${esc(c.slm||'')}" data-5="${statVal}">
+        return `<tr data-0="${esc(c.c)}" data-1="${esc(c.n)}" data-2="${esc(c.corp||'อื่นๆ')}" data-3="${esc(c.category||'ไม่ระบุ')}" data-4="${esc(c.slm||'')}" data-5="${statVal}" data-6="${esc(p.business_type||'none')}">
         <td class="mono">${esc(c.c)}</td>
         <td><input class="inp-cell" value="${esc(c.n)}" onchange="saveCustomerGroup('${esc(c.c)}','name',this.value)"></td>
         <td><input class="inp-cell" list="corp-list" value="${esc(c.corp||'')}" onchange="saveCustomerGroup('${esc(c.c)}','corporate',this.value);this.closest('tr').dataset['2']=this.value;_cgFilter()"></td>
         <td><input class="inp-cell" placeholder="เช่น สาขาพัทยา" value="${esc(c.branch||'')}" onchange="saveCustomerGroup('${esc(c.c)}','branch',this.value)"></td>
         <td><input class="inp-cell" list="cat-list" value="${esc(c.category||'')}" onchange="saveCustomerGroup('${esc(c.c)}','category',this.value);this.closest('tr').dataset['3']=this.value;_cgFilter()"></td>
+        <td><select class="inp-cell" title="${p.business_type_source==='auto'?'ระบบเดาให้ — เลือกใหม่เพื่อยืนยันเอง':''}" onchange="saveCustomerGroup('${esc(c.c)}','business_type',this.value);this.closest('tr').dataset['6']=this.value||'none';_cgFilter()" style="${p.business_type_source==='auto'?'color:var(--TX3)':''}"><option value="">— ยังไม่ระบุ —</option>${BIZ_TYPES.map(([k,l])=>`<option value="${k}"${p.business_type===k?' selected':''}>${esc(l)}${p.business_type===k&&p.business_type_source==='auto'?' (ระบบเดา)':''}</option>`).join('')}</select></td>
         <td><select class="inp-cell" title="${p.exec_channel_source==='auto'?'ระบบเดาให้ — เลือกใหม่เพื่อยืนยันเอง':''}" onchange="saveCustomerGroup('${esc(c.c)}','exec_channel',this.value)" style="${p.exec_channel_source==='auto'?'color:var(--TX3)':''}"><option value="">— ยังไม่ระบุ —</option>${DX_CHANNELS.map(([k,l])=>`<option value="${k}"${p.exec_channel===k?' selected':''}>${esc(l)}${p.exec_channel===k&&p.exec_channel_source==='auto'?' (ระบบเดา)':''}</option>`).join('')}</select></td>
         <td><input class="inp-cell" list="slm-list" value="${esc(c.slm||'')}" onchange="saveCustomerGroup('${esc(c.c)}','slm',this.value);this.closest('tr').dataset['4']=this.value;_cgFilter()"></td>
         <td><input class="inp-cell" type="number" step="0.01" min="0" max="100" placeholder="เช่น 18" value="${c.gpPct!=null?esc(String(c.gpPct)):''}" onchange="saveCustomerGroup('${esc(c.c)}','gp_pct',this.value)" style="width:70px"></td>
@@ -13237,7 +13251,7 @@ function _renderCustGroupsTable(rows,profs,loading){
     <datalist id="slm-list">${slms.map(s=>`<option value="${esc(s.code)}" label="${esc(s.code+' - '+(s.name||s.code))}"></option>`).join('')}</datalist>
   </div>`;
   // re-apply filter ถ้ามี
-  if(prevQ||prevCorp||prevCat||prevSlm||prevStat) _cgFilter();
+  if(prevQ||prevCorp||prevCat||prevSlm||prevStat||prevBiz) _cgFilter();
 }
 async function renderSalesMaster(){
   // FIXED (2026-09-16, /code-review): these two calls have no dependency on each other (different
@@ -13595,6 +13609,8 @@ function saveCustomerGroup(code,field,val){
   profs[code][field]=val;profs[code].edited_by=UID;profs[code].edited_at=new Date().toISOString();
   // หมวดผู้บริหาร (2026-10-03): คนเลือกเอง = manual — ปุ่ม "เดาหมวดผู้บริหาร" จะไม่ทับอีก · ค่าว่าง = กลับไปให้ระบบเดา
   if(field==='exec_channel'){profs[code].exec_channel=val||null;profs[code].exec_channel_source=val?'manual':null;window._dxCache={};}
+  // ประเภทธุรกิจ (2026-10-07): เลือกเอง = manual ปุ่ม "เดาประเภทธุรกิจ" จะไม่ทับ · ค่าว่าง = กลับไปให้ระบบเดา
+  if(field==='business_type'){profs[code].business_type=val||null;profs[code].business_type_source=val?'manual':null;}
   if(field==='corporate'){
     // a human editing the corporate value directly counts as confirming it — never let a
     // later AI run silently overwrite what someone just typed in.
@@ -13635,6 +13651,15 @@ async function autofillExecChannels(){
   const isLoaded=_cgExtraCodes instanceof Set;
   _renderCustGroupsTable(allCustomerRows(isLoaded?_cgExtraCodes:null),customerProfiles(),!isLoaded);
 }
+// ประเภทธุรกิจ (2026-10-07) — server เดาจากชื่อ/Category/Corporate/หมวดผู้บริหาร (server/lib/businessType.js)
+async function autofillBusinessTypes(){
+  const {data,error}=await apiFetch('/api/dashboard/business_type/autofill',{method:'POST',body:JSON.stringify({})});
+  if(error){toast('เดาประเภทธุรกิจไม่สำเร็จ: '+error.message);return;}
+  toast(`ตั้งประเภทธุรกิจให้ ${data?.updated??0} ราย (ข้ามที่ตั้งเองแล้ว ${data?.skipped_manual??0} ราย)`);
+  try{await SB.getCustomerProfiles();}catch(e){console.warn('getCustomerProfiles:',e.message||e);}
+  const isLoaded=_cgExtraCodes instanceof Set;
+  _renderCustGroupsTable(allCustomerRows(isLoaded?_cgExtraCodes:null),customerProfiles(),!isLoaded);
+}
 async function runAiCorporateGrouping(){
   openMod(`<div class="mh"><div class="mt2">AI กำลังจัดกลุ่ม Corporate…</div></div><div class="al ali">อาจใช้เวลาหลายสิบวินาทีถึงหลายนาที ขึ้นกับจำนวนลูกค้าที่ยังไม่ยืนยัน</div>`);
   const {data,error}=await apiFetch('/api/ai/corporate-grouping/propose',{method:'POST',body:JSON.stringify({})});
@@ -13644,8 +13669,9 @@ async function runAiCorporateGrouping(){
   renderCustGroups();
 }
 async function expCustomerGroups(){
-  const rows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.branch||'',c.category||'',c.slm||'']);
-  toXLSX([['Customer Groups',['รหัสลูกค้า','ลูกค้า','Corporate group','สาขา','Category','Sales'],rows]],'Customer_Groups_'+todayStr()+'.xlsx');
+  const profs=customerProfiles();
+  const rows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.branch||'',c.category||'',bizTypeLabel(profs[c.c]?.business_type),c.slm||'']);
+  toXLSX([['Customer Groups',['รหัสลูกค้า','ลูกค้า','Corporate group','สาขา','Category','ประเภทธุรกิจ','Sales'],rows]],'Customer_Groups_'+todayStr()+'.xlsx');
 }
 
 // ── PERMISSIONS ───────────────────────────────────────────────────
@@ -15882,6 +15908,8 @@ const DRAFT_SALE_PLACES = [
   { k: 'pretty', label: 'มีพริตตี้', unit: 'คน' },
   { k: 'other', label: 'จุดขายอื่นๆ', text: true },
 ];
+// สถานที่ส่ง (2026-10-08, ผู้ใช้ขอ) — เลือกได้ 1 ข้อ · อื่นๆ ต้องระบุ · เก็บใน form_extra_json.ship = { mode, text }
+const DRAFT_SHIP_PLACES = [{ k: 'branch', label: 'ส่งสาขา' }, { k: 'dc', label: 'ส่ง DC' }, { k: 'other', label: 'อื่นๆ', text: true }];
 const DRAFT_PRODUCT_TYPES = ['ตู้สด TSS', 'ตู้สด TGM', '1 แถม 1 (แพ็คคู่)', 'PACK TSS', 'PACK TGM', 'PACK HB'];
 // ลำดับแสดง (2026-09-24): บรรทัดแรก ตู้สด TSS · ตู้สด TGM · 1 แถม 1 · อื่นๆ / บรรทัดสอง PACK TSS · PACK TGM · PACK HB
 // (ลำดับใน DRAFT_PRODUCT_TYPES ใช้เป็น id ของ checkbox fx-pt-<i> — ห้ามสลับ จึงจัดลำดับแสดงแยก)
@@ -15914,6 +15942,7 @@ function _draftFormExtraHtml(raw, canEdit, header) {
     <div style="background:var(--bg2);border-radius:8px;padding:6px 12px 10px">
       ${row('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => ck(`fx-sale-${p.k}`, sale[p.k]?.on, p.label,
         p.text ? ' ' + txt(`fx-sale-${p.k}-v`, sale[p.k]?.text) : ` ${num(`fx-sale-${p.k}-v`, sale[p.k]?.n, 64, p.k === 'regular' ? 'จำนวนสาขา' : '')} ${p.unit}`)).join(''), '', true)}
+      ${row('สถานที่ส่ง', DRAFT_SHIP_PLACES.map(p => `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="fx-ship-mode" id="fx-ship-${p.k}" ${fx.ship?.mode === p.k ? 'checked' : ''} ${dis}>${p.label}${p.text ? ' ' + txt('fx-ship-other-v', fx.ship?.text) : ''}</label>`).join(''), '', true)}
       ${row('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? ck('fx-pt-other', fx.ptype_other?.on, 'อื่นๆ', ' ' + txt('fx-pt-other-v', fx.ptype_other?.text)) + '<span style="flex-basis:100%;height:0"></span>'
           : t === 'อื่นๆ2' ? ck('fx-pt-other2', fx.ptype_other2?.on, 'อื่นๆ', ' ' + txt('fx-pt-other2-v', fx.ptype_other2?.text))
           : ck(`fx-pt-${DRAFT_PRODUCT_TYPES.indexOf(t)}`, (fx.ptypes || []).includes(t), t)).join(''), '', true)}
@@ -15946,6 +15975,7 @@ function _draftReadFormExtra() {
   const offContract = on('draft-off-contract');
   return {
     sale,
+    ship: (() => { const p = DRAFT_SHIP_PLACES.find(x => on(`fx-ship-${x.k}`)); return { mode: p ? p.k : '', text: p?.text ? val('fx-ship-other-v') : '' }; })(),
     ptypes: DRAFT_PRODUCT_TYPES.filter((_, i) => on(`fx-pt-${i}`)),
     ptype_other: { on: on('fx-pt-other'), text: val('fx-pt-other-v') },
     ptype_other2: { on: on('fx-pt-other2'), text: val('fx-pt-other2-v') },
@@ -15966,6 +15996,7 @@ function _draftSetFormExtra(raw) {
   const setC = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
   const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
   DRAFT_SALE_PLACES.forEach(p => { setC(`fx-sale-${p.k}`, sale[p.k]?.on); setV(`fx-sale-${p.k}-v`, p.text ? sale[p.k]?.text : sale[p.k]?.n); });
+  DRAFT_SHIP_PLACES.forEach(p => setC(`fx-ship-${p.k}`, fx.ship?.mode === p.k)); setV('fx-ship-other-v', fx.ship?.text);
   DRAFT_PRODUCT_TYPES.forEach((t, i) => setC(`fx-pt-${i}`, (fx.ptypes || []).includes(t)));
   setC('fx-pt-other', fx.ptype_other?.on); setV('fx-pt-other-v', fx.ptype_other?.text);
   setC('fx-pt-other2', fx.ptype_other2?.on); setV('fx-pt-other2-v', fx.ptype_other2?.text);
@@ -17393,6 +17424,8 @@ async function saveDraftPromo(submitAfter = false) {
     // (2026-10-03) บังคับเลือก สถานที่ขาย / ประเภทสินค้า (อย่างน้อย 1 ข้อ, "อื่นๆ" ต้องระบุ) และค่าป้าย VL มี/ไม่มี
     if (!DRAFT_SALE_PLACES.some(p => fxv.sale[p.k]?.on)) { alert('กรุณาเลือก "สถานที่ขาย" อย่างน้อย 1 ข้อ'); document.getElementById('fx-sale-regular')?.focus(); return; }
     if (fxv.sale.other?.on && !fxv.sale.other.text) { alert('ติ๊ก "จุดขายอื่นๆ" แล้ว กรุณาระบุจุดขาย'); document.getElementById('fx-sale-other-v')?.focus(); return; }
+    if (!fxv.ship.mode) { alert('กรุณาเลือก "สถานที่ส่ง" (ส่งสาขา / ส่ง DC / อื่นๆ)'); document.getElementById('fx-ship-branch')?.focus(); return; }
+    if (fxv.ship.mode === 'other' && !fxv.ship.text) { alert('เลือกสถานที่ส่ง "อื่นๆ" แล้ว กรุณาระบุสถานที่ส่ง'); document.getElementById('fx-ship-other-v')?.focus(); return; }
     if (!fxv.ptypes.length && !fxv.ptype_other.on && !fxv.ptype_other2.on) { alert('กรุณาเลือก "ประเภทสินค้า" อย่างน้อย 1 ข้อ'); return; }
     if ((fxv.ptype_other.on && !fxv.ptype_other.text) || (fxv.ptype_other2.on && !fxv.ptype_other2.text)) { alert('ติ๊กประเภทสินค้า "อื่นๆ" แล้ว กรุณาระบุประเภท'); return; }
     if (fxv.vl_sign.has == null) { alert('กรุณาเลือก "ค่าป้าย promotion VL" ว่ามี หรือ ไม่มี'); document.getElementById('fx-vl-none')?.focus(); return; }
@@ -19262,6 +19295,7 @@ async function draftPreviewPDF(orient = 'landscape') {
         ${optRow('ค่าใช้จ่ายอื่นๆ', [fx.other_cost?.on ? { on: true, html: `<span class="ck on wide"><i class="box on">✓</i>${fv(fmtAmt(fx.other_cost?.amt), 60)} บาท · รายละเอียด ${fv(fx.other_cost?.detail || '')}</span>` } : null], 'r5')}
         ${optRow('สถานที่ขาย', DRAFT_SALE_PLACES.map(p => it(sale[p.k]?.on, p.label,
           p.text ? ' ' + fv(sale[p.k]?.text) : ` ${fv(sale[p.k]?.n ?? (p.k === 'regular' && branchCodes.length ? branchCodes.length : ''), 48)} ${p.unit}`)))}
+        ${optRow('สถานที่ส่ง', DRAFT_SHIP_PLACES.map(p => it(fx.ship?.mode === p.k, p.label, p.text ? ' ' + fv(fx.ship?.mode === 'other' ? fx.ship?.text : '') : '')))}
         ${optRow('ประเภทสินค้า', _draftPtypeOrder().map(t => t === 'อื่นๆ' ? it(fx.ptype_other?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other?.text))
           : t === 'อื่นๆ2' ? it(fx.ptype_other2?.on, 'อื่นๆ', ' ' + fv(fx.ptype_other2?.text)) : it((fx.ptypes || []).includes(t), esc(t))))}
         <b>ส่วนลด</b><div class="disc">
@@ -19860,6 +19894,21 @@ const SR_FLOW = {
 const SR_FAIL_REASONS = [['price', 'ราคาสูง'], ['taste', 'รสชาติ/เนื้อสัมผัสไม่ตรง'], ['hold', 'โปรเจกต์พัก'], ['cannot', 'พัฒนาไม่ได้'], ['cancel', 'ยกเลิก']];
 const SR_TEMPS = ['แช่เย็น', 'แช่แข็ง', 'อุณหภูมิปกติ'];
 const SR_UNITS = ['กก.', 'ถุง', 'กล่อง', 'ชิ้น', 'แพ็ค'];
+// สเปคสินค้าใหม่ตามแบบฟอร์มโรงงาน FM-RDC-RDD-12 "บันทึกการขอตัวอย่างและผลการทดสอบผลิตภัณฑ์" (2026-10-08)
+// ลงนามอนุมัติบนกระดาษ — ระบบไม่ดึงลายเซ็นลงฟอร์มนี้
+const SR_FM = {
+  brand:   [['TGM', 'TGM'], ['TSS', 'TSS'], ['nologo', 'No Logo'], ['eurola', 'Eurola'], ['other', 'Other']],
+  packTy:  [['nylon', 'ถุง Nylon'], ['thermo', 'เทอร์โมฟอร์ม']],
+  outer:   [['bag', 'ใส่ถุงรวม (แพ็ค)'], ['basket', 'ใส่ตะกร้า (แพ็ค)'], ['box', 'ใส่กล่องรวม (กก.)']],
+  boxTy:   [['logo', 'กล่องมีตรา'], ['nologo', 'กล่องไม่มีตรา']],
+  casing:  [['hog', 'Hog ไส้หมู'], ['cellulose', 'Cellulose ไส้พลาสติก'], ['skinless', 'Cellulose Skinless ไส้พลาสติกปอกเปลือก'],
+            ['sheep', 'Sheep ไส้แกะ'], ['collagen', 'Collagen ไส้คอลลาเจน'], ['other', 'Other']],
+  storage: [['chill', 'Chill'], ['frozen', 'Frozen']],
+  coa:     [['lot', 'ทุก Lot'], ['week', '1 ครั้ง/สัปดาห์'], ['month', '1 ครั้ง/เดือน'], ['none', 'ไม่ต้องการผลตรวจ']],
+  coaYear: [['year', '1 ครั้ง/ปี'], ['exact', 'ตรงตัวสินค้า'], ['group', 'ตัวแทนกลุ่ม'], ['none', 'ไม่ต้องการผลตรวจ']],
+  coaRows: [['coaPhys', 'COA ด้านกายภาพ'], ['coaChem', 'COA ด้านเคมี (Lab ใน)'], ['coaMicro', 'COA ด้านจุลินทรีย์ (Lab ใน)'], ['coaYear', 'COA รายปี (Lab นอก)']],
+};
+const _srFmLbl = (list, v) => (SR_FM[list].find(([k]) => k === v) || [])[1] || '';
 // ออกเลขอัตโนมัติย้อนหลัง (เปิดหน้ารายละเอียดแล้วยังไม่มีเลข) เฉพาะคำขอที่สร้างหลังเปิดใช้เลขที่เอกสาร — คำขอเก่าคงรหัสเดิม
 const SR_DOCNO_SINCE = Date.parse('2026-10-05T00:00:00+07:00');
 
@@ -20022,7 +20071,7 @@ function pgSample() {
         const prices = items.map(i => Number(i.targetPrice)).filter(v => v > 0);
         const fc = items.reduce((s, i) => s + (Number(i.forecastKg) || 0), 0);
         return `<tr style="cursor:pointer" onclick="_sr.view='detail';_sr.editId='${sid}';pgSample()">
-          <td class="mono" style="font-size:11px;white-space:nowrap">${r.doc_no ? `<b>${esc(r.doc_no)}</b>` : `<span style="color:var(--TX3)">${esc(r.id || '')}</span>`}</td>
+          <td class="mono" style="font-size:11px;white-space:nowrap">${r.doc_no ? `<b>${esc(r.doc_no)}</b>` : `<span style="color:var(--TX3)">${esc(r.id || '')}</span>`}${isNew && Number(srNewInfo(r).round) > 1 ? `<div style="font-family:var(--font);font-size:10.5px;color:var(--BL)">🔁 ครั้งที่ ${esc(String(srNewInfo(r).round))}</div>` : ''}</td>
           <td style="font-size:12px">${fmtD(r.date || '')}</td>
           <td style="font-size:12px">${esc((r.custName || '').substring(0, 22))}</td>
           <td style="font-size:11px;color:var(--TX2)">${itemSum || '—'}</td>
@@ -20041,8 +20090,12 @@ function pgSample() {
 
 function _srBlankItem(type) {
   return type === 'new'
-    ? { name: '', ptype: '', flavor: '', size: '', packWeight: '', pack: '', temp: '', shelfLife: '', qty: 1, unit: 'กก.',
-        targetPrice: '', forecastKg: '', refSku: '', refName: '', competitor: '', menu: '', note: '' }
+    ? { name: '', qty: 1, unit: 'กก.', targetPrice: '', forecastKg: '', refSku: '', refName: '', competitor: '', note: '',
+        // ช่องตามแบบฟอร์มโรงงาน FM-RDC-RDD-12 (SR_FM)
+        brand: '', brandOther: '', pack1G: '', pack1Qty: '', pack1Type: '', pack2G: '', pack2Qty: '', pack2Type: '',
+        outer: '', outerQty: '', boxType: '', casing: '', casingOther: '', sliceMm: '', pcsPerKg: '', diameterMm: '',
+        weightG: '', lengthVal: '', lengthUnit: 'cm', storage: '', storageDays: '',
+        coaPhys: '', coaChem: '', coaMicro: '', coaYear: '', draftSpec: '', detail: '' }
     : { sku: '', skuName: '', qty: 1, unit: 'กก.', note: '' };
 }
 function _srNewForm(type = 'existing') {
@@ -20084,22 +20137,26 @@ function _srRenderForm() {
           </select>
         </div>
         ${isNew ? `<div class="field" style="margin:0">
-          <label>กลุ่มลูกค้า</label>
+          <label>กลุ่มลูกค้า *</label>
           <input id="sr-cg" list="sr-cg-list" value="${esc(ni.custGroup || '')}" placeholder="เช่น ห้าง, ร้านค้าทั่วไป, Export Agent" style="${inpSt}">
           <datalist id="sr-cg-list">${DX_CHANNELS.map(([, l]) => `<option value="${esc(l)}"></option>`).join('')}<option value="โรงแรม/ร้านอาหาร"></option><option value="โรงงาน/OEM"></option></datalist>
         </div>` : ''}
         <div class="field" style="margin:0">
-          <label>ผู้ติดต่อ</label>
+          <label>ผู้ติดต่อ${isNew ? ' *' : ''}</label>
           <input id="sr-contact" type="text" value="${esc(f.contact || '')}" placeholder="ชื่อผู้ติดต่อที่ลูกค้า" style="${inpSt}">
         </div>
         <div class="field" style="margin:0">
-          <label>เบอร์โทร</label>
+          <label>เบอร์โทร${isNew ? ' *' : ''}</label>
           <input id="sr-phone" type="text" value="${esc(f.phone || '')}" placeholder="เบอร์โทรศัพท์" style="${inpSt}">
         </div>
         <div class="field" style="margin:0">
-          <label>วันที่ต้องการรับ *</label>
+          <label>${isNew ? 'วันที่ต้องการตัวอย่าง *' : 'วันที่ต้องการรับ *'}</label>
           <input id="sr-delivery" type="date" value="${esc(f.deliveryDate || '')}" style="${inpSt}">
         </div>
+        ${isNew ? `<div class="field" style="margin:0">
+          <label>ครั้งที่ (ขอตัวอย่างสินค้านี้) *</label>
+          <input id="sr-round" type="number" min="1" step="1" value="${esc(ni.round || '1')}" style="${inpSt}">
+        </div>` : ''}
         <div class="field" style="margin:0;grid-column:1/-1">
           <label>วัตถุประสงค์ / เหตุผล *</label>
           <textarea id="sr-purpose" placeholder="${isNew ? 'เช่น ลูกค้าต้องการสินค้าทดแทนคู่แข่ง, เมนูใหม่ของร้าน, เปิดตลาดใหม่' : 'เช่น ทดสอบสูตรใหม่, ทดลองตลาด, เปิดลูกค้าใหม่, งานแสดงสินค้า'}" style="${inpSt};height:64px;resize:vertical">${esc(f.purpose || '')}</textarea>
@@ -20114,7 +20171,7 @@ function _srRenderForm() {
         </div>
       </div>`)}
 
-    ${sec(isNew ? '✨ รายการสินค้าใหม่ที่ต้องการ (สเปค · ราคาเป้าหมาย · คู่แข่ง)' : '📦 รายการสินค้าตัวอย่าง', `
+    ${sec(isNew ? '✨ รายการสินค้าใหม่ <span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px;background:#E0E7FF;color:#3730A3;margin-left:6px">ตามแบบฟอร์มโรงงาน FM-RDC-RDD-12</span>' : '📦 รายการสินค้าตัวอย่าง', `
       <div id="sr-items-wrap">${items.map((it, i) => isNew ? _srNewItemCard(it, i, items.length) : _srItemRow(it, i, skus, items.length)).join('')}</div>
       <button onclick="srAddItem()" class="btn btn-sm" style="margin-top:6px">+ เพิ่มรายการสินค้า</button>
       ${isNew ? `<div id="sr-items-total" style="margin-top:10px;font-size:13px;text-align:right">${_srItemsTotalHtml(items)}</div>` : ''}
@@ -20180,50 +20237,104 @@ function _srItemRow(it, i, skus, total) {
 }
 
 // การ์ดสินค้าใหม่ 1 รายการ — ไม่บังคับ SKU (ยังไม่มีในระบบ) ใช้ชื่อ/สเปคแทน · SKU อ้างอิงเลือกจากสินค้าเดิมได้ (ไม่บังคับ)
+// ช่องบังคับของสินค้าใหม่ (2026-10-08, ผู้ใช้: "เอกสารขอตัวอย่าง NPD บังคับให้กรอกทุกช่อง") — คืนรายชื่อช่องที่ยังว่าง
+// ช่องตามเงื่อนไข: Brand/ไส้อื่นๆ เมื่อเลือก Other · จำนวนบรรจุภัณฑ์รวมเมื่อเลือกแบบแล้ว · กล่องมี/ไม่มีตราเมื่อใส่กล่องรวม
+// ไม่บังคับ: Packing size แถวที่ 2 (แบบฟอร์มมีไว้กรณีมีขนาดที่สอง) และข้อมูลภายใน (สินค้าอ้างอิง/คู่แข่ง)
+function _srFmMissing(it) {
+  const empty = x => x === '' || x == null || (typeof x === 'string' && !x.trim());
+  const req = [
+    ['name', 'ชื่อสินค้า'], ['targetPrice', 'ราคาขายลูกค้า'], ['forecastKg', 'ยอดสั่งซื้อ/เดือน'], ['qty', 'จำนวนตัวอย่าง'],
+    ['brand', 'Brand'], ['pack1G', 'Packing size (g.)'], ['pack1Qty', 'Packing size (Pack)'], ['pack1Type', 'ซองบรรจุ'],
+    ['outer', 'บรรจุภัณฑ์รวม'], ['casing', 'Type of Casing'], ['sliceMm', 'Slice thickness'], ['pcsPerKg', 'Pieces / Kg'],
+    ['diameterMm', 'Diameter'], ['weightG', 'Weight / Piece'], ['lengthVal', 'Length'], ['storage', 'Storage'], ['storageDays', 'Shelf life'],
+    ['detail', 'รายละเอียดเพิ่มเติม'], ...SR_FM.coaRows, ['draftSpec', 'Draft Spec.'],
+  ];
+  if (it.brand === 'other') req.push(['brandOther', 'Brand อื่นๆ']);
+  if (it.casing === 'other') req.push(['casingOther', 'ไส้อื่นๆ']);
+  if (it.outer) req.push(['outerQty', 'จำนวนบรรจุภัณฑ์รวม']);
+  if (it.outer === 'box') req.push(['boxType', 'กล่องมีตรา/ไม่มีตรา']);
+  if (it.pack2G || it.pack2Qty || it.pack2Type) req.push(['pack2G', 'Packing size 2 (g.)'], ['pack2Qty', 'Packing size 2 (Pack)'], ['pack2Type', 'ซองบรรจุ 2']);
+  return req.filter(([k]) => empty(it[k]) || (k === 'qty' && !(Number(it.qty) > 0))).map(([, l]) => l);
+}
 function _srNewItemCard(it, i, total) {
   const inpSt = 'padding:7px 8px;border:1px solid var(--BD);border-radius:7px;font-family:var(--font);font-size:13px;box-sizing:border-box;width:100%';
-  const fld = (lbl, key, ph = '', type = 'text', span = 1) => `<div style="grid-column:span ${span}">
-      <div style="font-size:11px;color:var(--TX3);margin-bottom:4px">${lbl}</div>
-      <input type="${type}" ${type === 'number' ? 'step="0.01" min="0"' : ''} value="${esc(it[key] ?? '')}" placeholder="${esc(ph)}"
-        onchange="srNewItemField(${i},'${key}',this.value${type === 'number' ? ',true' : ''})" style="${inpSt}"></div>`;
-  return `<div style="margin-bottom:12px;padding:12px 14px;background:var(--W);border-radius:10px;border:1px solid var(--BD)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <b style="font-size:13px;color:var(--N)">สินค้าใหม่ #${i + 1}</b>
-      ${total > 1 ? `<button onclick="srRemoveItem(${i})" style="padding:4px 10px;border:1px solid var(--BD);border-radius:7px;cursor:pointer;background:var(--W);color:var(--R);font-size:12px">✕ ลบรายการ</button>` : ''}
-    </div>
-    <div style="font-size:11.5px;font-weight:600;color:var(--TX2);margin:2px 0 6px">สเปคสินค้า</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 10px">
-      ${fld('ชื่อสินค้า/คำอธิบาย *', 'name', 'เช่น ไส้กรอกชีสพริกไทยดำ', 'text', 2)}
-      ${fld('ประเภทสินค้า', 'ptype', 'ไส้กรอก/แฮม/เบคอน…')}
-      ${fld('รสชาติ', 'flavor', 'เช่น เผ็ดน้อย, รมควัน')}
-      ${fld('ขนาด/ความหนา/การหั่น', 'size', 'เช่น ยาว 12 ซม., สไลซ์ 2 มม.')}
-      ${fld('น้ำหนักต่อแพ็ค', 'packWeight', 'เช่น 500 กรัม')}
-      ${fld('บรรจุภัณฑ์', 'pack', 'เช่น ถุงสุญญากาศ')}
-      <div><div style="font-size:11px;color:var(--TX3);margin-bottom:4px">อุณหภูมิจัดเก็บ</div>
-        <select onchange="srNewItemField(${i},'temp',this.value)" style="${inpSt}"><option value="">—</option>
-        ${SR_TEMPS.map(t => `<option ${it.temp === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
-      ${fld('อายุสินค้า', 'shelfLife', 'เช่น 45 วัน')}
-      ${fld('เมนู/การใช้งานของลูกค้า', 'menu', 'เช่น พิซซ่า, ฮอทดอก', 'text', 2)}
-    </div>
-    <div style="font-size:11.5px;font-weight:600;color:var(--TX2);margin:12px 0 6px">จำนวนตัวอย่าง · ราคาเป้าหมาย · ปริมาณคาดการณ์</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 10px;align-items:end">
-      ${fld('จำนวนตัวอย่าง *', 'qty', '', 'number')}
-      <div><div style="font-size:11px;color:var(--TX3);margin-bottom:4px">หน่วย</div>
-        <select onchange="srNewItemField(${i},'unit',this.value)" style="${inpSt}">
+  const R = '<span style="color:var(--R)"> *</span>';
+  const lbl = (t, req = true) => `<div style="font-size:11px;color:var(--TX3);margin-bottom:4px">${t}${req ? R : ''}</div>`;
+  const inp = (key, ph = '', type = 'text', w = '') => `<input type="${type}" ${type === 'number' ? 'step="0.01" min="0"' : ''} value="${esc(it[key] ?? '')}" placeholder="${esc(ph)}"
+      onchange="srNewItemField(${i},'${key}',this.value${type === 'number' ? ',true' : ''})" style="${inpSt}${w ? ';width:' + w + ';flex:none' : ''}">`;
+  const fld = (l, key, ph = '', type = 'text', span = 1, req = true) => `<div style="grid-column:span ${span}">${lbl(l, req)}${inp(key, ph, type)}</div>`;
+  const unitFld = (l, key, unit, ph = '') => `<div>${lbl(l)}<div style="display:flex;gap:5px;align-items:center">${inp(key, ph, 'number')}<span style="font-size:12px;color:var(--TX2);white-space:nowrap">${unit}</span></div></div>`;
+  const sel = (key, list, ph = '— เลือก —') => `<select onchange="srNewItemField(${i},'${key}',this.value)" style="${inpSt}"><option value="">${ph}</option>
+      ${SR_FM[list].map(([k, l]) => `<option value="${k}" ${it[key] === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const sub = t => `<div style="font-size:12px;font-weight:700;color:var(--TX2);margin:12px 0 7px">${t}</div>`;
+  const part = (icon, title, note, body, tint) => `<div style="border:1px solid var(--BD);border-radius:9px;padding:10px 12px 12px;margin-top:10px;background:${tint}">
+      <div style="font-size:13px;font-weight:700;color:var(--N);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">${icon} ${title}<span style="font-size:11px;font-weight:400;color:var(--TX3)">${note}</span></div>${body}</div>`;
+  const grid = (min, body) => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${min}px,1fr));gap:8px 10px;align-items:end">${body}</div>`;
+  const pack = n => `<div>${lbl(`Packing size (${n})${n === 2 ? ' — ถ้ามีขนาดที่สอง' : ''}`, n === 1)}<div style="display:flex;gap:5px;align-items:center">
+      ${inp(`pack${n}G`, 'กรัม', 'number')}<span style="font-size:12px;color:var(--TX2)">g. ×</span>${inp(`pack${n}Qty`, '', 'number', '64px')}<span style="font-size:12px;color:var(--TX2)">Pack</span></div></div>
+    <div>${lbl(`ซองบรรจุ (${n})`, n === 1)}${sel(`pack${n}Type`, 'packTy')}</div>`;
+  const coaRow = ([key, l]) => {
+    const list = key === 'coaYear' ? 'coaYear' : 'coa';
+    return `<div style="padding:6px 10px;font-weight:600;font-size:12.5px;border-top:1px solid var(--BD)">${l}${R}</div>${SR_FM[list].map(([k, ol]) =>
+      `<label style="padding:6px 10px;border-top:1px solid var(--BD);display:flex;gap:6px;align-items:center;font-size:12.5px;cursor:pointer">
+        <input type="radio" name="sr-${key}-${i}" value="${k}" ${it[key] === k ? 'checked' : ''} onchange="srNewItemField(${i},'${key}',this.value)">${list === 'coaYear' ? ol : ''}</label>`).join('')}`;
+  };
+  const missing = _sr.form && _sr.form._tried ? _srFmMissing(it) : [];
+
+  const detailPart = part('📦', 'ส่วนที่ 1 — รายละเอียดสินค้า', 'กรอกทุกช่อง (ช่องตัวเลขที่ไม่ใช้ เช่น สินค้าไม่สไลซ์ ใส่ 0)', `
+    ${sub('สินค้า · ราคา · ปริมาณ')}
+    ${grid(150, `${fld('Product name — ชื่อสินค้า', 'name', 'เช่น ไส้กรอกชีสพริกไทยดำ', 'text', 2)}
+      ${unitFld('ราคาขายลูกค้า', 'targetPrice', 'บาท/กก.')}
+      ${unitFld('ยอดสั่งซื้อ/เดือน', 'forecastKg', 'กก.')}
+      ${fld('จำนวนตัวอย่าง', 'qty', '', 'number')}
+      <div>${lbl('หน่วย')}<select onchange="srNewItemField(${i},'unit',this.value)" style="${inpSt}">
         ${SR_UNITS.map(u => `<option value="${u}" ${(it.unit || 'กก.') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
-      ${fld('ราคาเป้าหมาย (บาท/กก.)', 'targetPrice', '', 'number')}
-      ${fld('ปริมาณคาดการณ์ (กก./เดือน)', 'forecastKg', '', 'number')}
-      <div><div style="font-size:11px;color:var(--TX3);margin-bottom:4px">มูลค่าคาดการณ์ (บาท/เดือน)</div>
-        <div id="sr-val-${i}" style="padding:7px 8px;font-weight:700;font-size:13px">${_srItemValue(it)}</div></div>
-    </div>
-    <div style="font-size:11.5px;font-weight:600;color:var(--TX2);margin:12px 0 6px">สินค้าอ้างอิง / คู่แข่ง</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 10px">
-      <div><div style="font-size:11px;color:var(--TX3);margin-bottom:4px">สินค้าอ้างอิง (SKU เดิม)</div>
+      <div>${lbl('มูลค่าคาดการณ์ (บาท/เดือน)', false)}<div id="sr-val-${i}" style="padding:7px 2px;font-weight:700;font-size:13px">${_srItemValue(it)}</div></div>`)}
+    ${sub('Brand · บรรจุภัณฑ์')}
+    ${grid(170, `<div>${lbl('Brand')}${sel('brand', 'brand')}</div>
+      ${it.brand === 'other' ? fld('Brand อื่นๆ — ระบุ', 'brandOther') : ''}
+      ${pack(1)}${pack(2)}
+      <div>${lbl('Outer packaging — บรรจุภัณฑ์รวม')}${sel('outer', 'outer')}</div>
+      ${fld(it.outer === 'box' ? 'จำนวน (กก.)' : 'จำนวน (แพ็ค)', 'outerQty', '', 'number')}
+      ${it.outer === 'box' ? `<div>${lbl('กล่อง')}${sel('boxType', 'boxTy')}</div>` : ''}`)}
+    ${sub('สเปคผลิตภัณฑ์')}
+    ${grid(150, `<div style="grid-column:span 2">${lbl('Type of Casing — ไส้')}${sel('casing', 'casing')}</div>
+      ${it.casing === 'other' ? fld('ไส้อื่นๆ — ระบุ', 'casingOther') : ''}
+      ${unitFld('Slice thickness', 'sliceMm', 'mm')}
+      ${unitFld('Pieces / Kg', 'pcsPerKg', 'ชิ้น')}
+      ${unitFld('Diameter', 'diameterMm', 'mm')}
+      ${unitFld('Weight / Piece', 'weightG', 'g.')}
+      <div>${lbl('Length')}<div style="display:flex;gap:5px">${inp('lengthVal', '', 'number')}
+        <select onchange="srNewItemField(${i},'lengthUnit',this.value)" style="${inpSt};width:72px;flex:none">
+        ${['cm', 'inch'].map(u => `<option ${(it.lengthUnit || 'cm') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div></div>
+      <div>${lbl('Storage')}${sel('storage', 'storage')}</div>
+      ${unitFld('Shelf life', 'storageDays', 'วัน')}`)}
+    <div style="margin-top:8px">${lbl('Detail of Product — รายละเอียดเพิ่มเติม (รสชาติ เมนู เงื่อนไขพิเศษ)')}
+      <textarea onchange="srNewItemField(${i},'detail',this.value)" placeholder="เช่น รสพริกไทยดำเข้ม ใช้ทำเมนูฮอทดอก · ตรวจผลจุลินทรีย์เฉพาะล็อตแรก" style="${inpSt};height:58px;resize:vertical">${esc(it.detail ?? '')}</textarea></div>`, 'var(--W)');
+
+  const optionPart = part('⚙️', 'ส่วนที่ 2 — Option เพิ่มเติม', 'ผลตรวจ COA และ Draft Spec. ที่ลูกค้าต้องการ (เลือกทุกข้อ)', `
+    <div style="overflow-x:auto;margin-top:8px"><div style="display:grid;grid-template-columns:190px repeat(4,minmax(110px,1fr));border:1px solid var(--BD);border-radius:8px;background:#fff;min-width:640px">
+      <div style="padding:6px 10px;font-size:11.5px;color:var(--TX2);background:var(--bg2)">ผลตรวจ COA</div>
+      ${SR_FM.coa.map(([, l]) => `<div style="padding:6px 10px;font-size:11.5px;color:var(--TX2);background:var(--bg2)">${l}</div>`).join('')}
+      ${SR_FM.coaRows.map(coaRow).join('')}
+    </div></div>
+    <div style="margin-top:10px">${lbl('Draft Spec. ตัวอย่างสินค้า')}
+      <div style="display:flex;gap:20px;flex-wrap:wrap">${[['yes', 'ต้องการ Draft Spec.'], ['no', 'ไม่ต้องการ Draft Spec.']].map(([k, l]) => `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;cursor:pointer">
+        <input type="radio" name="sr-ds-${i}" value="${k}" ${it.draftSpec === k ? 'checked' : ''} onchange="srNewItemField(${i},'draftSpec',this.value)">${l}</label>`).join('')}</div></div>
+    <div style="font-size:11.5px;color:var(--A);margin-top:8px">หมายเหตุ: กรณีลูกค้ามีรายละเอียดเพิ่มเติม เช่น ตรวจผลจุลินทรีย์เฉพาะล็อตแรก, ต้องการตรวจ % เกลือทุกเดือน ระบุใน "รายละเอียดเพิ่มเติม" ให้ชัดเจน</div>`, '#FBFCFE');
+
+  const internalPart = `<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--BD)">${grid(170, `<div>${lbl('สินค้าอ้างอิง (SKU เดิม) — ข้อมูลภายใน ไม่บังคับ', false)}
         <input list="sr-sku-list" value="${esc(it.refSku || '')}" onchange="srNewItemRef(${i},this.value)" placeholder="ไม่บังคับ" style="${inpSt}">
         ${it.refName ? `<div style="font-size:10.5px;color:var(--TX3);margin-top:2px">${esc(it.refName)}</div>` : ''}</div>
-      ${fld('ยี่ห้อ/ราคาคู่แข่ง', 'competitor', 'เช่น ยี่ห้อ X 220 บ./กก.', 'text', 2)}
-      ${fld('หมายเหตุ', 'note', '')}
+      ${fld('ยี่ห้อ/ราคาคู่แข่ง — ข้อมูลภายใน ไม่บังคับ', 'competitor', 'เช่น ยี่ห้อ X 220 บ./กก.', 'text', 2, false)}`)}</div>`;
+
+  return `<div style="margin-bottom:12px;padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid ${missing.length ? 'var(--R)' : 'var(--BD)'}">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b style="font-size:13.5px;color:var(--N)">สินค้าใหม่ #${i + 1}</b>
+      ${total > 1 ? `<button onclick="srRemoveItem(${i})" style="padding:4px 10px;border:1px solid var(--BD);border-radius:7px;cursor:pointer;background:var(--W);color:var(--R);font-size:12px">✕ ลบรายการ</button>` : ''}
     </div>
+    ${missing.length ? `<div style="font-size:12px;color:var(--R);margin-top:6px">ยังไม่ได้กรอก: ${missing.map(esc).join(', ')}</div>` : ''}
+    ${detailPart}${optionPart}${internalPart}
   </div>`;
 }
 function _srItemValue(it) {
@@ -20239,6 +20350,8 @@ function srNewItemField(i, key, val, num) {
   _sr.form.items = _sr.form.items || [];
   _sr.form.items[i] = _sr.form.items[i] || _srBlankItem('new');
   _sr.form.items[i][key] = num ? (val === '' ? '' : parseFloat(val) || 0) : val;
+  // ช่องที่ทำให้ช่องอื่นโผล่/ซ่อน (Brand/ไส้ Other, กล่องรวม) หรือเคยกดส่งแล้วมีช่องค้าง → วาดใหม่ให้ข้อความเตือนตรงปัจจุบัน
+  if (['brand', 'casing', 'outer'].includes(key) || _sr.form._tried) { _srCollect(); _srRenderForm(); return; }
   if (key === 'targetPrice' || key === 'forecastKg') {
     const el = document.getElementById('sr-val-' + i); if (el) el.textContent = _srItemValue(_sr.form.items[i]);
     const tot = document.getElementById('sr-items-total'); if (tot) tot.innerHTML = _srItemsTotalHtml(_sr.form.items);
@@ -20314,6 +20427,7 @@ function _srCollect() {
   if (_sr.form.req_type === 'new') {
     const ni = _sr.form.new_info || (_sr.form.new_info = { costs: [] });
     ni.custGroup = val('sr-cg', ni.custGroup).trim();
+    ni.round = val('sr-round', ni.round).trim();
     const gp = val('sr-gp', ni.gpTarget);
     ni.gpTarget = gp === '' || gp == null ? '' : parseFloat(gp);
   }
@@ -20331,8 +20445,24 @@ function _srValidate() {
     toast(f.req_type === 'new' ? 'กรุณาระบุชื่อสินค้าใหม่และจำนวนตัวอย่างอย่างน้อย 1 รายการ' : 'กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ', 'warn');
     return false;
   }
+  // สินค้าใหม่ (NPD) บังคับกรอกทุกช่องตามแบบฟอร์มโรงงาน (2026-10-08) — ดู _srFmMissing()
+  if (f.req_type === 'new') {
+    const ni = f.new_info || {};
+    const head = [[f.contact, 'ผู้ติดต่อ'], [f.phone, 'เบอร์โทร'], [ni.custGroup, 'กลุ่มลูกค้า'], [ni.round, 'ครั้งที่']]
+      .filter(([x]) => !String(x || '').trim()).map(([, l]) => l);
+    // FIXED (2026-10-09, /code-review): แถวสินค้าที่ว่างทั้งแถวไม่ต้องตรวจ — _srBuild ตัดทิ้งตอนส่งอยู่แล้ว (เดิมเตือน "สินค้า #2 ยังกรอกไม่ครบ")
+    const bad = (f.items || []).map((it, i) => [i + 1, _srNpdFilled(it) ? _srFmMissing(it) : []]).filter(([, m]) => m.length);
+    if (head.length || bad.length) {
+      f._tried = true;
+      _srRenderForm();
+      toast(head.length ? `กรุณากรอก: ${head.join(', ')}` : `สินค้า #${bad[0][0]} ยังกรอกไม่ครบ ${bad[0][1].length} ช่อง (${bad[0][1].slice(0, 3).join(', ')}${bad[0][1].length > 3 ? ' …' : ''})`, 'warn');
+      return false;
+    }
+  }
   return true;
 }
+// แถวสินค้าใหม่ที่กรอกอะไรไว้แล้ว (ไม่นับช่องที่มีค่าเริ่มต้น จำนวน/หน่วย/หน่วยความยาว)
+function _srNpdFilled(it) { return Object.entries(it || {}).some(([k, v]) => !['qty', 'unit', 'lengthUnit'].includes(k) && v !== '' && v != null); }
 function _srBuild(status) {
   const f   = _sr.form;
   const now = new Date().toISOString();
@@ -20353,9 +20483,11 @@ function _srBuild(status) {
     note:         f.note     || '',
     // ร่างเก็บทุกแถวที่เริ่มกรอกแล้ว (ยังไม่ครบก็ได้) — ส่งขออนุมัติเก็บเฉพาะแถวที่ครบ
     items:        status === 'draft'
-      ? (f.items || []).filter(it => isNew ? Object.entries(it).some(([k, v]) => !['qty', 'unit'].includes(k) && v !== '' && v != null) : it.sku)
+      ? (f.items || []).filter(it => isNew ? _srNpdFilled(it) : it.sku)
       : _srValidItems(f),
-    new_info:     isNew ? { custGroup: ni.custGroup || '', gpTarget: ni.gpTarget ?? '', costs: (ni.costs || []).filter(c => (c.item || '').trim() || Number(c.amount)) } : null,
+    // root_id / prev_id / repeat_of = การขอตัวอย่างซ้ำ (srRepeat) — ต้องคงไว้ทุกครั้งที่บันทึก ไม่งั้นประวัติแต่ละครั้งหลุดจากกัน
+    new_info:     isNew ? { custGroup: ni.custGroup || '', round: ni.round || '', gpTarget: ni.gpTarget ?? '', costs: (ni.costs || []).filter(c => (c.item || '').trim() || Number(c.amount)),
+      ...(ni.root_id ? { root_id: ni.root_id, prev_id: ni.prev_id || '', repeat_of: ni.repeat_of || '' } : {}) } : null,
     status,
     submitted_at: status === 'pending' ? (base.submitted_at || now) : (base.submitted_at || null),
     by:           base.by     || UID,
@@ -20454,7 +20586,7 @@ function _srRenderDetail(id) {
   const isEditable  = (isMine || canApprove) && ['draft', 'pending'].includes(r.status);
   const sid = String(id || '').replace(/'/g, "\\'");
 
-  const actions = [`<button class="btn" onclick="srPrintDoc('${sid}')">🖨 พิมพ์ / PDF</button>`];
+  const actions = [`<button class="btn" onclick="srPrintDoc('${sid}')">🖨 ${isNew ? 'พิมพ์ใบขอตัวอย่าง (FM-RDC-RDD-12)' : 'พิมพ์ / PDF'}</button>`];
   if (isMine && r.status === 'draft')
     actions.push(`<button class="btn btn-p" onclick="srSubmitById('${sid}')">📤 ส่งขออนุมัติ</button>`);
   if (isEditable)
@@ -20480,6 +20612,9 @@ function _srRenderDetail(id) {
     actions.push(`<button class="btn btn-g" onclick="srSetStatus('${sid}','received')">✔️ ยืนยันรับแล้ว</button>`);
   if ((isMine || canApprove) && r.status === 'received')
     actions.push(`<button class="btn btn-t" onclick="_sr.view='testresult';_sr.editId='${sid}';pgSample()">🔬 ${r.testResult ? 'แก้ไขผลทดสอบ' : 'บันทึกผลทดสอบ'}</button>`);
+  // ขอตัวอย่างซ้ำ (รายละเอียดเดิม) — คำขอที่ส่งแล้วทุกสถานะ ยกเว้นถูกปฏิเสธ
+  if (isNew && srCanCreate() && !['draft', 'rejected'].includes(r.status))
+    actions.push(`<button class="btn ${r.testResult?.decision === 'need_more' ? 'btn-p' : ''}" onclick="srRepeat('${sid}')">🔁 ขอตัวอย่างซ้ำ (ครั้งที่ ${Math.max(0, ..._srChain(r).map(x => Number(srNewInfo(x).round) || 1)) + 1})</button>`);
   if ((isMine || canApprove) && ['draft', 'pending', 'rejected'].includes(r.status))
     actions.push(`<button class="btn btn-r" onclick="srDelete('${sid}')" style="opacity:.7">🗑 ลบ</button>`);
 
@@ -20520,6 +20655,8 @@ function _srRenderDetail(id) {
     </div>
     ${r.status === 'rejected' ? `<div class="al ald" style="margin-bottom:14px">❌ ปฏิเสธ${r.reject_reason ? ` — เหตุผล: ${esc(r.reject_reason)}` : ''}</div>` : ''}
     ${r.rd_note ? `<div class="al" style="margin-bottom:14px;background:var(--bg2);border:1px solid var(--BD)">🧑‍🔬 หมายเหตุ R&D: ${esc(r.rd_note)}</div>` : ''}
+    ${isNew && ni.repeat_of ? `<div class="al ali" style="margin-bottom:14px">🔁 ขอตัวอย่างซ้ำครั้งที่ <b>${esc(String(ni.round || ''))}</b> จากคำขอ <b class="mono">${esc(ni.repeat_of)}</b> — คัดลอกรายละเอียดสินค้าเดิมทั้งหมด</div>` : ''}
+    ${isNew && r.testResult?.decision === 'need_more' ? `<div class="al alw" style="margin-bottom:14px">ลูกค้าต้องการตัวอย่างเพิ่ม — กด "🔁 ขอตัวอย่างซ้ำ" เพื่อสร้างคำขอครั้งถัดไปด้วยรายละเอียดเดิม</div>` : ''}
 
     <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:14px;margin-bottom:14px">
       <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:10px">ข้อมูลคำขอ</div>
@@ -20563,6 +20700,7 @@ function _srRenderDetail(id) {
     </div>
 
     ${_srTestResultView(r)}
+    ${isNew ? _srChainHtml(r) : ''}
 
     <div style="font-weight:600;font-size:12px;color:var(--TX3);margin-bottom:8px">ประวัติสถานะ</div>
     <div style="display:flex;flex-direction:column;gap:6px">
@@ -20595,8 +20733,27 @@ function _srTimeline(r) {
     { st: 'tested',        lbl: 'บันทึกผลทดสอบ',      who: nm(r.testResult?.by), at: r.testResult?.date },
   ].filter(t => t.at || t.st === r.status);
 }
+// สเปคตามแบบฟอร์มโรงงาน (SR_FM) เป็นคู่ [หัวข้อ, ค่า] — ใช้ในหน้ารายละเอียด · คำขอเก่าก่อน 2026-10-08 ใช้ช่องเดิม (ptype/flavor/…)
+function _srFmSpec(it) {
+  const n = (v, u) => v !== '' && v != null ? `${_srNum(v, Number(v) % 1 ? 2 : 0)} ${u}` : '';
+  const pack = k => it[`pack${k}G`] || it[`pack${k}Qty`]
+    ? `${n(it[`pack${k}G`], 'g.')} × ${it[`pack${k}Qty`] || '—'} Pack${it[`pack${k}Type`] ? ' · ' + _srFmLbl('packTy', it[`pack${k}Type`]) : ''}` : '';
+  return [
+    ['Brand', it.brand === 'other' ? `Other ${it.brandOther || ''}` : _srFmLbl('brand', it.brand)],
+    ['Packing size', [pack(1), pack(2)].filter(Boolean).join(' / ')],
+    ['บรรจุภัณฑ์รวม', [it.outer ? `${_srFmLbl('outer', it.outer).replace(/ \(.*\)/, '')} ${it.outerQty || ''} ${it.outer === 'box' ? 'กก.' : 'แพ็ค'}` : '', _srFmLbl('boxTy', it.boxType)].filter(Boolean).join(' · ')],
+    ['Type of Casing', it.casing === 'other' ? `Other ${it.casingOther || ''}` : _srFmLbl('casing', it.casing)],
+    ['Slice thickness', n(it.sliceMm, 'mm')], ['Pieces / Kg', n(it.pcsPerKg, 'ชิ้น')], ['Diameter', n(it.diameterMm, 'mm')],
+    ['Weight / Piece', n(it.weightG, 'g.')], ['Length', n(it.lengthVal, it.lengthUnit || 'cm')],
+    ['Storage / Shelf life', it.storage ? `${_srFmLbl('storage', it.storage)} ${it.storageDays || '—'} วัน` : ''],
+    ...SR_FM.coaRows.map(([k, l]) => [l, _srFmLbl(k === 'coaYear' ? 'coaYear' : 'coa', it[k])]),
+    ['Draft Spec.', it.draftSpec === 'yes' ? 'ต้องการ' : it.draftSpec === 'no' ? 'ไม่ต้องการ' : ''],
+    ['รายละเอียดเพิ่มเติม', it.detail],
+  ].filter(([, v]) => v !== '' && v != null);
+}
 function _srNewItemView(it, i) {
-  const spec = [['ประเภท', it.ptype], ['รสชาติ', it.flavor], ['ขนาด/ความหนา/การหั่น', it.size], ['น้ำหนักต่อแพ็ค', it.packWeight],
+  const spec = [..._srFmSpec(it),
+    ['ประเภท', it.ptype], ['รสชาติ', it.flavor], ['ขนาด/ความหนา/การหั่น', it.size], ['น้ำหนักต่อแพ็ค', it.packWeight],
     ['บรรจุภัณฑ์', it.pack], ['อุณหภูมิ', it.temp], ['อายุสินค้า', it.shelfLife], ['เมนู/การใช้งาน', it.menu],
     ['สินค้าอ้างอิง', it.refSku ? `${it.refSku}${it.refName ? ' — ' + it.refName : ''}` : ''], ['ยี่ห้อ/ราคาคู่แข่ง', it.competitor], ['หมายเหตุ', it.note]]
     .filter(([, v]) => v !== '' && v != null);
@@ -20604,7 +20761,7 @@ function _srNewItemView(it, i) {
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <b style="font-size:14px">${i + 1}. ${esc(it.name || '—')}</b>
       <span style="font-size:12.5px">ตัวอย่าง <b>${_srNum(it.qty, Number(it.qty) % 1 ? 2 : 0)}</b> ${esc(it.unit || 'กก.')}
-        · ราคาเป้าหมาย <b>${_srNum(it.targetPrice, 2)}</b> บ./กก. · คาดการณ์ <b>${_srNum(it.forecastKg)}</b> กก./ด. · มูลค่า <b>${_srItemValue(it)}</b> บ./ด.</span>
+        · ราคาขายลูกค้า <b>${_srNum(it.targetPrice, 2)}</b> บ./กก. · ยอดสั่งซื้อ <b>${_srNum(it.forecastKg)}</b> กก./ด. · มูลค่า <b>${_srItemValue(it)}</b> บ./ด.</span>
     </div>
     ${spec.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px;font-size:12.5px">
       ${spec.map(([k, v]) => `<div><span style="color:var(--TX3)">${k}:</span> ${esc(String(v))}</div>`).join('')}</div>` : ''}
@@ -20614,7 +20771,7 @@ function _srTestResultView(r) {
   if (!r.testResult) return '';
   const tr = r.testResult;
   const resultStyle = { pass: 'color:var(--G);font-weight:700', fail: 'color:var(--R);font-weight:700', in_progress: 'color:var(--N);font-weight:700' };
-  const resultLbl   = { pass: '✅ ผ่าน', fail: '❌ ไม่ผ่าน', in_progress: '🔄 กำลังทดสอบ' };
+  const resultLbl   = { pass: '✅ ผ่าน', fail: '❌ ไม่ผ่าน', in_progress: '🔄 กำลังทดสอบ', other: '➖ อื่นๆ' };
   const decisionLbl = { will_order: '🛒 ตัดสินใจสั่งซื้อ', wont_order: '🚫 ไม่สั่งซื้อ', need_more: '🔁 ต้องการตัวอย่างเพิ่ม', undecided: '⏳ ยังไม่ตัดสินใจ' };
   const failLbl = (SR_FAIL_REASONS.find(([k]) => k === tr.failReason) || [])[1];
   const stars = tr.satisfaction ? '⭐'.repeat(tr.satisfaction) + '☆'.repeat(5 - tr.satisfaction) : '—';
@@ -20625,6 +20782,8 @@ function _srTestResultView(r) {
       <div><div style="font-size:11px;color:var(--TX3)">ผลการทดสอบ</div><div style="font-size:13px;${resultStyle[tr.result] || ''}">${resultLbl[tr.result] || tr.result || '—'}${failLbl ? ` — ${esc(failLbl)}` : ''}</div></div>
       <div><div style="font-size:11px;color:var(--TX3)">ความพึงพอใจ</div><div style="font-size:14px">${stars}</div></div>
       <div><div style="font-size:11px;color:var(--TX3)">การตัดสินใจ</div><div style="font-size:13px;font-weight:600">${decisionLbl[tr.decision] || tr.decision || '—'}</div></div>
+      ${tr.sampleCode || tr.round ? `<div><div style="font-size:11px;color:var(--TX3)">Sample Code · ครั้งที่</div><div style="font-size:13px">${esc(tr.sampleCode || '—')} · ${esc(String(tr.round || '—'))}</div></div>` : ''}
+      ${tr.firstOrderDate || tr.firstOrderKg ? `<div><div style="font-size:11px;color:var(--TX3)">สั่งออร์เดอร์แรก</div><div style="font-size:13px">${fmtD(tr.firstOrderDate || '')} · ${_srNum(tr.firstOrderKg)} กก.</div></div>` : ''}
       <div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">ความคิดเห็นลูกค้า</div><div style="font-size:13px">${esc(tr.feedback || '—')}</div></div>
       ${tr.note ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--TX3)">หมายเหตุ</div><div style="font-size:13px">${esc(tr.note)}</div></div>` : ''}
       ${(tr.itemResults || []).some(x => x.result) ? `<div style="grid-column:1/-1">
@@ -20691,12 +20850,71 @@ async function srSubmitById(id) {
   const reqs = getSR();
   const r = reqs.find(x => x.id === id); if (!r) return;
   if (!(r.items || []).length) { toast('คำขอนี้ยังไม่มีรายการสินค้า — กดแก้ไขก่อน', 'warn'); return; }
+  // ร่าง NPD ที่ยังกรอกไม่ครบ → เปิดฟอร์มแก้ไขแล้วให้ตรวจช่องเหมือนกดส่งจากฟอร์ม
+  if (srType(r) === 'new' && (r.items.some(it => _srFmMissing(it).length) || !r.contact || !r.phone || !srNewInfo(r).custGroup || !srNewInfo(r).round)) {
+    _srEditExisting(id); _sr.form._tried = true; _srRenderForm();
+    toast('เอกสารขอตัวอย่าง NPD ต้องกรอกทุกช่องก่อนส่ง — ช่องที่ยังว่างแสดงเป็นสีแดง', 'warn');
+    return;
+  }
   Object.assign(r, { status: 'pending', submitted_at: new Date().toISOString(), updated_by: UID });
   const ok = await _srSave(r);
   audit('SAMPLE_SUBMIT', id, {});
   const no = ok ? await _srAssignNo(id) : null;
   toast(no ? `ส่งคำขออนุมัติแล้ว — เลขที่ ${no}` : 'ส่งคำขอแล้ว แต่ยังออกเลขที่เอกสารไม่ได้ (จะลองใหม่เมื่อเปิดดูคำขอ)', no ? 'ok' : 'warn');
   _sr.view = 'detail'; pgSample();
+}
+// ── ขอตัวอย่างซ้ำ (NPD, 2026-10-08) ─────────────────────────────
+// ลูกค้าขอตัวอย่างสินค้าเดิมซ้ำได้หลายครั้งโดยไม่เปลี่ยนรายละเอียด — สร้างคำขอใหม่ (เลขที่ใหม่) คัดลอกลูกค้า/สเปคทุกช่อง
+// ครั้งที่ = ครั้งล่าสุดของชุด + 1 · ผูกทุกครั้งเข้าชุดเดียวกันด้วย new_info.root_id (= id ของคำขอครั้งแรก)
+// แต่ละครั้งมีผลทดสอบ/feedback ลูกค้าของตัวเอง แสดงรวมเป็นประวัติในหน้ารายละเอียด (_srChainHtml)
+function _srRootId(r) { return srNewInfo(r).root_id || r.id; }
+function _srChain(r) {
+  const root = _srRootId(r);
+  return getSR().filter(x => srType(x) === 'new' && (x.id === root || srNewInfo(x).root_id === root))
+    .sort((a, b) => (Number(srNewInfo(a).round) || 0) - (Number(srNewInfo(b).round) || 0) || (a.ts || 0) - (b.ts || 0));
+}
+async function srRepeat(id) {
+  const r = getSR().find(x => x.id === id); if (!r) return;
+  const chain = _srChain(r);
+  const draftOpen = chain.find(x => x.status === 'draft' && x.id !== id);
+  if (draftOpen && !confirm(`มีร่างขอซ้ำของสินค้าชุดนี้ค้างอยู่แล้ว (${srNo(draftOpen)}) — ต้องการสร้างร่างใหม่อีกใบใช่หรือไม่?`)) {
+    _sr.editId = draftOpen.id; _sr.view = 'detail'; pgSample(); return;
+  }
+  const round = Math.max(0, ...chain.map(x => Number(srNewInfo(x).round) || 1)) + 1;
+  const ni = srNewInfo(r), now = new Date().toISOString();
+  const rec = {
+    id: genId('SR'), req_type: 'new',
+    custCode: r.custCode, custName: r.custName || '', contact: r.contact || '', phone: r.phone || '',
+    purpose: r.purpose || '', deliveryDate: '', address: r.address || '', note: r.note || '',
+    items: JSON.parse(JSON.stringify(r.items || [])),
+    new_info: { custGroup: ni.custGroup || '', round: String(round), gpTarget: ni.gpTarget ?? '', costs: JSON.parse(JSON.stringify(ni.costs || [])),
+      root_id: _srRootId(r), prev_id: r.id, repeat_of: r.doc_no || r.id },
+    status: 'draft', submitted_at: null, by: UID, byName: UNAME, date: now.slice(0, 10), ts: Date.now(), updated_at: now, updated_by: UID,
+  };
+  const ok = await _srSave(rec);
+  audit('SAMPLE_REPEAT', rec.id, { from: r.id, round });
+  toast(ok ? `สร้างคำขอซ้ำครั้งที่ ${round} แล้ว (รายละเอียดเดิม) — ระบุวันที่ต้องการตัวอย่างแล้วกดส่ง` : 'บันทึกขึ้น server ไม่สำเร็จ — เก็บไว้ในเครื่องก่อน', ok ? 'ok' : 'warn');
+  _srEditExisting(rec.id);
+}
+// ประวัติการขอตัวอย่างทุกครั้งของสินค้าชุดนี้ + ผลทดสอบ/feedback ลูกค้าแต่ละครั้ง
+function _srChainHtml(r) {
+  const chain = _srChain(r);
+  if (chain.length < 2) return '';
+  const resLbl = { pass: '✅ ผ่าน', fail: '❌ ไม่ผ่าน', in_progress: '🔄 กำลังทดสอบ', other: '➖ อื่นๆ' };
+  const decLbl = { will_order: '🛒 สั่งซื้อ', wont_order: '🚫 ไม่สั่งซื้อ', need_more: '🔁 ขอตัวอย่างเพิ่ม', undecided: '⏳ ยังไม่ตัดสินใจ' };
+  return `<div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:14px;margin-bottom:14px">
+    <div style="font-weight:600;font-size:13px;margin-bottom:8px">🔁 ประวัติการขอตัวอย่างสินค้าชุดนี้ (${chain.length} ครั้ง) · ผลทดสอบ / feedback ลูกค้า</div>
+    <div class="tw"><table><thead><tr><th>ครั้งที่</th><th>เลขที่</th><th>วันที่ขอ</th><th>สถานะ</th><th>ผลทดสอบ</th><th>การตัดสินใจ</th><th>Feedback ลูกค้า</th></tr></thead><tbody>
+      ${chain.map(x => {
+        const tr = x.testResult || {}, cur = x.id === r.id, sid = String(x.id).replace(/'/g, "\\'");
+        return `<tr style="cursor:pointer${cur ? ';background:var(--LBL)' : ''}" onclick="_sr.editId='${sid}';_sr.view='detail';pgSample()">
+          <td style="font-weight:700">${esc(String(srNewInfo(x).round || 1))}${cur ? ' <span style="font-size:10px;color:var(--BL)">(ใบนี้)</span>' : ''}</td>
+          <td class="mono" style="font-size:11px">${esc(srNo(x))}</td><td style="font-size:12px">${fmtD(x.date || '')}</td><td>${srBadge(x.status)}</td>
+          <td style="font-size:12px">${resLbl[tr.result] || '—'}${tr.satisfaction ? ` · ${'⭐'.repeat(tr.satisfaction)}` : ''}</td>
+          <td style="font-size:12px">${decLbl[tr.decision] || '—'}</td>
+          <td style="font-size:12px;color:var(--TX2);max-width:320px">${esc(tr.feedback || '—')}</td></tr>`;
+      }).join('')}
+    </tbody></table></div></div>`;
 }
 function srDelete(id) {
   if (!confirm('ลบคำขอนี้?')) return;
@@ -20718,7 +20936,7 @@ function _srEditExisting(id) {
     purpose: r.purpose || '', deliveryDate: r.deliveryDate || '',
     address: r.address || '', note: r.note || '',
     items: JSON.parse(JSON.stringify(r.items || [])),
-    new_info: { custGroup: ni.custGroup || '', gpTarget: ni.gpTarget ?? '', costs: JSON.parse(JSON.stringify(ni.costs || [])) },
+    new_info: { ...ni, custGroup: ni.custGroup || '', round: ni.round || '', gpTarget: ni.gpTarget ?? '', costs: JSON.parse(JSON.stringify(ni.costs || [])) },
   };
   _sr.view = 'form';
   pgSample();
@@ -20759,8 +20977,25 @@ function _srRenderTestResult(id) {
             <option value="pass"        ${tr.result === 'pass' ? 'selected' : ''}>✅ ผ่าน</option>
             <option value="fail"        ${tr.result === 'fail' ? 'selected' : ''}>❌ ไม่ผ่าน</option>
             <option value="in_progress" ${tr.result === 'in_progress' ? 'selected' : ''}>🔄 กำลังทดสอบ</option>
+            ${isNew ? `<option value="other" ${tr.result === 'other' ? 'selected' : ''}>➖ อื่นๆ (Others)</option>` : ''}
           </select>
         </div>
+        ${isNew ? `<div class="field" style="margin:0">
+          <label>ครั้งที่ทดสอบ</label>
+          <input id="sr-tr-round" type="number" min="1" step="1" value="${esc(tr.round || srNewInfo(r).round || '1')}" style="${inpSt}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>Sample Code</label>
+          <input id="sr-tr-code" type="text" value="${esc(tr.sampleCode || '')}" placeholder="รหัสตัวอย่างจาก R&D" style="${inpSt}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>สั่งออร์เดอร์แรก วันที่</label>
+          <input id="sr-tr-fo-date" type="date" value="${esc(tr.firstOrderDate || '')}" style="${inpSt}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>สั่งออร์เดอร์แรก จำนวน (กก.) <span style="color:var(--TX3);font-weight:400">· ขั้นต่ำในการสั่งผลิต 40 กก.</span></label>
+          <input id="sr-tr-fo-kg" type="number" min="0" step="0.01" value="${esc(tr.firstOrderKg ?? '')}" style="${inpSt}">
+        </div>` : ''}
         ${isNew ? `<div class="field" id="sr-tr-reason-wrap" style="margin:0;${tr.result === 'fail' ? '' : 'display:none'}">
           <label>เหตุผลที่ไม่ผ่าน</label>
           <select id="sr-tr-reason" style="${inpSt}"><option value="">— ระบุเหตุผล —</option>
@@ -20775,7 +21010,7 @@ function _srRenderTestResult(id) {
           </div>
         </div>
         <div class="field" style="margin:0">
-          <label>การตัดสินใจของลูกค้า</label>
+          <label>การตัดสินใจของลูกค้า${isNew ? ' *' : ''}</label>
           <select id="sr-tr-decision" style="${inpSt}">
             <option value="">— ยังไม่ระบุ —</option>
             <option value="will_order"  ${tr.decision === 'will_order' ? 'selected' : ''}>🛒 ตัดสินใจสั่งซื้อ</option>
@@ -20785,7 +21020,7 @@ function _srRenderTestResult(id) {
           </select>
         </div>
         <div class="field" style="margin:0;grid-column:1/-1">
-          <label>ความคิดเห็น / Feedback ของลูกค้า</label>
+          <label>ความคิดเห็น / Feedback ของลูกค้า${isNew ? ' *' : ''}</label>
           <textarea id="sr-tr-feedback" placeholder="บันทึกความคิดเห็น ข้อเสนอแนะ หรือข้อมูลจากลูกค้าโดยตรง"
             style="${inpSt};height:72px;resize:vertical">${esc(tr.feedback || '')}</textarea>
         </div>
@@ -20842,6 +21077,12 @@ function srSaveTestResult(id) {
   const failReason = result === 'fail' ? (document.getElementById('sr-tr-reason')?.value || '') : '';
   if (!date)   { toast('กรุณาระบุวันที่ทดสอบ', 'warn'); return; }
   if (!result) { toast('กรุณาเลือกผลการทดสอบ', 'warn'); return; }
+  // NPD (2026-10-08): ต้องตอบผลเทส feedback จากลูกค้าทุกครั้ง — ใช้เทียบผลระหว่างการขอตัวอย่างแต่ละครั้ง
+  if (srType(r) === 'new') {
+    if (!feedback) { toast('กรุณากรอก Feedback ของลูกค้า', 'warn'); document.getElementById('sr-tr-feedback')?.focus(); return; }
+    if (!decision) { toast('กรุณาเลือกการตัดสินใจของลูกค้า', 'warn'); document.getElementById('sr-tr-decision')?.focus(); return; }
+    if (decision === 'will_order' && !(Number(document.getElementById('sr-tr-fo-kg')?.value) > 0)) { toast('ลูกค้าตัดสินใจสั่งซื้อ — กรุณากรอกจำนวนออร์เดอร์แรก (กก.)', 'warn'); document.getElementById('sr-tr-fo-kg')?.focus(); return; }
+  }
   const itemResults = (r.items || []).map((it, i) => ({
     sku:     it.sku || '',
     skuName: srItemLabel(it),
@@ -20850,11 +21091,18 @@ function srSaveTestResult(id) {
   }));
   const reqs = getSR();
   const rec  = reqs.find(x => x.id === id); if (!rec) return;
-  rec.testResult = { date, result, failReason, satisfaction: sat, decision, feedback, note, itemResults, by: UID, updated_at: new Date().toISOString() };
+  // ช่องของส่วน Testing Report ในแบบฟอร์มโรงงาน (เฉพาะสินค้าใหม่)
+  const fm = srType(r) === 'new' ? {
+    round: document.getElementById('sr-tr-round')?.value || '',
+    sampleCode: document.getElementById('sr-tr-code')?.value?.trim() || '',
+    firstOrderDate: document.getElementById('sr-tr-fo-date')?.value || '',
+    firstOrderKg: document.getElementById('sr-tr-fo-kg')?.value ?? '',
+  } : {};
+  rec.testResult = { date, result, failReason, satisfaction: sat, decision, feedback, note, itemResults, ...fm, by: UID, updated_at: new Date().toISOString() };
   saveSR(reqs);
   SB.upsertSampleRequest(rec).catch(e => console.warn('upsertSampleRequest:', e));
   audit('SAMPLE_TEST_RESULT', id, { result, decision, satisfaction: sat, failReason });
-  toast('บันทึกผลทดสอบแล้ว');
+  toast(decision === 'need_more' && srType(r) === 'new' ? 'บันทึกผลทดสอบแล้ว — ลูกค้าต้องการตัวอย่างเพิ่ม กด "🔁 ขอตัวอย่างซ้ำ" ได้เลย' : 'บันทึกผลทดสอบแล้ว');
   _sr.view = 'detail'; pgSample();
 }
 
@@ -20919,11 +21167,121 @@ function _srWritePrint(w, { title, docNo, orient = 'portrait', body, extraCss = 
 }
 const _srPD = d => d ? promoFmtD(d) : '';
 
+// ใบขอตัวอย่างสินค้าใหม่ = แบบฟอร์มโรงงาน FM-RDC-RDD-12 "บันทึกการขอตัวอย่างและผลการทดสอบผลิตภัณฑ์" (2026-10-08)
+// หนึ่งหน้า A4 ต่อสินค้าหนึ่งรายการ · ช่อง Approve by เว้นว่างให้ลงนามบนกระดาษ (ผู้ใช้: ยังไม่อนุมัติในระบบ)
+// ส่วน Testing Report เติมจากผลทดสอบที่บันทึกในระบบ (ถ้ามี)
+function _srWriteFm(w, r) {
+  const items = (r.items || []).length ? r.items : [{}];
+  const ni = srNewInfo(r), tr = r.testResult || {};
+  const v = x => (x === '' || x == null) ? '' : esc(String(x));
+  const num = x => (x === '' || x == null || isNaN(Number(x))) ? '' : Number(x).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const fill = (x, min = 60) => `<span class="fill" style="min-width:${min}px">${x || ''}</span>`;
+  const cb = on => `<span class="cb${on ? ' on' : ''}"></span>`;
+  const opt = (on, label) => `<span>${cb(on)}${label}</span>`;
+  const coa = (it, key) => `<div class="grid4">${SR_FM[key === 'coaYear' ? 'coaYear' : 'coa'].map(([k, l]) => opt(it[key] === k, l)).join('')}</div>`;
+  const d = x => x ? esc(promoFmtD(x)) : '';
+  const page = (it, idx) => `<div class="page"><div class="frame">
+    <div class="head">
+      <div class="logo"><div class="since">SINCE ♛ 1963</div><div class="tgm">TGM</div><div class="sub">THAI-GERMAN MEAT PRODUCT</div></div>
+      <div class="title"><div class="th">บันทึกการขอตัวอย่างและผลการทดสอบผลิตภัณฑ์</div><div class="en">Sample Request / Testing Report</div></div>
+      <div style="width:120px"></div>
+    </div>
+    <table>
+      <tr><td colspan="2"><div class="row2"><span><i><b>เลขที่ใบขอตัวอย่าง</b></i> ${fill(v(r.doc_no || r.id), 180)}</span><span>ครั้งที่ ${fill(v(ni.round), 40)}</span></div></td></tr>
+      <tr><td class="l">วันที่ขอตัวอย่าง :</td><td><div class="row2"><span class="v">${d(r.date)}</span><span><i><b>วันที่ต้องการตัวอย่าง :</b></i> ${fill(d(r.deliveryDate), 120)}</span></div></td></tr>
+      <tr><td class="l">Product name :</td><td class="v">${v(it.name)}</td></tr>
+      <tr><td class="l">Customer name :</td><td class="v">${v(r.custName)} <span class="code">${v(r.custCode)}</span></td></tr>
+      <tr><td class="l">ราคาขายลูกค้า :</td><td>${fill(num(it.targetPrice))} <i><b>baht / kg.</b></i></td></tr>
+      <tr><td class="l">Brand :</td><td><div class="opts">${SR_FM.brand.map(([k, l]) => opt(it.brand === k, k === 'other' ? `Other ${fill(it.brand === 'other' ? v(it.brandOther) : '')}` : l)).join('')}</div></td></tr>
+      <tr><td class="l">Packing size :</td><td>${[1, 2].map(n => `<div class="opts">
+        <span>${fill(num(it[`pack${n}G`]))} g.</span><span>${fill(num(it[`pack${n}Qty`]))} Pack</span>
+        ${opt(it[`pack${n}Type`] === 'nylon', 'ถุง Nylon')}${opt(it[`pack${n}Type`] === 'thermo', 'เทอร์โมฟอร์ม')}</div>`).join('')}</td></tr>
+      <tr><td class="l">Outter Packaging :<small>บรรจุภัณฑ์รวม</small></td><td>
+        <div class="opts">${opt(it.outer === 'bag', `ใส่ถุงรวม ${fill(it.outer === 'bag' ? num(it.outerQty) : '')} แพ็ค`)}${opt(it.outer === 'basket', `ใส่ตะกร้า ${fill(it.outer === 'basket' ? num(it.outerQty) : '')} แพ็ค`)}</div>
+        <div class="opts">${opt(it.outer === 'box', `ใส่กล่องรวม ${fill(it.outer === 'box' ? num(it.outerQty) : '')} กก.`)}${opt(it.boxType === 'logo', 'กล่องมีตรา')}${opt(it.boxType === 'nologo', 'กล่องไม่มีตรา')}</div></td></tr>
+      <tr><td class="l">Type of Casing :</td><td>
+        <div class="opts">${opt(it.casing === 'hog', 'Hog ไส้หมู')}${opt(it.casing === 'cellulose', 'Cellulose ไส้พลาสติก')}${opt(it.casing === 'skinless', 'Cellulose Skinless <small>ไส้พลาสติกปอกเปลือก</small>')}</div>
+        <div class="opts">${opt(it.casing === 'sheep', 'Sheep ไส้แกะ')}${opt(it.casing === 'collagen', 'Collagen ไส้คอลลาเจน')}${opt(it.casing === 'other', `Other ${fill(it.casing === 'other' ? v(it.casingOther) : '')}`)}</div></td></tr>
+      <tr><td class="l">Slice thickness :</td><td>${fill(num(it.sliceMm))} mm</td></tr>
+      <tr><td class="l">Pieces / Kg :</td><td>${fill(num(it.pcsPerKg))} Pieces</td></tr>
+      <tr><td class="l">Diameter :</td><td>${fill(num(it.diameterMm))} mm</td></tr>
+      <tr><td class="l">Weight/Piece :</td><td>${fill(num(it.weightG))} g.</td></tr>
+      <tr><td class="l">Length :</td><td>${fill(num(it.lengthVal))} ${it.lengthUnit === 'inch' ? 'inch' : 'cm.'}</td></tr>
+      <tr><td class="l">Storage/Shelf life :</td><td><div class="opts">${opt(it.storage === 'chill', `Chill ${fill(it.storage === 'chill' ? num(it.storageDays) : '')} Days`)}${opt(it.storage === 'frozen', `Frozen ${fill(it.storage === 'frozen' ? num(it.storageDays) : '')} Days`)}</div></td></tr>
+      ${SR_FM.coaRows.map(([k, l]) => `<tr><td class="l">${l}</td><td>${coa(it, k)}</td></tr>`).join('')}
+      <tr><td class="l">ยอดสั่งซื้อ/เดือน (กก.)</td><td class="v">${num(it.forecastKg)}</td></tr>
+      <tr><td class="l" style="height:46px">Detail of Product :<small>รายละเอียดเพิ่มเติม</small></td><td class="v" style="font-weight:400">${v(it.detail || [it.flavor, it.menu, it.note].filter(Boolean).join(' · '))}</td></tr>
+      <tr><td class="l">Draft Spec. ตัวอย่างสินค้า</td><td><div class="opts">${opt(it.draftSpec === 'yes', '<i><b>ต้องการ Draft Spec.</b></i>')}${opt(it.draftSpec === 'no', '<i><b>ไม่ต้องการ Draft Spec.</b></i>')}</div></td></tr>
+    </table>
+    <div class="note">หมายเหตุ : กรณีลูกค้ามีรายละเอียดเพิ่มเติม เช่น ตรวจผลจุลินทรีย์เฉพาะล็อตแรก, ต้องการตรวจ % เกลือ ทุกเดือน <u>ระบุเพิ่มเติมให้ชัดเจน</u></div>
+    <div class="appr">${[0, 1, 2].map(() => `<div>Approve by ____________________<br>(____________________)</div>`).join('')}</div>
+    <div class="tr">
+      <div class="h"><span></span><span>Testing Report</span><span class="rd">ครั้งที่ ${fill(v(tr.round), 30)}</span></div>
+      <div class="ln"><b>Date :</b>${fill(d(tr.date), 140)}</div>
+      <div class="ln"><b>Sample Code :</b>${fill(v(tr.sampleCode), 140)}</div>
+      <div class="ln"><b>Testing Result :</b>${opt(tr.result === 'pass', 'Pass')}${opt(tr.result === 'fail', 'Not Pass')}${opt(tr.result === 'other' || tr.result === 'in_progress', `Others ${fill(tr.result === 'in_progress' ? 'กำลังทดสอบ' : '', 150)}`)}</div>
+      <div class="ln"><b>Comment (if have) :</b><span class="fill v" style="flex:1;text-align:left">${v([tr.feedback, tr.note].filter(Boolean).join(' · '))}</span></div>
+      <div class="ln"><b>สั่งออร์เดอร์แรก วันที่</b>${fill(d(tr.firstOrderDate), 140)} จำนวน ${fill(num(tr.firstOrderKg), 90)} Kg.</div>
+      <div class="ln" style="font-style:italic;font-weight:600">Note : ขั้นต่ำในการสั่งผลิต 40 Kg.</div>
+      <div style="text-align:center;margin-top:14px;font-style:italic;font-weight:600">Report by ______________________<br>(______________________)</div>
+    </div>
+  </div>
+  <div class="foot"><span>พิมพ์จากระบบ TSS Supply Chain · ${v(r.doc_no || r.id)} · รายการที่ ${idx + 1}/${items.length}</span><b>FM-RDC-RDD-12/Rev.06/Effective Date 01/09/25</b></div></div>`;
+
+  w.document.open();
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(`ใบขอตัวอย่าง ${srNo(r)}`)}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap">
+  <style>
+    @page{size:A4 portrait;margin:8mm 9mm}
+    *{box-sizing:border-box}
+    body{font-family:'Sarabun',sans-serif;margin:0;color:#111;font-size:11.2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .page{break-after:page}.page:last-child{break-after:auto}
+    .frame{border:1.6px solid #111}
+    table{width:100%;border-collapse:collapse}
+    td{border:1px solid #111;padding:2.5px 6px;vertical-align:middle;height:21px}
+    td.l{width:27%;font-style:italic;font-weight:600}
+    td.l small{display:block;font-weight:600}
+    .head{display:flex;align-items:center;border-bottom:1px solid #111;padding:6px 8px}
+    .logo{width:120px;text-align:center;line-height:1}
+    .logo .since{font-size:8px;letter-spacing:.08em;color:#8a6d1d;font-weight:700}
+    .logo .tgm{font-family:'Times New Roman',serif;font-size:34px;font-weight:700;letter-spacing:1px}
+    .logo .sub{font-size:6.5px;font-weight:700;letter-spacing:.04em}
+    .title{flex:1;text-align:center}
+    .title .th{font-size:15px;font-weight:700;font-style:italic}
+    .title .en{font-size:13px;font-style:italic;margin-top:2px}
+    .cb{display:inline-block;width:12px;height:12px;border:1.2px solid #111;vertical-align:-2px;margin-right:4px;position:relative}
+    .cb.on::after{content:'';position:absolute;left:3px;top:0;width:4px;height:8px;border:solid #0b3d91;border-width:0 2px 2px 0;transform:rotate(45deg)}
+    .v,.fill{color:#0b3d91;font-weight:600}
+    .code{color:#555;font-weight:400}
+    .fill{display:inline-block;border-bottom:1px dotted #555;text-align:center;padding:0 4px}
+    .opts{display:flex;flex-wrap:wrap;gap:3px 18px}
+    .opts+.opts{margin-top:2px}
+    .opts>span{white-space:nowrap}
+    .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:2px 8px}
+    .row2{display:flex;justify-content:space-between;gap:10px}
+    .note{font-size:10.2px;font-style:italic;font-weight:600;padding:3px 6px;border-top:1px solid #111}
+    .appr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:30px 8px 8px;border-top:1px solid #111}
+    .appr div{text-align:center;font-style:italic;font-weight:600;font-size:10.5px;line-height:1.9}
+    .tr{border-top:1.6px solid #111;padding:4px 8px 8px}
+    .tr .h{display:grid;grid-template-columns:1fr auto 1fr;font-style:italic;font-weight:600;font-size:12px}
+    .tr .h .rd{justify-self:end;font-weight:400;font-style:normal}
+    .tr .ln{margin:6px 0;display:flex;gap:10px;align-items:center}
+    .tr .ln b{font-style:italic;min-width:96px}
+    .foot{display:flex;justify-content:space-between;font-size:9.5px;margin-top:3px}
+    .foot span{color:#64748b}
+  </style></head><body>${items.map(page).join('')}
+  <script>window.onload=()=>{const go=()=>setTimeout(()=>window.print(),200);document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go();}<` + `/script>
+  </body></html>`);
+  w.document.close();
+}
+
+
 // ใบเบิก/ใบขอตัวอย่างทีละใบ (A4 แนวตั้ง) — ช่องลงนามใช้รูปจาก "ลายเซ็นของฉัน" ของผู้ทำแต่ละขั้น (ไม่มีรูป = ชื่อตัวเขียน)
 async function srPrintDoc(id) {
   const r = getSR().find(x => x.id === id); if (!r) return;
   const w = _srOpenPrintWindow(); if (!w) return;
-  const isNew = srType(r) === 'new', ni = srNewInfo(r), items = r.items || [];
+  if (srType(r) === 'new') { _srWriteFm(w, r); return; }
+  const isNew = false, ni = srNewInfo(r), items = r.items || [];
   const atts = _sr.attsFor === id ? (_sr.atts || []) : await SB.getSampleRequestAttachments(id);
   const steps = [
     { role: 'ผู้ขอ', uid: r.by, at: r.submitted_at || (r.status !== 'draft' ? r.date : null) },

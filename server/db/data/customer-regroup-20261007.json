@@ -1,0 +1,1347 @@
+[
+ {
+  "code": "NSL-01-KK",
+  "corporate": "เอ็นเอสแอล ฟู้ดส์ จำกัด",
+  "business_type": "food_processor"
+ },
+ {
+  "code": "TOA-01-QC",
+  "corporate": "TOA INTERNATIONAL LIMITED",
+  "business_type": "export"
+ },
+ {
+  "code": "BP-POS",
+  "corporate": "TGM Shop โรงงาน",
+  "business_type": "company_shop"
+ },
+ {
+  "code": "OIS-01-KF",
+  "corporate": "โออิชิ ฟู้ด เซอร์วิส จำกัด",
+  "business_type": "restaurant"
+ },
+ {
+  "code": "ZKC-01-KF",
+  "corporate": "ซูกิชิ อินเตอร์กรุ๊ป จำกัด",
+  "business_type": "restaurant"
+ },
+ {
+  "code": "TG-IG-0001",
+  "corporate": "TGM Shop พระราม 3",
+  "business_type": "company_shop"
+ },
+ {
+  "code": "CNC-01-QC",
+  "corporate": "ห้างหุ้นส่วน ช้างนำโชค จำกัด"
+ },
+ {
+  "code": "LSH-01-PC",
+  "corporate": "LSH (CAMBODIA) PTE LTD.",
+  "business_type": "export"
+ },
+ {
+  "code": "KCG-01-QC",
+  "corporate": "เคซีจี คอร์ปอเรชั่น จำกัด (มหาชน)",
+  "business_type": "food_processor"
+ },
+ {
+  "code": "FAD-01-KK",
+  "corporate": "ฟู้ดแอนด์ดริ๊งส์ จำกัด (มหาชน)",
+  "business_type": "restaurant"
+ },
+ {
+  "code": "REX-01-QC",
+  "corporate": "REX FOODS LIMITED",
+  "business_type": "export"
+ },
+ {
+  "code": "01-TT-0011",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "TNA-01-KK",
+  "corporate": "ทนา กรุ๊ป อินเตอร์เนชั่นแนล จำกัด"
+ },
+ {
+  "code": "30-LF-1062",
+  "corporate": "บางกอกอะพาร์ทเม้นท์ จำกัด",
+  "business_type": "hotel"
+ },
+ {
+  "code": "01-TT-0007",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "NE-01-QC",
+  "corporate": "CHEF BRAND FRESH AND FROZEN MEAT",
+  "business_type": "export"
+ },
+ {
+  "code": "SMN-01-QC",
+  "corporate": "นายสมนึก นำศรีเจริญสุข"
+ },
+ {
+  "code": "01-TT-0020",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-VL-0046",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "01-TT-0019",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-VL-0048",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "01-KG-0590",
+  "corporate": "TGM Shop พระราม 3",
+  "business_type": "company_shop"
+ },
+ {
+  "code": "01-VL-0047",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "01-TT-0022",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-VL-0049",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "01-TT-0025",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-TT-0004",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "YVD-01-PG",
+  "corporate": "คุณแวววดี ยลถวิล"
+ },
+ {
+  "code": "01-TT-0041",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-TT-0006",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "AK-LB-0004",
+  "corporate": "ศิริรัตน์ สกุลคู"
+ },
+ {
+  "code": "TSM-01-QD",
+  "corporate": "ไทยซอสเซส (บริษัทในเครือ)"
+ },
+ {
+  "code": "YA-005",
+  "corporate": "ทีจี โคลด์ สตอเรจ (บริษัทในเครือ)"
+ },
+ {
+  "code": "01-VL-0044",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "TGM-04-PG",
+  "corporate": "ลูกค้าเงินสด",
+  "business_type": "direct"
+ },
+ {
+  "code": "30-TGM-003",
+  "corporate": "ไทย-เยอรมัน มีท โปรดักท์ (บริษัทในเครือ)"
+ },
+ {
+  "code": "01-VL-0041",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "01-VL-0042",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "PIT-01-QC",
+  "corporate": "แพมม์ อินเตอร์เนชั่นแนล จำกัด"
+ },
+ {
+  "code": "TVC-01-QD",
+  "corporate": "เดอะวินเทจคลับ จำกัด",
+  "business_type": "restaurant"
+ },
+ {
+  "code": "01-TT-0035",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "Z30-LF-211",
+  "corporate": "ซิตี้ วิลล่า จำกัด",
+  "business_type": "hotel"
+ },
+ {
+  "code": "01-VL-0043",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "01-TT-0034",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "ALS-01-KG",
+  "corporate": "Alek's Steak",
+  "business_type": "restaurant"
+ },
+ {
+  "code": "30-TGM-001",
+  "corporate": "ไทย-เยอรมัน มีท โปรดักท์ (บริษัทในเครือ)"
+ },
+ {
+  "code": "BPK-01-QD",
+  "corporate": "บางปะกง ริเวอร์ไซด์ คันทรี่ คลับ",
+  "business_type": "hotel"
+ },
+ {
+  "code": "01-TT-0039",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-BA-0005",
+  "corporate": "ภาสกร กุญชร ณ อยุธยา"
+ },
+ {
+  "code": "AK-LE-0749",
+  "corporate": "สมชาย วินศิริ"
+ },
+ {
+  "code": "30-TG-0002",
+  "corporate": "ไทย-เยอรมัน มีท โปรดักท์ (บริษัทในเครือ)"
+ },
+ {
+  "code": "SUN-01-QG",
+  "corporate": "ซันฟู้ด อินเตอร์เนชั่นแนล จำกัด"
+ },
+ {
+  "code": "01-VL-0045",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "01-VL-0050",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "AK-LD-0141",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "PRP-01-PG",
+  "corporate": "พี อาร์ โภคทรัพย์ จำกัด"
+ },
+ {
+  "code": "MTT-01-QG",
+  "corporate": "แฮนดท์มานน์ (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "AK-LD-0145",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "AK-LD-0132",
+  "corporate": "เอกรัฐ วิเศษฤทธิ์ (ส่งบ้านคุณเอก)"
+ },
+ {
+  "code": "PAT-01-QG",
+  "corporate": "น.ส. ปัทมาพร ไกรวัน"
+ },
+ {
+  "code": "AK-LD-0133",
+  "corporate": "สุดารัตน์ โพต๊ะ (ขนมโตเกียว คุณเพชร)"
+ },
+ {
+  "code": "30-NW-2001",
+  "corporate": "Makro TGM"
+ },
+ {
+  "code": "TTN-01-QC",
+  "corporate": "คุณ ฐิตติทนันต์ ภักดีเรืองธนา"
+ },
+ {
+  "code": "NGT-01-KF",
+  "corporate": "เงินทองมากมาย จำกัด"
+ },
+ {
+  "code": "Z30-LE-111",
+  "corporate": "เดอะ โบตานิค จำกัด"
+ },
+ {
+  "code": "07-LD-0004",
+  "corporate": "Malaythong Saysongkham"
+ },
+ {
+  "code": "30-LA-0194",
+  "corporate": "เอฟ แอนด์ บี โฮลเซลล์"
+ },
+ {
+  "code": "07-LD-0005",
+  "corporate": "PATHUMMARATH PRIOR"
+ },
+ {
+  "code": "Z30-LA-045",
+  "corporate": "ศรีฟ้าโฟรเซนฟู้ด จำกัด"
+ },
+ {
+  "code": "AK-LF-3803",
+  "corporate": "อัครอส ร้อย จำกัด"
+ },
+ {
+  "code": "AK-LD-0140",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "30-TGM-002",
+  "corporate": "ไทย-เยอรมัน มีท โปรดักท์ (บริษัทในเครือ)"
+ },
+ {
+  "code": "MRY-01-QG",
+  "corporate": "วัดโมลิโลกยาราม",
+  "business_type": "other"
+ },
+ {
+  "code": "01-TT-0040",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "AK-LD-0137",
+  "corporate": "ปิยกานต์ อิ่มสุวรรณวิทยา"
+ },
+ {
+  "code": "AK-LD-0146",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "AK-LE-0750",
+  "corporate": "วราวุจ ตันตระกูล"
+ },
+ {
+  "code": "01-BA-0004",
+  "corporate": "เกรียงไกร เจริญลาภ"
+ },
+ {
+  "code": "30-II-0001",
+  "corporate": "ไทยซอสเซส (บริษัทในเครือ)"
+ },
+ {
+  "code": "AK-LE-0757",
+  "corporate": "อิ่มอร่อย อ้อย โอ๋ จำกัด"
+ },
+ {
+  "code": "30-PO-0086",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "TIA-01-QG",
+  "corporate": "ทีด้า เทค จำกัด"
+ },
+ {
+  "code": "AK-LC-0007",
+  "corporate": "AENOTECA"
+ },
+ {
+  "code": "AK-LF-3798",
+  "corporate": "ชัญญา จินตะนะกุล"
+ },
+ {
+  "code": "30-LF-1054",
+  "corporate": "โลเปีย (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "30-TS-0002",
+  "corporate": "ไทยซอสเซส (บริษัทในเครือ)"
+ },
+ {
+  "code": "AK-LE-0763",
+  "corporate": "สมชาย แสงมณีเสถียร"
+ },
+ {
+  "code": "30-LF-1057",
+  "corporate": "มิสตี้ แวลเล่ย์ จำกัด"
+ },
+ {
+  "code": "SA-LE-0009",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "AK-LD-0142",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "TI-LC-0155",
+  "corporate": "ไทยยามาซากิ"
+ },
+ {
+  "code": "TSM-02-QA",
+  "corporate": "ไทยซอสเซส (บริษัทในเครือ)"
+ },
+ {
+  "code": "TI-LC-0154",
+  "corporate": "ไทยยามาซากิ"
+ },
+ {
+  "code": "SIN-O",
+  "corporate": "ซีโน-แปซิฟิค เทรดดิ้ง (ไทยแลนด์)"
+ },
+ {
+  "code": "AK-LD-0144",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "30-CP-0009",
+  "corporate": "ซีพี ออลล์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "30-CP-0008",
+  "corporate": "ซีพี ออลล์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "MI-LA-0018",
+  "corporate": "เอ็มเอฟ คาเฟ่ แอนด์ เรสเตอรองต์ จำกัด"
+ },
+ {
+  "code": "AK-LF-3790",
+  "corporate": "ริบส์ แอนด์ โค.เชียงใหม่ ไพรม์ จำกัด"
+ },
+ {
+  "code": "01-TT-0046",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-TT-0048",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "AK-LF-3843",
+  "corporate": "บลูคอฟ คอฟฟี่ โพรดักส์ จำกัด"
+ },
+ {
+  "code": "30-MJ-0027",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "AK-LE-0760",
+  "corporate": "ฉัตรทริกา จอมฟู"
+ },
+ {
+  "code": "30-MJ-0030",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-TT-0042",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "01-OM-0111",
+  "corporate": "Online"
+ },
+ {
+  "code": "Z30-LE-112",
+  "corporate": "เดอะ โบตานิค จำกัด"
+ },
+ {
+  "code": "AK-LG-0287",
+  "corporate": "ถนอมวรรณ เครือศรี"
+ },
+ {
+  "code": "Z30-LA-047",
+  "corporate": "ไอ แอม เขา ชีจรรย์ จำกัด"
+ },
+ {
+  "code": "30-LF-1064",
+  "corporate": "ฟีน่า พร็อพเพอร์ตี้ จำกัด"
+ },
+ {
+  "code": "30-PL-0009",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "AK-LE-0745",
+  "corporate": "บุษราพร โชคดีสิริกุล"
+ },
+ {
+  "code": "TI-LC-0153",
+  "corporate": "ไทยยามาซากิ"
+ },
+ {
+  "code": "AK-LF-3793",
+  "corporate": "โซล อีทเทอรี จำกัด"
+ },
+ {
+  "code": "LIT-01-QG",
+  "corporate": "ลิตเติลมันช์ชี่ จำกัด"
+ },
+ {
+  "code": "AK-LG-0285",
+  "corporate": "ROBERT JECH"
+ },
+ {
+  "code": "15-LD-0028",
+  "corporate": "สวนส้ม คิทเช่น กรุ๊ป จำกัด"
+ },
+ {
+  "code": "30-CP-0011",
+  "corporate": "ซีพี ออลล์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "AK-LF-3796",
+  "corporate": "โซล อีทเทอรี จำกัด"
+ },
+ {
+  "code": "MTV-01-QG",
+  "corporate": "มัลติแว็ค จำกัด"
+ },
+ {
+  "code": "30-PL-0014",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "AP-LE-0038",
+  "corporate": "เอ็บเพอคิวร์ เคเทอริ่ง จำกัด"
+ },
+ {
+  "code": "AK-LF-3794",
+  "corporate": "แทนเจอรีน แท็ปส์ จำกัด"
+ },
+ {
+  "code": "30-MH-0086",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "TCN-01-QF",
+  "corporate": "ทีม คอนซัลติ้ง เอนจิเนียริ่ง แอนด์ แมเนจเมนท์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "AK-LF-3807",
+  "corporate": "เจริญอาหาร ฟู้ด เซอร์วิส จำกัด"
+ },
+ {
+  "code": "AK-LD-0134",
+  "corporate": "วิภา เขียวอรุณ (คุณปุ้ย)"
+ },
+ {
+  "code": "30-PO-0073",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "30-NI-0022",
+  "corporate": "สุวรรณชาด"
+ },
+ {
+  "code": "AK-LF-3839",
+  "corporate": "ท็อปเบฟเวอร์เรจกรุ๊ป จำกัด"
+ },
+ {
+  "code": "30-LF-1063",
+  "corporate": "แมจิก เอ็นเตอร์ไพรส์ จำกัด"
+ },
+ {
+  "code": "30-PO-0021",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "30-PO-0132",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "30-LF-1055",
+  "corporate": "มิสตี้ แวลเล่ย์ จำกัด"
+ },
+ {
+  "code": "01-ON-0272",
+  "corporate": "Online"
+ },
+ {
+  "code": "30-PL-0008",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "15-LE-0073",
+  "corporate": "มากุโระ กรุ๊ป จำกัด (มหาชน)"
+ },
+ {
+  "code": "AK-LE-0753",
+  "corporate": "ห้าแยก เอ็นเตอร์เทนเมนต์ จำกัด"
+ },
+ {
+  "code": "AK-LF-3838",
+  "corporate": "โซล อีทเทอรี จำกัด"
+ },
+ {
+  "code": "Z30-LD-067",
+  "corporate": "ไอเอสเอฟ ฟู้ดส์ จำกัด"
+ },
+ {
+  "code": "30-PL-0020",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "30-PO-0018",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "30-CP-0005",
+  "corporate": "ซีพี ออลล์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "AK-LF-3830",
+  "corporate": "อ๊กซูซู จำกัด"
+ },
+ {
+  "code": "30-MH-0093",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3804",
+  "corporate": "เลอชิโน่ แบ็คยาร์ด คาเฟ่"
+ },
+ {
+  "code": "AK-LF-3814",
+  "corporate": "สถานีสเต็ก 189 จำกัด"
+ },
+ {
+  "code": "AK-LF-3812",
+  "corporate": "ฆโนทัย วัสสันตชาติ"
+ },
+ {
+  "code": "30-CP-0006",
+  "corporate": "ซีพี ออลล์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "AK-LE-0773",
+  "corporate": "กฤษ13 จำกัด"
+ },
+ {
+  "code": "AP-LE-0041",
+  "corporate": "เอ็บเพอคิวร์ เคเทอริ่ง จำกัด"
+ },
+ {
+  "code": "Z30-LE-108",
+  "corporate": "มีดี คิทเช่น จำกัด"
+ },
+ {
+  "code": "AK-LE-0755",
+  "corporate": "คอฟฟี่ ลาเต้ ร็อคเก็ต จำกัด"
+ },
+ {
+  "code": "AK-LE-0767",
+  "corporate": "ฟีด เดอะ บีสท์ จำกัด"
+ },
+ {
+  "code": "30-PL-0043",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "30-CP-0010",
+  "corporate": "ซีพี ออลล์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "AK-LE-0770",
+  "corporate": "โปรเจกต์ เอ็กซ์ คอลแล็บ"
+ },
+ {
+  "code": "AK-LF-3787",
+  "corporate": "ดราก้อนริเวอร์ จำกัด"
+ },
+ {
+  "code": "30-PL-0046",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "AK-LE-0781",
+  "corporate": "มีท บาย 211 ดีกรี จำกัด"
+ },
+ {
+  "code": "AK-LE-0758",
+  "corporate": "บีน โซลูชั่น จำกัด"
+ },
+ {
+  "code": "15-LE-0075",
+  "corporate": "มากุโระ กรุ๊ป จำกัด (มหาชน)"
+ },
+ {
+  "code": "30-PO-0074",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "01-OM-0110",
+  "corporate": "Online"
+ },
+ {
+  "code": "30-NT-0093",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LD-0148",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "AK-LD-0153",
+  "corporate": "มหาสารโภคภัณฑ์ จำกัด"
+ },
+ {
+  "code": "30-LE-0230",
+  "corporate": "เอ็มแอนด์เอ็ม 2007 จำกัด"
+ },
+ {
+  "code": "30-NT-0074",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "01-BA-0003",
+  "corporate": "ณัฐพงศ์แอร์"
+ },
+ {
+  "code": "30-NT-0047",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3828",
+  "corporate": "บาร์ เวิร์ค จำกัด"
+ },
+ {
+  "code": "30-MH-0116",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3829",
+  "corporate": "เออร์แบน เฮาส์ จำกัด"
+ },
+ {
+  "code": "30-PL-0059",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "KO-LE-0007",
+  "corporate": "คอร์ป อินเตอร์เทรด จำกัด"
+ },
+ {
+  "code": "AK-LE-0769",
+  "corporate": "อินน์เทรนฟู้ด จำกัด"
+ },
+ {
+  "code": "30-PN-5105",
+  "corporate": "Makro TSS"
+ },
+ {
+  "code": "30-PN-5104",
+  "corporate": "Makro TSS"
+ },
+ {
+  "code": "30-PN-5103",
+  "corporate": "Makro TSS"
+ },
+ {
+  "code": "30-PN-5102",
+  "corporate": "Makro TSS"
+ },
+ {
+  "code": "30-PN-5101",
+  "corporate": "Makro TSS"
+ },
+ {
+  "code": "30-PN-5100",
+  "corporate": "Makro TSS"
+ },
+ {
+  "code": "30-PL-0096",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "30-PL-0095",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "AK-LF-3802",
+  "corporate": "ปุณยนุช สิทธิอาภากิจ"
+ },
+ {
+  "code": "30-LF-1058",
+  "corporate": "สุขวัฒนะ บางกอก จำกัด"
+ },
+ {
+  "code": "AK-LF-3797",
+  "corporate": "แมวน้ำ จำกัด"
+ },
+ {
+  "code": "Z30-LD-068",
+  "corporate": "ไอเอสเอฟ ฟู้ดส์ จำกัด"
+ },
+ {
+  "code": "30-NT-0018",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "ZSM-LD-010",
+  "corporate": "ไซมิส เทสท์ จำกัด"
+ },
+ {
+  "code": "30-LC-0033",
+  "corporate": "บีเคเค ซีเอฟ จำกัด"
+ },
+ {
+  "code": "30-MH-0021",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "01-ON-0280",
+  "corporate": "Online"
+ },
+ {
+  "code": "AK-LF-3831",
+  "corporate": "ณัฐกานต์ เกษมรัตน์"
+ },
+ {
+  "code": "AK-LF-3826",
+  "corporate": "ขวัญพัฒน์ เอี่ยมกลาง"
+ },
+ {
+  "code": "30-PO-0106",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "AK-LD-0152",
+  "corporate": "ปิยนาถ เลิศอัศวลักษณ์"
+ },
+ {
+  "code": "AK-LE-0740",
+  "corporate": "ก้าวเจริญการกิน จำกัด"
+ },
+ {
+  "code": "30-NT-0021",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3809",
+  "corporate": "อชิรญาณ์ ญาณศิริ"
+ },
+ {
+  "code": "AK-LF-3820",
+  "corporate": "ใบเอกรวย 1224 จำกัด"
+ },
+ {
+  "code": "30-MH-0007",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LE-0777",
+  "corporate": "นภัส เบเกอรี่ จำกัด"
+ },
+ {
+  "code": "AK-LF-3811",
+  "corporate": "ศรัญญา อุปลากรณ์"
+ },
+ {
+  "code": "AK-LE-0764",
+  "corporate": "นพฐกรณ์ สงวนสัตย์"
+ },
+ {
+  "code": "AK-LE-0754",
+  "corporate": "โคคูมะ"
+ },
+ {
+  "code": "AK-LF-3799",
+  "corporate": "คณดล จำกัด"
+ },
+ {
+  "code": "AK-LD-0149",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "AK-LF-3821",
+  "corporate": "เลค ปาร์ค ฟู้ด แอนด์ เบฟเวอเรจ"
+ },
+ {
+  "code": "AK-LE-0776",
+  "corporate": "เพียว เบฟ จำกัด"
+ },
+ {
+  "code": "AK-LE-0780",
+  "corporate": "มีท บาย 211 ดีกรี จำกัด"
+ },
+ {
+  "code": "LNB-01-QG",
+  "corporate": "ลูน่าเบียนก้า แตททอเรีย (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "30-NT-0116",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "BK-LD-0278",
+  "corporate": "แบล็ค แคนยอน (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "30-NT-0115",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "30-MH-0047",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3836",
+  "corporate": "วริฏฐา เตี๋ยประดิษฐ์กุล"
+ },
+ {
+  "code": "LTV-01-QE",
+  "corporate": "โลตัส วัลเล่ย์ จำกัด"
+ },
+ {
+  "code": "AK-LF-3842",
+  "corporate": "เจษฎา พิมพ์รัตน์"
+ },
+ {
+  "code": "30-ST-0002",
+  "corporate": "สุราษฎร์ธานี ดีเวลลอปเม้นท์ จำกัด"
+ },
+ {
+  "code": "AK-LF-3850",
+  "corporate": "ห้างหุ้นส่วนจำกัด ทองวนา"
+ },
+ {
+  "code": "30-MH-0018",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3824",
+  "corporate": "สมิทเทิน คาเฟ่ แอนด์ เดเคอร์"
+ },
+ {
+  "code": "AK-LE-0774",
+  "corporate": "แทน แอนด์ แทสแมน จำกัด"
+ },
+ {
+  "code": "AK-LE-0761",
+  "corporate": "บีน โซลูชั่น จำกัด"
+ },
+ {
+  "code": "30-LE-0239",
+  "corporate": "เบอร์เกอร์ บี.กู๊ด จำกัด"
+ },
+ {
+  "code": "AK-LF-3833",
+  "corporate": "มัทโช โปรเจกต์ จำกัด"
+ },
+ {
+  "code": "AK-LF-3845",
+  "corporate": "เกียรติประวัติ น้อยทุ่ง"
+ },
+ {
+  "code": "30-PO-0126",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "AK-LF-3805",
+  "corporate": "กุสโตโซ่ พิซซ่า จำกัด"
+ },
+ {
+  "code": "AK-LF-3810",
+  "corporate": "จิรัชญา เฉียบแหลม"
+ },
+ {
+  "code": "01-OM-0114",
+  "corporate": "Online"
+ },
+ {
+  "code": "30-MH-0126",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AP-LE-0040",
+  "corporate": "เอ็บเพอคิวร์ เคเทอริ่ง จำกัด"
+ },
+ {
+  "code": "AK-LE-0772",
+  "corporate": "เล่งหงษ์ภัตตาคาร จำกัด"
+ },
+ {
+  "code": "AK-LD-0143",
+  "corporate": "ณัฐริณทร์ วุฒิไกรวัฒน์"
+ },
+ {
+  "code": "01-TT-0044",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "30-NT-0007",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3846",
+  "corporate": "อีทมีชีส จำกัด"
+ },
+ {
+  "code": "30-PO-0007",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "30-LD-0294",
+  "corporate": "อิมแพ็ค เอ็กซิบิชั่น แมเนจเม้นท์ จำกัด"
+ },
+ {
+  "code": "AK-LF-3832",
+  "corporate": "จันทร์เพ็ญ สีเขียว"
+ },
+ {
+  "code": "30-NT-0086",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LE-0775",
+  "corporate": "อันเดอร์ ด๊อก ไมโคร บรูเออรี จำกัด"
+ },
+ {
+  "code": "TMC-01-QG",
+  "corporate": "ไทยแม็กซ์ โคลด์ สโตร์เรจท์ จำกัด"
+ },
+ {
+  "code": "30-NU-0013",
+  "corporate": "โลตัส TGM"
+ },
+ {
+  "code": "30-PO-0047",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "01-OM-0112",
+  "corporate": "Online"
+ },
+ {
+  "code": "AK-LE-0762",
+  "corporate": "วัชรพล ศิริโภค"
+ },
+ {
+  "code": "AK-LE-0782",
+  "corporate": "เอ็มเอ็มพี คอร์ปอเรชั่น จำกัด"
+ },
+ {
+  "code": "30-LE-0240",
+  "corporate": "ฟู้ด เอ็กซ์ไซท์ จำกัด"
+ },
+ {
+  "code": "30-PO-0002",
+  "corporate": "บิ๊กซี"
+ },
+ {
+  "code": "BK-LD-0280",
+  "corporate": "แบล็ค แคนยอน (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "AK-LG-0286",
+  "corporate": "สุทธิพงษ์ เอ็นจิเนียริ่ง จำกัด"
+ },
+ {
+  "code": "30-MH-0002",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3825",
+  "corporate": "เบเกอรี่ เทรเชอรี่ จำกัด"
+ },
+ {
+  "code": "AK-LE-0779",
+  "corporate": "เพียว เบฟ จำกัด"
+ },
+ {
+  "code": "AK-LF-3851",
+  "corporate": "พีรดนย์ เพ็งลี"
+ },
+ {
+  "code": "AK-LF-3837",
+  "corporate": "ปารีส เอ็ม จำกัด"
+ },
+ {
+  "code": "AK-LF-3827",
+  "corporate": "ฟู้ด มิชชั่น จำกัด"
+ },
+ {
+  "code": "AK-LF-3664",
+  "corporate": "รินรดา ชาญนุกูล"
+ },
+ {
+  "code": "30-PL-0033",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "BK-LD-0281",
+  "corporate": "แบล็ค แคนยอน (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "AK-LF-3848",
+  "corporate": "สุวรรณา พุทธิวิสุทธิศักดิ์"
+ },
+ {
+  "code": "AK-LF-3834",
+  "corporate": "สตรอง ซอร์ส (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "AK-LF-3816",
+  "corporate": "มอร์นิ่ง กลอรี่ บลู จำกัด"
+ },
+ {
+  "code": "AK-LE-0771",
+  "corporate": "โอกุ ฟู้ดส์ จำกัด"
+ },
+ {
+  "code": "30-NT-0002",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LF-3835",
+  "corporate": "วิโรจน์ เจตวิเศษไพศาล"
+ },
+ {
+  "code": "AK-LF-3818",
+  "corporate": "เดอะ เฮ้าส์ เรสเตอรองท์ จำกัด"
+ },
+ {
+  "code": "AK-LD-0150",
+  "corporate": "ฉวีวรรณ"
+ },
+ {
+  "code": "30-CP-0004",
+  "corporate": "ซีพี ออลล์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "01-OE-0115",
+  "corporate": "Online"
+ },
+ {
+  "code": "30-MH-0115",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "30-MH-0074",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "VL-LF-0029",
+  "corporate": "วิลล่า/เบเกอรี่"
+ },
+ {
+  "code": "30-NT-0073",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "AK-LD-0129",
+  "corporate": "ท็อป แอนด์ จอย ฟู้ด จำกัด"
+ },
+ {
+  "code": "01-OS-0014",
+  "corporate": "Online"
+ },
+ {
+  "code": "30-LD-0293",
+  "corporate": "อิมแพ็ค เอ็กซิบิชั่น แมเนจเม้นท์ จำกัด"
+ },
+ {
+  "code": "AK-LF-3806",
+  "corporate": "แทงค์ ทู เนเจอ จำกัด"
+ },
+ {
+  "code": "AK-LF-3813",
+  "corporate": "บ้านเพ อินเตอร์ฟู้ด จำกัด"
+ },
+ {
+  "code": "AK-LF-3800",
+  "corporate": "บ้านเพ อินเตอร์ฟู้ด จำกัด"
+ },
+ {
+  "code": "01-OS-0011",
+  "corporate": "Online"
+ },
+ {
+  "code": "01-OS-0012",
+  "corporate": "Online"
+ },
+ {
+  "code": "01-ON-0279",
+  "corporate": "Online"
+ },
+ {
+  "code": "BK-LD-0282",
+  "corporate": "แบล็ค แคนยอน (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "01-OS-0015",
+  "corporate": "Online"
+ },
+ {
+  "code": "BK-LD-0279",
+  "corporate": "แบล็ค แคนยอน (ประเทศไทย) จำกัด"
+ },
+ {
+  "code": "01-OE-0117",
+  "corporate": "Online"
+ },
+ {
+  "code": "AK-LE-0744",
+  "corporate": "สายลมบางปู ลาบ น้ำตก"
+ },
+ {
+  "code": "AK-LF-3841",
+  "corporate": "ไนซ์ โคเรียน บาร์บีคิว จำกัด"
+ },
+ {
+  "code": "AK-LF-3801",
+  "corporate": "ศิริกาญจน์ พันธมิตร"
+ },
+ {
+  "code": "01-OM-0109",
+  "corporate": "Online"
+ },
+ {
+  "code": "AK-LF-3847",
+  "corporate": "นาพิมพ์เนตร ลิขิตเจริญวัฒนะ"
+ },
+ {
+  "code": "01-OM-0113",
+  "corporate": "Online"
+ },
+ {
+  "code": "20-LG-4309",
+  "corporate": "พนักงาน"
+ },
+ {
+  "code": "30-LF-1050",
+  "corporate": "สยามคอร์ท จำกัด"
+ },
+ {
+  "code": "NTO-01-QF",
+  "corporate": "นิวตร้า วัน จำกัด"
+ },
+ {
+  "code": "01-OS-0013",
+  "corporate": "Online"
+ },
+ {
+  "code": "Z15-LE-016",
+  "corporate": "โพรเกรส เอฟวรีเดย์ (สาขาเซ็นทรัล แอมบาสซี)"
+ },
+ {
+  "code": "30-NT-0003",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "01-TT-0043",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "30-MH-0073",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "01-OS-0016",
+  "corporate": "Online"
+ },
+ {
+  "code": "30-NT-0126",
+  "corporate": "บิ๊กซี เข้าศูนย์กระจาย"
+ },
+ {
+  "code": "20-LG-4325",
+  "corporate": "พนักงาน"
+ },
+ {
+  "code": "30-CP-0007",
+  "corporate": "ซีพี ออลล์ จำกัด (มหาชน)"
+ },
+ {
+  "code": "20-LG-4323",
+  "corporate": "พนักงาน"
+ },
+ {
+  "code": "01-VG-0024",
+  "corporate": "วิลล่า"
+ },
+ {
+  "code": "01-TT-0036",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "20-LG-4297",
+  "corporate": "พนักงาน"
+ },
+ {
+  "code": "VL-LF-0005",
+  "corporate": "วิลล่า/เบเกอรี่"
+ },
+ {
+  "code": "PAN-01-QC",
+  "corporate": "Pan Emirates Catering Services LLC",
+  "business_type": "export"
+ },
+ {
+  "code": "BB-L2-0103",
+  "corporate": "โลตัส (ยอดสั่ง)"
+ },
+ {
+  "code": "01-TT-0032",
+  "corporate": "เซ็นทรัล ฟุ้ด กรุ๊ป"
+ },
+ {
+  "code": "BB-M2-0023",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0015",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0021",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0007",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0016",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0003",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0006",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0008",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0005",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0004",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0018",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "BB-M2-0009",
+  "corporate": "เดอะมอลล์"
+ },
+ {
+  "code": "PNP-01-PC",
+  "corporate": "Mrs.Lim Nakry",
+  "business_type": "export"
+ }
+]

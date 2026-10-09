@@ -555,6 +555,12 @@ function runMigrations(db) {
 
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 
+  // ประเภทธุรกิจลูกค้า (2026-10-07) — ดู server/lib/businessType.js · source 'manual' = คนตั้ง, 'auto' = ระบบเดา
+  addColumnIfMissing(db, 'customer_profiles', 'business_type', 'business_type TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'business_type_source', 'business_type_source TEXT');
+  // ตัด FK customers ออก (ลูกค้า Bplus บันทึกกลุ่มได้) + จัดกลุ่มลูกค้าที่ยังไม่ระบุ + เดาประเภทธุรกิจครั้งแรก
+  require('./customerProfilesV2').migrateCustomerProfilesV2(db);
+
   // ใบเสนอราคา รอบ 1 (2026-10-07) — ราคากลางฐาน A–G + ประวัติการแก้ (คำอธิบายเต็มดู schema.sql)
   db.exec(`
     CREATE TABLE IF NOT EXISTS price_tiers (

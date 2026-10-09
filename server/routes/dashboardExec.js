@@ -96,6 +96,7 @@ module.exports = function dashboardExecRoutes(db) {
     const channel = {};
     const chCache = new Map();
     for (const r of rows) {
+      if (isNonSales(r.cust_code)) continue;
       const amt = Number(r.amount) || 0;
       const co = src[r.company];
       const m = (company[r.ym] = company[r.ym] || { TSS: 0, TSSNV: 0, TGM: 0, CONSI: 0 });
@@ -142,21 +143,49 @@ module.exports = function dashboardExecRoutes(db) {
     return out;
   }
 
-  // ยอดต่อลูกค้าในช่วง → Map(code → { net, consi })
+  // Makro/โลตัส TGM รายวัน (2026-10-08): Bplus ลงยอดลูกค้ากลุ่มนี้ (30-NW/30-NU …) เป็นบิลสรุปก้อนเดียววันสิ้นเดือน
+  // (เช่น 30 ก.ย. 2025 = 9.57 ล้าน) เลือกช่วงวันแล้วยอดหายทั้งก้อน — แฟ้ม TGM ของ Express มีบิลรายวันจริงของลูกค้าชุดเดียวกัน
+  // → ช่วงวันที่ใช้แถวรายวันของ Express TGM แทนแถว BP-TGM
+  // FIXED (2026-10-09, /code-review): เดิมตัด BP-TGM ของลูกค้าทั้งช่วง แต่ Express มีแทนแค่ถึง พ.ค. 2026 (ช่วงคร่อมเดือนหลัง
+  // ยอดหาย) และแทนทุกลูกค้าที่มีแถวใน Express (Express บางเดือนไม่ตรง Bplus — เช่น BB-VG-* ม.ค. 2025 ไม่มีใน Bplus เลย)
+  // → แทนรายลูกค้า×เดือน เฉพาะเดือนที่ยอดทั้งเดือนของ Express TGM เท่ากับ Bplus (ข้อมูลจริง: ตรง 129 จาก 176 ลูกค้า-เดือน)
+  // คืนแถวปรับยอด (BP-TGM ติดลบ + TGM บวก) ต่อท้ายแถวเดิม — map รวมยอดตามลูกค้าอยู่แล้ว
+  function expressTgmSwap(from, to, raw, slmCodes) {
+    if (from.length !== 10 || reqBpDailyMissing || !raw.includes('BP-TGM')) return [];
+    const m0 = from.slice(0, 7), m1 = to.slice(0, 7);
+    const same = new Set(db.prepare(`WITH bp AS (SELECT cust_code, substr(d, 1, 7) AS ym, SUM(amount) AS amt FROM invoice_sales_daily
+        WHERE company = 'BP-TGM' AND substr(d, 1, 7) BETWEEN ? AND ? GROUP BY 1, 2),
+      ex AS (SELECT cust_code, substr(d, 1, 7) AS ym, SUM(amount) AS amt FROM invoice_sales_daily
+        WHERE company = 'TGM' AND substr(d, 1, 7) BETWEEN ? AND ? GROUP BY 1, 2)
+      SELECT ex.cust_code, ex.ym FROM ex JOIN bp ON bp.cust_code = ex.cust_code AND bp.ym = ex.ym WHERE abs(bp.amt - ex.amt) < 1`)
+      .all(m0, m1, m0, m1).map((r) => `${r.cust_code}|${r.ym}`));
+    if (!same.size) return [];
+    const inRange = (company, sign) => db.prepare(`SELECT cust_code, substr(d, 1, 7) AS ym, SUM(amount) AS amount FROM invoice_sales_daily
+      WHERE company = ? AND d >= ? AND d <= ? ${slmCodes.sql} GROUP BY 1, 2`).all(company, from, to, ...slmCodes.params)
+      .filter((r) => same.has(`${r.cust_code}|${r.ym}`)).map((r) => ({ company, cust_code: r.cust_code, amount: sign * (Number(r.amount) || 0) }));
+    return [...inRange('BP-TGM', -1), ...inRange('TGM', 1)];
+  }
+
+  // ยอดต่อลูกค้าในช่วง → Map(code → { net, consi }) · ยอดขายให้บริษัทในเครือฝั่ง Express สะสมใน map.ic (ไม่อยู่ใน map)
   function perCustomer(from, to, slmCodes) {
     const { src, raw } = companyFilter(Number(from.slice(0, 4)));
-    const rows = parts(from, to, raw).flatMap((p) => db.prepare(`SELECT company, cust_code, SUM(amount) AS amount FROM ${p.t.inv}
+    let rows = parts(from, to, raw).flatMap((p) => db.prepare(`SELECT company, cust_code, SUM(amount) AS amount FROM ${p.t.inv}
       WHERE company IN (${inList(p.cos.length)}) AND ${p.t.col} >= ? AND ${p.t.col} <= ?
       ${slmCodes.sql}
       GROUP BY company, cust_code`).all(...p.cos, p.lo, p.hi, ...slmCodes.params));
+    rows = rows.concat(expressTgmSwap(from, to, raw, slmCodes));
+    const coOf = (c) => src[c] || (c === 'TGM' ? 'TGM' : c);
     const map = new Map();
+    map.ic = 0;
     for (const r of rows) {
+      const amt = Number(r.amount) || 0;
+      if (reqNonSales.ic.has(r.cust_code)) { map.ic += amt; continue; }
+      if (reqNonSales.staff.has(r.cust_code)) continue;
       // tgm = ส่วนที่ขายผ่านโรงงาน (Bplus) — ใช้แสดงยอดแยกบริษัทใต้ชื่อเครือใน Top 20
       const cur = map.get(r.cust_code) || { net: 0, consi: 0, tgm: 0 };
-      const amt = Number(r.amount) || 0;
-      if (src[r.company] === 'CONSI') cur.consi += amt;
+      if (coOf(r.company) === 'CONSI') cur.consi += amt;
       else cur.net += amt;
-      if (src[r.company] === 'TGM') cur.tgm += amt;
+      if (coOf(r.company) === 'TGM') cur.tgm += amt;
       map.set(r.cust_code, cur);
     }
     for (const r of chainRows(from, to)) {
@@ -188,11 +217,30 @@ module.exports = function dashboardExecRoutes(db) {
     return map;
   }
 
+  // ใช้ค่าที่บันทึกไว้เฉพาะที่คนตั้งเอง (manual) — ค่า 'auto' เดาซ้ำทุกครั้งตามกฎปัจจุบัน (2026-10-08) ไม่งั้นค่าที่เดาไว้ก่อน
+  // ตั้งกลุ่ม/เครือหรือก่อนแก้กฎจะค้าง เช่น TG-IG-0001 (Shop พระราม 3) ค้างเป็นร้านค้าทั่วไป
   function channelOf(meta, code, hasConsi) {
     const m = meta.get(code) || {};
-    if (m.exec_channel && EXEC_CHANNEL_KEYS.has(m.exec_channel)) return m.exec_channel;
-    return guessExecChannel({ name: m.pname || m.name || '', category: m.category || '', corporate: m.corporate || '', hasConsi, hasExport: !!m.has_export });
+    if (m.exec_channel_source === 'manual' && EXEC_CHANNEL_KEYS.has(m.exec_channel)) return m.exec_channel;
+    return guessExecChannel({ code, name: m.pname || m.name || '', category: m.category || '', corporate: m.corporate || '', hasConsi, hasExport: !!m.has_export });
   }
+
+  // ลูกค้าที่ไม่นับเป็นยอดขาย (2026-10-08, ผู้ใช้ยืนยันตาม Excel "Sales Update" ของฝ่ายขาย):
+  //   ic    = ขายให้บริษัทในเครือฝั่ง Express (ทีจีเอ็ม 30-IA-0002, ไทย-เยอรมัน 30-TG-*/30-TGM-*, รายได้บริหารจัดการ) → แสดงรวมกับยอดในเครือ
+  //   staff = พนักงานซื้อ / เบิกตัวอย่าง → ตัดทิ้ง
+  function nonSalesCodes() {
+    const ic = new Set();
+    const staff = new Set();
+    for (const r of db.prepare(`SELECT code, category, corporate FROM customer_profiles
+      WHERE category IN ('ไทย-เยอรมัน', 'ได้รายเบ็ดเตล็ด/บริหารจัดการ', 'พนักงาน', 'เบิกตัวอย่าง')
+         OR corporate LIKE 'ไทย-เยอรมัน มีท โปรดักท์%' OR code LIKE '30-TG%'`).all()) {
+      (r.category === 'พนักงาน' || r.category === 'เบิกตัวอย่าง' ? staff : ic).add(r.code);
+    }
+    for (const r of db.prepare(`SELECT code FROM customers WHERE code LIKE '30-TG%'`).all()) ic.add(r.code);
+    return { ic, staff };
+  }
+  let reqNonSales = { ic: new Set(), staff: new Set() };
+  const isNonSales = (code) => reqNonSales.ic.has(code) || reqNonSales.staff.has(code);
 
   // ขายให้บริษัทในเครือจาก Bplus โรงงาน — แสดงแยก ไม่รวมในยอดขาย (ผู้ใช้ยืนยัน 2026-10-05)
   function icTotal(from, to, slmCodes) {
@@ -271,6 +319,7 @@ module.exports = function dashboardExecRoutes(db) {
         }
       }
       reqBpDailyMissing = daily && !db.prepare("SELECT 1 FROM invoice_sales_daily WHERE company = 'BP-TGM' LIMIT 1").get();
+      reqNonSales = nonSalesCodes();
       const lyFrom = shiftYear(from, -1);
       const lyTo = shiftYear(to, -1);
 
@@ -285,8 +334,9 @@ module.exports = function dashboardExecRoutes(db) {
       const kpi = {
         ty_net: sum(ty, 'net'), ty_consi: sum(ty, 'consi'), ly_net: sum(ly, 'net'), ly_consi: sum(ly, 'consi'),
         ty_active: active(ty), ly_active: active(ly),
-        // ยอดในเครือมาจากโรงงาน — เลือก TSS อย่างเดียวไม่ต้องแสดง
-        ty_ic: co === 'tss' ? 0 : icTotal(from, to, slmCodes), ly_ic: co === 'tss' ? 0 : icTotal(lyFrom, lyTo, slmCodes),
+        // ยอดในเครือ = โรงงานขายให้ไทยซอสเซสฯ (BP-TGM-IC) + TSS ขายให้ไทย-เยอรมัน (ty.ic — ดู nonSalesCodes)
+        ty_ic: (co === 'tss' ? 0 : icTotal(from, to, slmCodes)) + ty.ic,
+        ly_ic: (co === 'tss' ? 0 : icTotal(lyFrom, lyTo, slmCodes)) + ly.ic,
       };
 
       // หมวด + กลุ่มลูกค้า (Corporate group ก่อน ไม่มีค่อยใช้ชื่อลูกค้า — กติกาเดียวกับ Top 10 ลูกค้าเดิม)
@@ -384,7 +434,7 @@ module.exports = function dashboardExecRoutes(db) {
       const known = new Set(db.prepare('SELECT code FROM customers').all().map((r) => r.code));
       const upsert = db.prepare(`INSERT INTO customer_profiles (code, exec_channel, exec_channel_source, edited_by, updated_at)
         VALUES (?, ?, 'auto', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        ON CONFLICT(code) DO UPDATE SET exec_channel = excluded.exec_channel, exec_channel_source = 'auto'
+        ON CONFLICT(code) DO UPDATE SET exec_channel = excluded.exec_channel, exec_channel_source = 'auto', updated_at = excluded.updated_at
         WHERE COALESCE(customer_profiles.exec_channel_source, '') <> 'manual'`);
       const counts = {};
       let updated = 0, skippedManual = 0;
@@ -394,7 +444,7 @@ module.exports = function dashboardExecRoutes(db) {
           if (!known.has(code)) continue;
           const m = meta.get(code) || {};
           if (m.exec_channel_source === 'manual') { skippedManual++; continue; }
-          const ch = guessExecChannel({ name: m.pname || m.name || '', category: m.category || '', corporate: m.corporate || '', hasConsi: consiCodes.has(code), hasExport: !!m.has_export });
+          const ch = guessExecChannel({ code, name: m.pname || m.name || '', category: m.category || '', corporate: m.corporate || '', hasConsi: consiCodes.has(code), hasExport: !!m.has_export });
           if (upsert.run(code, ch, req.user?.uid || 'system').changes) { updated++; counts[ch] = (counts[ch] || 0) + 1; }
         }
         db.exec('COMMIT');
@@ -405,6 +455,16 @@ module.exports = function dashboardExecRoutes(db) {
       res.json({ updated, skipped_manual: skippedManual, counts });
     } catch (e) {
       console.error('[dashboardExec] autofill failed:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/dashboard/business_type/autofill — เดาประเภทธุรกิจลูกค้า (lib/businessType.js) · ไม่ทับค่าที่ตั้งเอง (2026-10-07)
+  router.post('/business_type/autofill', requireRole(...AUTOFILL_ROLES), (req, res) => {
+    try {
+      res.json(autofillBusinessTypes(db, req.user?.uid || 'system'));
+    } catch (e) {
+      console.error('[dashboardExec] business_type autofill failed:', e);
       res.status(500).json({ error: e.message });
     }
   });
