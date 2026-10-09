@@ -77,6 +77,7 @@ module.exports = function authRoutes(db) {
         slm_id: user.slm_id,
         slm_codes: user.slm_codes,
         bplus_codes: user.bplus_codes || null,
+        min_price_tier: user.min_price_tier || 'E',
       },
     });
   });

@@ -513,6 +513,11 @@ function buildApp(db, opts = {}) {
   //   promo_drafts — เหลือแค่ฟิลด์ราย SKU/สาขา (บรรทัดสินค้า) อ้าง draft_no กลับไปที่ header
   //   promo_draft_attachments — ไฟล์แนบ (BLOB, คัดลอกโครง custreg_attachments)
   app.use('/api/promo_draft_headers', require('./routes/promoDraftHeaders')(db, PROMO_DRAFT_ROLES));
+  // ราคากลางฐาน A–G (2026-10-07, ใบเสนอราคา รอบ 1) — ฝ่ายขายทุกระดับดูได้ (ใช้ออกใบเสนอราคา) แต่นำเข้า/แก้ได้
+  // เฉพาะ admin/ผู้จัดการฝ่ายขาย ตามแผนที่ผู้ใช้อนุมัติ
+  app.use('/api/price_tiers', require('./routes/priceTiers')(db, [...PROMO_DRAFT_ROLES, 'manager'], ['superadmin', 'admin', 'sales_manager']));
+  // ใบเสนอราคา (2026-10-08, รอบ 2) — ฝ่ายขายทุกระดับสร้างได้ · Sales เห็นเฉพาะของตัวเอง ผู้จัดการเห็นทั้งหมด
+  app.use('/api/quotation_headers', require('./routes/quotationHeaders')(db, [...PROMO_DRAFT_ROLES, 'manager']));
   app.use('/api/promo_draft_attachments', require('./routes/promoDraftAttachments')(db, PROMO_DRAFT_ROLES));
 
   // Comment ต่อแถวสินค้า (ต่อ SKU ต่อเอกสาร, 2026-09-11) — mount แบบเดียวกับ audit_log (readOnly:true

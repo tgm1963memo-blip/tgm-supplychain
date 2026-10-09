@@ -1175,3 +1175,90 @@ SELECT
   (SELECT MAX(b.created_at) FROM bookings b WHERE b.sku = p.code) AS latest_created_at
 FROM products p
 WHERE p.is_active = 1;
+
+-- ราคากลางร้านค้า ฐาน A–G (2026-10-07, ใบเสนอราคา) — 1 แถวต่อรหัสสินค้า ตรงกับไฟล์ "ฐานราคาร้านค้า A.B.C.D.E.F.G"
+-- ที่ฝ่ายขายใช้อยู่ (รหัส/ชื่อไทย/ชื่ออังกฤษ/หน่วย/ราคา A..G) · A ถูกสุด → G แพงสุด · price_x ว่าง = ฐานนั้นไม่มีราคา
+-- รหัสเป็นข้อความตามไฟล์ (บางรหัสไม่ตรง products ของ Express — เก็บได้ แต่หน้านำเข้าแจ้งเตือน)
+-- นำเข้า/แก้ได้ที่ routes/priceTiers.js เท่านั้น ทุกการเปลี่ยนเขียน price_tier_logs
+CREATE TABLE IF NOT EXISTS price_tiers (
+  code        TEXT PRIMARY KEY,
+  name_th     TEXT,
+  name_en     TEXT,
+  unit        TEXT,
+  price_a     REAL,
+  price_b     REAL,
+  price_c     REAL,
+  price_d     REAL,
+  price_e     REAL,
+  price_f     REAL,
+  price_g     REAL,
+  is_active   INTEGER NOT NULL DEFAULT 1,
+  note        TEXT,
+  updated_by  TEXT,
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE TABLE IF NOT EXISTS price_tier_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code       TEXT NOT NULL,
+  field      TEXT NOT NULL,
+  old_value  TEXT,
+  new_value  TEXT,
+  source     TEXT NOT NULL,
+  batch_id   TEXT,
+  by_uid     TEXT,
+  at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_price_tier_logs_code ON price_tier_logs(code, at);
+
+-- ใบเสนอราคา (2026-10-08, รอบ 2 ของแผน folder-cryptic-lamport) — แทนไฟล์ Excel "ไฟล์เสนอราคาฐาน X" ชีต ฟอร์มต้นฉบับ
+-- doc_no ออกที่ server ตอนสร้าง (QT<พ.ศ.>-<เดือน>-<ลำดับ>) · status: draft → issued (พิมพ์ได้) / cancelled
+-- รอบ 2 ใช้ได้เฉพาะฐานในสิทธิ์ (sc_users.min_price_tier) — ราคาต่ำกว่าสิทธิ์/การขออนุมัติอยู่รอบ 3
+-- base_price/needs_approval คำนวณที่ server จาก price_tiers ทุกครั้ง ไม่เชื่อค่าจาก client
+-- remarks_json = [{th, en}] หมายเหตุสองภาษา · signer_json = { name, title, contact } ผู้ลงนาม "ขอแสดงความนับถือ"
+CREATE TABLE IF NOT EXISTS quotation_headers (
+  id            TEXT PRIMARY KEY,
+  doc_no        TEXT UNIQUE,
+  doc_date      TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'draft',
+  customer_code TEXT,
+  customer_name TEXT NOT NULL,
+  attn          TEXT,
+  tel           TEXT,
+  email         TEXT,
+  price_tier    TEXT NOT NULL,
+  sales_name    TEXT,
+  from_text     TEXT,
+  remarks_json  TEXT,
+  signer_json   TEXT,
+  note          TEXT,
+  created_by    TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by    TEXT,
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  issued_at     TEXT,
+  cancelled_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS quotation_lines (
+  header_id      TEXT NOT NULL,
+  seq            INTEGER NOT NULL,
+  product_code   TEXT NOT NULL,
+  name_th        TEXT,
+  name_en        TEXT,
+  unit           TEXT,
+  base_price     REAL,
+  quoted_price   REAL NOT NULL,
+  price_source   TEXT NOT NULL DEFAULT 'tier',
+  tier_used      TEXT,
+  needs_approval INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (header_id, seq)
+);
+CREATE TABLE IF NOT EXISTS quotation_logs (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  header_id TEXT NOT NULL,
+  action    TEXT NOT NULL,
+  detail    TEXT,
+  by_uid    TEXT,
+  at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_quotation_headers_by ON quotation_headers(created_by, doc_date);
+CREATE INDEX IF NOT EXISTS idx_quotation_logs_h ON quotation_logs(header_id, at);

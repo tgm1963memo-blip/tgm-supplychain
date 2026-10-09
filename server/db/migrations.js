@@ -555,6 +555,48 @@ function runMigrations(db) {
 
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
 
+  // ใบเสนอราคา รอบ 1 (2026-10-07) — ราคากลางฐาน A–G + ประวัติการแก้ (คำอธิบายเต็มดู schema.sql)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS price_tiers (
+      code TEXT PRIMARY KEY, name_th TEXT, name_en TEXT, unit TEXT,
+      price_a REAL, price_b REAL, price_c REAL, price_d REAL, price_e REAL, price_f REAL, price_g REAL,
+      is_active INTEGER NOT NULL DEFAULT 1, note TEXT, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS price_tier_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, field TEXT NOT NULL,
+      old_value TEXT, new_value TEXT, source TEXT NOT NULL, batch_id TEXT, by_uid TEXT,
+      at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_price_tier_logs_code ON price_tier_logs(code, at);
+  `);
+  // ฐานราคาต่ำสุดที่ผู้ใช้เสนอเองได้โดยไม่ต้องขออนุมัติ (2026-10-07, ผู้ใช้ยืนยัน: ปกติ Sales ใช้ได้ E F G
+  // แต่บางคนเริ่มที่ D ได้ — ตั้งรายคน) · ต่ำกว่าฐานนี้ = ใบเสนอราคาต้องขออนุมัติ (ใช้ในรอบ 3)
+  addColumnIfMissing(db, 'sc_users', 'min_price_tier', "min_price_tier TEXT NOT NULL DEFAULT 'E'");
+  // ใบเสนอราคา รอบ 2 (2026-10-08) — หัวเอกสาร / บรรทัดสินค้า / log (คำอธิบายเต็มดู schema.sql)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS quotation_headers (
+      id TEXT PRIMARY KEY, doc_no TEXT UNIQUE, doc_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
+      customer_code TEXT, customer_name TEXT NOT NULL, attn TEXT, tel TEXT, email TEXT,
+      price_tier TEXT NOT NULL, sales_name TEXT, from_text TEXT, remarks_json TEXT, signer_json TEXT, note TEXT,
+      created_by TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      issued_at TEXT, cancelled_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS quotation_lines (
+      header_id TEXT NOT NULL, seq INTEGER NOT NULL, product_code TEXT NOT NULL,
+      name_th TEXT, name_en TEXT, unit TEXT, base_price REAL, quoted_price REAL NOT NULL,
+      price_source TEXT NOT NULL DEFAULT 'tier', tier_used TEXT, needs_approval INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (header_id, seq)
+    );
+    CREATE TABLE IF NOT EXISTS quotation_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, header_id TEXT NOT NULL, action TEXT NOT NULL, detail TEXT,
+      by_uid TEXT, at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_quotation_headers_by ON quotation_headers(created_by, doc_date);
+    CREATE INDEX IF NOT EXISTS idx_quotation_logs_h ON quotation_logs(header_id, at);
+  `);
+
   // conversion_doc_lines (2026-10-08): เอกสารแปลงสินค้า FF จาก STCRD รายบรรทัด — tgm-wms ใช้ตรวจเลข FF
   // ในใบสั่งแปลง (มีจริงไหม / จำนวนตรงไหม) · direction: out = วัตถุดิบ, in = ผลผลิต · เขียนใหม่ทุกรอบ sync
   db.exec(`

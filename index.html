@@ -4926,6 +4926,10 @@ async function _userBpLoad(force){
 function _userBpName(codes){
   return String(codes||'').split(',').map(x=>x.trim()).filter(Boolean).map(c=>{const m=(_userBpList||[]).find(x=>x.code===c);return m?`${c} ${m.name}`:c;}).join(', ');
 }
+// ฐานราคาต่ำสุดที่เสนอเองได้ (2026-10-07, ใบเสนอราคา) — ต่ำกว่านี้ต้องขออนุมัติ · ค่าเริ่มต้น E (Sales ทั่วไปใช้ E/F/G)
+function _userMinTierField(cur){
+  return `<div class="field"><label>ฐานราคาต่ำสุดที่เสนอเองได้ (ใบเสนอราคา)</label><select id="u-mintier">${['A','B','C','D','E','F','G'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>ฐาน ${t}${t==='E'?' (ค่าเริ่มต้น)':''} — ใช้ ${t}–G ได้เอง</option>`).join('')}</select></div>`;
+}
 function _userBplusField(cur){
   const sel=new Set(String(cur||'').split(',').map(x=>x.trim()).filter(Boolean));
   const list=[...(_userBpList||[])];
@@ -5199,7 +5203,7 @@ const RNAV={
   // ── Super Admin / Admin ───────────────────────────────────────────────
   superadmin:[
     ['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
     ['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
     ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
     ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
@@ -5210,7 +5214,7 @@ const RNAV={
   ],
   admin:[
     ['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
     ['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
     ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
     ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
@@ -5222,21 +5226,21 @@ const RNAV={
   // manager: ดูยอดขายทีม + อนุมัติ + รายงาน
   sales_manager:[
     ['dash','📊','Dashboard'],['mysales','📈','ยอดขายทีม'],['consi','📦','ฝากขาย CONSI'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
     ['forecast','📝','Sales Forecast'],
     ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['reports','📄','Reports']
   ],
   // officer: ทำงาน Sales ประจำวัน
   sales_officer:[
     ['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
     ['forecast','📝','Sales Forecast'],
     ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']
   ],
   // worker: Sales ระดับพื้นฐาน (เห็นเฉพาะงานตัวเอง)
   sales_worker:[
     ['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
     ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']
   ],
   // ── Planning department ───────────────────────────────────────────────
@@ -5264,12 +5268,12 @@ const RNAV={
     ['sample','🧪','ของตัวอย่าง']
   ],
   // ── Backward-compat (roles เดิม) ─────────────────────────────────────
-  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['promo_history','🎯','เอกสารโปรโมชัน'],['forecast','📝','Sales Forecast'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']],
+  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['forecast','📝','Sales Forecast'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']],
   planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['sample','🧪','ของตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
   warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['sample','🧪','ของตัวอย่าง']],
   manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
-const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
+const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
 
 // แยกแอป Sales/Planning (2026-09-15) — role ไหน "เป็นของแผนกเดียวเท่านั้น" คืนค่า 'sales'/'planning',
@@ -5532,6 +5536,8 @@ function nav(page){
       case 'mysales': pgMySales(); break;
       case 'consi': pgConsignment(); break;
       case 'promo_history': pgPromoHistory(); break;
+      case 'pricetiers': pgPriceTiers(); break;
+      case 'quotation': pgQuotation(); break;
       case 'forecast': pgForecast(); break;
       case 'planstock': pgPlanStock(); break;
       case 'po': pgPO(); break;
@@ -10854,6 +10860,7 @@ function showAddUser(){
     <div class="field"><label>SLM ID (สำหรับ Sales)</label><input type="text" id="u-slm" placeholder="เช่น 210"></div>
     ${_userSlmCodesField('')}
     ${_userBplusField('')}
+    ${_userMinTierField('E')}
     <div class="field"><label>รหัสผ่าน</label><input type="password" id="u-pwd" value="1234"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email"></div>
   </div>
@@ -10887,6 +10894,7 @@ function showEditUser(i){
     <div class="field"><label>SLM ID</label><input type="text" id="u-slm" value="${u.slm_id||''}"></div>
     ${_userSlmCodesField(u.slm_codes||'')}
     ${_userBplusField(u.bplus_codes||'')}
+    ${_userMinTierField(u.min_price_tier||'E')}
     <div class="field"><label>รหัสผ่านใหม่ (ว่าง=ไม่เปลี่ยน)</label><input type="password" id="u-pwd" placeholder="(ว่าง=ไม่เปลี่ยน)"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email" value="${u.email||''}"></div>
   </div>
@@ -10916,7 +10924,7 @@ async function saveUser(idx){
   // the local cache from the server so this save is visible to every other page/device that reads it.
   const slmCodes=[...document.querySelectorAll('.u-slmc:checked')].map(x=>x.value).join(',');
   const bpCodes=[...document.querySelectorAll('.u-bpc:checked')].map(x=>x.value).join(',');
-  const payload={uid,name,role,department:department||null,position:position||null,slm_id:slm||null,slm_codes:slmCodes||null,bplus_codes:bpCodes||null,email:email||null};
+  const payload={uid,name,role,department:department||null,position:position||null,slm_id:slm||null,slm_codes:slmCodes||null,bplus_codes:bpCodes||null,min_price_tier:document.getElementById('u-mintier')?.value||'E',email:email||null};
   if(pwd) payload.pwd=pwd; // ว่าง = ไม่เปลี่ยนรหัสผ่าน (เฉพาะตอนแก้ไข); SB.upsertUser map เป็น pwd_hash ให้ server ไป hash เอง
   try{
     await SB.upsertUser(payload);
@@ -13638,6 +13646,8 @@ const ALL_NAV_PAGES=[
   {id:'mysales',lbl:'📈 Sales Overview'},
   {id:'consi',lbl:'📦 ฝากขาย CONSI'},
   {id:'promo_history',lbl:'🎯 เอกสารโปรโมชัน'},
+  {id:'pricetiers',lbl:'💰 ราคากลาง A–G'},
+  {id:'quotation',lbl:'🧾 ใบเสนอราคา'},
   {id:'forecast',lbl:'📝 Sales Forecast'},
   {id:'planstock',lbl:'📦 Stock & Planning'},
   {id:'po',lbl:'📋 PO Planning'},
@@ -13683,11 +13693,11 @@ let _permTab='pages';
 const DEFAULT_ROLES={
   // ── 5-Level roles ใหม่ ──────────────────────────────────────────────
   superadmin:{label:'Super Admin',pages:(ALL_NAV_PAGES||[]).map(p=>p.id)},
-  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','promo_history','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custreg','sample','skuadmin','groups','reports','auditlog']},
+  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','promo_history','pricetiers','quotation','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custreg','sample','skuadmin','groups','reports','auditlog']},
   // Sales department
-  sales_manager:{label:'Sales Manager',pages:['dash','mysales','consi','promo_history','forecast','custreg','sample','reports']},
-  sales_officer:{label:'Sales Officer',pages:['dash','mysales','promo_history','forecast','custreg','sample']},
-  sales_worker:{label:'Sales Worker',pages:['dash','mysales','promo_history','custreg','sample']},
+  sales_manager:{label:'Sales Manager',pages:['dash','mysales','consi','promo_history','pricetiers','quotation','forecast','custreg','sample','reports']},
+  sales_officer:{label:'Sales Officer',pages:['dash','mysales','promo_history','pricetiers','quotation','forecast','custreg','sample']},
+  sales_worker:{label:'Sales Worker',pages:['dash','mysales','promo_history','pricetiers','quotation','custreg','sample']},
   // Planning department
   planning_manager:{label:'Planning Manager',pages:['dash','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','sample','skuadmin','groups','reports']},
   planning_officer:{label:'Planning Officer',pages:['dash','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','sample']},
@@ -13695,7 +13705,7 @@ const DEFAULT_ROLES={
   // ── Backward-compat roles เดิม ───────────────────────────────────────
   planning:{label:'Planning (เดิม)',pages:['dash','forecast','planstock','po','prodplan','sample','skuadmin','groups']},
   warehouse:{label:'Warehouse (เดิม)',pages:['dash','wms','po','sample']},
-  sales:{label:'Sales (เดิม)',pages:['dash','mysales','promo_history','forecast','custreg','sample']},
+  sales:{label:'Sales (เดิม)',pages:['dash','mysales','promo_history','pricetiers','quotation','forecast','custreg','sample']},
   manager:{label:'Manager (เดิม)',pages:['dash','mysales','planstock','po','custreg','sample','groups','reports']},
 };
 function _getRoles(){
@@ -18014,6 +18024,542 @@ let _pdCodeMapDraft = null; // ผลอ่านไฟล์ที่ยัง�
 let _pdRenumberPlan = null; // ตัวอย่างออกเลขใหม่ให้เอกสารเดิม
 const _pdCanCodeMap = () => ['admin', 'superadmin'].includes(ROLE);
 function _pdYm() { const d = new Date(); return String((d.getFullYear() + 543) % 100).padStart(2, '0') + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+// ═══════════════════════════════════════════════════════════════════
+// ราคากลาง A–G (2026-10-07, ใบเสนอราคา รอบ 1) — server: routes/priceTiers.js
+// ดูได้ทุก role ฝ่ายขาย · นำเข้า Excel/แก้ราคา เฉพาะ superadmin/admin/sales_manager (server ตรวจซ้ำ)
+// ไฟล์ต้นทาง: "ฐานราคาร้านค้า A.B.C.D.E.F.G" (รหัส/รายการสินค้า/English Name/หน่วย/A..G) หรือไฟล์ฐานเดียว
+// "ไฟล์เสนอราคาฐาน X" (ชีต Master Price) — ไฟล์ฐานเดียวแก้เฉพาะฐานนั้น
+// ═══════════════════════════════════════════════════════════════════
+const PT_TIERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+let _pt = { rows: null, q: '', inactive: false, draft: null, err: '' };
+const _ptCanWrite = () => ['superadmin', 'admin', 'sales_manager'].includes(ROLE);
+const _ptMin = () => (CURRENT_USER?.min_price_tier || 'E');
+const _ptFmt = v => v == null || v === '' ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const _ptCol = t => 'price_' + t.toLowerCase();
+const _ptFieldLbl = f => f.startsWith('price_') ? 'ฐาน ' + f.slice(6).toUpperCase() : ({ name_th: 'ชื่อไทย', name_en: 'ชื่ออังกฤษ', unit: 'หน่วย', is_active: 'สถานะ', note: 'หมายเหตุ', '*': 'สร้างใหม่' }[f] || f);
+
+async function pgPriceTiers(reload) {
+  if (_pt.rows === null || reload) {
+    document.getElementById('ct').innerHTML = '<div style="padding:30px;text-align:center;color:var(--TX3)">⏳ กำลังโหลดราคากลาง…</div>';
+    const r = await apiFetch('/api/price_tiers');
+    if (!_isActivePage('pricetiers')) return;
+    _pt.err = r.error ? r.error.message : '';
+    _pt.rows = r.error ? [] : (r.data || []);
+  }
+  ptRender();
+}
+
+function _ptFiltered() {
+  const q = _pt.q.trim().toLowerCase();
+  return (_pt.rows || []).filter(r => (_pt.inactive || r.is_active) &&
+    (!q || [r.code, r.name_th, r.name_en].some(x => String(x || '').toLowerCase().includes(q))));
+}
+
+function ptRender() {
+  const ct = document.getElementById('ct'); if (!ct) return;
+  const w = _ptCanWrite(), min = _ptMin();
+  const all = _pt.rows || [], act = all.filter(r => r.is_active).length;
+  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="ptExport()">⬇ ส่งออก Excel</button>
+    ${w ? `<button class="btn btn-sm" onclick="ptEdit(null)">＋ เพิ่มสินค้า</button><button class="btn btn-sm btn-p" onclick="document.getElementById('pt-file').click()">⬆ นำเข้า Excel</button><input type="file" id="pt-file" accept=".xlsx,.xls" style="display:none" onchange="ptImport(this)">` : ''}`;
+  ct.innerHTML = `${_pt.err ? `<div class="al alw">โหลดราคากลางไม่สำเร็จ: ${esc(_pt.err)}</div>` : ''}
+    <div id="pt-draft">${_ptDraftHtml()}</div>
+    <div class="card">
+      <div class="ch"><div class="ct2">💰 ราคากลางร้านค้า ฐาน A–G</div>
+        <span style="font-size:12px;color:var(--TX3)">${act.toLocaleString()} รายการที่ใช้งาน${all.length > act ? ` · ยกเลิกขาย ${all.length - act}` : ''}</span></div>
+      <div class="al ali" style="font-size:12px">A ถูกสุด → G แพงสุด · สิทธิ์ของคุณ: เสนอเองได้ตั้งแต่ <b>ฐาน ${esc(min)}</b> ขึ้นไป (คอลัมน์สีเหลือง = ต่ำกว่าสิทธิ์ ต้องขออนุมัติเมื่อออกใบเสนอราคา)${w ? ' · คลิกที่ราคาเพื่อแก้ไข (บันทึกประวัติทุกครั้ง)' : ''}</div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <input type="text" id="pt-q" placeholder="🔍 ค้นหารหัส / ชื่อสินค้า" value="${esc(_pt.q)}" oninput="_pt.q=this.value;ptRenderRows()" style="width:280px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px">
+        <label style="font-size:12.5px;display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${_pt.inactive ? 'checked' : ''} onchange="_pt.inactive=this.checked;ptRenderRows()"> แสดงสินค้ายกเลิกขาย</label>
+        <span id="pt-count" style="font-size:12px;color:var(--TX3)"></span>
+      </div>
+      <div class="tw" style="max-height:calc(100vh - 290px);overflow:auto"><table><thead><tr>
+        <th>รหัส</th><th>รายการสินค้า</th><th>English Name</th><th>หน่วย</th>
+        ${PT_TIERS.map(t => `<th class="r" style="${PT_TIERS.indexOf(t) < PT_TIERS.indexOf(min) ? 'background:#8a6a12' : ''}">${t}</th>`).join('')}
+        <th></th></tr></thead><tbody id="pt-body"></tbody></table></div>
+    </div>`;
+  ptRenderRows();
+}
+
+function ptRenderRows() {
+  const body = document.getElementById('pt-body'); if (!body) return;
+  const rows = _ptFiltered(), w = _ptCanWrite(), mi = PT_TIERS.indexOf(_ptMin());
+  const cnt = document.getElementById('pt-count'); if (cnt) cnt.textContent = `แสดง ${rows.length.toLocaleString()} รายการ`;
+  body.innerHTML = rows.map(r => `<tr style="${r.is_active ? '' : 'opacity:.5'}">
+    <td class="mono">${esc(r.code)}</td><td>${esc(r.name_th || '')}${r.is_active ? '' : ' <span class="badge bbr">ยกเลิกขาย</span>'}</td>
+    <td style="font-size:12px;color:var(--TX2)">${esc(r.name_en || '')}</td><td style="font-size:12px">${esc(r.unit || '')}</td>
+    ${PT_TIERS.map((t, i) => `<td class="r" data-code="${esc(r.code)}" data-t="${t}" style="${i < mi ? 'background:var(--LY);' : ''}${w ? 'cursor:pointer' : ''}" ${w ? 'onclick="ptCellEdit(this)"' : ''}>${_ptFmt(r[_ptCol(t)])}</td>`).join('')}
+    <td><button class="btn btn-xs" onclick="ptEdit('${esc(r.code)}')" title="${w ? 'แก้ไข / ประวัติ' : 'ประวัติราคา'}">${w ? '✏️' : '🕘'}</button></td></tr>`).join('')
+    || `<tr><td colspan="12" style="padding:24px;text-align:center;color:var(--TX3)">${(_pt.rows || []).length ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีราคากลาง — กด "นำเข้า Excel" เพื่อนำเข้าไฟล์ฐานราคา A–G'}</td></tr>`;
+}
+
+// แก้ราคาในตาราง: คลิกช่อง → input · Enter/ออกจากช่อง = บันทึก · Esc = ยกเลิก · ว่าง = ล้างราคาฐานนั้น
+function ptCellEdit(td) {
+  if (td.querySelector('input')) return;
+  const code = td.dataset.code, t = td.dataset.t, row = (_pt.rows || []).find(r => r.code === code); if (!row) return;
+  const old = row[_ptCol(t)];
+  td.innerHTML = `<input type="number" step="0.01" min="0" value="${old ?? ''}" style="width:80px;text-align:right;padding:2px 4px">`;
+  const inp = td.firstChild; inp.focus(); inp.select();
+  let done = false;
+  const finish = async save => {
+    if (done) return; done = true;
+    const v = inp.value.trim(), nv = v === '' ? null : Number(v);
+    if (!save || nv === (old ?? null)) { td.textContent = _ptFmt(old); return; }
+    if (nv !== null && !(nv >= 0)) { toast('ราคาไม่ถูกต้อง'); td.textContent = _ptFmt(old); return; }
+    td.textContent = '⏳';
+    const r = await apiFetch('/api/price_tiers/' + encodeURIComponent(code), { method: 'PUT', body: JSON.stringify({ [_ptCol(t)]: nv }) });
+    if (r.error) { toast('บันทึกไม่สำเร็จ: ' + r.error.message); td.textContent = _ptFmt(old); return; }
+    Object.assign(row, r.data); td.textContent = _ptFmt(row[_ptCol(t)]);
+    toast(`บันทึก ${code} ฐาน ${t}: ${_ptFmt(old)} → ${_ptFmt(nv)}`);
+  };
+  inp.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); };
+  inp.onblur = () => finish(true);
+}
+
+// แก้/เพิ่มรายตัว + ประวัติการแก้ (code=null = เพิ่มสินค้าใหม่)
+async function ptEdit(code) {
+  const r = code ? (_pt.rows || []).find(x => x.code === code) : {}; if (!r) return;
+  const w = _ptCanWrite(), dis = w ? '' : 'disabled';
+  openMod(`<div class="mh"><div class="mt2">${code ? 'ราคากลาง ' + esc(code) : 'เพิ่มสินค้าในราคากลาง'}</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div class="fg">
+      <div class="field"><label>รหัสสินค้า</label><input type="text" id="pte-code" value="${esc(code || '')}" ${code ? 'readonly' : ''} placeholder="เช่น 10003-2"></div>
+      <div class="field"><label>หน่วย</label><input type="text" id="pte-unit" value="${esc(r.unit || '')}" ${dis} placeholder="กิโลกรัม / แพค"></div>
+      <div class="field" style="grid-column:1/-1"><label>รายการสินค้า (ไทย)</label><input type="text" id="pte-th" value="${esc(r.name_th || '')}" ${dis}></div>
+      <div class="field" style="grid-column:1/-1"><label>English Name</label><input type="text" id="pte-en" value="${esc(r.name_en || '')}" ${dis}></div>
+      ${PT_TIERS.map(t => `<div class="field"><label>ฐาน ${t}</label><input type="number" step="0.01" min="0" id="pte-${t}" value="${r[_ptCol(t)] ?? ''}" ${dis}></div>`).join('')}
+      <div class="field"><label>สถานะ</label><select id="pte-act" ${dis}><option value="1" ${r.is_active !== 0 ? 'selected' : ''}>ใช้งาน</option><option value="0" ${r.is_active === 0 ? 'selected' : ''}>ยกเลิกขาย</option></select></div>
+      <div class="field" style="grid-column:1/-1"><label>หมายเหตุ</label><input type="text" id="pte-note" value="${esc(r.note || '')}" ${dis}></div>
+    </div>
+    ${code ? '<div style="font-weight:700;font-size:13px;margin:4px 0 6px">🕘 ประวัติการแก้ไข</div><div id="pte-logs" style="max-height:200px;overflow:auto;font-size:12px;color:var(--TX3)">กำลังโหลด…</div>' : ''}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn" onclick="closeM()">ปิด</button>${w ? `<button class="btn btn-p" onclick="ptEditSave(${code ? 'true' : 'false'})">บันทึก</button>` : ''}</div>`);
+  if (!code) return;
+  const lg = await apiFetch('/api/price_tiers/logs?code=' + encodeURIComponent(code));
+  const box = document.getElementById('pte-logs'); if (!box) return;
+  box.innerHTML = lg.error ? esc(lg.error.message) : (lg.data || []).length ? `<table style="width:100%"><thead><tr><th>เวลา</th><th>ผู้แก้</th><th>รายการ</th><th class="r">เดิม</th><th class="r">ใหม่</th><th>ที่มา</th></tr></thead><tbody>${lg.data.map(l => `<tr>
+    <td>${esc(new Date(l.at).toLocaleString('th-TH'))}</td><td>${esc(uidToName(l.by_uid) || l.by_uid || '')}</td><td>${esc(_ptFieldLbl(l.field))}</td>
+    <td class="r">${esc(l.old_value ?? '—')}</td><td class="r">${esc(l.new_value ?? '—')}</td><td>${l.source === 'import' ? 'นำเข้า Excel' : 'แก้บนเว็บ'}</td></tr>`).join('')}</tbody></table>` : 'ยังไม่มีประวัติ';
+}
+
+async function ptEditSave(isEdit) {
+  const g = id => document.getElementById(id)?.value ?? '';
+  const code = g('pte-code').trim();
+  if (!code) { toast('กรุณากรอกรหัสสินค้า'); return; }
+  if (!isEdit && (_pt.rows || []).some(r => r.code === code)) { toast('รหัสนี้มีในราคากลางแล้ว'); return; }
+  const body = { name_th: g('pte-th'), name_en: g('pte-en'), unit: g('pte-unit'), note: g('pte-note'), is_active: g('pte-act') === '1' };
+  if (!body.name_th.trim()) { toast('กรุณากรอกชื่อสินค้า'); return; }
+  for (const t of PT_TIERS) { const v = g('pte-' + t).trim(); if (v !== '' && !(Number(v) >= 0)) { toast(`ราคาฐาน ${t} ไม่ถูกต้อง`); return; } body[_ptCol(t)] = v === '' ? null : Number(v); }
+  const r = await apiFetch('/api/price_tiers/' + encodeURIComponent(code), { method: 'PUT', body: JSON.stringify(body) });
+  if (r.error) { toast('บันทึกไม่สำเร็จ: ' + r.error.message); return; }
+  const i = _pt.rows.findIndex(x => x.code === code);
+  if (i >= 0) _pt.rows[i] = r.data; else _pt.rows.push(r.data), _pt.rows.sort((a, b) => a.code.localeCompare(b.code));
+  closeM(); toast('บันทึกราคากลาง ' + code + ' แล้ว'); ptRenderRows();
+}
+
+// อ่านชีตราคา: หาแถวหัวที่มีช่อง "รหัส" แล้วจับคอลัมน์ชื่อ/อังกฤษ/หน่วย และคอลัมน์ฐาน "A ปรับ 1/7/65".."G ..."
+// ชีตที่มีทั้งราคาเดิม/ราคาปรับ (เช่นชีต "พี่มล": "D เดิม" กับ "D ปรับ") เลือกคอลัมน์ที่มีคำว่า "ปรับ" · "A(2) เดิม" ไม่นับ
+function _ptParseSheet(ws) {
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: false });
+  const h = aoa.slice(0, 20).findIndex(r => (r || []).some(c => String(c ?? '').trim() === 'รหัส'));
+  if (h < 0) return null;
+  const head = aoa[h].map(c => String(c ?? '').trim());
+  const find = re => head.findIndex(c => re.test(c));
+  const cCode = head.indexOf('รหัส'), cTh = find(/รายการสินค้า/), cEn = find(/english/i), cUnit = find(/^หน่วย/), cSt = find(/^สถานะ/);
+  const tierCol = {}, score = {};
+  head.forEach((c, j) => {
+    const m = /^([A-G])(?![A-Za-z(])/.exec(c); if (!m) return;
+    const s = /ปรับ/.test(c) ? 2 : 1;
+    if (!(m[1] in score) || s >= score[m[1]]) { tierCol[m[1]] = j; score[m[1]] = s; }
+  });
+  const tiers = PT_TIERS.filter(t => t in tierCol);
+  if (!tiers.length) return null;
+  const rows = [];
+  for (let i = h + 1; i < aoa.length; i++) {
+    const r = aoa[i] || [], code = String(r[cCode] ?? '').trim();
+    if (!code) continue;
+    const prices = {}; tiers.forEach(t => { prices[t] = r[tierCol[t]]; });
+    rows.push({ row: i + 1, code, name_th: cTh >= 0 ? r[cTh] : null, name_en: cEn >= 0 ? r[cEn] : null, unit: cUnit >= 0 ? r[cUnit] : null, status: cSt >= 0 ? r[cSt] : null, prices });
+  }
+  return { tiers, rows };
+}
+
+function ptImport(input) {
+  const file = input.files[0]; if (!file) return;
+  input.value = '';
+  const rd = new FileReader();
+  rd.onload = async e => {
+    try {
+      await ensureXLSX();
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const sheets = wb.SheetNames.map(n => ({ name: n, parsed: _ptParseSheet(wb.Sheets[n]) })).filter(s => s.parsed && s.parsed.rows.length);
+      if (!sheets.length) { toast('ไม่พบชีตที่มีคอลัมน์ "รหัส" และราคาฐาน A–G ในไฟล์'); return; }
+      const best = sheets.reduce((a, b) => b.parsed.tiers.length > a.parsed.tiers.length ? b : a);
+      _pt.draft = { file: file.name, sheets, sheet: best.name, preview: null, deactivate: false };
+      await ptPreview();
+    } catch (err) { toast('อ่านไฟล์ไม่สำเร็จ: ' + (err.message || err)); }
+  };
+  rd.readAsArrayBuffer(file);
+}
+function _ptDraftSheet() { return _pt.draft?.sheets.find(s => s.name === _pt.draft.sheet)?.parsed; }
+async function ptPreview(sheet) {
+  if (!_pt.draft) return;
+  if (sheet) _pt.draft.sheet = sheet;
+  const p = _ptDraftSheet();
+  _pt.draft.preview = null; _pt.draft.error = '';
+  document.getElementById('pt-draft').innerHTML = _ptDraftHtml();
+  const r = await apiFetch('/api/price_tiers/import/preview', { method: 'POST', body: JSON.stringify({ rows: p.rows, tiers: p.tiers }) });
+  if (!_pt.draft) return;
+  if (r.error) _pt.draft.error = r.error.message; else _pt.draft.preview = r.data;
+  const box = document.getElementById('pt-draft'); if (box) box.innerHTML = _ptDraftHtml();
+}
+function _ptDraftHtml() {
+  const d = _pt.draft; if (!d) return '';
+  const pv = d.preview, p = _ptDraftSheet(), byCode = new Map((_pt.rows || []).map(r => [r.code, r]));
+  const nm = c => esc(byCode.get(c)?.name_th || p.rows.find(r => String(r.code).trim() === c)?.name_th || '');
+  const chg = x => x.changes.map(c => `<span style="white-space:nowrap">${esc(_ptFieldLbl(c.field))}: ${c.field.startsWith('price_') ? `${_ptFmt(c.old)} → <b>${_ptFmt(c.new)}</b>` : c.field === 'is_active' ? (c.new ? 'ใช้งาน' : '<b style="color:var(--R)">ยกเลิกขาย</b>') : `${esc(c.old ?? '—')} → <b>${esc(c.new ?? '—')}</b>`}</span>`).join(' · ');
+  const list = (arr, max = 60) => arr.slice(0, max).map(esc).join(', ') + (arr.length > max ? ` … (+${arr.length - max})` : '');
+  return `<div class="card" style="border:2px solid var(--BL)">
+    <div class="ch"><div class="ct2">📄 ตรวจไฟล์ก่อนนำเข้า: ${esc(d.file)}</div>
+      ${d.sheets.length > 1 ? `<select onchange="ptPreview(this.value)" style="padding:4px 8px">${d.sheets.map(s => `<option value="${esc(s.name)}" ${s.name === d.sheet ? 'selected' : ''}>ชีต ${esc(s.name)} (ฐาน ${s.parsed.tiers.join('')}, ${s.parsed.rows.length} แถว)</option>`).join('')}</select>` : `<span style="font-size:12px;color:var(--TX3)">ชีต ${esc(d.sheet)}</span>`}</div>
+    <div style="font-size:12.5px;margin-bottom:8px">พบคอลัมน์ราคา <b>ฐาน ${p.tiers.join(', ')}</b>${p.tiers.length < 7 ? ' — <span style="color:var(--A)">ไฟล์นี้แก้เฉพาะฐานที่มีในไฟล์ ฐานอื่นคงเดิม</span>' : ''} · ${p.rows.length.toLocaleString()} แถว</div>
+    ${d.error ? `<div class="al alw">${esc(d.error)}</div>` : !pv ? '<div style="color:var(--TX3);padding:8px">⏳ กำลังตรวจ…</div>' : `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <span class="badge bbg">ใหม่ ${pv.new_count}</span><span class="badge bbl">เปลี่ยน ${pv.changed_count}</span><span class="badge bbgr">ไม่เปลี่ยน ${pv.unchanged_count}</span>
+      ${pv.cancelled.length ? `<span class="badge bbr">ยกเลิกขาย ${pv.cancelled.length}</span>` : ''}
+      ${pv.invalid.length ? `<span class="badge bba">ราคาอ่านไม่ได้ ${pv.invalid.length}</span>` : ''}
+      ${pv.dup.length ? `<span class="badge bba">รหัสซ้ำในไฟล์ ${pv.dup.length}</span>` : ''}
+      ${pv.unknown.length ? `<span class="badge bba">ไม่พบใน Express ${pv.unknown.length}</span>` : ''}
+    </div>
+    ${pv.invalid.length ? `<details open style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">⚠️ ราคาที่อ่านไม่ได้ (คงราคาเดิม) ${pv.invalid.length} ช่อง</summary><div style="margin:4px 0 0 16px">${pv.invalid.slice(0, 60).map(x => `แถว ${x.row} ${esc(x.code)} ฐาน ${esc(x.tier)}: "${esc(x.value)}"`).join('<br>')}</div></details>` : ''}
+    ${pv.dup.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">⚠️ รหัสซ้ำในไฟล์ (ใช้แถวล่างสุด)</summary><div style="margin:4px 0 0 16px">${list(pv.dup)}</div></details>` : ''}
+    ${pv.unknown.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">⚠️ รหัสที่ไม่พบในสินค้า Express ${pv.unknown.length} รหัส — นำเข้าได้ แต่ควรตรวจว่ารหัสพิมพ์ถูกหรือไม่</summary><div style="margin:4px 0 0 16px">${pv.unknown.slice(0, 200).map(c => `${esc(c)} <span style="color:var(--TX3)">${nm(c)}</span>`).join(' · ')}</div></details>` : ''}
+    ${pv.changed.length ? `<details ${pv.changed_count <= 50 ? 'open' : ''} style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer">รายการที่เปลี่ยน ${pv.changed_count}</summary>
+      <div class="tw" style="max-height:260px;overflow:auto;margin-top:4px"><table><thead><tr><th>รหัส</th><th>สินค้า</th><th>การเปลี่ยนแปลง</th></tr></thead><tbody>${pv.changed.map(x => `<tr><td class="mono">${esc(x.code)}</td><td>${nm(x.code)}</td><td>${chg(x)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    ${pv.new_items.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer">รายการใหม่ ${pv.new_count}</summary><div style="margin:4px 0 0 16px">${pv.new_items.slice(0, 200).map(x => `${esc(x.code)} <span style="color:var(--TX3)">${nm(x.code)}</span>`).join(' · ')}</div></details>` : ''}
+    ${pv.missing.length ? `<label style="font-size:12.5px;display:flex;gap:6px;align-items:flex-start;margin:6px 0;cursor:pointer"><input type="checkbox" ${d.deactivate ? 'checked' : ''} onchange="_pt.draft.deactivate=this.checked">
+      <span>ปิดใช้งาน (ยกเลิกขาย) ${pv.missing.length} รหัสที่มีในระบบแต่ไม่อยู่ในไฟล์นี้ <span style="color:var(--TX3)">— ${list(pv.missing, 30)}</span></span></label>` : ''}`}
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-sm" onclick="_pt.draft=null;ptRender()">ยกเลิก</button>
+      ${pv && (pv.new_count || pv.changed_count || pv.missing.length) ? `<button class="btn btn-sm btn-g" style="margin-left:auto" onclick="ptImportSave(this)">💾 บันทึกราคากลาง</button>` : pv ? '<span style="margin-left:auto;font-size:12.5px;color:var(--G)">✓ ราคาในไฟล์ตรงกับระบบแล้ว</span>' : ''}</div>
+  </div>`;
+}
+async function ptImportSave(btn) {
+  const d = _pt.draft, p = _ptDraftSheet(); if (!d || !p) return;
+  if (d.deactivate && !confirm(`ยืนยันปิดใช้งาน ${d.preview.missing.length} รหัสที่ไม่อยู่ในไฟล์?`)) return;
+  btn.disabled = true; btn.textContent = '⏳ กำลังบันทึก…';
+  const r = await apiFetch('/api/price_tiers/import', { method: 'POST', body: JSON.stringify({ rows: p.rows, tiers: p.tiers, file: `${d.file} · ชีต ${d.sheet}`, deactivate_missing: !!d.deactivate }) });
+  if (r.error) { toast('นำเข้าไม่สำเร็จ: ' + r.error.message); btn.disabled = false; btn.textContent = '💾 บันทึกราคากลาง'; return; }
+  _pt.draft = null;
+  toast(`นำเข้าแล้ว — ใหม่ ${r.data.created} · แก้ ${r.data.updated}${r.data.deactivated ? ' · ปิดใช้งาน ' + r.data.deactivated : ''}`);
+  pgPriceTiers(true);
+}
+
+// ส่งออกรูปแบบเดียวกับไฟล์นำเข้า (แก้ใน Excel แล้วนำเข้ากลับได้) — คอลัมน์ "สถานะ" = ยกเลิกการขาย ปิดใช้งานโดยไม่ลบราคา
+function ptExport() {
+  const rows = _ptFiltered().map(r => [r.code, r.name_th || '', r.name_en || '', r.unit || '',
+    ...PT_TIERS.map(t => r[_ptCol(t)] ?? ''), r.is_active ? '' : 'ยกเลิกการขาย']);
+  toXLSX([['ราคากลาง A-G', ['รหัส', 'รายการสินค้า', 'English Name', 'หน่วย', ...PT_TIERS, 'สถานะ'], rows]], `ราคากลาง_A-G_${today()}.xlsx`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ใบเสนอราคา (2026-10-08, รอบ 2) — server: routes/quotationHeaders.js · ราคาจาก ราคากลาง A–G (price_tiers)
+// แทนไฟล์ "ไฟล์เสนอราคาฐาน X" ชีต ฟอร์มต้นฉบับ · รอบนี้ใช้ได้เฉพาะฐาน/ราคาในสิทธิ์ (min_price_tier) — ขออนุมัติ = รอบ 3
+// สถานะ: ร่าง (แก้ได้) → ออกแล้ว (พิมพ์ส่งลูกค้า) · ยกเลิกได้ทั้งสองสถานะ · server คำนวณราคาฐาน/ตรวจสิทธิ์เองทุกครั้ง
+// ═══════════════════════════════════════════════════════════════════
+const QT_STATUS = { draft: { lbl: 'ร่าง', cls: 'bbgr' }, issued: { lbl: 'ออกแล้ว', cls: 'bbg' }, cancelled: { lbl: 'ยกเลิก', cls: 'bbr' } };
+// หมายเหตุ / ผู้ลงนาม ตั้งต้นตามฟอร์มต้นฉบับ (แก้ได้ทุกใบ)
+const QT_DEFAULT_REMARKS = [
+  { th: 'ราคานี้ยังไม่รวมภาษีมูลค่าเพิ่ม 7%', en: 'Price is subject to 7% VAT.' },
+  { th: 'กรุณาสั่งจองล่วงหน้า 7 วันทำการ (ไม่รวมเสาร์-อาทิตย์ และวันหยุดนักขัตฤกษ์)', en: 'Please order 7 working days in advance (excl. Sat-Sun & public holidays).' },
+  { th: 'ส่งสินค้าทุกวัน ยกเว้นวันอาทิตย์ หรือตามรอบส่งหรือตรงวันหยุดนักขัตฤกษ์', en: 'Delivery daily (or per delivery schedule), except Sundays and public holidays.' },
+  { th: 'สินค้าส่งขั้นต่ำครั้งละ 10 กก.', en: 'Minimum order 10 kg per delivery.' },
+  { th: 'วิธีเก็บรักษา: สินค้าชิลล์ เก็บที่ 0-4°C / สินค้าโฟรเซ่น เก็บที่ -18°C', en: 'Storage: chilled 0-4°C / frozen -18°C or below.' },
+  { th: 'หลังจากเปิดถุง ควรใช้ให้หมดภายใน 3 วัน', en: 'Once opened, keep refrigerated and consume within 3 days.' },
+  { th: 'หากพบปัญหาสินค้ากรุณาแจ้งและส่งสินค้าคืนกลับภายในวันส่งสินค้า', en: 'If any issue is found, please notify and return upon receipt.' },
+];
+const QT_DEFAULT_SIGNER = { name: 'Pratchaya Arjfak', title: 'ผู้จัดการฝ่ายขาย / Sales Manager', contact: 'Tel: 092-8694269 •  Pratchaya@tgm.co.th' };
+const QT_FROM = 'THAI-GERMAN MEAT PRODUCT CO.,LTD';
+// โลโก้ TGM จากไฟล์ต้นฉบับ "ไฟล์เสนอราคาฐาน X" (image1, 229×124)
+const QT_LOGO = 'data:image/png;base64,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';
+let _qt = { list: null, prices: null, view: 'list', doc: null, status: '', q: '', err: '' };
+const _qtCanManage = () => ['superadmin', 'admin', 'sales_manager', 'manager'].includes(ROLE);
+const _qtPrice = (code) => (_qt.prices || []).find(p => p.code === String(code || '').trim());
+const _qtFmt = v => v == null || v === '' ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function pgQuotation(reload) {
+  const ct = document.getElementById('ct');
+  if (_qt.list === null || reload) {
+    ct.innerHTML = '<div style="padding:30px;text-align:center;color:var(--TX3)">⏳ กำลังโหลดใบเสนอราคา…</div>';
+    const [l, p] = await Promise.all([apiFetch('/api/quotation_headers'), _qt.prices ? { data: _qt.prices } : apiFetch('/api/price_tiers?active=1')]);
+    if (!_isActivePage('quotation')) return;
+    _qt.err = l.error ? l.error.message : p.error ? 'โหลดราคากลางไม่สำเร็จ: ' + p.error.message : '';
+    _qt.list = l.error ? [] : (l.data || []);
+    _qt.prices = p.error ? [] : (p.data || []);
+  }
+  if (_qt.view === 'form' && _qt.doc) return qtRenderForm();
+  if (_qt.view === 'view' && _qt.doc) return qtRenderView();
+  qtRenderList();
+}
+
+function qtRenderList() {
+  _qt.view = 'list'; _qt.doc = null;
+  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm btn-p" onclick="qtNew()">＋ สร้างใบเสนอราคา</button>`;
+  const q = _qt.q.trim().toLowerCase();
+  const rows = (_qt.list || []).filter(r => (!_qt.status || r.status === _qt.status) && (!q || [r.doc_no, r.customer_name, r.customer_code, r.sales_name].some(x => String(x || '').toLowerCase().includes(q))));
+  document.getElementById('ct').innerHTML = `${_qt.err ? `<div class="al alw">${esc(_qt.err)}</div>` : ''}
+    <div class="card">
+      <div class="ch"><div class="ct2">🧾 ใบเสนอราคา</div><span style="font-size:12px;color:var(--TX3)">${_qtCanManage() ? 'ทุกใบในระบบ' : 'เฉพาะใบที่คุณสร้าง'} · ${(_qt.list || []).length.toLocaleString()} ใบ</span></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <input type="text" placeholder="🔍 เลขที่ / ลูกค้า / พนักงานขาย" value="${esc(_qt.q)}" oninput="_qt.q=this.value;qtRenderList();this.focus();this.setSelectionRange(this.value.length,this.value.length)" style="width:280px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px">
+        <select onchange="_qt.status=this.value;qtRenderList()" style="padding:6px 8px;border:1px solid var(--BD);border-radius:7px"><option value="">ทุกสถานะ</option>
+          ${Object.entries(QT_STATUS).map(([k, s]) => `<option value="${k}" ${_qt.status === k ? 'selected' : ''}>${s.lbl}</option>`).join('')}</select>
+        <span style="font-size:12px;color:var(--TX3)">แสดง ${rows.length.toLocaleString()} ใบ</span>
+      </div>
+      <div class="tw"><table><thead><tr><th>เลขที่</th><th>วันที่</th><th>ลูกค้า</th><th>ฐาน</th><th class="r">รายการ</th><th>พนักงานขาย</th><th>สถานะ</th><th></th></tr></thead><tbody>
+        ${rows.map(r => `<tr style="cursor:pointer" onclick="qtOpen('${esc(r.id)}')">
+          <td class="mono"><b>${esc(r.doc_no || '')}</b></td><td style="font-size:12px">${fmtD(r.doc_date || '')}</td>
+          <td>${esc(r.customer_name || '')}${r.customer_code ? ` <span class="mono" style="font-size:11px;color:var(--TX3)">${esc(r.customer_code)}</span>` : ''}</td>
+          <td><b>${esc(r.price_tier || '')}</b></td><td class="r">${r.line_count || 0}</td><td style="font-size:12px">${esc(r.sales_name || '')}</td>
+          <td><span class="badge ${(QT_STATUS[r.status] || {}).cls || 'bbgr'}">${esc((QT_STATUS[r.status] || {}).lbl || r.status)}</span></td>
+          <td><button class="btn btn-xs">เปิด</button></td></tr>`).join('')
+          || `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--TX3)">${(_qt.list || []).length ? 'ไม่พบใบเสนอราคาตามตัวกรอง' : 'ยังไม่มีใบเสนอราคา — กด "＋ สร้างใบเสนอราคา"'}</td></tr>`}
+      </tbody></table></div>
+    </div>`;
+}
+
+function qtNew() {
+  if (!(_qt.prices || []).length) { toast('ยังไม่มีราคากลาง — นำเข้าที่หน้า "ราคากลาง A–G" ก่อน'); return; }
+  _qt.doc = { id: null, status: 'draft', doc_date: today(), price_tier: _ptMin(), customer_code: '', customer_name: '', attn: '', tel: '', email: '',
+    sales_name: UNAME || '', from_text: QT_FROM, note: '', remarks: QT_DEFAULT_REMARKS.map(r => ({ ...r })), signer: { ...QT_DEFAULT_SIGNER },
+    lines: [{ product_code: '', quoted_price: '' }] };
+  _qt.view = 'form';
+  qtRenderForm();
+}
+async function qtOpen(id) {
+  const r = await apiFetch('/api/quotation_headers/' + encodeURIComponent(id));
+  if (r.error) { toast('เปิดใบเสนอราคาไม่สำเร็จ: ' + r.error.message); return; }
+  _qt.doc = { ...r.data, lines: r.data.lines.map(l => ({ ...l, _manual: l.price_source === 'manual' })) };
+  _qt.view = r.data.status === 'draft' && (r.data.created_by === UID || _qtCanManage()) ? 'form' : 'view';
+  _qt.view === 'form' ? qtRenderForm() : qtRenderView();
+}
+
+// อ่านค่าจากฟอร์มเข้า _qt.doc (เรียกก่อนวาดใหม่/บันทึก)
+function _qtCollect() {
+  const d = _qt.doc; if (!d) return;
+  const v = id => document.getElementById(id)?.value ?? '';
+  ['customer_name', 'attn', 'tel', 'email', 'sales_name', 'from_text', 'note', 'doc_date'].forEach(k => { const el = document.getElementById('qt-' + k); if (el) d[k] = el.value; });
+  const tier = document.getElementById('qt-tier'); if (tier) d.price_tier = tier.value;
+  d.signer = { name: v('qt-sg-name'), title: v('qt-sg-title'), contact: v('qt-sg-contact') };
+  d.remarks = [...document.querySelectorAll('.qt-rm')].map(row => ({ th: row.querySelector('.th').value, en: row.querySelector('.en').value }));
+  d.lines = [...document.querySelectorAll('.qt-line')].map(row => { const pr = row.querySelector('.price'); return { product_code: row.querySelector('.code').value.trim(), quoted_price: pr.value, _manual: !!pr.dataset.manual }; });
+}
+function qtCustPick(inp) {
+  const m = (salesCustomers() || []).find(c => c.c === inp.value.trim() || `${c.c} — ${c.n}` === inp.value);
+  if (!m) return;
+  _qtCollect();
+  _qt.doc.customer_code = m.c; _qt.doc.customer_name = m.n || m.c;
+  qtRenderForm();
+}
+function qtAddLine() { _qtCollect(); _qt.doc.lines.push({ product_code: '', quoted_price: '' }); qtRenderForm(); setTimeout(() => [...document.querySelectorAll('.qt-line .code')].pop()?.focus(), 0); }
+function qtDelLine(i) { _qtCollect(); _qt.doc.lines.splice(i, 1); if (!_qt.doc.lines.length) _qt.doc.lines.push({ product_code: '', quoted_price: '' }); qtRenderForm(); }
+function qtAddRemark() { _qtCollect(); _qt.doc.remarks.push({ th: '', en: '' }); qtRenderForm(); }
+function qtDelRemark(i) { _qtCollect(); _qt.doc.remarks.splice(i, 1); qtRenderForm(); }
+// เลือกสินค้า/เปลี่ยนฐาน → ราคาเสนอกลับเป็นราคาฐาน (ถ้าผู้ใช้ยังไม่พิมพ์ราคาเอง)
+function qtLineCode(inp) {
+  _qtCollect();
+  const i = [...document.querySelectorAll('.qt-line')].indexOf(inp.closest('.qt-line')), l = _qt.doc.lines[i], p = _qtPrice(l?.product_code);
+  if (l) { l._manual = false; l.quoted_price = p ? (p[_ptCol(_qt.doc.price_tier)] ?? '') : ''; }
+  qtRenderForm();
+}
+function qtTierChange() { _qtCollect(); _qt.doc.lines.forEach(l => { const p = _qtPrice(l.product_code); if (p && !l._manual) l.quoted_price = p[_ptCol(_qt.doc.price_tier)] ?? ''; }); qtRenderForm(); }
+function qtResetPrice(i) { _qtCollect(); const l = _qt.doc.lines[i], p = _qtPrice(l.product_code); l._manual = false; l.quoted_price = p ? (p[_ptCol(_qt.doc.price_tier)] ?? '') : ''; qtRenderForm(); }
+
+function qtRenderForm() {
+  const d = _qt.doc; if (!d) return;
+  const min = _ptMin(), mi = PT_TIERS.indexOf(min), tier = d.price_tier;
+  const inp = 'padding:7px 9px;border:1px solid var(--BD);border-radius:7px;width:100%;box-sizing:border-box;font-family:var(--font);font-size:13px';
+  const f = (lbl, key, ph = '', type = 'text') => `<div class="field" style="margin:0"><label>${lbl}</label><input type="${type}" id="qt-${key}" value="${esc(d[key] ?? '')}" placeholder="${esc(ph)}" style="${inp}"></div>`;
+  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="pgQuotation(true);_qt.view='list'">← รายการ</button>`;
+  const lineRows = d.lines.map((l, i) => {
+    const p = _qtPrice(l.product_code), base = p ? p[_ptCol(tier)] : null, floor = p ? p[_ptCol(min)] : null;
+    const q = l.quoted_price === '' || l.quoted_price == null ? base : Number(l.quoted_price);
+    const low = p && floor != null && q != null && q < floor;
+    return `<tr class="qt-line" style="${low ? 'background:#FDECEC' : ''}">
+      <td class="c" style="color:var(--TX3)">${i + 1}</td>
+      <td><input class="code mono" list="qt-prod-list" value="${esc(l.product_code || '')}" placeholder="รหัส / ชื่อ" onchange="qtLineCode(this)" style="${inp};width:120px"></td>
+      <td>${p ? esc(p.name_th || '') : l.product_code ? '<span style="color:var(--R)">ไม่พบในราคากลาง</span>' : ''}<div style="font-size:11px;color:var(--TX3)">${p ? esc(p.name_en || '') : ''}</div></td>
+      <td style="font-size:12px">${p ? esc(p.unit || '') : ''}</td>
+      <td class="r" style="font-size:12px">${_qtFmt(base)}</td>
+      <td class="r"><input class="price" type="number" step="0.01" min="0" value="${esc(l.quoted_price === '' || l.quoted_price == null ? (base ?? '') : l.quoted_price)}" ${l._manual ? 'data-manual="1"' : ''}
+        oninput="this.dataset.manual='1'" onchange="_qtCollect();qtRenderForm()" style="${inp};width:110px;text-align:right;${l._manual ? 'border-color:var(--A)' : ''}">
+        ${l._manual && base != null ? `<div style="font-size:10.5px"><a href="javascript:void(0)" onclick="qtResetPrice(${i})">↺ ใช้ราคาฐาน</a></div>` : ''}
+        ${low ? `<div style="font-size:10.5px;color:var(--R)">ต่ำกว่าฐาน ${min} (${_qtFmt(floor)})</div>` : ''}</td>
+      <td><button class="btn btn-xs" onclick="qtDelLine(${i})" style="color:var(--R)">✕</button></td></tr>`;
+  }).join('');
+  document.getElementById('ct').innerHTML = `
+  <div class="card">
+    <div class="ch"><div class="ct2">🧾 ${d.id ? `แก้ไขใบเสนอราคา <span class="mono">${esc(d.doc_no || '')}</span>` : 'สร้างใบเสนอราคา'}</div>
+      <span class="badge ${QT_STATUS[d.status]?.cls || 'bbgr'}">${QT_STATUS[d.status]?.lbl || d.status}</span></div>
+    <div class="cgrid c2" style="gap:14px">
+      <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:12px 14px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px">ข้อมูลลูกค้า / Customer</div>
+        <div class="field" style="margin:0 0 8px"><label>เลือกจากรายชื่อลูกค้า (หรือพิมพ์ชื่อลูกค้าใหม่ในช่อง "ถึง")</label>
+          <input list="qt-cust-list" placeholder="🔍 รหัส / ชื่อลูกค้า" value="${esc(d.customer_code || '')}" onchange="qtCustPick(this)" style="${inp}">
+          <datalist id="qt-cust-list">${(salesCustomers() || []).slice(0, 3000).map(c => `<option value="${esc(c.c)}">${esc(c.n || '')}</option>`).join('')}</datalist></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="grid-column:1/-1">${f('ถึง / To *', 'customer_name', 'ชื่อลูกค้า')}</div>
+          ${f('ผู้ติดต่อ / Attn', 'attn')}${f('โทร / Tel', 'tel')}<div style="grid-column:1/-1">${f('อีเมล / Email', 'email', '', 'email')}</div>
+        </div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:12px 14px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px">รายละเอียดเอกสาร / Quotation Details</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          ${f('วันที่ / Date', 'doc_date', '', 'date')}
+          <div class="field" style="margin:0"><label>ฐานราคา</label><select id="qt-tier" onchange="qtTierChange()" style="${inp}">
+            ${PT_TIERS.map((t, i) => `<option value="${t}" ${tier === t ? 'selected' : ''} ${i < mi ? 'disabled' : ''}>ฐาน ${t}${i < mi ? ' — ต่ำกว่าสิทธิ์ (ต้องขออนุมัติ เร็วๆ นี้)' : ''}</option>`).join('')}</select></div>
+          <div style="grid-column:1/-1">${f('จาก / From', 'from_text')}</div>
+          <div style="grid-column:1/-1">${f('พนักงานขาย / Sales', 'sales_name')}</div>
+        </div>
+        <div style="font-size:11.5px;color:var(--TX3);margin-top:6px">สิทธิ์ของคุณ: เสนอเองได้ตั้งแต่ฐาน <b>${esc(min)}</b> ขึ้นไป · ราคาเสนอต่ำกว่าฐาน ${esc(min)} บันทึกไม่ได้ (การขออนุมัติราคาพิเศษจะมาในรอบถัดไป)</div>
+      </div>
+    </div>
+
+    <div style="font-weight:700;font-size:13px;margin:16px 0 6px">รายการสินค้า</div>
+    <datalist id="qt-prod-list">${(_qt.prices || []).map(p => `<option value="${esc(p.code)}">${esc((p.name_th || '') + (p.unit ? ' · ' + p.unit : ''))}</option>`).join('')}</datalist>
+    <div class="tw"><table><thead><tr><th class="c" style="width:34px">#</th><th style="width:130px">รหัส</th><th>รายการสินค้า / Description</th><th>หน่วย</th>
+      <th class="r">ราคาฐาน ${esc(tier)}</th><th class="r" style="width:130px">ราคาเสนอ</th><th></th></tr></thead><tbody>${lineRows}</tbody></table></div>
+    <button class="btn btn-sm" onclick="qtAddLine()" style="margin-top:6px">＋ เพิ่มสินค้า</button>
+
+    <div style="font-weight:700;font-size:13px;margin:16px 0 6px">หมายเหตุ / Remarks</div>
+    ${d.remarks.map((r, i) => `<div class="qt-rm" style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-bottom:5px">
+      <input class="th" value="${esc(r.th)}" placeholder="ภาษาไทย" style="${inp}"><input class="en" value="${esc(r.en)}" placeholder="English" style="${inp}">
+      <button class="btn btn-xs" onclick="qtDelRemark(${i})" style="color:var(--R)">✕</button></div>`).join('')}
+    <button class="btn btn-sm" onclick="qtAddRemark()">＋ เพิ่มหมายเหตุ</button>
+
+    <div style="font-weight:700;font-size:13px;margin:16px 0 6px">ผู้ลงนาม "ขอแสดงความนับถือ / Best Regards"</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">
+      <div class="field" style="margin:0"><label>ชื่อ</label><input id="qt-sg-name" value="${esc(d.signer?.name || '')}" style="${inp}"></div>
+      <div class="field" style="margin:0"><label>ตำแหน่ง</label><input id="qt-sg-title" value="${esc(d.signer?.title || '')}" style="${inp}"></div>
+      <div class="field" style="margin:0"><label>ติดต่อ</label><input id="qt-sg-contact" value="${esc(d.signer?.contact || '')}" style="${inp}"></div>
+    </div>
+    <div style="margin-top:10px">${f('หมายเหตุภายใน (ไม่พิมพ์ลงใบเสนอราคา)', 'note')}</div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+      <button class="btn" onclick="_qt.view='list';qtRenderList()">ยกเลิกการแก้ไข</button>
+      ${d.id ? `<button class="btn" onclick="qtPrint()">🖨 ดูตัวอย่าง / พิมพ์ร่าง</button><button class="btn btn-r" onclick="qtCancel()" style="opacity:.8">🗑 ยกเลิกใบเสนอราคา</button>` : ''}
+      <button class="btn btn-g" style="margin-left:auto" onclick="qtSave(false)">💾 บันทึกร่าง</button>
+      <button class="btn btn-p" onclick="qtSave(true)">📤 ออกใบเสนอราคา</button>
+    </div>
+  </div>`;
+}
+
+async function qtSave(issue) {
+  _qtCollect();
+  const d = _qt.doc;
+  if (!String(d.customer_name || '').trim()) { toast('กรุณาระบุลูกค้า (ถึง / To)'); document.getElementById('qt-customer_name')?.focus(); return; }
+  const lines = d.lines.filter(l => l.product_code);
+  if (!lines.length) { toast('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ'); return; }
+  const bad = lines.find(l => !_qtPrice(l.product_code)); if (bad) { toast(`ไม่พบรหัส ${bad.product_code} ในราคากลาง`); return; }
+  if (issue && !confirm('ออกใบเสนอราคา? — หลังออกแล้วจะแก้ไขไม่ได้ (ยกเลิกแล้วสร้างใบใหม่ได้)')) return;
+  const body = { ...d, lines: lines.map(l => ({ product_code: l.product_code, quoted_price: l.quoted_price === '' ? null : Number(l.quoted_price) })) };
+  let r = await apiFetch('/api/quotation_headers' + (d.id ? '/' + encodeURIComponent(d.id) : ''), { method: d.id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+  if (r.error) { toast('บันทึกไม่สำเร็จ: ' + r.error.message); return; }
+  if (issue) {
+    const r2 = await apiFetch(`/api/quotation_headers/${encodeURIComponent(r.data.id)}/issue`, { method: 'POST', body: '{}' });
+    if (r2.error) { toast('บันทึกร่างแล้ว แต่ออกเอกสารไม่สำเร็จ: ' + r2.error.message); _qt.doc = { ...r.data }; qtRenderForm(); return; }
+    r = r2;
+  }
+  toast(issue ? `ออกใบเสนอราคา ${r.data.doc_no} แล้ว` : `บันทึกร่าง ${r.data.doc_no} แล้ว`);
+  _qt.list = null;
+  _qt.doc = { ...r.data, lines: r.data.lines.map(l => ({ ...l, _manual: l.price_source === 'manual' })) };
+  _qt.view = issue ? 'view' : 'form';
+  issue ? qtRenderView() : qtRenderForm();
+  apiFetch('/api/quotation_headers').then(x => { if (!x.error) _qt.list = x.data || []; });
+}
+async function qtCancel() {
+  const d = _qt.doc; if (!d?.id) return;
+  const reason = prompt(`ยกเลิกใบเสนอราคา ${d.doc_no}? ระบุเหตุผล (ไม่บังคับ)`, '');
+  if (reason === null) return;
+  const r = await apiFetch(`/api/quotation_headers/${encodeURIComponent(d.id)}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) });
+  if (r.error) { toast('ยกเลิกไม่สำเร็จ: ' + r.error.message); return; }
+  toast(`ยกเลิก ${d.doc_no} แล้ว`);
+  _qt.doc = { ...r.data }; _qt.list = null; _qt.view = 'view'; qtRenderView();
+  apiFetch('/api/quotation_headers').then(x => { if (!x.error) _qt.list = x.data || []; });
+}
+
+function qtRenderView() {
+  const d = _qt.doc; if (!d) return;
+  const canCancel = d.status !== 'cancelled' && (d.created_by === UID || _qtCanManage());
+  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="pgQuotation(true);_qt.view='list'">← รายการ</button>`;
+  const actLbl = { create: 'สร้าง', update: 'แก้ไข', issue: 'ออกเอกสาร', cancel: 'ยกเลิก' };
+  document.getElementById('ct').innerHTML = `<div class="card">
+    <div class="ch" style="flex-wrap:wrap;gap:8px"><div class="ct2">🧾 <span class="mono">${esc(d.doc_no || '')}</span> <span class="badge ${QT_STATUS[d.status]?.cls || 'bbgr'}">${QT_STATUS[d.status]?.lbl || d.status}</span></div>
+      <div style="display:flex;gap:8px"><button class="btn btn-p" onclick="qtPrint()">🖨 พิมพ์ / PDF</button>${canCancel ? `<button class="btn btn-r" onclick="qtCancel()" style="opacity:.8">🗑 ยกเลิก</button>` : ''}</div></div>
+    <div class="cgrid c2" style="gap:6px 20px;font-size:13px;margin-bottom:12px">
+      <div><span style="color:var(--TX3)">ถึง:</span> <b>${esc(d.customer_name || '')}</b> ${d.customer_code ? `<span class="mono" style="font-size:11px;color:var(--TX3)">${esc(d.customer_code)}</span>` : ''}</div>
+      <div><span style="color:var(--TX3)">วันที่:</span> ${fmtD(d.doc_date || '')} · <span style="color:var(--TX3)">ฐาน</span> <b>${esc(d.price_tier)}</b></div>
+      <div><span style="color:var(--TX3)">ผู้ติดต่อ:</span> ${esc(d.attn || '—')} · ${esc(d.tel || '')} ${esc(d.email || '')}</div>
+      <div><span style="color:var(--TX3)">พนักงานขาย:</span> ${esc(d.sales_name || '')}</div>
+    </div>
+    <div class="tw"><table><thead><tr><th class="c">#</th><th>รหัส</th><th>รายการสินค้า</th><th>Description</th><th>หน่วย</th><th class="r">ราคาฐาน</th><th class="r">ราคาเสนอ</th></tr></thead><tbody>
+      ${(d.lines || []).map(l => `<tr><td class="c">${l.seq}</td><td class="mono">${esc(l.product_code)}</td><td>${esc(l.name_th || '')}</td><td style="font-size:12px;color:var(--TX2)">${esc(l.name_en || '')}</td>
+        <td style="font-size:12px">${esc(l.unit || '')}</td><td class="r" style="font-size:12px;color:var(--TX3)">${_qtFmt(l.base_price)}</td><td class="r"><b>${_qtFmt(l.quoted_price)}</b></td></tr>`).join('')}
+    </tbody></table></div>
+    ${d.note ? `<div style="margin-top:8px;font-size:12.5px"><span style="color:var(--TX3)">หมายเหตุภายใน:</span> ${esc(d.note)}</div>` : ''}
+    <div style="font-weight:600;font-size:12px;color:var(--TX3);margin:14px 0 6px">ประวัติ</div>
+    ${(d.logs || []).map(l => `<div style="font-size:12px">${esc(new Date(l.at).toLocaleString('th-TH'))} — <b>${esc(actLbl[l.action] || l.action)}</b> โดย ${esc(uidToName(l.by_uid) || l.by_uid || '')}${l.detail ? ` · ${esc(l.detail)}` : ''}</div>`).join('')}
+  </div>`;
+}
+
+// หน้าพิมพ์ A4 ตามฟอร์มต้นฉบับ (โลโก้ + ที่อยู่ TGM, กล่องลูกค้า/รายละเอียดเอกสาร, ตารางสินค้า, หมายเหตุ 2 ภาษา, ลายเซ็น)
+// ไม่มีบรรทัด "รวมทั้งสิ้น" — ผลรวมราคาต่อหน่วยไม่มีความหมาย (ตามแผนที่อนุมัติ) · ร่าง/ยกเลิก = มีลายน้ำ
+function qtPrint() {
+  const d = _qt.doc; if (!d) return;
+  const w = window.open('', '_blank'); if (!w) { toast('เบราว์เซอร์บล็อกป็อปอัป กรุณาอนุญาตแล้วลองใหม่'); return; }
+  const wm = d.status === 'draft' ? 'ร่าง — ยังไม่ออกเอกสาร' : d.status === 'cancelled' ? 'ยกเลิก' : '';
+  const dd = x => x ? promoFmtD(x) : '';
+  const lines = (d.lines || []).filter(l => l.product_code);
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>ใบเสนอราคา ${esc(d.doc_no || '')}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap">
+  <style>
+    @page{size:A4 portrait;margin:10mm}
+    *{box-sizing:border-box} body{font-family:'Sarabun',sans-serif;margin:0;color:#111;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .top{display:flex;align-items:center;gap:16px;border-bottom:2px solid #1E3A5F;padding-bottom:8px}
+    .top img{height:62px} .addr{font-size:11px;line-height:1.55;color:#222}
+    .title{display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 8px}
+    .title h1{font-size:19px;margin:0;color:#1E3A5F;letter-spacing:.02em} .title .no{font-size:13px} .title .no b{font-size:15px;color:#1E3A5F}
+    .boxes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+    .box{border:1px solid #9AA8BC;border-radius:4px} .box .h{background:#1E3A5F;color:#fff;font-weight:600;padding:4px 8px;font-size:11.5px}
+    .box table{width:100%;border-collapse:collapse} .box td{padding:3px 8px;vertical-align:top} .box td.k{width:120px;color:#475569;white-space:nowrap}
+    table.items{width:100%;border-collapse:collapse} .items th{background:#1E3A5F;color:#fff;font-weight:600;padding:5px 6px;font-size:11px;line-height:1.25;border:1px solid #1E3A5F}
+    .items td{border:1px solid #9AA8BC;padding:4px 6px;vertical-align:top} .items td.c{text-align:center} .items td.r{text-align:right;white-space:nowrap}
+    .items tr{break-inside:avoid}
+    .rm{margin-top:10px;border:1px solid #9AA8BC;border-radius:4px;padding:6px 10px;break-inside:avoid}
+    .rm .h{font-weight:700;color:#1E3A5F;margin-bottom:3px} .rm .rw{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:11px;line-height:1.5;text-align:left}
+    .sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:22px;break-inside:avoid;text-align:center}
+    .sign .sp{height:46px} .sign .ln{border-top:1px dotted #475569;margin:0 30px;padding-top:4px}
+    .wm{position:fixed;top:42%;left:0;right:0;text-align:center;font-size:58px;font-weight:700;color:rgba(200,30,30,.13);transform:rotate(-24deg);pointer-events:none}
+  </style></head><body>
+  ${wm ? `<div class="wm">${esc(wm)}</div>` : ''}
+  <div class="top"><img src="${QT_LOGO}" alt="TGM"><div class="addr"><b>THAI - GERMAN MEAT PRODUCT CO.,LTD</b><br>74 Moo 5 Bangna - Trad Highway Km.36, Babgsamark, Chachoengsao 24130<br>Tel.+66 (0)3857-0279-81 , (0) 3857-0694-96 Fax. +66 (0) 3857-0282, (0)3857-0697 www.tgm.co.th</div></div>
+  <div class="title"><h1>ใบเสนอราคา / QUOTATION</h1><div class="no">เลขที่ / No. <b>${esc(d.doc_no || '')}</b></div></div>
+  <div class="boxes">
+    <div class="box"><div class="h">ข้อมูลลูกค้า / Customer</div><table>
+      <tr><td class="k">ถึง / To</td><td><b>${esc(d.customer_name || '')}</b></td></tr><tr><td class="k">ผู้ติดต่อ / Attn</td><td>${esc(d.attn || '')}</td></tr>
+      <tr><td class="k">โทร / Tel</td><td>${esc(d.tel || '')}</td></tr><tr><td class="k">อีเมล / Email</td><td>${esc(d.email || '')}</td></tr></table></div>
+    <div class="box"><div class="h">รายละเอียดเอกสาร / Quotation Details</div><table>
+      <tr><td class="k">วันที่ / Date</td><td>${esc(dd(d.doc_date))}</td></tr><tr><td class="k">จาก / From</td><td>${esc(d.from_text || '')}</td></tr>
+      <tr><td class="k">พนักงานขาย / Sales</td><td>${esc(d.sales_name || '')}</td></tr><tr><td class="k">หน้า / Page</td><td>1</td></tr></table></div>
+  </div>
+  <table class="items"><thead><tr><th style="width:40px">ลำดับ<br>No.</th><th style="width:80px">รหัส<br>Code</th><th>รายการสินค้า<br>Product (TH)</th><th>Description<br>Product (EN)</th><th style="width:66px">หน่วย<br>Unit</th><th style="width:84px">ราคา/หน่วย<br>Price/Unit</th></tr></thead>
+    <tbody>${lines.map((l, i) => `<tr><td class="c">${i + 1}</td><td class="c">${esc(l.product_code)}</td><td>${esc(l.name_th || _qtPrice(l.product_code)?.name_th || '')}</td><td>${esc(l.name_en || _qtPrice(l.product_code)?.name_en || '')}</td><td class="c">${esc(l.unit || _qtPrice(l.product_code)?.unit || '')}</td><td class="r">${_qtFmt(l.quoted_price)}</td></tr>`).join('')}</tbody></table>
+  ${(d.remarks || []).length ? `<div class="rm"><div class="h">หมายเหตุ / Remarks</div>${d.remarks.map(r => `<div class="rw"><div>${r.th ? '•  ' + esc(r.th) : ''}</div><div>${r.en ? '•  ' + esc(r.en) : ''}</div></div>`).join('')}</div>` : ''}
+  <div class="sign">
+    <div><div>อนุมัติสั่งซื้อ / Approved by</div><div class="sp"></div><div class="ln">ลงชื่อ / Authorized Signature</div><div style="margin-top:6px">วันที่ / Date ............................</div></div>
+    <div><div>ขอแสดงความนับถือ / Best Regards,</div><div class="sp"></div><div class="ln"><b>${esc(d.signer?.name || '')}</b></div><div>${esc(d.signer?.title || '')}</div><div style="font-size:11px">${esc(d.signer?.contact || '')}</div></div>
+  </div>
+  <script>window.onload=()=>{const go=()=>setTimeout(()=>window.print(),250);document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go();}<` + `/script>
+  </body></html>`);
+  w.document.close();
+}
 function _pdCodeMapHtml() {
   if (_pdCodeMap === null) {
     apiFetch('/api/promo_draft_headers/code-map').then(r => { _pdCodeMap = r.error ? { rules: [], skipped: [], error: r.error.message } : r.data; pgPromoDraftWorkflowSettings(true); });

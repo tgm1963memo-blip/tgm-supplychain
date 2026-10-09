@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 
-const SAFE_FIELDS = ['uid', 'name', 'role', 'department', 'position', 'slm_id', 'slm_codes', 'bplus_codes', 'email', 'is_active', 'created_at'];
+const SAFE_FIELDS = ['uid', 'name', 'role', 'department', 'position', 'slm_id', 'slm_codes', 'bplus_codes', 'min_price_tier', 'email', 'is_active', 'created_at'];
 
 // "101, 110-1,,101" → "101,110-1" (ตัดช่องว่าง/ซ้ำ) · undefined = ไม่แก้ · ว่าง = null
 function normSlmCodes(v) {
@@ -18,6 +18,14 @@ function normBplusCodes(v) {
   if (v === undefined) return undefined;
   const list = [...new Set((Array.isArray(v) ? v : String(v ?? '').split(',')).map(x => String(x).trim().replace(/^BP-/i, '')).filter(Boolean))];
   return list.length ? list.join(',') : null;
+}
+
+// ฐานราคาต่ำสุดที่เสนอเองได้ (2026-10-07, ใบเสนอราคา) — A..G ตัวเดียว · undefined = ไม่แก้ · ค่าอื่น = error
+function normMinTier(v) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const t = String(v).trim().toUpperCase();
+  if (!/^[A-G]$/.test(t)) throw new Error('min_price_tier ต้องเป็น A–G');
+  return t;
 }
 
 // sc_users needs bcrypt-on-write and must never leak pwd_hash — handled by hand instead of the
@@ -43,7 +51,7 @@ function usersRoutes(db) {
           const params = [];
           for (const [col, val] of Object.entries({
             name: r.name, role: r.role, department: r.department, position: r.position,
-            slm_id: r.slm_id, slm_codes: normSlmCodes(r.slm_codes), bplus_codes: normBplusCodes(r.bplus_codes), email: r.email, is_active: r.is_active,
+            slm_id: r.slm_id, slm_codes: normSlmCodes(r.slm_codes), bplus_codes: normBplusCodes(r.bplus_codes), min_price_tier: normMinTier(r.min_price_tier), email: r.email, is_active: r.is_active,
           })) {
             if (val === undefined) continue;
             fields.push(`${col} = ?`);
@@ -56,9 +64,9 @@ function usersRoutes(db) {
         } else {
           if (!pwd_hash) return res.status(400).json({ error: 'pwd_hash is required for a new user' });
           db.prepare(`
-            INSERT INTO sc_users (uid, name, role, department, position, slm_id, slm_codes, bplus_codes, email, pwd_hash, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(uid, r.name, r.role, r.department || null, r.position || null, r.slm_id || null, normSlmCodes(r.slm_codes) || null, normBplusCodes(r.bplus_codes) || null, r.email || null, pwd_hash, req.user.uid);
+            INSERT INTO sc_users (uid, name, role, department, position, slm_id, slm_codes, bplus_codes, min_price_tier, email, pwd_hash, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(uid, r.name, r.role, r.department || null, r.position || null, r.slm_id || null, normSlmCodes(r.slm_codes) || null, normBplusCodes(r.bplus_codes) || null, normMinTier(r.min_price_tier) || 'E', r.email || null, pwd_hash, req.user.uid);
         }
         db.prepare('INSERT INTO audit_log (uid, role, action, target) VALUES (?, ?, ?, ?)')
           .run(req.user.uid, req.user.role, existing ? 'EDIT_USER' : 'ADD_USER', uid);
@@ -77,11 +85,12 @@ function usersRoutes(db) {
     if (!target) return res.status(404).json({ error: 'not found' });
 
     const body = { ...req.body };
+    try { normMinTier(body.min_price_tier); } catch (e) { return res.status(400).json({ error: e.message }); }
     const fields = [];
     const upd = [];
     for (const [col, val] of Object.entries({
       name: body.name, role: body.role, department: body.department, position: body.position,
-      slm_id: body.slm_id, slm_codes: normSlmCodes(body.slm_codes), bplus_codes: normBplusCodes(body.bplus_codes), email: body.email, is_active: body.is_active,
+      slm_id: body.slm_id, slm_codes: normSlmCodes(body.slm_codes), bplus_codes: normBplusCodes(body.bplus_codes), min_price_tier: normMinTier(body.min_price_tier), email: body.email, is_active: body.is_active,
     })) {
       if (val === undefined) continue;
       fields.push(`${col} = ?`);
