@@ -41,7 +41,7 @@ const SALES_ONLY = [
   // ตัวกรองบริษัท + ยอดโรงงาน (Bplus) ใน Sales Overview (2026-10-05) — เรียก _sbInvoiceSalesRows* ที่เป็น sales-only
   '_sdCo', '_sdCoLabel', '_sdCosFor', '_sdInvMonth', '_sdInvRange', '_sdBpLines', '_sdProdsMixed', 'sdSetCo',
   '_sdD', '_sdWI', '_sdVs', '_sdBar', 'sdTogOp',
-  '_ymAddYear', '_dateAddYear', '_yoyPct', '_sdYoYMaps', '_sdYoYHead', '_sdYoYCell', '_sdLoadYoY', 'sdTogYoY',
+  '_ymAddYear', '_dateAddYear', '_yoyPct', '_sdYoYMaps', '_sdYoYHead', '_sdYoYCell', '_sdYoYRange', '_sdYoYSeq', '_sdStartYoY', '_sdLoadYoY', 'sdTogYoY',
   '_dateToYm', 'sdSetDateRange', 'sdApplyCustomRange', 'sdSetDatePreset', 'sdLoadCustom',
   'pgMySales', 'sdRender', 'sdUpdateLabel', 'sdKPI', '_xa', '_custsByItemGrouped',
   'sdCust', 'sdProd', 'sdSlm', 'sdSetPT', 'sdNav', 'sdGoNow', 'sdTab', 'sdTogView', 'sdSort',
