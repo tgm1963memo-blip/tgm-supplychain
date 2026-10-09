@@ -29,11 +29,18 @@ function routeOf(db, routeId) {
 const needsExec = row => ['is_npd', 'has_off_contract_cost', 'has_marketing_cost'].some(k => Number(row[k]) === 1 || row[k] === true);
 // picks (2026-09-24): ขั้นที่ตั้งค่า pick_by_creator = ผู้สร้างเอกสารเลือกผู้อนุมัติเองตอนส่งอนุมัติ
 // { [levelId]: [uid,...] } — แทนที่รายชื่อ (ค่าแนะนำ) ในเทมเพลตของขั้นนั้น แล้วค่อย validate ทั้งเส้นทาง
-function template(db, entity, allowEmpty = false, picks = null) {
+// overrides (2026-10-09, ผู้ใช้ขอ): ผู้ส่ง (เจ้าของเอกสาร)/admin แก้รายชื่อผู้อนุมัติของขั้นปกติในเอกสารนี้ได้ — { [lv.id]: [uid] }
+// ลบได้แต่ต้องเหลืออย่างน้อย 1 คนต่อขั้น (กันข้ามขั้น เช่น ขั้นตรวจสอบ) · ไม่แก้เทมเพลตกลาง
+function template(db, entity, allowEmpty = false, picks = null, overrides = null) {
   const row = db.prepare('SELECT levels_json FROM approval_workflow_templates WHERE entity_type=?').get(entity);
   const users = db.prepare('SELECT uid,name,role,is_active FROM sc_users').all();
   const levels = (row ? parse(row.levels_json) : []).map(lv => {
-    if (!lv.pick_by_creator) return lv;
+    if (!lv.pick_by_creator) {
+      const ov = overrides && Array.isArray(overrides[lv.id]) ? [...new Set(overrides[lv.id].map(String).filter(Boolean))] : null;
+      if (!ov) return lv;
+      if (!ov.length) throw new Error(`ขั้น "${lv.label || lv.id}" ต้องมีผู้อนุมัติอย่างน้อย 1 คน`);
+      return { ...lv, approvers: ov.map(uid => { const u = users.find(x => x.uid === uid); return { uid, name: u?.name || uid, role: u?.role || '' }; }) };
+    }
     const chosen = picks && Array.isArray(picks[lv.id]) ? [...new Set(picks[lv.id].map(String))] : null;
     if (!chosen || !chosen.length) {
       // ไม่ได้เลือก: ใช้รายชื่อแนะนำในเทมเพลตถ้ามี ไม่มีเลย = ต้องเลือกก่อนส่ง
@@ -100,9 +107,14 @@ function validateChange(db, old, change, user) {
   // (line_verdicts: { [sku]: 'profit' | 'loss' })
   const lineVerdicts = change.approval_line_verdicts && typeof change.approval_line_verdicts === 'object' && !Array.isArray(change.approval_line_verdicts) ? change.approval_line_verdicts : null;
   delete change.approval_line_verdicts;
+  // เหตุผลของรายการ "ขาดทุน" (2026-10-09, ผู้ใช้ขอ) — { [sku]: ข้อความ } บังคับทุก SKU ที่เลือกขาดทุน · เก็บลง actor.line_verdict_notes
+  const verdictNotes = change.approval_line_verdict_notes && typeof change.approval_line_verdict_notes === 'object' && !Array.isArray(change.approval_line_verdict_notes) ? change.approval_line_verdict_notes : {};
+  delete change.approval_line_verdict_notes;
   // ผู้อนุมัติที่ผู้สร้างเลือกเองตอนส่งอนุมัติ (ไม่ใช่คอลัมน์)
   const picks = change.picked_approvers && typeof change.picked_approvers === 'object' ? change.picked_approvers : {};
   delete change.picked_approvers;
+  const overrides = change.approver_overrides && typeof change.approver_overrides === 'object' && !Array.isArray(change.approver_overrides) ? change.approver_overrides : null;
+  delete change.approver_overrides;
   // route_name เป็น snapshot ที่ server เขียนเองตอนส่งอนุมัติ — ไม่รับจาก client
   delete change.route_name;
   const next = { ...old, ...change };
@@ -128,7 +140,9 @@ function validateChange(db, old, change, user) {
     const route = routeOf(db, String(change.route_id ?? old.route_id ?? '').trim());
     change.route_id = route.entity === 'promo_draft' ? null : route.entity.slice('promo_draft@'.length);
     change.route_name = route.name;
-    const levels = template(db, route.entity, true, picks);
+    // แก้รายชื่อผู้อนุมัติขั้นปกติได้เฉพาะเจ้าของเอกสาร/admin — คนอื่นส่งมาก็ไม่รับ
+    if (overrides && Object.keys(overrides).length && old.created_by !== user.uid && !['admin', 'superadmin'].includes(user.role)) throw new Error('แก้ผู้อนุมัติได้เฉพาะผู้ส่ง (เจ้าของเอกสาร) หรือ admin');
+    const levels = template(db, route.entity, true, picks, overrides);
     // เส้นทางเพิ่มเติมต้องมีขั้นอนุมัติ — ถ้าว่างจะตกไปกรณี "ไม่มี route" ที่ผู้จัดการคนใดก็อนุมัติเองได้ (ข้ามผู้อนุมัติ)
     if (route.entity !== 'promo_draft' && !levels.length) throw new Error(`เส้นทาง "${route.name}" ยังไม่ได้ตั้งขั้นอนุมัติ กรุณาเลือกเส้นทางอื่นหรือให้แอดมินตั้งค่า`);
     assign(levels);
@@ -167,10 +181,19 @@ function validateChange(db, old, change, user) {
         const missing = skus.filter(s => !['profit', 'loss'].includes(lineVerdicts?.[s]));
         if (missing.length) throw new Error(`ขั้นตรวจสอบ: กรุณาเลือกผล "ขายได้" หรือ "ขาดทุน" ให้ครบทุกรายการสินค้า (ยังขาด ${missing.join(', ')})`);
         verdicts = Object.fromEntries(skus.map(s => [s, lineVerdicts[s]]));
+        const lossNoReason = skus.filter(s => verdicts[s] === 'loss' && !String(verdictNotes[s] ?? '').trim());
+        if (lossNoReason.length) throw new Error(`ขั้นตรวจสอบ: กรุณาระบุเหตุผลของรายการที่ขาดทุน (${lossNoReason.join(', ')})`);
       }
       result = workflow.advance(levels, old.current_level, user.uid, status !== 'rejected', comment);
       stampSignature(db, result.levels, old.current_level, user.uid);
-      if (verdicts) { const actor = result.levels[old.current_level]?.approvers?.find(a => a.uid === user.uid); if (actor) actor.line_verdicts = verdicts; }
+      if (verdicts) {
+        const actor = result.levels[old.current_level]?.approvers?.find(a => a.uid === user.uid);
+        if (actor) {
+          actor.line_verdicts = verdicts;
+          const notes = Object.fromEntries(Object.keys(verdicts).filter(s => verdicts[s] === 'loss').map(s => [s, String(verdictNotes[s]).replace(/<[^>]*>/g, '').trim().slice(0, 500)]));
+          if (Object.keys(notes).length) actor.line_verdict_notes = notes;
+        }
+      }
       // ขั้น "เฉพาะเมื่อมีรายการขาดทุน" (only_if_loss, 2026-09-30): ขั้นก่อนหน้าผ่านแล้วและยังไม่มีผลตรวจ 'loss'
       // ในเอกสาร → ข้ามขั้นนั้น (ทำเครื่องหมาย skipped) ต่อไปจนเจอขั้นปกติ; ข้ามจนสุดเส้นทาง = อนุมัติครบ
       if (result.levelDone && !result.rejected && !result.complete) {

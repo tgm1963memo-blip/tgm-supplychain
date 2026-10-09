@@ -94,7 +94,8 @@ function prevCommentsHtml(header) {
 
 function renderApprovalRequestEmail({ header, sum, approverName, stepLabel, approveUrl, rejectUrl, openUrl }) {
   const btn = (href, bg, color, label) => `<a href="${e(href)}" style="background:${bg};color:${color};padding:11px 22px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block;margin:4px 6px">${label}</a>`;
-  const subject = `[รออนุมัติ] ใบเคาะราคา ${header.doc_no || header.draft_no} — ${header.promo_name || ''}`.trim();
+  // หัวเรื่อง (2026-10-09, ผู้ใช้ขอ): "Approve Promotion" + ชื่อโปร (+ เลขที่ไว้ค้นในระบบ)
+  const subject = `Approve Promotion: ${header.promo_name || '(ไม่มีชื่อ)'} [${header.doc_no || header.draft_no}]`;
   const html = shell(`
     <p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#111">เรียน คุณ${e(approverName)}<br/>
       มีใบเคาะราคารอการอนุมัติจากท่าน</p>

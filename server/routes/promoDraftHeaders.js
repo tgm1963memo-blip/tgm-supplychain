@@ -190,7 +190,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   // (2026-09-23) เลือกผู้อนุมัติได้ทุกคนในระบบแล้ว — ผู้ที่ไม่มี role ฝ่ายขาย (writeRoles) PATCH ได้เฉพาะ
   // "การอนุมัติ/ไม่อนุมัติ" ของเอกสารที่ตัวเองเป็นผู้อนุมัติในขั้นปัจจุบันเท่านั้น (แก้ข้อมูลอื่นไม่ได้)
   // validateChange ยังเป็นตัวคำนวณผลอนุมัติจริงเสมอ (ไม่เชื่อ levels_json ที่ client ส่งมา)
-  const APPROVAL_KEYS = new Set(['status', 'updated_by', 'levels_json', 'current_level', 'approvers_json', 'approval_comment', 'approval_line_verdicts']);
+  const APPROVAL_KEYS = new Set(['status', 'updated_by', 'levels_json', 'current_level', 'approvers_json', 'approval_comment', 'approval_line_verdicts', 'approval_line_verdict_notes']);
   const writerOrCurrentApprover = (req, res, next) => {
     if (writeRoles.includes(req.user.role)) return next();
     const deny = () => res.status(403).json({ error: 'ไม่มีสิทธิ์แก้ไขเอกสารนี้' });
@@ -343,6 +343,8 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   router.post('/:draftNo/cancel-request', requireRole(...writeRoles), (req, res) => {
     const t = getRaw(req.params.draftNo);
     if (!t) return res.status(404).json({ error: 'ไม่พบเอกสาร' });
+    // เฉพาะเจ้าของเอกสาร (ผู้ส่งอนุมัติ) และ admin (2026-10-09, ผู้ใช้ขอ — เหมือน recall)
+    if (t.created_by !== req.user.uid && !['admin', 'superadmin'].includes(req.user.role)) return res.status(403).json({ error: 'ขอยกเลิกได้เฉพาะผู้ส่งอนุมัติ หรือ admin' });
     if (!CANCELABLE.includes(t.status)) return res.status(400).json({ error: 'ขอยกเลิกได้เฉพาะเอกสารที่ส่งอนุมัติแล้ว (ร่าง/ไม่อนุมัติ แก้ไขหรือลบได้เลย)' });
     if (pj(t.cancel_request_json)) return res.status(400).json({ error: 'มีคำขอยกเลิกที่รออนุมัติอยู่แล้ว' });
     const body = req.body || {};

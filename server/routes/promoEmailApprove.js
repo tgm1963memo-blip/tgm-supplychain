@@ -70,7 +70,8 @@ module.exports = function promoEmailApproveRoutes(db) {
             <td style="border-bottom:1px solid #E5E7EB;padding:5px 6px;font-size:12.5px"><input type="hidden" name="vsku_${i}" value="${e(l.sku)}"><b>${e(l.sku)}</b> ${e(l.sku_name || '')}</td>
             <td style="border-bottom:1px solid #E5E7EB;padding:5px 6px;white-space:nowrap;font-size:12.5px">
               <label style="margin-right:12px"><input type="radio" name="verdict_${i}" value="profit" required> ✅ ขายได้</label>
-              <label><input type="radio" name="verdict_${i}" value="loss"> ⚠️ ขาดทุน</label></td></tr>`).join('')}</table></div>` : ''}
+              <label><input type="radio" name="verdict_${i}" value="loss"> ⚠️ ขาดทุน</label>
+              <input type="text" name="vnote_${i}" maxlength="500" placeholder="เหตุผล (บังคับเมื่อเลือกขาดทุน)" style="display:block;width:100%;margin-top:4px;padding:4px 6px;font-size:12px"></td></tr>`).join('')}</table></div>` : ''}
         <label style="font-size:13px;font-weight:600">ความเห็น ${reject ? '(ควรระบุเหตุผล)' : '(ไม่บังคับ)'}</label>
         <textarea name="comment" maxlength="1000" placeholder="${reject ? 'ระบุเหตุผลที่ไม่อนุมัติ' : 'ความเห็นเพิ่มเติม'}"></textarea>
         <div style="text-align:center;margin-top:14px">
@@ -85,10 +86,11 @@ module.exports = function promoEmailApproveRoutes(db) {
     const action = req.body?.action === 'reject' ? 'reject' : 'approve';
     const comment = String(req.body?.comment || '').replace(/<[^>]*>/g, '').trim().slice(0, 1000);
     // ผลตรวจสอบรายสินค้า (ขั้นตรวจสอบ): vsku_<i> = รหัสสินค้า, verdict_<i> = profit | loss — ตรวจครบ/ถูกต้องที่ validateChange
-    const lineVerdicts = {};
+    const lineVerdicts = {}, verdictNotes = {};
     Object.keys(req.body || {}).filter(k => /^vsku_\d+$/.test(k)).forEach(k => {
       const v = req.body['verdict_' + k.slice(5)];
       if (['profit', 'loss'].includes(v)) lineVerdicts[String(req.body[k])] = v;
+      if (v === 'loss') verdictNotes[String(req.body[k])] = String(req.body['vnote_' + k.slice(5)] || '');
     });
     let before, after, st;
     try {
@@ -96,7 +98,7 @@ module.exports = function promoEmailApproveRoutes(db) {
       st = loadState(db, req.params.token);
       if (st.error || st.closed) { db.exec('ROLLBACK'); return res.status(409).send(page('บันทึกไม่ได้', promoMail.shell(`<p style="font-size:14px">${e(st.error || st.closed)}</p>`))); }
       before = st.header;
-      after = applyHeaderChange(db, st.raw, { status: action === 'reject' ? 'rejected' : st.raw.status, approval_comment: comment, ...(action !== 'reject' && Object.keys(lineVerdicts).length ? { approval_line_verdicts: lineVerdicts } : {}) }, st.user, { channel: 'email' });
+      after = applyHeaderChange(db, st.raw, { status: action === 'reject' ? 'rejected' : st.raw.status, approval_comment: comment, ...(action !== 'reject' && Object.keys(lineVerdicts).length ? { approval_line_verdicts: lineVerdicts, approval_line_verdict_notes: verdictNotes } : {}) }, st.user, { channel: 'email' });
       db.prepare("UPDATE promo_approval_tokens SET used_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE token = ?").run(req.params.token);
       db.prepare('INSERT INTO audit_log (uid, role, action, target) VALUES (?, ?, ?, ?)')
         .run(st.user.uid, st.user.role, 'PROMO_DRAFT_EMAIL_' + (action === 'reject' ? 'REJECT' : 'APPROVE'), st.header.draft_no);

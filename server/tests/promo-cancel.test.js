@@ -56,7 +56,7 @@ test('only_if_loss level is skipped when every line is profit, required when any
   // มีขาดทุน 1 รายการ → ต้องผ่านขั้น x
   const n2 = await mk('loss', ['P1', 'P2']);
   await call(r(n2), 'PATCH', { status: 'pending_approval' });
-  await call(r(n2), 'PATCH', { status: 'pending_approval', approval_line_verdicts: { P1: 'profit', P2: 'loss' } }, 'A');
+  await call(r(n2), 'PATCH', { status: 'pending_approval', approval_line_verdicts: { P1: 'profit', P2: 'loss' }, approval_line_verdict_notes: { P2: 'ทุนสูง' } }, 'A');
   const mid = await call(r(n2), 'PATCH', { status: 'pending_approval' }, 'M');
   assert.equal(mid.data[0].status, 'pending_approval');
   assert.equal(mid.data[0].current_level, 2);

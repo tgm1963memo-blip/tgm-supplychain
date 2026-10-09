@@ -15185,14 +15185,15 @@ function _draftCancelBadges(h) {
   return (rq ? ` <span class="badge bba">⏳ ขอยกเลิก${rq.scope === 'all' ? 'ทั้งใบ' : ` ${rq.skus.length} รายการ`} (รอ ${esc(rq.approver_name || uidToName(rq.approver_uid))})</span>` : '')
     + (cx.size && h.status !== 'cancelled' ? ` <span class="badge bbr">ยกเลิกบางรายการ (${cx.size})</span>` : '');
 }
-function _draftIsCancelWriter() { return isSales() || ['admin', 'superadmin'].includes(ROLE); }
+// เรียกกลับ / ขอยกเลิก — เฉพาะเจ้าของเอกสาร (ผู้ส่งอนุมัติ) และ admin (2026-10-09, ผู้ใช้ขอ) · server ตรวจซ้ำ
+function _draftIsCancelWriter(h) { return h?.created_by === UID || ['admin', 'superadmin'].includes(ROLE); }
 // ปุ่มยกเลิก/เรียกกลับ/ประวัติ — ใช้ทั้งหน้ารายการเอกสาร และหัวหน้าต่างเอกสาร
 function _draftCancelButtons(h, small = true) {
   const b = small ? 'btn btn-xs' : 'btn btn-sm';
   const rq = _draftCancelPending(h), no = esc(h.draft_no), out = [];
-  if (['pending_approval', 'pending_exec_approval'].includes(h.status) && (h.created_by === UID || ['admin', 'superadmin'].includes(ROLE)))
+  if (['pending_approval', 'pending_exec_approval'].includes(h.status) && _draftIsCancelWriter(h))
     out.push(`<button class="${b}" onclick="draftRecall('${no}')" title="เรียกกลับมาเป็นร่างเพื่อแก้ไข แล้วส่งอนุมัติใหม่">↩️ เรียกกลับเพื่อแก้ไข</button>`);
-  if (DRAFT_CANCELABLE.includes(h.status) && !rq && _draftIsCancelWriter()) out.push(`<button class="${b}" onclick="draftCancelRequestDialog('${no}')">🚫 ขอยกเลิก</button>`);
+  if (DRAFT_CANCELABLE.includes(h.status) && !rq && _draftIsCancelWriter(h)) out.push(`<button class="${b}" onclick="draftCancelRequestDialog('${no}')">🚫 ขอยกเลิก</button>`);
   if (rq && (rq.approver_uid === UID || ROLE === 'superadmin')) out.push(`<button class="${b} btn-r" onclick="draftCancelDecide('${no}',false)">ไม่อนุมัติยกเลิก</button><button class="${b} btn-g" onclick="draftCancelDecide('${no}',true)">อนุมัติยกเลิก</button>`);
   if (rq && rq.requested_by === UID) out.push(`<button class="${b}" onclick="draftCancelWithdraw('${no}')">ถอนคำขอยกเลิก</button>`);
   if (h.draft_no) out.push(`<button class="${b}" onclick="draftShowLogs('${no}')">📜 ประวัติ</button>`);
@@ -15667,7 +15668,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
   _draftCopyHeader = null;
   _draftCopySrcNo = '';
   _draftPlan = null; _draftPlanOpts = null; _draftPlanLoading = null; _draftFormSeq++;
-  _draftLineVerdicts = {};
+  _draftLineVerdicts = {}; _draftLineVerdictNotes = {};
   _draftPromoDocsCache.clear();
   _draftEquipKeep = '';
   _draftDiscScopeKeep = ''; _draftSpecialDistKeep = '';
@@ -15693,6 +15694,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
     _draftEquipKeep = header.equipment || '';
     _draftDiscScopeKeep = header.discount_scope || ''; _draftSpecialDistKeep = header.special_distribution || '';
     _draftLineVerdicts = { ...(_draftSavedLineVerdicts(header) || {}) };
+    _draftLineVerdictNotes = { ...(_draftSavedLineVerdicts(header, 'line_verdict_notes') || {}) };
     _draftEditStatus = header.status || 'draft';
     _draftEditCreatedBy = header.created_by || '';
     _draftOtherCosts = Array.isArray(header.other_costs_json) ? header.other_costs_json : [];
@@ -16908,7 +16910,8 @@ function _draftPlanHtml() {
   const suggest = _draftSuggestRoute(_draftPlanRoutes, _draftFormRouteFacts());
   if (!_draftPlan) {
     const saved = _draftFx((_draftHeader || _draftCopyHeader)?.form_extra_json).approval_plan;
-    _draftPlan = saved && typeof saved === 'object' ? { route_id: String(saved.route_id || ''), picks: { ...(saved.picks || {}) }, manual: !!saved.manual } : { route_id: suggest.id, picks: {}, manual: false };
+    _draftPlan = saved && typeof saved === 'object' ? { route_id: String(saved.route_id || ''), picks: { ...(saved.picks || {}) }, manual: !!saved.manual,
+      over: { ...(saved.over || {}) }, over_route: saved.over_route ?? null } : { route_id: suggest.id, picks: {}, manual: false, over: {}, over_route: null };
   }
   if (!_draftPlan.manual) _draftPlan.route_id = suggest.id; // ยังไม่เคยเลือกเอง → ตามเส้นทางแนะนำ (เปลี่ยนตามสาขา/เงื่อนไขที่กรอก)
   if (!_draftPlanOpts.some(o => o.id === _draftPlan.route_id)) _draftPlan.route_id = '';
@@ -16917,6 +16920,9 @@ function _draftPlanHtml() {
   const canEdit = draftCanEditStatus(_draftEditStatus);
   const dis = canEdit ? '' : 'disabled';
   const nameOf = uid => (_draftPlanUsers.find(u => u.uid === uid)?.name) || uidToName(uid) || uid;
+  // แก้ผู้อนุมัติขั้นปกติในเอกสารนี้ (2026-10-09, ผู้ใช้ขอ) — เฉพาะผู้ส่ง (เจ้าของเอกสาร)/admin · server ตรวจซ้ำตอนส่ง
+  const canOver = canEdit && ((_draftHeader?.created_by || UID) === UID || ['admin', 'superadmin'].includes(ROLE));
+  const over = _draftPlanOver(opt);
   const rows = [`<tr><td>1</td><td class="l"><b>ผู้จัดทำ</b></td><td class="l">${esc(uidToName(_draftHeader?.created_by || UID) || '—')}</td><td>—</td></tr>`];
   (opt?.levels || []).forEach((lv, i) => {
     let who;
@@ -16926,6 +16932,11 @@ function _draftPlanHtml() {
         ${canEdit ? `${!sel.includes(UID) ? `<button class="btn btn-xs" onclick="draftPlanAdd('${_promoJsKey(lv.id)}','${_promoJsKey(UID)}')">👤 ฉัน</button>` : ''}
         <input list="draft-plan-users" placeholder="🔍 พิมพ์ชื่อเพื่อเพิ่ม" style="width:190px;font-size:12px;padding:3px 7px" onchange="draftPlanAddByText('${_promoJsKey(lv.id)}',this)">` : ''}</div>
         <div style="font-size:10.5px;color:var(--TX3);margin-top:2px">ผู้สร้างเลือกเอง</div>`;
+    } else if (canOver || over[lv.id]) {
+      const list = over[lv.id] || (lv.approvers || []).map(a => a.uid);
+      who = `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">${list.map(uid => `<span style="font-size:11.5px;background:var(--bg2);border-radius:4px;padding:2px 7px">${esc(nameOf(uid))}${canOver && list.length > 1 ? ` <button onclick="draftPlanOverRem('${_promoJsKey(lv.id)}','${_promoJsKey(uid)}')" title="ลบผู้อนุมัติคนนี้ออกจากขั้นนี้ (เฉพาะเอกสารนี้)" style="background:none;border:0;cursor:pointer;color:var(--R);padding:0">✕</button>` : ''}</span>`).join('')}
+        ${canOver ? `<input list="draft-plan-users" placeholder="＋ เพิ่มผู้อนุมัติ" style="width:160px;font-size:12px;padding:3px 7px" onchange="draftPlanOverAdd('${_promoJsKey(lv.id)}',this)">` : ''}
+        ${over[lv.id] ? `<span style="font-size:10.5px;color:var(--A)">แก้จากเส้นทางกลาง${canOver ? ` · <a href="#" onclick="draftPlanOverReset('${_promoJsKey(lv.id)}');return false">คืนค่า</a>` : ''}</span>` : ''}</div>`;
     } else who = esc((lv.approvers || []).map(a => a.name || uidToName(a.uid)).join(' / ') || '—');
     rows.push(`<tr><td>${i + 2}</td><td class="l"><b>ขั้นที่ ${i + 1} · ${esc(lv.label || 'ผู้อนุมัติ')}</b>${lv.audit_verdict ? '<div style="font-size:10.5px;color:var(--BL)">🔍 ขั้นตรวจสอบ (ขายได้/ขาดทุน รายสินค้า)</div>' : ''}${lv.only_if_loss ? '<div style="font-size:10.5px;color:var(--O)">⚠️ เฉพาะเมื่อมีรายการขาดทุน</div>' : ''}</td><td class="l">${who}</td>
       <td style="white-space:nowrap;font-size:11.5px">${(lv.approvers || []).length > 1 || lv.pick_by_creator ? (lv.mode === 'all' ? 'ทุกคนต้องอนุมัติ' : 'คนใดคนหนึ่ง') : '—'}</td></tr>`);
@@ -16946,6 +16957,32 @@ function _draftPlanHtml() {
     <datalist id="draft-plan-users">${_draftPlanUsers.map(u => `<option value="${esc(`${u.name} · ${u.uid}`)}">${esc([u.department, u.position].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>`;
 }
 function draftPlanSetRoute(id) { if (!_draftPlan) return; _draftPlan.route_id = id || ''; _draftPlan.manual = true; draftRenderApprovalTrail(); }
+// รายชื่อผู้อนุมัติที่แก้ไว้ (lvId -> [uid]) — ใช้ได้เฉพาะกับเส้นทางที่แก้ไว้ เปลี่ยนเส้นทาง = กลับไปใช้รายชื่อกลาง
+function _draftPlanOver(opt) { return _draftPlan?.over && _draftPlan.over_route === (opt?.id || '') ? _draftPlan.over : {}; }
+function _draftPlanOverSet(lvId, list) {
+  const opt = _draftPlanOpt(), rid = opt?.id || '';
+  if (_draftPlan.over_route !== rid) { _draftPlan.over = {}; _draftPlan.over_route = rid; }
+  _draftPlan.over[lvId] = list; draftRenderApprovalTrail();
+}
+function _draftPlanOverList(lvId) {
+  const opt = _draftPlanOpt(), lv = (opt?.levels || []).find(x => x.id === lvId);
+  return [...(_draftPlanOver(opt)[lvId] || (lv?.approvers || []).map(a => a.uid))];
+}
+function draftPlanOverRem(lvId, uid) {
+  if (!_draftPlan) return;
+  const list = _draftPlanOverList(lvId).filter(x => x !== uid);
+  if (!list.length) { toast('แต่ละขั้นต้องมีผู้อนุมัติอย่างน้อย 1 คน', 'warn'); return; }
+  _draftPlanOverSet(lvId, list);
+}
+function draftPlanOverAdd(lvId, input) {
+  if (!_draftPlan) return;
+  const m = String(input.value || '').match(/·\s*([^·]+)$/), uid = m ? m[1].trim() : '';
+  if (!_draftPlanUsers.some(u => u.uid === uid)) { toast('เลือกชื่อจากรายการที่ขึ้นมา', 'warn'); return; }
+  const list = _draftPlanOverList(lvId);
+  if (!list.includes(uid)) list.push(uid);
+  _draftPlanOverSet(lvId, list);
+}
+function draftPlanOverReset(lvId) { if (!_draftPlan?.over) return; delete _draftPlan.over[lvId]; draftRenderApprovalTrail(); }
 function draftPlanAuto() { if (!_draftPlan) return; _draftPlan.manual = false; draftRenderApprovalTrail(); }
 function draftPlanAdd(lvId, uid) {
   if (!_draftPlan || !uid) return;
@@ -16965,18 +17002,21 @@ function _draftPlanForSave() {
   if (!_draftPlan || !_draftPlanOpts) return _draftFx((_draftHeader || _draftCopyHeader)?.form_extra_json).approval_plan || null;
   const opt = _draftPlanOpt();
   const picks = Object.fromEntries((opt?.levels || []).filter(lv => lv.pick_by_creator).map(lv => [lv.id, _draftPlan.picks[lv.id] || []]));
-  return { route_id: opt?.id || '', picks, manual: !!_draftPlan.manual };
+  const over = _draftPlanOver(opt);
+  return { route_id: opt?.id || '', picks, manual: !!_draftPlan.manual, ...(Object.keys(over).length ? { over: { ...over }, over_route: opt?.id || '' } : {}) };
 }
 // ผลตรวจสอบ ขายได้/ขาดทุน รายบรรทัดสินค้า (2026-09-24, ผู้ใช้ยืนยัน: เลือกในตารางสินค้า แทนผลรวม) — กรอกได้เฉพาะ
 // ผู้อนุมัติของขั้นที่ตั้ง "ขั้นตรวจสอบ" (lv.audit_verdict) ตอนถึงตาตัวเอง · server เก็บลง approver entry
 // (line_verdicts: {sku: 'profit'|'loss'}) และบังคับครบทุก SKU — ดู promoApproval.validateChange
 const DRAFT_VERDICT = { profit: { t: 'ขายได้', icon: '✅', color: 'var(--G)', bg: 'var(--LG)' }, loss: { t: 'ขาดทุน', icon: '⚠️', color: 'var(--R)', bg: 'var(--LR)' } };
 let _draftLineVerdicts = {}; // sku -> 'profit' | 'loss' (ผลที่บันทึกแล้ว หรือที่ผู้ตรวจสอบกำลังเลือก)
-// ผลที่บันทึกแล้วในเอกสาร (ผู้ตรวจสอบคนล่าสุดที่มี line_verdicts)
-function _draftSavedLineVerdicts(h) {
+// เหตุผลของรายการขาดทุน (2026-10-09, ผู้ใช้ขอ) — sku -> ข้อความ · บังคับเมื่อเลือกขาดทุน (server ตรวจซ้ำ) · แสดงใต้ "ขาดทุน" ทั้งหน้าจอและ PDF
+let _draftLineVerdictNotes = {};
+// ผลที่บันทึกแล้วในเอกสาร (ผู้ตรวจสอบคนล่าสุดที่มี line_verdicts) · key='line_verdict_notes' = เหตุผลขาดทุนของผู้ตรวจคนเดียวกัน
+function _draftSavedLineVerdicts(h, key = 'line_verdicts') {
   const levels = [...(Array.isArray(h?.approval_history_json) ? h.approval_history_json : []), ...(Array.isArray(h?.levels_json) ? h.levels_json : [])];
   let found = null;
-  levels.forEach(lv => (lv.approvers || []).forEach(a => { if (a.line_verdicts && typeof a.line_verdicts === 'object') found = a.line_verdicts; }));
+  levels.forEach(lv => (lv.approvers || []).forEach(a => { if (a.line_verdicts && typeof a.line_verdicts === 'object') found = a[key] || null; }));
   return found;
 }
 // ถึงตาผู้ใช้คนนี้กรอกผลตรวจสอบหรือยัง (เอกสารรออนุมัติ + ขั้นปัจจุบันเป็นขั้นตรวจสอบ + เป็นผู้อนุมัติที่ยังไม่ตัดสินใจ)
@@ -16997,10 +17037,12 @@ function _draftVerdictCellHtml(i) {
   if (_draftIsAuditTurn()) {
     const btn = (val) => { const x = DRAFT_VERDICT[val], on = v === val;
       return `<button class="btn btn-xs" onclick="draftSetLineVerdict(${i},'${val}')" style="padding:2px 7px;${on ? `background:${x.bg};color:${x.color};border-color:${x.color};font-weight:700` : 'opacity:.75'}">${x.icon} ${x.t}</button>`; };
-    return `<div style="display:flex;gap:4px;justify-content:center;white-space:nowrap">${btn('profit')}${btn('loss')}</div>`;
+    return `<div style="display:flex;gap:4px;justify-content:center;white-space:nowrap">${btn('profit')}${btn('loss')}</div>`
+      + (v === 'loss' ? `<input type="text" maxlength="500" placeholder="เหตุผลที่ขาดทุน *" value="${esc(_draftLineVerdictNotes[l.sku] || '')}" oninput="_draftLineVerdictNotes['${_promoJsKey(l.sku)}']=this.value" style="width:100%;margin-top:4px;font-size:11.5px;padding:3px 6px;border:1px solid var(--R);border-radius:5px">` : '');
   }
   const x = DRAFT_VERDICT[v];
-  return x ? `<span style="font-size:12px;font-weight:700;color:${x.color};white-space:nowrap">${x.icon} ${x.t}</span>` : '—';
+  const note = v === 'loss' && _draftLineVerdictNotes[l.sku] ? `<div style="font-size:11px;color:var(--TX2);white-space:normal;margin-top:2px">${esc(_draftLineVerdictNotes[l.sku])}</div>` : '';
+  return x ? `<span style="font-size:12px;font-weight:700;color:${x.color};white-space:nowrap">${x.icon} ${x.t}</span>${note}` : '—';
 }
 function draftSetLineVerdict(i, v) {
   const l = _draftLines[i]; if (!l?.sku || !_draftIsAuditTurn()) return;
@@ -17752,6 +17794,9 @@ async function draftSubmitForApproval(draftNo) {
     routeId = r.routeId; picks = r.picks;
   }
   let levels = (options.find(o => o.id === routeId) || options[0]).levels;
+  // ผู้อนุมัติที่ผู้ส่งแก้ไว้ในการ์ด (เฉพาะเส้นทางเดียวกับที่ส่ง) — server ใช้ approver_overrides สร้างขั้นจริง
+  const overrides = plan?.over && (plan.over_route ?? null) === (routeId || '') ? plan.over : null;
+  if (overrides) levels = levels.map(lv => !lv.pick_by_creator && overrides[lv.id]?.length ? { ...lv, approvers: overrides[lv.id].map(uid => { const u = _draftPickUsers.find(x => x.uid === uid) || {}; return { uid, name: u.name || uidToName(uid) || uid, role: u.role || '' }; }) } : lv);
   levels = levels.map(lv => lv.pick_by_creator ? { ...lv, approvers: (picks[lv.id] || []).map(uid => { const u = _draftPickUsers.find(x => x.uid === uid) || {}; return { uid, name: u.name || uid, role: u.role || '' }; }) } : lv);
   const routeError = ApprovalWorkflow.validate(levels || [], null, true);
   if (routeError) { toast(routeError, 'warn'); return; }
@@ -17761,7 +17806,7 @@ async function draftSubmitForApproval(draftNo) {
     approvers: (lv.approvers || []).map(a => ({ uid: a.uid, name: a.name, role: a.role, status: 'pending', comment: '', ts: null })),
   }));
   // server โคลนขั้นจากเส้นทาง route_id เองอีกรอบ (validateChange) — levels ที่ส่งไปใช้แค่ตอนไม่มี server route
-  const patch = { status: 'pending_approval', updated_by: UID, picked_approvers: picks, route_id: routeId || '' };
+  const patch = { status: 'pending_approval', updated_by: UID, picked_approvers: picks, route_id: routeId || '', ...(overrides ? { approver_overrides: overrides } : {}) };
   if (clonedLevels.length) { patch.levels_json = clonedLevels; patch.current_level = 0; patch.approvers_json = clonedLevels.flatMap(lv => lv.approvers); }
   SB.updatePromoDraftHeader(no, patch)
     .then(() => { audit('PROMO_DRAFT_SUBMIT', no, { levels: clonedLevels.length, route: routeId || 'standard' }); toast('ส่งอนุมัติแล้ว' + (clonedLevels.length ? ` (${clonedLevels.length} ขั้นตอน)` : '')); _draftAfterStatusChange(no); })
@@ -17813,11 +17858,14 @@ async function _draftApplyApproval(draftNo, approved, executive) {
       const missing = lines.filter(x => !DRAFT_VERDICT[_draftLineVerdicts[x.l.sku]]).map(x => x.num);
       if (missing.length) { toast(`ขั้นตรวจสอบ: เลือกผล "ขายได้" หรือ "ขาดทุน" ให้ครบทุกรายการ (ยังขาดลำดับ ${missing.join(', ')})`, 'warn'); return; }
       verdicts = Object.fromEntries(lines.map(x => [x.l.sku, _draftLineVerdicts[x.l.sku]]));
+      const noReason = lines.filter(x => verdicts[x.l.sku] === 'loss' && !String(_draftLineVerdictNotes[x.l.sku] || '').trim()).map(x => x.num);
+      if (noReason.length) { toast(`ขั้นตรวจสอบ: กรุณาระบุเหตุผลของรายการที่ขาดทุน (ลำดับ ${noReason.join(', ')})`, 'warn'); return; }
     }
     const ans = await _draftAskApprovalComment(approved, verdicts && Object.keys(verdicts).length ? verdicts : null);
     if (ans === null) return;
     const comment = ans.comment;
-    const vPatch = verdicts ? { approval_line_verdicts: verdicts } : {};
+    const vPatch = verdicts ? { approval_line_verdicts: verdicts,
+      approval_line_verdict_notes: Object.fromEntries(Object.keys(verdicts).filter(s => verdicts[s] === 'loss').map(s => [s, String(_draftLineVerdictNotes[s] || '').trim()])) } : {};
     // ต้องมีลายเซ็นก่อนกดอนุมัติ — server snapshot ลายเซ็นนี้ลงเอกสารตอนบันทึกการอนุมัติ
     if (approved) await sigEnsureMine();
     if (!levels.length) {
@@ -19230,7 +19278,7 @@ async function draftPreviewPDF(orient = 'landscape') {
   let pdfAudit = false;
   const vCell = sku => {
     const v = _draftLineVerdicts[sku];
-    const body = v === 'profit' ? '<b class="vd profit">✅ ขายได้</b>' : v === 'loss' ? '<b class="vd loss">⚠️ ขาดทุน</b>'
+    const body = v === 'profit' ? '<b class="vd profit">✅ ขายได้</b>' : v === 'loss' ? `<b class="vd loss">⚠️ ขาดทุน</b>${_draftLineVerdictNotes[sku] ? `<div class="vnote">${esc(_draftLineVerdictNotes[sku])}</div>` : ''}`
       : '<span class="vbox"><i class="box"></i>ขายได้</span><span class="vbox"><i class="box"></i>ขาดทุน</span>';
     return pdfAudit ? `<td class="gs vcell">${body}</td>` : '';
   };
@@ -19483,6 +19531,7 @@ async function draftPreviewPDF(orient = 'landscape') {
     table.items td.vcell{font-size:9.2px;white-space:nowrap;text-align:left;padding-left:4px;padding-right:2px}
     table.items td.vcell .vbox{display:flex;align-items:center;gap:3px;margin:1px 0;color:#374151}
     table.items td.vcell .vd{font-size:9.6px}
+    table.items td.vcell .vnote{font-size:8.6px;color:#374151;white-space:normal;line-height:1.25;margin-top:1px}
     .vd .profit{color:#0A5940}.vd .loss{color:#A32D2D}
     table.signs td .sub{font-size:8.5px;color:#8896A5;white-space:normal}
     table.signs tr.pending td{color:#8896A5}

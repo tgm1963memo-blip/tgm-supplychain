@@ -10,7 +10,8 @@ let transporterError = null;
 
 function getTransporter() {
   if (transporter || transporterError) return transporter;
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
+  // SMTP_PASS = ชื่อตัวแปรเดียวกับ e-memo (2026-10-09: ใช้กล่องอีเมลเดียวกับ e-memo — คัดลอกค่ามาได้ตรงๆ)
+  if (!process.env.SMTP_USER || !(process.env.SMTP_PASSWORD || process.env.SMTP_PASS)) {
     transporterError = new Error('SMTP_CONFIG_MISSING');
     return null;
   }
@@ -19,7 +20,7 @@ function getTransporter() {
     host: process.env.SMTP_HOST || 'mail.tgm.co.th',
     port,
     secure: port === 465,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD || process.env.SMTP_PASS },
     tls: { rejectUnauthorized: false },
   });
   return transporter;

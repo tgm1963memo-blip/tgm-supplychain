@@ -50,10 +50,15 @@ test('per-line audit verdicts (profit/loss) only at the review step', async t =>
   assert.equal(miss.status, 400); assert.match(miss.data.error, /B/);
   assert.equal((await call(r, 'PATCH', { status: 'pending_approval', approval_line_verdicts: { A: 'profit', B: 'maybe' } }, 'C')).status, 400);
   // ครบ → อนุมัติครบ + เก็บผลรายบรรทัด (ค่าที่ไม่ใช่ SKU ของเอกสารไม่ถูกเก็บ)
-  const ok = await call(r, 'PATCH', { status: 'pending_approval', approval_line_verdicts: { A: 'profit', B: 'loss', ZZ: 'loss' }, approval_comment: 'B ทุนต่ำกว่าราคาขาย' }, 'C');
+  // 2026-10-09: รายการขาดทุนต้องมีเหตุผล — ไม่มี = ไม่รับ
+  const noReason = await call(r, 'PATCH', { status: 'pending_approval', approval_line_verdicts: { A: 'profit', B: 'loss' } }, 'C');
+  assert.equal(noReason.status, 400);
+  assert.match(noReason.data.error, /เหตุผล/);
+  const ok = await call(r, 'PATCH', { status: 'pending_approval', approval_line_verdicts: { A: 'profit', B: 'loss', ZZ: 'loss' }, approval_line_verdict_notes: { B: 'ทุนสูงกว่าราคาโปร <b>x</b>' }, approval_comment: 'B ทุนต่ำกว่าราคาขาย' }, 'C');
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
   assert.equal(ok.data[0].status, 'approved');
   assert.deepEqual(ok.data[0].levels_json[1].approvers[0].line_verdicts, { A: 'profit', B: 'loss' });
+  assert.deepEqual(ok.data[0].levels_json[1].approvers[0].line_verdict_notes, { B: 'ทุนสูงกว่าราคาโปร x' });
 
   // เอกสารไม่มีบรรทัดสินค้า (นอกสัญญา) → ขั้นตรวจสอบอนุมัติได้โดยไม่ต้องมีผล
   const off = await mk('off', []);
