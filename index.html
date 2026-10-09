@@ -7502,7 +7502,7 @@ function _sdProdsMixed(orderRows,invRows,bpRows){
 function sdSetCo(c){
   _sd.co=['tss','tgm'].includes(c)?c:'all';
   try{localStorage.setItem('sd_co',_sd.co);}catch(e){}
-  _sdApi.loaded=false;_sdApi.yoy=null;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdYoYSeq++;
   pgMySales();
 }
 // ยอด/โครงสร้างหลังกรอง Sales — null = ไม่กรอง (หรือข้อมูลโหลดมาเฉพาะ Sales คนนั้นจาก server แล้ว)
@@ -7517,7 +7517,7 @@ function _sdUseSwapAll(swapRows,rows,bpRows){
 function _sdFiltered(){
   const s=_sdEffSlm();
   if(!s||!_sdApi.loaded||s===String(_sdApi._slmId||'')||!Array.isArray(_sdApi._rows)) return null;
-  const key=[s,_sdApi._buildCacheKey,_sdApi.invoiceBased?1:0,_sdApi._rows.length,(_sdApi._invRowsSlm||_sdApi._invRows||[]).length,_sdApi.yoy?(_sdApi.yoy._rows||[]).length:-1].join('|');
+  const key=[s,_sdApi._buildCacheKey,_sdApi.invoiceBased?1:0,_sdApi._rows.length,(_sdApi._invRowsSlm||_sdApi._invRows||[]).length,_sdApi.yoy?(_sdApi.yoy._rows||[]).length+'/'+(_sdApi.yoy._invRowsSlm||[]).length:-1].join('|');
   if(_sdApi._filt&&_sdApi._filt.key===key) return _sdApi._filt;
   const rows=_sdApi._rows.filter(r=>_sdRowSlmMatch(r,s));
   const sum=(a,k)=>a.reduce((t,r)=>t+(Number(r[k])||0),0);
@@ -7540,8 +7540,15 @@ function _sdFiltered(){
   }
   let yoy=null;
   if(_sdApi.yoy&&Array.isArray(_sdApi.yoy._rows)){
-    const yr=_sdApi.yoy._rows.filter(r=>_sdRowSlmMatch(r,s));
-    yoy={total:sum(yr,'amount'),qty:sum(yr,'qty'),invoices:yr.length,custs:_sdBuildCusts(yr),prods:_sdBuildProds(yr),slms:_sdBuildSlms(yr,_sdApi.slmList||[])};
+    const Y=_sdApi.yoy,yr=Y._rows.filter(r=>_sdRowSlmMatch(r,s));
+    const ySrc=Y._invRowsSlm||Y._invRows;
+    // ปีที่แล้วกรองแบบเดียวกับงวดปัจจุบัน (ใบกำกับตามรหัส Sales) — เดิมกรองจากแถวออเดอร์ ซึ่งไม่ตรงแหล่งกับยอดปัจจุบัน
+    const yInv=Y.invoiceBased&&Array.isArray(ySrc)?ySrc.filter(r=>slmKeySet(s).has(String(r.slm_code||'').trim())):null;
+    if(yInv){
+      const yt=sum(yInv,'amount'),yic=sum(yInv,'invoice_count');
+      yoy={total:yt,qty:sum(yr,'qty'),invoices:yic||yr.length,custs:_sdBuildCustsFromInvoice(yInv),slms:_sdBuildSlmsFromInvoice(yInv),
+        prods:_sdScaleProdsToTotal(_sdProdsMixed(yr,yInv,(Y._bpRows||[]).filter(r=>slmKeySet(s).has(String(r.slm_id||'').trim()))),yt)};
+    }else yoy={total:sum(yr,'amount'),qty:sum(yr,'qty'),invoices:yr.length,custs:_sdBuildCusts(yr),prods:_sdBuildProds(yr),slms:_sdBuildSlms(yr,_sdApi.slmList||[])};
   }
   const name=slmKeySet(s).size>1?slmKeyName(s):((_sdApi.slmList||[]).find(x=>String(x.code)===s)?.name||salesNameFor(s)||s);
   _sdApi._filt={key,slm:s,name,total,qty:sum(rows,'qty'),invoices,vs,monthly,custs,prods,extras,x,slms:slms.filter(x=>slmKeySet(s).has(String(x.code))),yoy};
@@ -8075,7 +8082,7 @@ async function sdLoad(){
   }
   if(_sd.showYoY && _sdApi.loaded && !_sdApi.yoy){
     _sdApi.yoyLoading=true;
-    _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
+    _sdStartYoY();
   }
   sdRender();
 }
@@ -8192,7 +8199,7 @@ async function sdLoadYear(){
   }
   if(_sd.showYoY && _sdApi.loaded && !_sdApi.yoy){
     _sdApi.yoyLoading=true;
-    _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
+    _sdStartYoY();
   }
   sdRender();
 }
@@ -8565,13 +8572,12 @@ function _sdYoYCell(prev){
   if(_sdApi.yoyLoading)return'<td class="r" style="color:var(--TX3);font-size:11px">⏳</td>';
   return`<td class="r" style="color:var(--TX2);font-size:12px">${prev?_sdFmtTotal(_sdV(prev)):'—'}</td>`;
 }
-async function _sdLoadYoY(){
-  const me=(DB.get('users')||[]).find(x=>x.uid===UID);
-  const slmId=_sdLoadSlm();
+// ช่วงเดือนของปีที่แล้วที่ตรงกับมุมมองปัจจุบัน + คีย์ไว้เช็กว่าผลที่โหลดเสร็จยังตรงกับหน้าจอ
+function _sdYoYRange(){
   let start,end;
   if(_sd.pt==='custom'){
     const fromYm=_dateToYm(_sd.dateFrom);const toYm=_dateToYm(_sd.dateTo);
-    if(!fromYm||!toYm)return;
+    if(!fromYm||!toYm)return null;
     start=_ymAddYear(fromYm,-1);end=_ymAddYear(toYm,-1);
   }else if(_sd.pt==='year'){
     const gy=_sdApiYear();start=`${gy-1}-01`;end=`${gy-1}-12`;
@@ -8579,18 +8585,58 @@ async function _sdLoadYoY(){
     const gy=_sd.cy-543;const mm=String(_sd.cm+1).padStart(2,'0');
     start=`${gy-1}-${mm}`;end=`${gy-1}-${mm}`;
   }
-  const rows=await _sbSalesRows(start,end,slmId,{
-    includeConsi:false,
-    fastProducts:true,
-    dateFrom:_sd.pt==='custom'?_dateAddYear(_sd.dateFrom,-1):null,
-    dateTo:_sd.pt==='custom'?_dateAddYear(_sd.dateTo,-1):null
+  return {start,end,key:[_sd.pt,start,end,_sd.dateFrom,_sd.dateTo,_sdCo(),_sdLoadSlm()].join('|')};
+}
+let _sdYoYSeq=0;
+// FIXED (2026-10-09, ผู้ใช้แจ้ง "ปี 2569 กับ 2568 ยอดเท่ากันเมื่อเปลี่ยนตัวกรอง Sales"):
+// 1) ไม่มีตัวกันผลเก่า — เปลี่ยนเดือน/ปีระหว่างที่ YoY รอบก่อนยังโหลดอยู่ ผลรอบเก่า (ซึ่งอาจเป็นข้อมูลของงวดที่กำลังดูอยู่) มาเขียนทับ _sdApi.yoy
+//    แล้ว sdLoad/sdLoadYear เห็นว่ามี yoy แล้วจึงไม่โหลดใหม่ → "ปีที่แล้ว" = ยอดงวดปัจจุบัน
+// 2) ยอดปัจจุบันมาจากใบกำกับ (invoice_sales_monthly รวม TGM โรงงาน) แต่ปีที่แล้วมาจากออเดอร์ (ไม่มีลูกค้าจริง/ไม่มี TGM)
+//    พอกรอง Sales จึงเทียบคนละแหล่ง — ลูกค้า/รหัส BP-xx ขึ้น "ใหม่" ทั้งหมด → ใช้ใบกำกับของปีที่แล้วเหมือนกัน
+function _sdStartYoY(){
+  const seq=++_sdYoYSeq;
+  _sdApi.yoyLoading=true;
+  _sdLoadYoY(seq).catch(e=>console.warn('YoY:',e)).finally(()=>{
+    if(seq!==_sdYoYSeq) return;
+    _sdApi.yoyLoading=false;sdRender();
   });
-  _sdApi.yoy={
-    total:rows.reduce((a,r)=>a+(Number(r.amount)||0),0),
-    qty:rows.reduce((a,r)=>a+(Number(r.qty)||0),0),
-    invoices:rows.length,_rows:rows,
-    custs:_sdBuildCusts(rows),prods:_sdBuildProds(rows),slms:_sdBuildSlms(rows,_sdApi.slmList||[])
-  };
+}
+async function _sdLoadYoY(seq){
+  const slmId=_sdLoadSlm();
+  const rg=_sdYoYRange();if(!rg)return;
+  const {start,end}=rg;
+  const wantInv=!!_sdApi.invoiceBased&&_sd.pt!=='custom';
+  const [rows,inv,bpRows,swap]=await Promise.all([
+    _sbSalesRows(start,end,slmId,{
+      includeConsi:false,
+      fastProducts:true,
+      includeTgm:!slmId,
+      dateFrom:_sd.pt==='custom'?_dateAddYear(_sd.dateFrom,-1):null,
+      dateTo:_sd.pt==='custom'?_dateAddYear(_sd.dateTo,-1):null
+    }),
+    wantInv?_sdInvRange(start,end).catch(()=>null):null,
+    wantInv?_sdBpLines(start,end):[],
+    wantInv?_chainSwap(start,end).catch(()=>null):null,
+  ]);
+  // ผลของรอบที่ไม่ใช่ล่าสุด หรือผู้ใช้เปลี่ยนงวด/บริษัทไปแล้ว → ทิ้ง
+  if(seq!==_sdYoYSeq||_sdYoYRange()?.key!==rg.key) return;
+  const sum=(a,k)=>a.reduce((t,r)=>t+(Number(r[k])||0),0);
+  const Y={total:sum(rows,'amount'),qty:sum(rows,'qty'),invoices:rows.length,_rows:rows};
+  if(Array.isArray(inv)&&inv.length){
+    const swapRows=_chainSwapInvRows(inv,swap,_sdCosFor(start));
+    // เหมือนงวดปัจจุบัน: ยอดรวม/รายลูกค้าใช้ใบกำกับเดิม · รายเซลส์/การกรอง Sales ใช้แถวที่แทน DC ด้วยสาขาห้องแล้ว
+    const base=_scopeNow()?.restricted?swapRows:inv;
+    Y.total=sum(base,'amount');
+    const ic=sum(base,'invoice_count');if(ic) Y.invoices=ic;
+    Y._invRows=inv;Y._invRowsSlm=swapRows;Y._bpRows=bpRows||[];
+    Y.custs=_sdBuildCustsFromInvoice(base);
+    Y.slms=_sdBuildSlmsFromInvoice(swapRows);
+    Y.prods=_sdScaleProdsToTotal(_sdProdsMixed(rows,base,Y._bpRows),Y.total);
+    Y.invoiceBased=true;
+  }else{
+    Y.custs=_sdBuildCusts(rows);Y.prods=_sdBuildProds(rows);Y.slms=_sdBuildSlms(rows,_sdApi.slmList||[]);
+  }
+  _sdApi.yoy=Y;_sdApi._filt=null;
 }
 function sdTogYoY(){
   _sd.showYoY=!_sd.showYoY;
@@ -8599,8 +8645,8 @@ function sdTogYoY(){
   else{b.style.background='';b.style.color='';b.style.borderColor='';b.style.fontWeight='';}}
   if(_sd.showYoY&&_sdApi.loaded&&!_sdApi.yoy){
     _sdApi.yoyLoading=true;sdRender();
-    _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
-  }else{if(!_sd.showYoY){_sdApi.yoy=null;_sdApi.yoyLoading=false;}sdRender();}
+    _sdStartYoY();
+  }else{if(!_sd.showYoY){_sdApi.yoy=null;_sdYoYSeq++;_sdApi.yoyLoading=false;}sdRender();}
 }
 function _dateToYm(d){return d?d.substring(0,7):'';}
 function _dateToDisplayTh(d){
@@ -8616,7 +8662,7 @@ function sdApplyCustomRange(){
   sdSetDateRange();
   if(!_sd.dateFrom||!_sd.dateTo){alert('กรุณาเลือกช่วงวันที่');return;}
   if(_sd.dateFrom>_sd.dateTo){alert('วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด');return;}
-  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;sdLoadCustom();
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdYoYSeq++;_sdApi.yoyLoading=false;sdLoadCustom();
 }
 function sdSetDatePreset(p){
   const now=new Date();
@@ -8633,7 +8679,7 @@ function sdSetDatePreset(p){
   _sd.dateFrom=from;_sd.dateTo=to;
   const f=document.getElementById('sd-date-from');const t=document.getElementById('sd-date-to');
   if(f)f.value=from;if(t)t.value=to;
-  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdYoYSeq++;_sdApi.yoyLoading=false;
   sdLoadCustom();
 }
 async function sdLoadCustom(){
@@ -8664,7 +8710,7 @@ async function sdLoadCustom(){
     _sdUpdateSlmDrop();
     if(_sd.showYoY){
       _sdApi.yoyLoading=true;
-      _sdLoadYoY().then(()=>{_sdApi.yoyLoading=false;sdRender();}).catch(e=>{console.warn('YoY:',e);_sdApi.yoyLoading=false;sdRender();});
+      _sdStartYoY();
     }
   }catch(e){_sdApi.loaded=false;_sdApi.error=e.message||'ไม่สามารถโหลดข้อมูลได้';console.error('Custom range load:',e);}
   finally{document.getElementById('sd-loading')?.remove();}
@@ -8684,7 +8730,7 @@ function pgMySales(){
   // "today"). Switching tabs (sdTab) doesn't re-run pgMySales(), so navigating within an open visit
   // (prev/next month, Year toggle) is untouched by this — only re-entering the page resets it.
   _sd.pt='month';_sd.cm=now.getMonth();_sd.cy=now.getFullYear()+543;_sd.cy_y=now.getFullYear()+543;_sd.cw=1;
-  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdYoYSeq++;_sdApi.yoyLoading=false;
   if(!_sd.dateFrom||_sd.dateFrom.length<=7){_sd.dateFrom=_mFirst;}
   if(!_sd.dateTo||_sd.dateTo.length<=7){_sd.dateTo=_today;}
   const isCustom=_sd.pt==='custom';
@@ -8838,7 +8884,7 @@ function sdKPI(){
     ? `<div class="kh" style="color:var(--TX3)">ยอดจากใบกำกับภาษีจริง (${_sdCoLabel()}) — รายสินค้าฝั่ง TSS ปรับสัดส่วนจากข้อมูลออเดอร์ · ฝั่ง TGM ใช้บรรทัดสินค้าจริงจากโรงงาน</div>`
     : '';
   // (2026-10-05) โหมดกำหนดเอง / เทียบปีที่แล้ว ยังคิดจากข้อมูลออเดอร์ ซึ่งไม่มียอดโรงงาน — แจ้งไว้จนกว่าจะทำส่วนนี้
-  const coLimitNote=_sdCo()!=='tss'&&(_sd.pt==='custom'||_sd.showYoY)?`<div class="kh" style="color:var(--A)">${_sd.pt==='custom'?'โหมดกำหนดเอง':'ตัวเลขเทียบปีที่แล้ว'}ยังไม่รวมยอด TGM (โรงงาน)</div>`:'';
+  const coLimitNote=_sdCo()!=='tss'&&(_sd.pt==='custom'||(_sd.showYoY&&yoy&&!_sdApi.yoy?.invoiceBased))?`<div class="kh" style="color:var(--A)">${_sd.pt==='custom'?'โหมดกำหนดเอง':'ตัวเลขเทียบปีที่แล้ว'}ยังไม่รวมยอด TGM (โรงงาน)</div>`:'';
   const _yoyLine=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${_sdFmtTotal(prev)} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳ กำลังโหลดข้อมูลปีที่แล้ว…':'')}</div>`:'';
   const _yoyLineNum=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${Math.round(prev).toLocaleString()} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳':'')}</div>`:'';
   kr.innerHTML=`
@@ -9395,7 +9441,7 @@ function sdSetPT(t){
   if(t==='week') _sd.cw=1;
   const ng=document.getElementById('sd-nav-group');if(ng)ng.style.display=(t==='custom'?'none':'flex');
   const cr=document.getElementById('sd-custom-range');if(cr)cr.style.display=(t==='custom'?'block':'none');
-  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdYoYSeq++;_sdApi.yoyLoading=false;
   if(t==='year') sdLoadYear();
   else if(t==='custom'){if(_sd.dateFrom&&_sd.dateTo) sdLoadCustom(); else sdRender();}
   else sdLoad();
@@ -9412,13 +9458,13 @@ function sdNav(d){
     if(_sd.cw<1){_sd.cm--;if(_sd.cm<0){_sd.cm=11;_sd.cy--;}_sd.cw=4;}
     else if(_sd.cw>4){_sd.cm++;if(_sd.cm>11){_sd.cm=0;_sd.cy++;}_sd.cw=1;}
   }
-  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdYoYSeq++;_sdApi.yoyLoading=false;
   if(_sd.pt==='year') sdLoadYear(); else sdLoad();
 }
 function sdGoNow(){
   const now=new Date();
   _sd.cm=now.getMonth();_sd.cy=now.getFullYear()+543;_sd.cy_y=now.getFullYear()+543;_sd.cw=1;
-  _sdApi.loaded=false;_sdApi.yoy=null;_sdApi.yoyLoading=false;
+  _sdApi.loaded=false;_sdApi.yoy=null;_sdYoYSeq++;_sdApi.yoyLoading=false;
   if(_sd.pt==='year') sdLoadYear(); else sdLoad();
 }
 function sdTab(el,t){
