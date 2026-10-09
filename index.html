@@ -18353,7 +18353,8 @@ function ptExport() {
 // แทนไฟล์ "ไฟล์เสนอราคาฐาน X" ชีต ฟอร์มต้นฉบับ · รอบนี้ใช้ได้เฉพาะฐาน/ราคาในสิทธิ์ (min_price_tier) — ขออนุมัติ = รอบ 3
 // สถานะ: ร่าง (แก้ได้) → ออกแล้ว (พิมพ์ส่งลูกค้า) · ยกเลิกได้ทั้งสองสถานะ · server คำนวณราคาฐาน/ตรวจสิทธิ์เองทุกครั้ง
 // ═══════════════════════════════════════════════════════════════════
-const QT_STATUS = { draft: { lbl: 'ร่าง', cls: 'bbgr' }, issued: { lbl: 'ออกแล้ว', cls: 'bbg' }, cancelled: { lbl: 'ยกเลิก', cls: 'bbr' } };
+const QT_STATUS = { draft: { lbl: 'ร่าง', cls: 'bbgr' }, pending_approval: { lbl: 'รออนุมัติ', cls: 'bba' }, rejected: { lbl: 'ไม่อนุมัติ — แก้ไขแล้วส่งใหม่', cls: 'bbr' },
+  issued: { lbl: 'ออกแล้ว', cls: 'bbg' }, cancelled: { lbl: 'ยกเลิก', cls: 'bbr' } };
 // หมายเหตุ / ผู้ลงนาม ตั้งต้นตามฟอร์มต้นฉบับ (แก้ได้ทุกใบ)
 const QT_DEFAULT_REMARKS = [
   { th: 'ราคานี้ยังไม่รวมภาษีมูลค่าเพิ่ม 7%', en: 'Price is subject to 7% VAT.' },
@@ -18368,7 +18369,22 @@ const QT_DEFAULT_SIGNER = { name: 'Pratchaya Arjfak', title: 'ผู้จัด
 const QT_FROM = 'THAI-GERMAN MEAT PRODUCT CO.,LTD';
 // โลโก้ TGM จากไฟล์ต้นฉบับ "ไฟล์เสนอราคาฐาน X" (image1, 229×124)
 const QT_LOGO = 'data:image/png;base64,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';
-let _qt = { list: null, prices: null, view: 'list', doc: null, status: '', q: '', err: '' };
+let _qt = { list: null, prices: null, view: 'list', doc: null, status: '', q: '', err: '', special: {}, specialKey: '', spAll: null };
+// ราคาพิเศษประจำลูกค้า (2026-10-09, รอบ 3) — product_code -> ราคา ของลูกค้าในฟอร์ม · server ตรวจซ้ำทุกครั้งที่บันทึก
+const _qtSpecial = code => _qt.special[String(code || '').trim()] ?? null;
+const _qtDefaultPrice = (code, tier) => { const sp = _qtSpecial(code); if (sp != null) return sp; const p = _qtPrice(code); return p ? (p[_ptCol(tier)] ?? '') : ''; };
+async function qtLoadSpecial(rerender = true) {
+  const d = _qt.doc; if (!d) return;
+  const key = `${d.customer_code || ''}|${String(d.customer_name || '').trim().toLowerCase()}`;
+  if (key === _qt.specialKey) return;
+  _qt.specialKey = key; _qt.special = {};
+  if (!d.customer_code && !String(d.customer_name || '').trim()) return rerender && qtRenderForm();
+  const r = await apiFetch(`/api/quotation_headers/special-prices?customer_code=${encodeURIComponent(d.customer_code || '')}&customer_name=${encodeURIComponent(d.customer_name || '')}`);
+  if (r.error || _qt.specialKey !== key) return;
+  _qt.special = Object.fromEntries((r.data || []).map(x => [x.product_code, x.price]));
+  // บรรทัดที่ยังไม่ได้พิมพ์ราคาเอง → ใช้ราคาพิเศษ
+  if (_qt.view === 'form') { (d.lines || []).forEach(l => { if (!l._manual && l.product_code) l.quoted_price = _qtDefaultPrice(l.product_code, d.price_tier); }); if (rerender) qtRenderForm(); }
+}
 const _qtCanManage = () => ['superadmin', 'admin', 'sales_manager', 'manager'].includes(ROLE);
 const _qtPrice = (code) => (_qt.prices || []).find(p => p.code === String(code || '').trim());
 const _qtFmt = v => v == null || v === '' ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -18390,7 +18406,7 @@ async function pgQuotation(reload) {
 
 function qtRenderList() {
   _qt.view = 'list'; _qt.doc = null;
-  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm btn-p" onclick="qtNew()">＋ สร้างใบเสนอราคา</button>`;
+  document.getElementById('tb-r').innerHTML = `${_qtCanManage() ? `<button class="btn btn-sm" onclick="qtSpecialPrices()">💜 ราคาพิเศษลูกค้า</button>` : ''}<button class="btn btn-sm btn-p" onclick="qtNew()">＋ สร้างใบเสนอราคา</button>`;
   const q = _qt.q.trim().toLowerCase();
   const rows = (_qt.list || []).filter(r => (!_qt.status || r.status === _qt.status) && (!q || [r.doc_no, r.customer_name, r.customer_code, r.sales_name].some(x => String(x || '').toLowerCase().includes(q))));
   document.getElementById('ct').innerHTML = `${_qt.err ? `<div class="al alw">${esc(_qt.err)}</div>` : ''}
@@ -18407,27 +18423,48 @@ function qtRenderList() {
           <td class="mono"><b>${esc(r.doc_no || '')}</b></td><td style="font-size:12px">${fmtD(r.doc_date || '')}</td>
           <td>${esc(r.customer_name || '')}${r.customer_code ? ` <span class="mono" style="font-size:11px;color:var(--TX3)">${esc(r.customer_code)}</span>` : ''}</td>
           <td><b>${esc(r.price_tier || '')}</b></td><td class="r">${r.line_count || 0}</td><td style="font-size:12px">${esc(r.sales_name || '')}</td>
-          <td><span class="badge ${(QT_STATUS[r.status] || {}).cls || 'bbgr'}">${esc((QT_STATUS[r.status] || {}).lbl || r.status)}</span></td>
+          <td><span class="badge ${(QT_STATUS[r.status] || {}).cls || 'bbgr'}">${esc((QT_STATUS[r.status] || {}).lbl || r.status)}</span>${r.status === 'pending_approval' && r.approver_uid === UID ? ' <span class="badge bba">รอคุณอนุมัติ</span>' : ''}</td>
           <td><button class="btn btn-xs">เปิด</button></td></tr>`).join('')
           || `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--TX3)">${(_qt.list || []).length ? 'ไม่พบใบเสนอราคาตามตัวกรอง' : 'ยังไม่มีใบเสนอราคา — กด "＋ สร้างใบเสนอราคา"'}</td></tr>`}
       </tbody></table></div>
     </div>`;
 }
 
+// รายการราคาพิเศษประจำลูกค้าทั้งหมด (ผู้จัดการ) — ปิดใช้งานได้ (ครั้งต่อไปต้องขออนุมัติใหม่)
+async function qtSpecialPrices() {
+  const r = await apiFetch('/api/quotation_headers/special-prices/all');
+  if (r.error) { toast('โหลดราคาพิเศษไม่สำเร็จ: ' + r.error.message); return; }
+  const rows = r.data || [];
+  openMod(`<div class="mh"><div class="mt2">💜 ราคาพิเศษประจำลูกค้า (${rows.length})</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="font-size:12px;color:var(--TX3);margin-bottom:8px">เกิดจากใบเสนอราคาที่อนุมัติแล้ว · ลูกค้ารายนี้เสนอราคา ≥ ราคาพิเศษได้โดยไม่ต้องขออนุมัติซ้ำ · ปิดใช้งาน = ครั้งต่อไปต้องขอใหม่</div>
+    <div class="tw" style="max-height:60vh;overflow:auto"><table><thead><tr><th>ลูกค้า</th><th>สินค้า</th><th class="r">ราคาพิเศษ</th><th>อนุมัติโดย</th><th>จากใบ</th><th></th></tr></thead><tbody>
+    ${rows.map(x => `<tr><td>${esc(x.customer_name || '')}${x.customer_code ? ` <span class="mono" style="font-size:11px;color:var(--TX3)">${esc(x.customer_code)}</span>` : ''}</td>
+      <td><span class="mono">${esc(x.product_code)}</span> <span style="font-size:12px">${esc(x.name_th || '')}</span></td><td class="r"><b>${_qtFmt(x.price)}</b></td>
+      <td style="font-size:12px">${esc(uidToName(x.approved_by) || x.approved_by || '')}<div style="color:var(--TX3);font-size:11px">${x.approved_at ? esc(new Date(x.approved_at).toLocaleDateString('th-TH')) : ''}</div></td>
+      <td class="mono" style="font-size:11.5px">${esc(x.doc_no || '')}</td><td><button class="btn btn-xs" onclick="qtSpecialOff(${Number(x.id)})" style="color:var(--R)">ปิดใช้งาน</button></td></tr>`).join('')
+      || '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--TX3)">ยังไม่มีราคาพิเศษ</td></tr>'}</tbody></table></div>`);
+}
+async function qtSpecialOff(id) {
+  if (!confirm('ปิดใช้งานราคาพิเศษนี้? ครั้งต่อไปลูกค้ารายนี้ต้องขออนุมัติใหม่')) return;
+  const r = await apiFetch(`/api/quotation_headers/special-prices/${id}/deactivate`, { method: 'POST', body: '{}' });
+  if (r.error) { toast('ปิดใช้งานไม่สำเร็จ: ' + r.error.message); return; }
+  toast('ปิดใช้งานแล้ว'); qtSpecialPrices();
+}
 function qtNew() {
   if (!(_qt.prices || []).length) { toast('ยังไม่มีราคากลาง — นำเข้าที่หน้า "ราคากลาง A–G" ก่อน'); return; }
   _qt.doc = { id: null, status: 'draft', doc_date: today(), price_tier: _ptMin(), customer_code: '', customer_name: '', attn: '', tel: '', email: '',
     sales_name: UNAME || '', from_text: QT_FROM, note: '', remarks: QT_DEFAULT_REMARKS.map(r => ({ ...r })), signer: { ...QT_DEFAULT_SIGNER },
     lines: [{ product_code: '', quoted_price: '' }] };
-  _qt.view = 'form';
+  _qt.view = 'form'; _qt.special = {}; _qt.specialKey = '';
   qtRenderForm();
 }
 async function qtOpen(id) {
   const r = await apiFetch('/api/quotation_headers/' + encodeURIComponent(id));
   if (r.error) { toast('เปิดใบเสนอราคาไม่สำเร็จ: ' + r.error.message); return; }
   _qt.doc = { ...r.data, lines: r.data.lines.map(l => ({ ...l, _manual: l.price_source === 'manual' })) };
-  _qt.view = r.data.status === 'draft' && (r.data.created_by === UID || _qtCanManage()) ? 'form' : 'view';
-  _qt.view === 'form' ? qtRenderForm() : qtRenderView();
+  _qt.view = ['draft', 'rejected'].includes(r.data.status) && (r.data.created_by === UID || _qtCanManage()) ? 'form' : 'view';
+  _qt.specialKey = '';
+  if (_qt.view === 'form') { await qtLoadSpecial(false); qtRenderForm(); } else qtRenderView();
 }
 
 // อ่านค่าจากฟอร์มเข้า _qt.doc (เรียกก่อนวาดใหม่/บันทึก)
@@ -18445,7 +18482,7 @@ function qtCustPick(inp) {
   if (!m) return;
   _qtCollect();
   _qt.doc.customer_code = m.c; _qt.doc.customer_name = m.n || m.c;
-  qtRenderForm();
+  qtRenderForm(); qtLoadSpecial();
 }
 function qtAddLine() { _qtCollect(); _qt.doc.lines.push({ product_code: '', quoted_price: '' }); qtRenderForm(); setTimeout(() => [...document.querySelectorAll('.qt-line .code')].pop()?.focus(), 0); }
 function qtDelLine(i) { _qtCollect(); _qt.doc.lines.splice(i, 1); if (!_qt.doc.lines.length) _qt.doc.lines.push({ product_code: '', quoted_price: '' }); qtRenderForm(); }
@@ -18455,11 +18492,20 @@ function qtDelRemark(i) { _qtCollect(); _qt.doc.remarks.splice(i, 1); qtRenderFo
 function qtLineCode(inp) {
   _qtCollect();
   const i = [...document.querySelectorAll('.qt-line')].indexOf(inp.closest('.qt-line')), l = _qt.doc.lines[i], p = _qtPrice(l?.product_code);
-  if (l) { l._manual = false; l.quoted_price = p ? (p[_ptCol(_qt.doc.price_tier)] ?? '') : ''; }
+  if (l) { l._manual = false; l.quoted_price = p ? _qtDefaultPrice(l.product_code, _qt.doc.price_tier) : ''; }
   qtRenderForm();
 }
-function qtTierChange() { _qtCollect(); _qt.doc.lines.forEach(l => { const p = _qtPrice(l.product_code); if (p && !l._manual) l.quoted_price = p[_ptCol(_qt.doc.price_tier)] ?? ''; }); qtRenderForm(); }
-function qtResetPrice(i) { _qtCollect(); const l = _qt.doc.lines[i], p = _qtPrice(l.product_code); l._manual = false; l.quoted_price = p ? (p[_ptCol(_qt.doc.price_tier)] ?? '') : ''; qtRenderForm(); }
+function qtTierChange() { _qtCollect(); _qt.doc.lines.forEach(l => { const p = _qtPrice(l.product_code); if (p && !l._manual) l.quoted_price = _qtDefaultPrice(l.product_code, _qt.doc.price_tier); }); qtRenderForm(); }
+function qtResetPrice(i) { _qtCollect(); const l = _qt.doc.lines[i], p = _qtPrice(l.product_code); l._manual = false; l.quoted_price = p ? _qtDefaultPrice(l.product_code, _qt.doc.price_tier) : ''; qtRenderForm(); }
+// บรรทัดที่ต้องขออนุมัติ (กติกาเดียวกับ server buildDoc): ราคาเสนอ < ราคาฐานสิทธิ์ต่ำสุด และไม่ได้ ≥ ราคาพิเศษของลูกค้า
+function _qtLineNeeds(l, tier) {
+  const p = _qtPrice(l.product_code); if (!p) return false;
+  const min = _ptMin(), floor = p[_ptCol(min)], sp = _qtSpecial(l.product_code);
+  const q = l.quoted_price === '' || l.quoted_price == null ? (sp ?? p[_ptCol(tier)]) : Number(l.quoted_price);
+  if (q == null || q === '') return false;
+  const below = floor != null ? q < floor : PT_TIERS.indexOf(tier) < PT_TIERS.indexOf(min);
+  return below && !(sp != null && q >= sp);
+}
 
 function qtRenderForm() {
   const d = _qt.doc; if (!d) return;
@@ -18467,11 +18513,11 @@ function qtRenderForm() {
   const inp = 'padding:7px 9px;border:1px solid var(--BD);border-radius:7px;width:100%;box-sizing:border-box;font-family:var(--font);font-size:13px';
   const f = (lbl, key, ph = '', type = 'text') => `<div class="field" style="margin:0"><label>${lbl}</label><input type="${type}" id="qt-${key}" value="${esc(d[key] ?? '')}" placeholder="${esc(ph)}" style="${inp}"></div>`;
   document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="pgQuotation(true);_qt.view='list'">← รายการ</button>`;
+  const needN = d.lines.filter(l => l.product_code && _qtLineNeeds(l, tier)).length;
   const lineRows = d.lines.map((l, i) => {
-    const p = _qtPrice(l.product_code), base = p ? p[_ptCol(tier)] : null, floor = p ? p[_ptCol(min)] : null;
-    const q = l.quoted_price === '' || l.quoted_price == null ? base : Number(l.quoted_price);
-    const low = p && floor != null && q != null && q < floor;
-    return `<tr class="qt-line" style="${low ? 'background:#FDECEC' : ''}">
+    const p = _qtPrice(l.product_code), base = p ? p[_ptCol(tier)] : null, floor = p ? p[_ptCol(min)] : null, sp = _qtSpecial(l.product_code);
+    const low = _qtLineNeeds(l, tier);
+    return `<tr class="qt-line" style="${low ? 'background:#FFF4DB' : ''}">
       <td class="c" style="color:var(--TX3)">${i + 1}</td>
       <td><input class="code mono" list="qt-prod-list" value="${esc(l.product_code || '')}" placeholder="รหัส / ชื่อ" onchange="qtLineCode(this)" style="${inp};width:120px"></td>
       <td>${p ? esc(p.name_th || '') : l.product_code ? '<span style="color:var(--R)">ไม่พบในราคากลาง</span>' : ''}<div style="font-size:11px;color:var(--TX3)">${p ? esc(p.name_en || '') : ''}</div></td>
@@ -18480,13 +18526,15 @@ function qtRenderForm() {
       <td class="r"><input class="price" type="number" step="0.01" min="0" value="${esc(l.quoted_price === '' || l.quoted_price == null ? (base ?? '') : l.quoted_price)}" ${l._manual ? 'data-manual="1"' : ''}
         oninput="this.dataset.manual='1'" onchange="_qtCollect();qtRenderForm()" style="${inp};width:110px;text-align:right;${l._manual ? 'border-color:var(--A)' : ''}">
         ${l._manual && base != null ? `<div style="font-size:10.5px"><a href="javascript:void(0)" onclick="qtResetPrice(${i})">↺ ใช้ราคาฐาน</a></div>` : ''}
-        ${low ? `<div style="font-size:10.5px;color:var(--R)">ต่ำกว่าฐาน ${min} (${_qtFmt(floor)})</div>` : ''}</td>
+        ${sp != null ? `<div style="font-size:10.5px;color:var(--P)">ราคาพิเศษลูกค้า ${_qtFmt(sp)}</div>` : ''}
+        ${low ? `<div style="font-size:10.5px;color:var(--A);font-weight:700">ต้องขออนุมัติ · ต่ำกว่าฐาน ${min}${floor != null ? ` (${_qtFmt(floor)})` : ''}</div>` : ''}</td>
       <td><button class="btn btn-xs" onclick="qtDelLine(${i})" style="color:var(--R)">✕</button></td></tr>`;
   }).join('');
   document.getElementById('ct').innerHTML = `
   <div class="card">
     <div class="ch"><div class="ct2">🧾 ${d.id ? `แก้ไขใบเสนอราคา <span class="mono">${esc(d.doc_no || '')}</span>` : 'สร้างใบเสนอราคา'}</div>
       <span class="badge ${QT_STATUS[d.status]?.cls || 'bbgr'}">${QT_STATUS[d.status]?.lbl || d.status}</span></div>
+    ${d.status === 'rejected' ? `<div class="al alw">❌ ไม่อนุมัติโดย ${esc(uidToName(d.approver_uid) || d.approver_uid || '')}${d.reject_reason ? ` — ${esc(d.reject_reason)}` : ''} · แก้ไขราคาแล้วส่งขออนุมัติใหม่ หรือปรับให้อยู่ในสิทธิ์แล้วออกเอกสารเอง</div>` : ''}
     <div class="cgrid c2" style="gap:14px">
       <div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:12px 14px">
         <div style="font-weight:700;font-size:13px;margin-bottom:8px">ข้อมูลลูกค้า / Customer</div>
@@ -18494,7 +18542,7 @@ function qtRenderForm() {
           <input list="qt-cust-list" placeholder="🔍 รหัส / ชื่อลูกค้า" value="${esc(d.customer_code || '')}" onchange="qtCustPick(this)" style="${inp}">
           <datalist id="qt-cust-list">${(salesCustomers() || []).slice(0, 3000).map(c => `<option value="${esc(c.c)}">${esc(c.n || '')}</option>`).join('')}</datalist></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div style="grid-column:1/-1">${f('ถึง / To *', 'customer_name', 'ชื่อลูกค้า')}</div>
+          <div style="grid-column:1/-1" onchange="if(event.target.id==='qt-customer_name'){_qtCollect();qtLoadSpecial();}">${f('ถึง / To *', 'customer_name', 'ชื่อลูกค้า')}</div>
           ${f('ผู้ติดต่อ / Attn', 'attn')}${f('โทร / Tel', 'tel')}<div style="grid-column:1/-1">${f('อีเมล / Email', 'email', '', 'email')}</div>
         </div>
       </div>
@@ -18503,11 +18551,11 @@ function qtRenderForm() {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           ${f('วันที่ / Date', 'doc_date', '', 'date')}
           <div class="field" style="margin:0"><label>ฐานราคา</label><select id="qt-tier" onchange="qtTierChange()" style="${inp}">
-            ${PT_TIERS.map((t, i) => `<option value="${t}" ${tier === t ? 'selected' : ''} ${i < mi ? 'disabled' : ''}>ฐาน ${t}${i < mi ? ' — ต่ำกว่าสิทธิ์ (ต้องขออนุมัติ เร็วๆ นี้)' : ''}</option>`).join('')}</select></div>
+            ${PT_TIERS.map((t, i) => `<option value="${t}" ${tier === t ? 'selected' : ''} >ฐาน ${t}${i < mi ? ' — ต่ำกว่าสิทธิ์ (ต้องขออนุมัติ)' : ''}</option>`).join('')}</select></div>
           <div style="grid-column:1/-1">${f('จาก / From', 'from_text')}</div>
           <div style="grid-column:1/-1">${f('พนักงานขาย / Sales', 'sales_name')}</div>
         </div>
-        <div style="font-size:11.5px;color:var(--TX3);margin-top:6px">สิทธิ์ของคุณ: เสนอเองได้ตั้งแต่ฐาน <b>${esc(min)}</b> ขึ้นไป · ราคาเสนอต่ำกว่าฐาน ${esc(min)} บันทึกไม่ได้ (การขออนุมัติราคาพิเศษจะมาในรอบถัดไป)</div>
+        <div style="font-size:11.5px;color:var(--TX3);margin-top:6px">สิทธิ์ของคุณ: เสนอเองได้ตั้งแต่ฐาน <b>${esc(min)}</b> ขึ้นไป · ราคาต่ำกว่าฐาน ${esc(min)} ต้องส่งขออนุมัติ — อนุมัติแล้วเป็นราคาพิเศษของลูกค้ารายนี้ ใช้ซ้ำได้โดยไม่ต้องขอใหม่</div>
       </div>
     </div>
 
@@ -18535,12 +18583,28 @@ function qtRenderForm() {
       <button class="btn" onclick="_qt.view='list';qtRenderList()">ยกเลิกการแก้ไข</button>
       ${d.id ? `<button class="btn" onclick="qtPrint()">🖨 ดูตัวอย่าง / พิมพ์ร่าง</button><button class="btn btn-r" onclick="qtCancel()" style="opacity:.8">🗑 ยกเลิกใบเสนอราคา</button>` : ''}
       <button class="btn btn-g" style="margin-left:auto" onclick="qtSave(false)">💾 บันทึกร่าง</button>
-      <button class="btn btn-p" onclick="qtSave(true)">📤 ออกใบเสนอราคา</button>
+      ${needN ? `<button class="btn btn-p" onclick="qtSave('submit')" style="background:var(--A);border-color:var(--A)">📤 ส่งขออนุมัติ (${needN} รายการ)</button>`
+        : `<button class="btn btn-p" onclick="qtSave(true)">📤 ออกใบเสนอราคา</button>`}
     </div>
   </div>`;
 }
 
+// เลือกผู้อนุมัติ (ผู้จัดการฝ่ายขายขึ้นไป) — คืน uid หรือ null ถ้ายกเลิก
+async function _qtPickApprover() {
+  const r = await apiFetch('/api/quotation_headers/approvers');
+  if (r.error) { toast('โหลดรายชื่อผู้อนุมัติไม่สำเร็จ: ' + r.error.message); return null; }
+  const list = r.data || [];
+  if (!list.length) { toast('ไม่พบผู้อนุมัติ (ผู้จัดการฝ่ายขาย) ในระบบ'); return null; }
+  return new Promise(resolve => {
+    window._qtPickDone = v => { closeM(); resolve(v); };
+    openMod(`<div class="mh"><div class="mt2">📤 ส่งขออนุมัติราคาพิเศษ</div><span class="mx" onclick="_qtPickDone(null)">✕</span></div>
+      <div class="field"><label>ผู้อนุมัติ</label><select id="qt-ap" style="width:100%">${list.map(u => `<option value="${esc(u.uid)}">${esc(u.name || u.uid)}${u.has_email ? '' : ' (ไม่มีอีเมล — แจ้งในระบบเท่านั้น)'}</option>`).join('')}</select></div>
+      <div style="font-size:12px;color:var(--TX3);margin-bottom:10px">ผู้อนุมัติได้รับอีเมลแจ้ง · อนุมัติแล้วใบเสนอราคาออกทันที และราคาที่อนุมัติเป็นราคาพิเศษของลูกค้ารายนี้</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="_qtPickDone(null)">ยกเลิก</button><button class="btn btn-p" onclick="_qtPickDone(document.getElementById('qt-ap').value)">ส่งขออนุมัติ</button></div>`);
+  });
+}
 async function qtSave(issue) {
+  const submit = issue === 'submit'; if (submit) issue = false;
   _qtCollect();
   const d = _qt.doc;
   if (!String(d.customer_name || '').trim()) { toast('กรุณาระบุลูกค้า (ถึง / To)'); document.getElementById('qt-customer_name')?.focus(); return; }
@@ -18548,6 +18612,8 @@ async function qtSave(issue) {
   if (!lines.length) { toast('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ'); return; }
   const bad = lines.find(l => !_qtPrice(l.product_code)); if (bad) { toast(`ไม่พบรหัส ${bad.product_code} ในราคากลาง`); return; }
   if (issue && !confirm('ออกใบเสนอราคา? — หลังออกแล้วจะแก้ไขไม่ได้ (ยกเลิกแล้วสร้างใบใหม่ได้)')) return;
+  const approver = submit ? await _qtPickApprover() : null;
+  if (submit && !approver) return;
   const body = { ...d, lines: lines.map(l => ({ product_code: l.product_code, quoted_price: l.quoted_price === '' ? null : Number(l.quoted_price) })) };
   let r = await apiFetch('/api/quotation_headers' + (d.id ? '/' + encodeURIComponent(d.id) : ''), { method: d.id ? 'PUT' : 'POST', body: JSON.stringify(body) });
   if (r.error) { toast('บันทึกไม่สำเร็จ: ' + r.error.message); return; }
@@ -18556,12 +18622,33 @@ async function qtSave(issue) {
     if (r2.error) { toast('บันทึกร่างแล้ว แต่ออกเอกสารไม่สำเร็จ: ' + r2.error.message); _qt.doc = { ...r.data }; qtRenderForm(); return; }
     r = r2;
   }
-  toast(issue ? `ออกใบเสนอราคา ${r.data.doc_no} แล้ว` : `บันทึกร่าง ${r.data.doc_no} แล้ว`);
+  if (submit) {
+    const r3 = await apiFetch(`/api/quotation_headers/${encodeURIComponent(r.data.id)}/submit`, { method: 'POST', body: JSON.stringify({ approver_uid: approver }) });
+    if (r3.error) { toast('บันทึกร่างแล้ว แต่ส่งขออนุมัติไม่สำเร็จ: ' + r3.error.message); _qt.doc = { ...r.data, lines: r.data.lines.map(l => ({ ...l, _manual: l.price_source === 'manual' })) }; qtRenderForm(); return; }
+    r = r3;
+  }
+  toast(submit ? `ส่งขออนุมัติ ${r.data.doc_no} แล้ว` : issue ? `ออกใบเสนอราคา ${r.data.doc_no} แล้ว` : `บันทึกร่าง ${r.data.doc_no} แล้ว`);
   _qt.list = null;
   _qt.doc = { ...r.data, lines: r.data.lines.map(l => ({ ...l, _manual: l.price_source === 'manual' })) };
-  _qt.view = issue ? 'view' : 'form';
-  issue ? qtRenderView() : qtRenderForm();
+  _qt.view = issue || submit ? 'view' : 'form';
+  issue || submit ? qtRenderView() : qtRenderForm();
   apiFetch('/api/quotation_headers').then(x => { if (!x.error) _qt.list = x.data || []; });
+}
+async function qtDecide(ok) {
+  const d = _qt.doc; if (!d?.id) return;
+  let body = {};
+  if (ok) { if (!confirm(`อนุมัติ ${d.doc_no}? — ใบเสนอราคาจะออกทันที และราคาที่ขอเป็นราคาพิเศษของ ${d.customer_name}`)) return; }
+  else { const reason = prompt('เหตุผลที่ไม่อนุมัติ (บังคับ)', ''); if (reason === null) return; if (!reason.trim()) { toast('กรุณาระบุเหตุผล'); return; } body = { reason }; }
+  const r = await apiFetch(`/api/quotation_headers/${encodeURIComponent(d.id)}/${ok ? 'approve' : 'reject'}`, { method: 'POST', body: JSON.stringify(body) });
+  if (r.error) { toast((ok ? 'อนุมัติ' : 'ไม่อนุมัติ') + 'ไม่สำเร็จ: ' + r.error.message); return; }
+  toast(ok ? `อนุมัติ ${d.doc_no} แล้ว` : `ตีกลับ ${d.doc_no} แล้ว`);
+  _qt.doc = { ...r.data }; _qt.list = null; _qt.spAll = null; qtRenderView();
+}
+async function qtRecall() {
+  const d = _qt.doc; if (!d?.id || !confirm(`เรียกคืน ${d.doc_no} กลับเป็นร่างเพื่อแก้ไข?`)) return;
+  const r = await apiFetch(`/api/quotation_headers/${encodeURIComponent(d.id)}/recall`, { method: 'POST', body: '{}' });
+  if (r.error) { toast('เรียกคืนไม่สำเร็จ: ' + r.error.message); return; }
+  _qt.list = null; qtOpen(d.id);
 }
 async function qtCancel() {
   const d = _qt.doc; if (!d?.id) return;
@@ -18578,10 +18665,17 @@ function qtRenderView() {
   const d = _qt.doc; if (!d) return;
   const canCancel = d.status !== 'cancelled' && (d.created_by === UID || _qtCanManage());
   document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="pgQuotation(true);_qt.view='list'">← รายการ</button>`;
-  const actLbl = { create: 'สร้าง', update: 'แก้ไข', issue: 'ออกเอกสาร', cancel: 'ยกเลิก' };
+  const actLbl = { create: 'สร้าง', update: 'แก้ไข', issue: 'ออกเอกสาร', cancel: 'ยกเลิก', submit: 'ส่งขออนุมัติ', recall: 'เรียกคืน', approve: 'อนุมัติ', reject: 'ไม่อนุมัติ' };
+  const pend = d.status === 'pending_approval';
+  const canDecide = pend && d.created_by !== UID && (d.approver_uid === UID || ['admin', 'superadmin'].includes(ROLE));
+  const canRecall = pend && (d.created_by === UID || ['admin', 'superadmin'].includes(ROLE));
   document.getElementById('ct').innerHTML = `<div class="card">
     <div class="ch" style="flex-wrap:wrap;gap:8px"><div class="ct2">🧾 <span class="mono">${esc(d.doc_no || '')}</span> <span class="badge ${QT_STATUS[d.status]?.cls || 'bbgr'}">${QT_STATUS[d.status]?.lbl || d.status}</span></div>
-      <div style="display:flex;gap:8px"><button class="btn btn-p" onclick="qtPrint()">🖨 พิมพ์ / PDF</button>${canCancel ? `<button class="btn btn-r" onclick="qtCancel()" style="opacity:.8">🗑 ยกเลิก</button>` : ''}</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${canDecide ? `<button class="btn btn-r" onclick="qtDecide(false)">❌ ไม่อนุมัติ</button><button class="btn btn-g" onclick="qtDecide(true)">✅ อนุมัติ</button>` : ''}
+        ${canRecall ? `<button class="btn" onclick="qtRecall()">↩️ เรียกคืนเพื่อแก้ไข</button>` : ''}
+        <button class="btn btn-p" onclick="qtPrint()">🖨 ${pend ? 'ดูตัวอย่าง' : 'พิมพ์ / PDF'}</button>${canCancel ? `<button class="btn btn-r" onclick="qtCancel()" style="opacity:.8">🗑 ยกเลิก</button>` : ''}</div></div>
+    ${pend ? `<div class="al alw">⏳ รออนุมัติจาก <b>${esc(uidToName(d.approver_uid) || d.approver_uid || '')}</b> — ${(d.lines || []).filter(l => l.needs_approval).length} รายการราคาต่ำกว่าสิทธิ์ (ไฮไลต์ในตาราง)</div>` : ''}
+    ${d.approved_by ? `<div style="font-size:12.5px;color:var(--G);margin-bottom:8px">✅ อนุมัติโดย ${esc(uidToName(d.approved_by) || d.approved_by)} ${d.approved_at ? '· ' + esc(new Date(d.approved_at).toLocaleString('th-TH')) : ''}</div>` : ''}
     <div class="cgrid c2" style="gap:6px 20px;font-size:13px;margin-bottom:12px">
       <div><span style="color:var(--TX3)">ถึง:</span> <b>${esc(d.customer_name || '')}</b> ${d.customer_code ? `<span class="mono" style="font-size:11px;color:var(--TX3)">${esc(d.customer_code)}</span>` : ''}</div>
       <div><span style="color:var(--TX3)">วันที่:</span> ${fmtD(d.doc_date || '')} · <span style="color:var(--TX3)">ฐาน</span> <b>${esc(d.price_tier)}</b></div>
@@ -18589,8 +18683,8 @@ function qtRenderView() {
       <div><span style="color:var(--TX3)">พนักงานขาย:</span> ${esc(d.sales_name || '')}</div>
     </div>
     <div class="tw"><table><thead><tr><th class="c">#</th><th>รหัส</th><th>รายการสินค้า</th><th>Description</th><th>หน่วย</th><th class="r">ราคาฐาน</th><th class="r">ราคาเสนอ</th></tr></thead><tbody>
-      ${(d.lines || []).map(l => `<tr><td class="c">${l.seq}</td><td class="mono">${esc(l.product_code)}</td><td>${esc(l.name_th || '')}</td><td style="font-size:12px;color:var(--TX2)">${esc(l.name_en || '')}</td>
-        <td style="font-size:12px">${esc(l.unit || '')}</td><td class="r" style="font-size:12px;color:var(--TX3)">${_qtFmt(l.base_price)}</td><td class="r"><b>${_qtFmt(l.quoted_price)}</b></td></tr>`).join('')}
+      ${(d.lines || []).map(l => `<tr style="${l.needs_approval && d.status !== 'issued' ? 'background:#FFF4DB' : ''}"><td class="c">${l.seq}</td><td class="mono">${esc(l.product_code)}</td><td>${esc(l.name_th || '')}</td><td style="font-size:12px;color:var(--TX2)">${esc(l.name_en || '')}</td>
+        <td style="font-size:12px">${esc(l.unit || '')}</td><td class="r" style="font-size:12px;color:var(--TX3)">${_qtFmt(l.base_price)}</td><td class="r"><b>${_qtFmt(l.quoted_price)}</b>${l.needs_approval ? `<div style="font-size:10.5px;color:var(--A)">${d.status === 'issued' ? 'อนุมัติราคาพิเศษแล้ว' : 'ต่ำกว่าสิทธิ์'}</div>` : l.price_source === 'special' ? '<div style="font-size:10.5px;color:var(--P)">ราคาพิเศษลูกค้า</div>' : ''}</td></tr>`).join('')}
     </tbody></table></div>
     ${d.note ? `<div style="margin-top:8px;font-size:12.5px"><span style="color:var(--TX3)">หมายเหตุภายใน:</span> ${esc(d.note)}</div>` : ''}
     <div style="font-weight:600;font-size:12px;color:var(--TX3);margin:14px 0 6px">ประวัติ</div>
@@ -18603,7 +18697,7 @@ function qtRenderView() {
 function qtPrint() {
   const d = _qt.doc; if (!d) return;
   const w = window.open('', '_blank'); if (!w) { toast('เบราว์เซอร์บล็อกป็อปอัป กรุณาอนุญาตแล้วลองใหม่'); return; }
-  const wm = d.status === 'draft' ? 'ร่าง — ยังไม่ออกเอกสาร' : d.status === 'cancelled' ? 'ยกเลิก' : '';
+  const wm = d.status === 'draft' || d.status === 'rejected' ? 'ร่าง — ยังไม่ออกเอกสาร' : d.status === 'pending_approval' ? 'รออนุมัติ — ยังไม่ออกเอกสาร' : d.status === 'cancelled' ? 'ยกเลิก' : '';
   const dd = x => x ? promoFmtD(x) : '';
   const lines = (d.lines || []).filter(l => l.product_code);
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>ใบเสนอราคา ${esc(d.doc_no || '')}</title>

@@ -10,6 +10,8 @@ function makeDb() {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE price_tiers (code TEXT PRIMARY KEY, name_th TEXT, name_en TEXT, unit TEXT,
     price_a REAL, price_b REAL, price_c REAL, price_d REAL, price_e REAL, price_f REAL, price_g REAL, is_active INTEGER NOT NULL DEFAULT 1)`);
+  db.exec(`CREATE TABLE customer_special_prices (id INTEGER PRIMARY KEY, cust_key TEXT, customer_code TEXT, customer_name TEXT, product_code TEXT,
+    price REAL, source_quotation_id TEXT, approved_by TEXT, approved_at TEXT, is_active INTEGER DEFAULT 1, updated_at TEXT)`);
   db.prepare("INSERT INTO price_tiers VALUES ('10001-2','ค๊อกเทล 500 ก.','Cocktail 500g','กิโลกรัม',140,150,155,155,160,165,175,1)").run();
   db.prepare("INSERT INTO price_tiers VALUES ('X1','ยกเลิก',NULL,'กก.',1,1,1,1,1,1,1,0)").run();
   db.prepare("INSERT INTO price_tiers VALUES ('NOP','ไม่มีราคา',NULL,'กก.',NULL,NULL,NULL,NULL,NULL,NULL,NULL,1)").run();
@@ -27,16 +29,29 @@ test('ชื่อ/หน่วย/ราคาฐาน มาจาก price_t
   assert.equal(lines[0].needs_approval, 0);
 });
 
-test('ฐานต่ำกว่าสิทธิ์ถูกปฏิเสธ (รอบ 2 ยังไม่มีการขออนุมัติ)', () => {
-  assert.throws(() => buildDoc(makeDb(), { ...base, price_tier: 'C' }, sales), /ต่ำกว่าสิทธิ์/);
-  // ผู้ใช้ที่ตั้งสิทธิ์ D ใช้ฐาน D ได้
-  assert.doesNotThrow(() => buildDoc(makeDb(), { ...base, price_tier: 'D' }, { ...sales, min_price_tier: 'D' }));
+// รอบ 3 (2026-10-09): ต่ำกว่าสิทธิ์ไม่ปฏิเสธแล้ว — บรรทัดนั้น needs_approval (ส่งขออนุมัติ)
+test('ฐานต่ำกว่าสิทธิ์ = ต้องขออนุมัติ · ผู้ใช้ที่ได้สิทธิ์ D ใช้ฐาน D ได้เลย', () => {
+  assert.equal(buildDoc(makeDb(), { ...base, price_tier: 'C' }, sales).lines[0].needs_approval, 1);
+  assert.equal(buildDoc(makeDb(), { ...base, price_tier: 'D' }, { ...sales, min_price_tier: 'D' }).lines[0].needs_approval, 0);
 });
 
-test('ราคาเสนอต่ำกว่าราคาฐานสิทธิ์ต่ำสุดถูกปฏิเสธ · สูงกว่าได้ (manual)', () => {
-  assert.throws(() => buildDoc(makeDb(), { ...base, lines: [{ product_code: '10001-2', quoted_price: 159 }] }, sales), /ต่ำกว่าฐาน E/);
+test('ราคาเสนอต่ำกว่าราคาฐานสิทธิ์ต่ำสุด = ต้องขออนุมัติ · สูงกว่า = manual ไม่ต้องอนุมัติ', () => {
+  assert.equal(buildDoc(makeDb(), { ...base, lines: [{ product_code: '10001-2', quoted_price: 159 }] }, sales).lines[0].needs_approval, 1);
   const { lines } = buildDoc(makeDb(), { ...base, lines: [{ product_code: '10001-2', quoted_price: 170 }] }, sales);
   assert.equal(lines[0].price_source, 'manual');
+  assert.equal(lines[0].needs_approval, 0);
+});
+
+test('ราคาพิเศษประจำลูกค้า: เป็นราคาตั้งต้น และราคา ≥ ราคาพิเศษไม่ต้องขออนุมัติซ้ำ', () => {
+  const db = makeDb();
+  db.prepare("INSERT INTO customer_special_prices (cust_key, product_code, price) VALUES ('N:ลูกค้าทดสอบ', '10001-2', 150)").run();
+  const d = buildDoc(db, base, sales).lines[0];
+  assert.equal(d.quoted_price, 150);
+  assert.equal(d.price_source, 'special');
+  assert.equal(d.needs_approval, 0);
+  assert.equal(buildDoc(db, { ...base, lines: [{ product_code: '10001-2', quoted_price: 149 }] }, sales).lines[0].needs_approval, 1);
+  // ลูกค้าอื่นไม่ได้ราคาพิเศษนี้
+  assert.equal(buildDoc(db, { ...base, customer_name: 'ลูกค้าอื่น' }, sales).lines[0].quoted_price, 165);
 });
 
 test('รหัสไม่มี / ยกเลิกขาย / ไม่มีราคาและไม่ระบุราคา ถูกปฏิเสธ', () => {

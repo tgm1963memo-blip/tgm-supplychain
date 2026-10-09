@@ -602,6 +602,20 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_quotation_headers_by ON quotation_headers(created_by, doc_date);
     CREATE INDEX IF NOT EXISTS idx_quotation_logs_h ON quotation_logs(header_id, at);
   `);
+  // ใบเสนอราคา รอบ 3 (2026-10-09): ขออนุมัติราคาต่ำกว่าสิทธิ์ + ราคาพิเศษประจำลูกค้า (ดู schema.sql / routes/quotationHeaders.js)
+  addColumnIfMissing(db, 'quotation_headers', 'approver_uid', 'approver_uid TEXT');
+  addColumnIfMissing(db, 'quotation_headers', 'submitted_at', 'submitted_at TEXT');
+  addColumnIfMissing(db, 'quotation_headers', 'approved_by', 'approved_by TEXT');
+  addColumnIfMissing(db, 'quotation_headers', 'approved_at', 'approved_at TEXT');
+  addColumnIfMissing(db, 'quotation_headers', 'reject_reason', 'reject_reason TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_special_prices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, cust_key TEXT NOT NULL, customer_code TEXT, customer_name TEXT,
+      product_code TEXT NOT NULL, price REAL NOT NULL, source_quotation_id TEXT, approved_by TEXT, approved_at TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE (cust_key, product_code)
+    );
+  `);
 
   // conversion_doc_lines (2026-10-08): เอกสารแปลงสินค้า FF จาก STCRD รายบรรทัด — tgm-wms ใช้ตรวจเลข FF
   // ในใบสั่งแปลง (มีจริงไหม / จำนวนตรงไหม) · direction: out = วัตถุดิบ, in = ผลผลิต · เขียนใหม่ทุกรอบ sync

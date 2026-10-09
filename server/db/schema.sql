@@ -1268,3 +1268,21 @@ CREATE TABLE IF NOT EXISTS quotation_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_quotation_headers_by ON quotation_headers(created_by, doc_date);
 CREATE INDEX IF NOT EXISTS idx_quotation_logs_h ON quotation_logs(header_id, at);
+
+-- ราคาพิเศษประจำลูกค้า (2026-10-09, ใบเสนอราคา รอบ 3) — เกิดจากใบเสนอราคาที่ผู้จัดการอนุมัติราคาต่ำกว่าสิทธิ์ของ Sales
+-- ครั้งต่อไปลูกค้ารายเดิม + สินค้าเดิม ใช้ราคานี้เป็นค่าตั้งต้นและไม่ต้องขออนุมัติซ้ำ (ราคาเสนอ ≥ ราคาพิเศษ)
+-- cust_key = 'C:<รหัสลูกค้า>' หรือ 'N:<ชื่อลูกค้าใหม่ ตัวพิมพ์เล็ก>' (ลูกค้ารายใหม่ที่ยังไม่มีรหัส) · 1 ราคาต่อลูกค้า×สินค้า (อนุมัติใหม่ = ทับ)
+CREATE TABLE IF NOT EXISTS customer_special_prices (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  cust_key            TEXT NOT NULL,
+  customer_code       TEXT,
+  customer_name       TEXT,
+  product_code        TEXT NOT NULL,
+  price               REAL NOT NULL,
+  source_quotation_id TEXT,
+  approved_by         TEXT,
+  approved_at         TEXT,
+  is_active           INTEGER NOT NULL DEFAULT 1,
+  updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (cust_key, product_code)
+);

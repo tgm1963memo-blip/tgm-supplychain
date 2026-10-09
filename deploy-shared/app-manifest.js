@@ -125,7 +125,7 @@ const SALES_ONLY = [
   // ราคากลาง A–G (2026-10-07, ใบเสนอราคา รอบ 1)
   'PT_TIERS', '_pt', '_ptCanWrite', '_ptMin', '_ptFmt', '_ptCol', '_ptFieldLbl', 'pgPriceTiers', '_ptFiltered', 'ptRender', 'ptRenderRows', 'ptCellEdit', 'ptEdit', 'ptEditSave', '_ptParseSheet', 'ptImport', '_ptDraftSheet', 'ptPreview', '_ptDraftHtml', 'ptImportSave', 'ptExport',
   // ใบเสนอราคา (2026-10-08, รอบ 2)
-  'QT_STATUS', 'QT_DEFAULT_REMARKS', 'QT_DEFAULT_SIGNER', 'QT_FROM', 'QT_LOGO', '_qt', '_qtCanManage', '_qtPrice', '_qtFmt', 'pgQuotation', 'qtRenderList', 'qtNew', 'qtOpen', '_qtCollect', 'qtCustPick', 'qtAddLine', 'qtDelLine', 'qtAddRemark', 'qtDelRemark', 'qtLineCode', 'qtTierChange', 'qtResetPrice', 'qtRenderForm', 'qtSave', 'qtCancel', 'qtRenderView', 'qtPrint',
+  'QT_STATUS', 'QT_DEFAULT_REMARKS', 'QT_DEFAULT_SIGNER', 'QT_FROM', 'QT_LOGO', '_qt', '_qtCanManage', '_qtPrice', '_qtFmt', 'pgQuotation', 'qtRenderList', 'qtNew', 'qtOpen', '_qtCollect', 'qtCustPick', 'qtAddLine', 'qtDelLine', 'qtAddRemark', 'qtDelRemark', 'qtLineCode', 'qtTierChange', 'qtResetPrice', 'qtRenderForm', 'qtSave', 'qtCancel', 'qtRenderView', 'qtPrint', '_qtSpecial', '_qtDefaultPrice', 'qtLoadSpecial', '_qtLineNeeds', '_qtPickApprover', 'qtDecide', 'qtRecall', 'qtSpecialPrices', 'qtSpecialOff',
 ];
 
 // ── Planning-only: Stock & Planning, Production Planning, จองสินค้า PO/SO, สรุปการจอง, สั่งยอดผลิต, ──

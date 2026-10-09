@@ -157,6 +157,14 @@ Express (Business Plus) ERP           tgm-supplychain (this repo)              t
 - **ยังไม่ทำ (blocked, รอข้อมูลเพิ่ม)**: ไม่มี — ทุกข้อในแผนต้นฉบับ (`menu-fuzzy-willow.md`) เสร็จแล้ว ณ 2026-09-16
 - **เทสต์**: `e2e/tests/promo-draft-creation.spec.js` (UI-level, stub SB.*) + `e2e/tests/promo-draft-api-security.spec.js` (API-level จริง: doc_no concurrency, role-gate 403, mime-type spoofing) — รวม 40+ เทสต์
 
+### 20) ราคากลาง A–G + ใบเสนอราคา + ราคาพิเศษ (2026-10-07 ถึง 2026-10-09, Sales app เท่านั้น)
+- **ราคากลาง** (`price_tiers`, 1 แถว/รหัส ราคา A..G, ประวัติ `price_tier_logs`): นำเข้าไฟล์ "ฐานราคาร้านค้า A–G" แบบตรวจผลต่างก่อนบันทึก, แก้ราคาในตาราง, ส่งออก Excel · แก้ได้เฉพาะ superadmin/admin/sales_manager (`routes/priceTiers.js`)
+- **สิทธิ์ฐานรายคน** `sc_users.min_price_tier` (ค่าเริ่มต้น E) — ตั้งในฟอร์มผู้ใช้
+- **ใบเสนอราคา** (`quotation_headers/lines/logs`, `routes/quotationHeaders.js`): เลขที่ `QT<พ.ศ.>-<เดือน>-<ลำดับ>` ออกที่ server · ชื่อ/หน่วย/ราคาฐานมาจาก server เสมอ · พิมพ์ A4 ตามฟอร์มต้นฉบับ (โลโก้ TGM)
+- **ขออนุมัติราคาต่ำกว่าสิทธิ์**: บรรทัดที่ราคาเสนอ < ราคาฐาน `min_price_tier` ของผู้สร้าง = `needs_approval` → ออกเองไม่ได้ ต้องส่งให้ผู้จัดการ (เลือกคน, อีเมลแจ้ง) · draft → pending_approval → อนุมัติ = issued / ไม่อนุมัติ (บังคับเหตุผล) = rejected แก้แล้วส่งใหม่ · ผู้สร้างเรียกคืนได้
+- **ราคาพิเศษประจำลูกค้า** (`customer_special_prices`, key = รหัสลูกค้า หรือชื่อลูกค้าใหม่): เกิดตอนอนุมัติ · เป็นราคาตั้งต้นของลูกค้ารายนั้น และราคา ≥ ราคาพิเศษไม่ต้องขอซ้ำ · ผู้จัดการดู/ปิดใช้งานได้ (ปุ่ม 💜 ในหน้ารายการ)
+- ทดสอบ: `server/tests/quotations.test.js`, `quotation-approval.test.js`, `e2e/tests/price-tiers.spec.js`
+
 ### หน้า WMS System, และหน้า orphan
 - **WMS System** (`wms`, เห็นเฉพาะ role `warehouse`): แสดง stock แบบอ่านอย่างเดียว + ปุ่มเปิด WMS app ในแท็บใหม่ + ข้อความ SSO — ข้อความ UI ในหน้านี้อ้างอิง Supabase ("ใช้ร่วมกันผ่าน Supabase") ซึ่ง**ล้าสมัยแล้ว** ตามหัวข้อ 6
 - **(legacy) รับสินค้าเข้า / Expiry**: ไม่อยู่ใน nav ของ role ไหนเลยในปัจจุบัน แต่ router ยังเสิร์ฟได้ถ้ามีคน set page id ตรงๆ — เขียน stock ลง localStorage ซึ่ง**ขัดกับสถาปัตยกรรมจริงที่ควรมาจาก Express sync เท่านั้น** ถ้ามีใครเผลอเพิ่มกลับเข้า nav จะทำให้เกิดข้อมูล stock หลอกที่มองไม่เห็นจากที่อื่น
