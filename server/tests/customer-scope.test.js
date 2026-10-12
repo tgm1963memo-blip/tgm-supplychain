@@ -92,11 +92,16 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   assert.equal(bad.salesmen['BP-9'], 'BP Nine');
 
   // บรรทัดใบเคาะ (2026-10-12): ผู้ถูกจำกัดบันทึกได้เฉพาะสาขาที่มองเห็น · admin ได้ทุกสาขา
-  const pd = (cust, uid) => call('/promo_drafts', 'POST', { draft_no: 'PMD-T1', cust_code: cust, sku: 'X', unit_price: 1 }, uid);
+  const pd = (cust, uid, no = 'PMD-' + cust) => call('/promo_drafts', 'POST', { draft_no: no, cust_code: cust, sku: 'X', unit_price: 1 }, uid);
   assert.equal((await pd('10-BB-0001', 'S1')).status, 403, 'สาขาของคนอื่น');
   assert.equal((await pd('10-AA-0001', 'S1')).status, 201, 'สาขาของตัวเอง');
   assert.equal((await pd('30-MJ-0001', 'S1')).status, 201, 'เจ้า MT ที่ดูแล');
   assert.equal((await pd('50-ZZ-0001', 'ADM')).status, 201);
+  // ใบเคาะ 1 ใบ = ห้างเดียว: ท๊อปส์ (30-MJ) + โลตัส (BB-L2) ใบเดียวกันไม่ได้ · ห้างเดียวกันหลายสาขาได้
+  assert.equal((await pd('30-MJ-0002', 'ADM', 'PMD-30-MJ-0001')).status, 201, 'ท๊อปส์ 2 สาขา');
+  const mix = await pd('BB-L2-0005', 'ADM', 'PMD-30-MJ-0001');
+  assert.equal(mix.status, 400);
+  assert.match(mix.data.error, /ห้างเดียว/);
 
   // ใบเคาะ: เห็นเมื่อมีสาขาที่มองเห็น
   const made = await call('/promo_draft_headers', 'POST', { promo_name: 'Tops' });

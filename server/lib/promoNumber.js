@@ -147,7 +147,32 @@ function planRenumberAll(db) {
   });
 }
 
+// ห้างของสาขา (2026-10-12, ผู้ใช้ขอ: ใบเคาะ 1 ใบเลือกได้ห้างเดียว) — ชื่อห้างจากตารางรหัสเอกสาร (คอลัมน์ A)
+// ไม่อยู่ในตาราง = customer_profiles.corporate (จัดการกลุ่ม) · ไม่มีทั้งคู่ = 'ไม่ระบุกลุ่ม' (รวมกันได้)
+// เทียบด้วยคีย์ที่ตัดวรรณยุกต์/ช่องว่าง/ตัวพิมพ์ — 'ท๊อปส์' กับ 'ท็อปส์' เป็นห้างเดียวกัน
+const UNGROUPED_CHAIN = 'ไม่ระบุกลุ่ม';
+const chainKey = name => String(name || '').normalize('NFC').toLowerCase().replace(/[\s็-์.]/g, '');
+function chainsFor(db, codes, rules = loadCodeMap(db).rules) {
+  const corp = db.prepare('SELECT corporate FROM customer_profiles WHERE code = ?');
+  const out = new Map(); // key -> { name, codes: [] }
+  for (const c of new Set((codes || []).map(String).filter(Boolean))) {
+    const r = ruleForCode(rules, c);
+    // นอกช่วงรหัสในตาราง แต่ prefix เดียวกับห้างเดียว (เช่น 30-PL-0094 อยู่เกินช่วงของท๊อปส์) = ห้างนั้น
+    const m = String(c).trim().toUpperCase().match(CODE_RE);
+    const famNames = m ? [...new Set(rules.filter(x => x.prefix === m[1]).map(x => x.name))] : [];
+    const name = (r && r.name) || (famNames.length === 1 ? famNames[0] : '') || String(corp.get(c)?.corporate || '').trim() || UNGROUPED_CHAIN;
+    const k = chainKey(name);
+    if (!out.has(k)) out.set(k, { name, codes: [] });
+    out.get(k).codes.push(c);
+  }
+  return [...out.values()];
+}
+function assertSingleChain(db, codes) {
+  const ch = chainsFor(db, codes);
+  if (ch.length > 1) throw new Error('ใบเคาะ 1 ใบเลือกสาขาได้ห้างเดียว — ตอนนี้มี ' + ch.map(x => x.name + ' (' + x.codes.length + ' สาขา)').join(', '));
+}
+
 module.exports = {
   CODE_MAP_ENTITY, parseCodeMap, loadCodeMap, ruleForCode, ruleForCodes, nextCodeNo, nextDocNoFor, nextPromoNoFor,
-  docCustCodes, docNoBase, previewForCodes, planRenumberAll, ymPart,
+  docCustCodes, docNoBase, previewForCodes, planRenumberAll, ymPart, chainsFor, chainKey, assertSingleChain, UNGROUPED_CHAIN,
 };

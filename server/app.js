@@ -588,6 +588,17 @@ function buildApp(db, opts = {}) {
   // สาขาที่อยู่ในใบนั้นอยู่แล้ว (เช่น ผู้ร่วมแก้เอกสารที่มีสาขาของคนอื่น) บันทึกซ้ำได้ตามเดิม
   const promoDraftCustGuard = (req, res, next) => {
     if (!['POST', 'PATCH'].includes(req.method)) return next();
+    // ใบเคาะ 1 ใบ = ห้างเดียว (2026-10-12) — รวมบรรทัดที่มีอยู่แล้วของใบเดียวกัน (client ส่งเป็นหลายก้อน)
+    try {
+      const byDraft = new Map();
+      for (const r of (Array.isArray(req.body) ? req.body : [req.body || {}])) {
+        if (!r || !r.draft_no || r.cust_code === undefined) continue;
+        const k = String(r.draft_no);
+        if (!byDraft.has(k)) byDraft.set(k, db.prepare('SELECT DISTINCT cust_code FROM promo_drafts WHERE draft_no = ?').all(k).map(x => x.cust_code));
+        byDraft.get(k).push(String(r.cust_code));
+      }
+      for (const codes of byDraft.values()) require('./lib/promoNumber').assertSingleChain(db, codes);
+    } catch (e) { return res.status(400).json({ error: e.message }); }
     const scope = scopeOf(req);
     if (!scope || scope.all) return next();
     const rows = (Array.isArray(req.body) ? req.body : [req.body || {}]).filter(r => r && r.cust_code !== undefined);

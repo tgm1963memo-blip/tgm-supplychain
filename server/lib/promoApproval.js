@@ -1,5 +1,6 @@
 const workflow = require('../../shared/approval-workflow');
 const { overlapsFor } = require('./promoOverlap');
+const promoNumber = require('./promoNumber');
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 // เส้นทางอนุมัติหลายแบบ (2026-09-24): รายชื่อเส้นทางเก็บเป็นแถว entity_type='promo_draft_routes'
 // (levels_json = [{id, name, match:{corps,item_types,npd,off_contract,marketing}}]) ส่วนขั้นอนุมัติของแต่ละเส้นทาง
@@ -142,6 +143,8 @@ function validateChange(db, old, change, user) {
   if (status === 'pending_approval' && ['draft', 'rejected'].includes(old.status)) {
     // วันเริ่มทุนต้องไม่หลังวันเริ่มโปร (2026-10-12, ผู้ใช้ขอ) — ตรวจตอนส่งอนุมัติ (ร่างเก่าที่ยังไม่ส่งไม่โดน)
     if (next.cost_start_date && next.start_date && String(next.cost_start_date) > String(next.start_date)) throw new Error('วันที่เริ่มทุนต้องไม่หลังวันที่เริ่มโปร');
+    // ใบเคาะ 1 ใบ = ห้างเดียว (2026-10-12, ผู้ใช้ขอ) — ดู promoNumber.chainsFor
+    promoNumber.assertSingleChain(db, promoNumber.docCustCodes(db, { ...old, ...next }));
     if (needsExec(next)) template(db, 'promo_draft_exec');
     const route = routeOf(db, String(change.route_id ?? old.route_id ?? '').trim());
     change.route_id = route.entity === 'promo_draft' ? null : route.entity.slice('promo_draft@'.length);

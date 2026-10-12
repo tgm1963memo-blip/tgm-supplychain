@@ -73,7 +73,7 @@ const SALES_ONLY = [
   'draftGroupToggle', 'draftGroupSelectAll', 'draftGroupClear', '_draftGroupQ', 'draftGroupSearch',
   '_draftCatsForGroups', '_draftPruneCats', 'draftCatLabel', 'draftCatPickerHtml', 'draftCatListHtml',
   'draftCatRefresh', 'draftCatToggle', 'draftCatSelectAll', 'draftCatClear',
-  'draftMsLabel', 'draftMsButton', '_draftMsMineOv', '_draftMyCodes', '_draftMsMine', '_draftMsMineSet', 'draftMsItems', '_draftShipBranch', '_draftShipBranchLoading', '_draftLoadShipBranch', '_custNameParts', 'draftMsSearch', 'draftMsRefresh', 'draftMsToggle', 'draftMsSelectAll',
+  'draftMsLabel', 'draftMsButton', '_draftChainRules', '_draftChainRulesLoading', '_draftLoadChainRules', '_draftChainKey', '_DRAFT_CODE_RE', '_draftChainOf', '_draftSelectedChains', '_draftMsMineOv', '_draftMyCodes', '_draftMsMine', '_draftMsMineSet', 'draftMsItems', '_draftShipBranch', '_draftShipBranchLoading', '_draftLoadShipBranch', '_custNameParts', 'draftMsSearch', 'draftMsRefresh', 'draftMsToggle', 'draftMsSelectAll',
   '_draftSkuList', 'draftEnsureSkuCatalog', '_draftFindSku', 'draftApplySku',
   // เรียกจากฟอร์มใบเคาะราคาเท่านั้น แต่ตัวเองเรียก draftLineField/draftGroupRefresh/draftMsRefresh (sales-only)
   'draftApplyDefaultGp', 'draftRefreshCustomerCatalog', 'draftCostSameChanged', 'draftCostStartChanged', '_draftRefreshCompensateMarks', '_draftMarkCompensateInput', '_draftRefreshLineRefDataNow', '_draftRefPromise',

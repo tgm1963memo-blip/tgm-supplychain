@@ -16226,8 +16226,11 @@ function draftCatClear() {
 
 // ── ขั้นที่ 3: สาขา — กรองตามกลุ่ม/ประเภทที่เลือกไว้ในขั้น 1-2 ก่อนแสดงรายการ
 function draftMsLabel() {
+  _draftLoadChainRules();
   const n = _draftSelectedBranches.size;
-  return n === 0 ? 'เลือกสาขา...' : `เลือกแล้ว ${n.toLocaleString()} สาขา`;
+  if (!n) return 'เลือกสาขา...';
+  const ch = _draftSelectedChains();
+  return `เลือกแล้ว ${n.toLocaleString()} สาขา · ${ch.length > 1 ? `⚠️ ${ch.length} ห้าง — ต้องเหลือห้างเดียว` : 'ห้าง ' + ch[0].name}`;
 }
 function draftMsButton() {
   return `<div class="ms-drop" id="draft-ms">
@@ -16329,13 +16332,48 @@ function draftMsRefresh() {
   draftCheckOverlap();
   draftRefreshLineRefData();
 }
+// ── ใบเคาะ 1 ใบ = ห้างเดียว (2026-10-12, ผู้ใช้ขอ) — กติกาเดียวกับ server/lib/promoNumber.js chainsFor (server ตรวจซ้ำ)
+// ชื่อห้าง: ตารางรหัสเอกสาร (ช่วงรหัส → prefix เดียวกับห้างเดียว) → customer_profiles.corporate → 'ไม่ระบุกลุ่ม'
+let _draftChainRules = null, _draftChainRulesLoading = false;
+function _draftLoadChainRules() {
+  if (_draftChainRules || _draftChainRulesLoading) return;
+  _draftChainRulesLoading = true;
+  apiFetch('/api/promo_draft_headers/code-map').then(r => { _draftChainRules = r.error ? [] : (r.data?.rules || []); draftMsRefresh(); })
+    .catch(() => { _draftChainRules = []; }).finally(() => { _draftChainRulesLoading = false; });
+}
+const _draftChainKey = n => String(n || '').normalize('NFC').toLowerCase().replace(/[\s็-์.]/g, '');
+const _DRAFT_CODE_RE = /^([A-Z0-9]+-[A-Z0-9]+-)(\d+)$/;
+function _draftChainOf(code) {
+  const rules = _draftChainRules || [];
+  const c = String(code || '').trim();
+  const inRange = mm => mm ? rules.find(r => r.prefix === mm[1] && +mm[2] >= r.from && +mm[2] <= r.to) : null;
+  const m = c.toUpperCase().match(_DRAFT_CODE_RE);
+  let r = inRange(m);
+  if (!r && /^[^-]+-.+-.+$/.test(c)) r = inRange(c.replace(/^[^-]+-/, 'BB-').toUpperCase().match(_DRAFT_CODE_RE));
+  const fam = m ? [...new Set(rules.filter(x => x.prefix === m[1]).map(x => x.name))] : [];
+  const name = (r && r.name) || (fam.length === 1 ? fam[0] : '') || String((customerProfiles()[c] || {}).corporate || '').trim() || 'ไม่ระบุกลุ่ม';
+  return { key: _draftChainKey(name), name };
+}
+function _draftSelectedChains() {
+  const m = new Map();
+  _draftSelectedBranches.forEach(c => { const ch = _draftChainOf(c); if (!m.has(ch.key)) m.set(ch.key, { key: ch.key, name: ch.name, n: 0 }); m.get(ch.key).n++; });
+  return [...m.values()];
+}
 function draftMsToggle(code) {
-  if (_draftSelectedBranches.has(code)) _draftSelectedBranches.delete(code); else _draftSelectedBranches.add(code);
+  if (_draftSelectedBranches.has(code)) _draftSelectedBranches.delete(code);
+  else {
+    const cur = _draftSelectedChains(), ch = _draftChainOf(code);
+    if (cur.length && !cur.some(x => x.key === ch.key)) { toast(`ใบเคาะ 1 ใบเลือกได้ห้างเดียว — ใบนี้เป็นห้าง ${cur[0].name} (สาขานี้เป็น ${ch.name})`, 'warn'); return; }
+    _draftSelectedBranches.add(code);
+  }
   draftMsRefresh();
 }
 function draftMsSelectAll() {
   const q = _msSearchText(_draftMsQ).trim();
   const myCodes = _draftMsMine() ? _draftMyCodes() : null;
+  // ห้างเดียว: ยึดห้างที่เลือกอยู่ ไม่มี = ห้างของสาขาแรกที่ตรงตัวกรอง
+  const cur = _draftSelectedChains();
+  let target = cur.length ? cur[0] : null, skipped = 0;
   _draftBranchGroups().forEach(([corp, branches]) => {
     if (_draftSelGroups.size && !_draftSelGroups.has(corp)) return;
     branches.forEach(c => {
@@ -16343,9 +16381,13 @@ function draftMsSelectAll() {
       if (_draftSelCats.size && !_draftSelCats.has(cat)) return;
       if (myCodes && !myCodes.has(String(c.slm || ''))) return;
       if (q && !_msSearchText(corp + ' ' + c.c + ' ' + c.n + ' ' + (c.branch || '')).includes(q)) return;
+      const ch = _draftChainOf(c.c);
+      if (!target) target = ch;
+      if (ch.key !== target.key) { skipped++; return; }
       _draftSelectedBranches.add(c.c);
     });
   });
+  if (skipped) toast(`เลือกเฉพาะห้าง ${target.name} — ข้าม ${skipped.toLocaleString()} สาขาของห้างอื่น (ใบเคาะ 1 ใบเลือกได้ห้างเดียว)`, 'warn');
   draftMsRefresh();
 }
 
@@ -17497,6 +17539,7 @@ async function saveDraftPromo(submitAfter = false) {
   const lines = offContract ? [] : _draftLines.filter(l => l.sku);
   if (!name) { alert('กรุณากรอกชื่อรายการ'); return; }
   if (!custCodes.length) { alert('กรุณาเลือกอย่างน้อย 1 สาขา'); return; }
+  { const ch = _draftSelectedChains(); if (ch.length > 1) { alert(`ใบเคาะ 1 ใบเลือกสาขาได้ห้างเดียว — ตอนนี้มี ${ch.map(x => `${x.name} (${x.n} สาขา)`).join(', ')}\nกรุณาเอาสาขาของห้างอื่นออก`); return; } }
   // ยืนยันแล้ว (2026-09-14): 1 ใบเคาะราคา = 1 ช่วงเวลาเดียวเท่านั้น — วันที่ของหัวเอกสารจึงบังคับกรอกเสมอ
   // (เดิมเช็คว่าแต่ละบรรทัดมีวันที่ของตัวเอง อนุญาตให้ไม่กรอกวันที่หัวเอกสารได้ถ้าทุกบรรทัดมีวันที่ครบ)
   if (!promoStart || !promoDue) { alert('กรุณากรอกวันที่เริ่ม-สิ้นสุดโปร (หัวเอกสาร) — ใบเคาะราคา 1 ใบใช้ได้แค่ช่วงเวลาเดียว'); return; }
@@ -17695,7 +17738,7 @@ async function pgPromoDraftsRenderBody() {
 
   if (!drafts.length) { box.innerHTML = '<div class="al ali">ยังไม่มีเอกสารใบเคาะราคา</div>'; return; }
 
-  box.innerHTML = drafts.map(h => {
+  const card = h => {
     const docLines = linesByDraftNo.get(h.draft_no) || [];
     // เอกสารค่าใช้จ่ายนอกสัญญาไม่มีบรรทัดสินค้า — รหัสสาขาเก็บใน form_extra_json.branches
     const offContract = !!Number(h.has_off_contract_cost) && !docLines.length;
@@ -17726,7 +17769,21 @@ async function pgPromoDraftsRenderBody() {
         : `<div style="font-size:12px;margin-top:3px"><b>สินค้า:</b> ${skuLines.map(esc).join(', ')}</div>`}
       ${h.note ? `<div style="font-size:12px;margin-top:3px;color:var(--TX3)">หมายเหตุ: ${esc(h.note)}</div>` : ''}
     </div>`;
-  }).join('');
+  };
+  // แยกส่วน (2026-10-12, ผู้ใช้ขอ): รอฉันอนุมัติ (ขั้นปัจจุบัน/คำขอยกเลิก-เปลี่ยนวันที่) · ใบที่ฉันสร้าง · เอกสารอื่นที่มองเห็น
+  // ใบที่ตรงหลายส่วนแสดงในส่วนแรกที่ตรงเท่านั้น
+  const waitMe = h => _draftCanApprove(h) || _draftCancelPending(h)?.approver_uid === UID;
+  const toApprove = drafts.filter(waitMe);
+  const mine = drafts.filter(h => !waitMe(h) && h.created_by === UID);
+  const others = drafts.filter(h => !waitMe(h) && h.created_by !== UID);
+  const section = (title, hint, list, empty) => `<div style="margin:4px 0 14px">
+      <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:6px 2px;border-bottom:2px solid var(--BD);margin-bottom:10px">
+        <b style="font-size:14px">${title}</b><span class="badge bbgr">${list.length.toLocaleString()}</span><span style="font-size:11.5px;color:var(--TX3)">${hint}</span></div>
+      ${list.length ? list.map(card).join('') : `<div style="font-size:12px;color:var(--TX3);padding:4px 2px 8px">${empty}</div>`}
+    </div>`;
+  box.innerHTML = section('⏳ รอฉันอนุมัติ', 'ขั้นอนุมัติปัจจุบัน หรือคำขอยกเลิก/เปลี่ยนวันที่ที่เลือกฉันเป็นผู้อนุมัติ', toApprove, 'ไม่มีเอกสารที่รอคุณอนุมัติ')
+    + section('📝 ใบที่ฉันสร้าง', 'เอกสารที่คุณเป็นผู้สร้าง', mine, 'ยังไม่มีเอกสารที่คุณสร้าง')
+    + (others.length ? section('📂 เอกสารอื่น', 'เอกสารของคนอื่นที่คุณมีสิทธิ์เห็น', others, '') : '');
 }
 // ข้อ 2 (2026-09-14, ยืนยันกับผู้ใช้): ก่อนปิดสถานะ "คีย์เข้า Express แล้ว" ตรวจสอบว่ามีเอกสารจริงใน Express
 // (มิเรอร์มาที่ promo_docs ทุก 5 นาที) ตรงกับใบเคาะราคานี้ทุกบรรทัดหรือไม่ — เช็ค 4 อย่าง: ลูกค้า/สินค้า/
