@@ -239,6 +239,10 @@ module.exports = function dashboardExecRoutes(db) {
       (r.category === 'พนักงาน' || r.category === 'เบิกตัวอย่าง' ? staff : ic).add(r.code);
     }
     for (const r of db.prepare(`SELECT code FROM customers WHERE code LIKE '30-TG%'`).all()) ic.add(r.code);
+    // (2026-10-12, ผู้ใช้ขอ) ลูกค้าที่ตั้งกลุ่มเป็น "(บริษัทในเครือ)" (เช่น ทีจี โคลด์ สตอเรจ YA-005, ไทยซอสเซส TSM-01-QD ที่ขายผ่าน
+    // Bplus โรงงาน) และลูกค้า Bplus ที่ติดธง is_intercompany — ไม่นับเป็นยอดขาย ไม่แสดงใน Top 20 (ไปรวมใน "ยอดในเครือ")
+    for (const r of db.prepare(`SELECT code FROM customer_profiles WHERE corporate LIKE '%(บริษัทในเครือ)%'
+      UNION SELECT code FROM bplus_customers WHERE is_intercompany = 1`).all()) ic.add(r.code);
     return { ic, staff };
   }
   let reqNonSales = { ic: new Set(), staff: new Set() };
