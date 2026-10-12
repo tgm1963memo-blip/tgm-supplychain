@@ -135,3 +135,45 @@ test('cancel whole document or selected lines — sales requests with reason, ch
   const h3 = (await call(r(n3).replace('?', '?') , 'GET')).data;
   assert.equal(h3[0].cancelled_skus_json ?? null, null);
 });
+
+// 2026-10-12: เปลี่ยนแปลงวันที่ผ่านคำขอยกเลิก (scope 'dates') — เลขเอกสารเดิม, แก้หัว+ทุกบรรทัด, เก็บเดิม→ใหม่ในประวัติ
+test('date change request — approved updates header + all lines, keeps doc/promo no and status', async t => {
+  const { db, call, setRoute, mk, r, logs } = await setup(t);
+  setRoute([{ id: 'm', label: 'ผู้จัดการ', mode: 'any', approvers: [{ uid: 'M', name: 'M' }] }]);
+  const no = await mk('dates', ['P1', 'P2']);
+  await call(r(no), 'PATCH', { start_date: '2026-10-01', due_date: '2026-10-15', cost_start_date: '2026-10-01', cost_end_date: '2026-10-15' });
+  db.prepare("UPDATE promo_drafts SET start_date='2026-10-01', due_date='2026-10-15' WHERE draft_no=?").run(no);
+  await call(r(no), 'PATCH', { status: 'pending_approval' });
+  const appr = (await call(r(no), 'PATCH', { status: 'pending_approval' }, 'M')).data[0];
+  assert.equal(appr.status, 'approved');
+  const url = `/promo_draft_headers/${no}/cancel-request`, dec = `/promo_draft_headers/${no}/cancel-decision`;
+  const base = { scope: 'dates', reason: 'เลื่อนโปร', approver_uid: 'M' };
+  assert.equal((await call(url, 'POST', { ...base, dates: { start_date: '2026-10-20', due_date: '2026-10-10' } })).status, 400); // ผิดลำดับ
+  assert.equal((await call(url, 'POST', { ...base, dates: { start_date: '2026-10-01', due_date: '2026-10-15' } })).status, 400); // ไม่เปลี่ยน
+  assert.equal((await call(url, 'POST', { ...base, dates: { start_date: 'bad', due_date: '2026-10-15' } })).status, 400);
+  assert.equal((await call(url, 'POST', { ...base, dates: { due_date: '2026-10-20' } }, 'S2')).status, 404); // ไม่ใช่เจ้าของ (มองไม่เห็น)
+  // ไม่อนุมัติ → วันที่ไม่เปลี่ยน
+  assert.equal((await call(url, 'POST', { ...base, dates: { due_date: '2026-10-20' } })).status, 200);
+  const rj = await call(dec, 'POST', { approve: false }, 'M');
+  assert.equal(rj.data.due_date, '2026-10-15');
+  // อนุมัติ → แก้หัว + ทุกบรรทัด, สถานะ/เลขเดิม
+  const rq = await call(url, 'POST', { ...base, dates: { start_date: '2026-10-05', due_date: '2026-10-25', cost_end_date: '2026-10-25' } });
+  assert.equal(rq.status, 200, JSON.stringify(rq.data));
+  assert.equal(rq.data.cancel_request_json.dates_from.due_date, '2026-10-15');
+  const ok = await call(dec, 'POST', { approve: true, note: 'ok' }, 'M');
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.equal(ok.data.status, 'approved');
+  assert.equal(ok.data.doc_no, appr.doc_no);
+  assert.equal(ok.data.promo_no, appr.promo_no);
+  assert.equal(ok.data.start_date, '2026-10-05');
+  assert.equal(ok.data.due_date, '2026-10-25');
+  assert.equal(ok.data.cost_start_date, '2026-10-01');
+  assert.equal(ok.data.cost_end_date, '2026-10-25');
+  assert.deepEqual(ok.data.cancelled_skus_json, []);
+  const lines = db.prepare('SELECT start_date, due_date FROM promo_drafts WHERE draft_no=?').all(no);
+  assert.ok(lines.every(l => l.start_date === '2026-10-05' && l.due_date === '2026-10-25'));
+  const hist = ok.data.cancel_history_json;
+  assert.equal(hist.at(-1).dates_to.due_date, '2026-10-25');
+  const l = await logs(no);
+  for (const a of ['date_change_request', 'date_change_reject', 'date_change_approve']) assert.ok(l.includes(a), a + ' missing');
+});

@@ -210,6 +210,7 @@ table.draft-trail td.l{text-align:left}
 .be-date-text.disabled{color:var(--TX2)}
 .esc-item{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--TX);cursor:pointer;user-select:none}
 .esc-item input{width:auto;margin:0;accent-color:var(--A)}
+.fx-row+.fx-row{border-top:1px solid var(--BD)} /* ฟอร์มใบเคาะ: เส้นแบ่งหัวข้อ */
 .esc-warn{display:flex;align-items:flex-start;gap:8px;background:var(--LY);color:var(--A);border:1px solid rgba(122,69,0,.25);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px}
 .cmt-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:4px 7px;border-radius:6px;border:1px solid var(--BD);background:var(--W);color:var(--TX2);cursor:pointer;font-size:11px}
 .cmt-btn:hover{background:var(--LBL);border-color:var(--BL);color:var(--BL)}
@@ -15208,7 +15209,7 @@ function _draftCancelSet(h) { return new Set(Array.isArray(h?.cancelled_skus_jso
 function _draftCancelPending(h) { const r = h?.cancel_request_json; return r && typeof r === 'object' && !Array.isArray(r) ? r : null; }
 function _draftCancelBadges(h) {
   const rq = _draftCancelPending(h), cx = _draftCancelSet(h);
-  return (rq ? ` <span class="badge bba">⏳ ขอยกเลิก${rq.scope === 'all' ? 'ทั้งใบ' : ` ${rq.skus.length} รายการ`} (รอ ${esc(rq.approver_name || uidToName(rq.approver_uid))})</span>` : '')
+  return (rq ? ` <span class="badge bba">⏳ ${rq.scope === 'dates' ? 'ขอเปลี่ยนวันที่' : 'ขอยกเลิก' + (rq.scope === 'all' ? 'ทั้งใบ' : ` ${rq.skus.length} รายการ`)} (รอ ${esc(rq.approver_name || uidToName(rq.approver_uid))})</span>` : '')
     + (cx.size && h.status !== 'cancelled' ? ` <span class="badge bbr">ยกเลิกบางรายการ (${cx.size})</span>` : '');
 }
 // เรียกกลับ / ขอยกเลิก — เฉพาะเจ้าของเอกสาร (ผู้ส่งอนุมัติ) และ admin (2026-10-09, ผู้ใช้ขอ) · server ตรวจซ้ำ
@@ -15219,9 +15220,10 @@ function _draftCancelButtons(h, small = true) {
   const rq = _draftCancelPending(h), no = esc(h.draft_no), out = [];
   if (['pending_approval', 'pending_exec_approval'].includes(h.status) && _draftIsCancelWriter(h))
     out.push(`<button class="${b}" onclick="draftRecall('${no}')" title="เรียกกลับมาเป็นร่างเพื่อแก้ไข แล้วส่งอนุมัติใหม่">↩️ เรียกกลับเพื่อแก้ไข</button>`);
-  if (DRAFT_CANCELABLE.includes(h.status) && !rq && _draftIsCancelWriter(h)) out.push(`<button class="${b}" onclick="draftCancelRequestDialog('${no}')">🚫 ขอยกเลิก</button>`);
-  if (rq && (rq.approver_uid === UID || ROLE === 'superadmin')) out.push(`<button class="${b} btn-r" onclick="draftCancelDecide('${no}',false)">ไม่อนุมัติยกเลิก</button><button class="${b} btn-g" onclick="draftCancelDecide('${no}',true)">อนุมัติยกเลิก</button>`);
-  if (rq && rq.requested_by === UID) out.push(`<button class="${b}" onclick="draftCancelWithdraw('${no}')">ถอนคำขอยกเลิก</button>`);
+  if (DRAFT_CANCELABLE.includes(h.status) && !rq && _draftIsCancelWriter(h)) out.push(`<button class="${b}" onclick="draftCancelRequestDialog('${no}')">🚫 ขอยกเลิก / เปลี่ยนวันที่</button>`);
+  const what = rq?.scope === 'dates' ? 'เปลี่ยนวันที่' : 'ยกเลิก';
+  if (rq && (rq.approver_uid === UID || ROLE === 'superadmin')) out.push(`<button class="${b} btn-r" onclick="draftCancelDecide('${no}',false)">ไม่อนุมัติ${what}</button><button class="${b} btn-g" onclick="draftCancelDecide('${no}',true)">อนุมัติ${what}</button>`);
+  if (rq && rq.requested_by === UID) out.push(`<button class="${b}" onclick="draftCancelWithdraw('${no}')">ถอนคำขอ${what}</button>`);
   if (h.draft_no) out.push(`<button class="${b}" onclick="draftShowLogs('${no}')">📜 ประวัติ</button>`);
   return out.join('');
 }
@@ -15238,48 +15240,81 @@ async function draftCancelRequestDialog(no) {
   } catch (e) { toast('โหลดข้อมูลไม่สำเร็จ: ' + (e.message || e), 'warn'); return; }
   const cx = _draftCancelSet(h);
   const skus = [...new Map((lines || []).filter(l => l.sku).map(l => [l.sku, l.sku_name || ''])).entries()];
-  openMod(`<div class="mh"><div class="mt2">🚫 ขอยกเลิกเอกสาร ${esc(h.promo_no || h.doc_no || no)}</div><span class="mx" onclick="closeM()">✕</span></div>
-    <div style="font-size:12px;color:var(--TX2);margin-bottom:10px">${esc(h.promo_name || '')} · สถานะ ${draftStatusBadgeHtml(h.status)} — ผู้อนุมัติที่เลือกต้องอนุมัติก่อนจึงจะยกเลิกจริง · ระบบไม่เขียน Express (ต้องไปยกเลิกโปรใน Express เองหลังอนุมัติ)</div>
-    <div class="field"><label>ยกเลิก</label>
-      <label class="esc-item"><input type="radio" name="dcx-scope" value="all" checked onchange="document.getElementById('dcx-skus').classList.add('hidden')"> ทั้งใบ</label>
-      <label class="esc-item" style="margin-left:14px"><input type="radio" name="dcx-scope" value="lines" ${skus.length ? '' : 'disabled'} onchange="document.getElementById('dcx-skus').classList.remove('hidden')"> เป็นรายสินค้า (ทุกสาขาในใบ)</label></div>
+  const dIn = (id, label, v) => `<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--TX2)">${label}<input type="date" id="${id}" value="${esc((v || '').slice(0, 10))}" style="padding:4px 6px"></label>`;
+  openMod(`<div class="mh"><div class="mt2">🚫 ขอยกเลิก / เปลี่ยนแปลงวันที่ ${esc(h.promo_no || h.doc_no || no)}</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="font-size:12px;color:var(--TX2);margin-bottom:10px">${esc(h.promo_name || '')} · สถานะ ${draftStatusBadgeHtml(h.status)} — ผู้อนุมัติที่เลือกต้องอนุมัติก่อนจึงจะมีผลจริง · ระบบไม่เขียน Express (ต้องไปแก้/ยกเลิกโปรใน Express เองหลังอนุมัติ)</div>
+    <div class="field"><label>ประเภทคำขอ</label>
+      <label class="esc-item"><input type="radio" name="dcx-scope" value="all" checked onchange="_dcxScopeChanged()"> ยกเลิกทั้งใบ</label>
+      <label class="esc-item" style="margin-left:14px"><input type="radio" name="dcx-scope" value="lines" ${skus.length ? '' : 'disabled'} onchange="_dcxScopeChanged()"> ยกเลิกเป็นรายสินค้า (ทุกสาขาในใบ)</label>
+      <label class="esc-item" style="margin-left:14px"><input type="radio" name="dcx-scope" value="dates" onchange="_dcxScopeChanged()"> 📅 เปลี่ยนแปลงวันที่ (เลขเอกสารเดิม)</label></div>
     <div id="dcx-skus" class="hidden" style="max-height:200px;overflow:auto;border:1px solid var(--BD);border-radius:7px;padding:6px 10px;margin-bottom:10px">
       ${skus.map(([c, n]) => `<label class="esc-item" style="display:flex;gap:6px;padding:2px 0${cx.has(c) ? ';color:var(--TX3);text-decoration:line-through' : ''}"><input type="checkbox" class="dcx-sku" value="${esc(c)}" ${cx.has(c) ? 'disabled' : ''}><span class="mono">${esc(c)}</span> ${esc(n)}${cx.has(c) ? ' (ยกเลิกแล้ว)' : ''}</label>`).join('')}</div>
-    <div class="field"><label>ผู้อนุมัติการยกเลิก <span style="color:var(--R)">*</span></label>
+    <div id="dcx-dates" class="hidden" style="border:1px solid var(--BD);border-radius:7px;padding:8px 10px;margin-bottom:10px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+        ${dIn('dcx-d-start_date', 'วันเริ่มโปร *', h.start_date)}${dIn('dcx-d-due_date', 'วันสิ้นสุดโปร *', h.due_date)}
+        ${dIn('dcx-d-cost_start_date', 'วันเริ่มทุน', h.cost_start_date)}${dIn('dcx-d-cost_end_date', 'วันสิ้นสุดทุน', h.cost_end_date)}</div>
+      <div style="font-size:11px;color:var(--TX3);margin-top:6px">เดิม: โปร ${fmtD(h.start_date)} – ${fmtD(h.due_date)}${h.cost_start_date || h.cost_end_date ? ` · ทุน ${fmtD(h.cost_start_date)} – ${fmtD(h.cost_end_date)}` : ''} — อนุมัติแล้วแก้ในเอกสารนี้ทุกบรรทัด เก็บวันที่เดิมไว้ในประวัติ</div></div>
+    <div class="field"><label>ผู้อนุมัติ <span style="color:var(--R)">*</span></label>
       <select id="dcx-approver"><option value="">— เลือกผู้อนุมัติ —</option>${approvers.filter(u => u.uid !== UID).map(u => `<option value="${esc(u.uid)}">${esc(u.name || u.uid)}${u.position ? ' · ' + esc(u.position) : ''}</option>`).join('')}</select></div>
-    <div class="field"><label>หมายเหตุการยกเลิก <span style="color:var(--R)">*</span></label>
-      <textarea id="dcx-reason" rows="3" maxlength="1000" placeholder="ระบุเหตุผลการยกเลิก" style="width:100%;border:1px solid var(--BD);border-radius:7px;padding:7px;font:inherit;box-sizing:border-box"></textarea></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ปิด</button><button class="btn btn-p" onclick="draftCancelSubmit('${esc(no)}', this)">ส่งคำขอยกเลิก</button></div>`);
+    <div class="field"><label>หมายเหตุ / เหตุผล <span style="color:var(--R)">*</span></label>
+      <textarea id="dcx-reason" rows="3" maxlength="1000" placeholder="ระบุเหตุผล" style="width:100%;border:1px solid var(--BD);border-radius:7px;padding:7px;font:inherit;box-sizing:border-box"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ปิด</button><button class="btn btn-p" onclick="draftCancelSubmit('${esc(no)}', this)">ส่งคำขอ</button></div>`);
 }
+function _dcxScopeChanged() {
+  const s = document.querySelector('input[name="dcx-scope"]:checked')?.value;
+  document.getElementById('dcx-skus')?.classList.toggle('hidden', s !== 'lines');
+  document.getElementById('dcx-dates')?.classList.toggle('hidden', s !== 'dates');
+}
+const DCX_DATE_FIELDS = ['start_date', 'due_date', 'cost_start_date', 'cost_end_date'];
 async function draftCancelSubmit(no, btn) {
   const scope = document.querySelector('input[name="dcx-scope"]:checked')?.value || 'all';
   const skus = [...document.querySelectorAll('.dcx-sku:checked')].map(x => x.value);
   const approver = document.getElementById('dcx-approver')?.value || '';
   const reason = (document.getElementById('dcx-reason')?.value || '').trim();
   if (scope === 'lines' && !skus.length) { alert('กรุณาเลือกสินค้าที่ต้องการยกเลิก'); return; }
-  if (!approver) { alert('กรุณาเลือกผู้อนุมัติการยกเลิก'); return; }
-  if (!reason) { alert('กรุณากรอกหมายเหตุการยกเลิก'); document.getElementById('dcx-reason')?.focus(); return; }
+  let dates;
+  if (scope === 'dates') {
+    dates = Object.fromEntries(DCX_DATE_FIELDS.map(f => [f, document.getElementById('dcx-d-' + f)?.value || null]));
+    if (!dates.start_date || !dates.due_date) { alert('กรุณาระบุวันเริ่มและวันสิ้นสุดโปร'); return; }
+    if (dates.start_date > dates.due_date) { alert('วันเริ่มโปรต้องไม่เกินวันสิ้นสุดโปร'); return; }
+    if (dates.cost_start_date && dates.cost_end_date && dates.cost_start_date > dates.cost_end_date) { alert('วันเริ่มทุนต้องไม่เกินวันสิ้นสุดทุน'); return; }
+  }
+  if (!approver) { alert('กรุณาเลือกผู้อนุมัติ'); return; }
+  if (!reason) { alert('กรุณากรอกหมายเหตุ / เหตุผล'); document.getElementById('dcx-reason')?.focus(); return; }
   const done = _draftBusy(btn, '⏳ กำลังส่ง…');
   if (!done) return;
-  const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/cancel-request`, { method: 'POST', body: JSON.stringify({ scope, skus, reason, approver_uid: approver }) });
-  if (r.error) { done(); toast('ส่งคำขอยกเลิกไม่สำเร็จ: ' + r.error.message, 'warn'); return; }
-  closeM(); toast('ส่งคำขอยกเลิกแล้ว — รอ ' + uidToName(approver) + ' อนุมัติ');
+  const what = scope === 'dates' ? 'เปลี่ยนวันที่' : 'ยกเลิก';
+  const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/cancel-request`, { method: 'POST', body: JSON.stringify({ scope, skus, dates, reason, approver_uid: approver }) });
+  if (r.error) { done(); toast(`ส่งคำขอ${what}ไม่สำเร็จ: ` + r.error.message, 'warn'); return; }
+  closeM(); toast(`ส่งคำขอ${what}แล้ว — รอ ` + uidToName(approver) + ' อนุมัติ');
   _draftAfterCancelAction(no);
 }
 async function draftCancelDecide(no, approve) {
   const h = await SB.getPromoDraftHeader(no).catch(() => null);
   const rq = _draftCancelPending(h);
-  if (!rq) { toast('ไม่มีคำขอยกเลิกที่รออนุมัติแล้ว', 'warn'); return; }
-  openMod(`<div class="mh"><div class="mt2">${approve ? '✅ อนุมัติการยกเลิก' : '❌ ไม่อนุมัติการยกเลิก'} — ${esc(h.promo_no || h.doc_no || no)}</div><span class="mx" onclick="closeM()">✕</span></div>
+  if (!rq) { toast('ไม่มีคำขอที่รออนุมัติแล้ว', 'warn'); return; }
+  const isDates = rq.scope === 'dates', what = isDates ? 'เปลี่ยนแปลงวันที่' : 'การยกเลิก';
+  const ov = isDates && Array.isArray(rq.overlaps) ? rq.overlaps : [];
+  openMod(`<div class="mh"><div class="mt2">${approve ? '✅ อนุมัติ' : '❌ ไม่อนุมัติ'}${what} — ${esc(h.promo_no || h.doc_no || no)}</div><span class="mx" onclick="closeM()">✕</span></div>
     <div style="font-size:12.5px;line-height:1.7;margin-bottom:10px;background:var(--bg2);border-radius:7px;padding:8px 12px">
-      <div><b>ขอยกเลิก:</b> ${rq.scope === 'all' ? 'ทั้งใบ' : 'รายสินค้า ' + rq.skus.map(esc).join(', ')}</div>
+      ${isDates ? `<div><b>ขอเปลี่ยนแปลงวันที่:</b> ${esc(_draftDatesDiffText(rq.dates_from, rq.dates_to))}</div>`
+        : `<div><b>ขอยกเลิก:</b> ${rq.scope === 'all' ? 'ทั้งใบ' : 'รายสินค้า ' + rq.skus.map(esc).join(', ')}</div>`}
+      ${ov.length ? `<div style="color:var(--R)"><b>⚠️ ช่วงใหม่ซ้อนกับโปรอื่น:</b> ${ov.map(o => `${esc(o.ref)} (${o.kind === 'express' ? 'Express' : 'ใบเคาะ'} ${fmtD(o.start)}–${fmtD(o.due)})`).join(', ')}</div>` : ''}
       <div><b>ผู้ขอ:</b> ${esc(rq.requested_by_name || uidToName(rq.requested_by))} · ${new Date(rq.requested_at).toLocaleString('th-TH')}</div>
       <div><b>หมายเหตุผู้ขอ:</b> ${esc(rq.reason)}</div></div>
     <div class="field"><label>หมายเหตุผู้อนุมัติ <span style="font-weight:400;color:var(--TX3)">(ไม่บังคับ)</span></label>
       <textarea id="dcx-note" rows="3" maxlength="1000" style="width:100%;border:1px solid var(--BD);border-radius:7px;padding:7px;font:inherit;box-sizing:border-box"></textarea></div>
-    ${approve ? '<div class="al alw" style="font-size:12px">อนุมัติแล้วระบบไม่เขียน Express — ต้องไปยกเลิกโปรใน Express เองด้วย</div>' : ''}
+    ${approve ? `<div class="al alw" style="font-size:12px">อนุมัติแล้วระบบไม่เขียน Express — ต้องไป${isDates ? 'แก้วันที่' : 'ยกเลิก'}โปรใน Express เองด้วย</div>` : ''}
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM()">ปิด</button>
-      <button class="btn ${approve ? 'btn-g' : 'btn-r'}" onclick="draftCancelDecideSubmit('${esc(no)}',${approve}, this)">${approve ? 'ยืนยันอนุมัติยกเลิก' : 'ยืนยันไม่อนุมัติ'}</button></div>`);
+      <button class="btn ${approve ? 'btn-g' : 'btn-r'}" onclick="draftCancelDecideSubmit('${esc(no)}',${approve}, this)">${approve ? (isDates ? 'ยืนยันอนุมัติเปลี่ยนวันที่' : 'ยืนยันอนุมัติยกเลิก') : 'ยืนยันไม่อนุมัติ'}</button></div>`);
+}
+// "โปร 01 ต.ค.–15 ต.ค. → 05 ต.ค.–20 ต.ค. · ทุน …" (ทุนแสดงเมื่อเปลี่ยนเท่านั้น)
+function _draftDatesDiffText(f, t) {
+  f = f || {}; t = t || {};
+  const rg = (a, b) => `${fmtD(a)}–${fmtD(b)}`;
+  const out = [`โปร ${rg(f.start_date, f.due_date)} → ${rg(t.start_date, t.due_date)}`];
+  if (f.cost_start_date !== t.cost_start_date || f.cost_end_date !== t.cost_end_date) out.push(`ทุน ${rg(f.cost_start_date, f.cost_end_date)} → ${rg(t.cost_start_date, t.cost_end_date)}`);
+  return out.join(' · ');
 }
 async function draftCancelDecideSubmit(no, approve, btn) {
   const note = (document.getElementById('dcx-note')?.value || '').trim();
@@ -15287,14 +15322,17 @@ async function draftCancelDecideSubmit(no, approve, btn) {
   if (!done) return;
   const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/cancel-decision`, { method: 'POST', body: JSON.stringify({ approve, note }) });
   if (r.error) { done(); toast('บันทึกไม่สำเร็จ: ' + r.error.message, 'warn'); return; }
-  closeM(); toast(approve ? (r.data?.status === 'cancelled' ? 'ยกเลิกเอกสารแล้ว' : 'ยกเลิกรายการที่ขอแล้ว') + ' — อย่าลืมยกเลิกใน Express' : 'ไม่อนุมัติการยกเลิก');
+  const lastRq = (r.data?.cancel_history_json || []).slice(-1)[0];
+  const isDates = lastRq?.scope === 'dates';
+  closeM(); toast(approve ? (isDates ? 'เปลี่ยนวันที่แล้ว — อย่าลืมแก้ใน Express' : (r.data?.status === 'cancelled' ? 'ยกเลิกเอกสารแล้ว' : 'ยกเลิกรายการที่ขอแล้ว') + ' — อย่าลืมยกเลิกใน Express')
+    : (isDates ? 'ไม่อนุมัติการเปลี่ยนวันที่' : 'ไม่อนุมัติการยกเลิก'));
   _draftAfterCancelAction(no);
 }
 async function draftCancelWithdraw(no) {
-  if (!confirm('ถอนคำขอยกเลิกนี้?')) return;
+  if (!confirm('ถอนคำขอนี้?')) return;
   const r = await apiFetch(`/api/promo_draft_headers/${encodeURIComponent(no)}/cancel-withdraw`, { method: 'POST', body: '{}' });
   if (r.error) { toast('ถอนคำขอไม่สำเร็จ: ' + r.error.message, 'warn'); return; }
-  toast('ถอนคำขอยกเลิกแล้ว'); _draftAfterCancelAction(no);
+  toast('ถอนคำขอแล้ว'); _draftAfterCancelAction(no);
 }
 function draftRecall(no) {
   openMod(`<div class="mh"><div class="mt2">↩️ เรียกเอกสารกลับเพื่อแก้ไข</div><span class="mx" onclick="closeM()">✕</span></div>
@@ -15326,6 +15364,8 @@ const DRAFT_LOG_LABELS = {
   recall: '↩️ เรียกกลับเพื่อแก้ไข', cancel_request: '🚫 ขอยกเลิก', cancel_approve: '✅ อนุมัติการยกเลิก', cancel_reject: '❌ ไม่อนุมัติการยกเลิก',
   cancel_withdraw: '↩️ ถอนคำขอยกเลิก', keyed: '⌨️ คีย์เข้า Express แล้ว', delete: '🗑️ ลบเอกสาร', attach: '📎 แนบไฟล์', detach: '🗑️ ลบไฟล์แนบ',
   copy_attachments: '📋 คัดลอกไฟล์แนบ', renumber: '🔢 เปลี่ยนเลขที่เอกสาร',
+  date_change_request: '📅 ขอเปลี่ยนแปลงวันที่', date_change_approve: '✅ อนุมัติเปลี่ยนแปลงวันที่', date_change_reject: '❌ ไม่อนุมัติเปลี่ยนแปลงวันที่',
+  date_change_withdraw: '↩️ ถอนคำขอเปลี่ยนวันที่',
 };
 const DRAFT_LOG_FIELD_LABELS = { promo_name: 'ชื่อรายการ', purpose: 'วัตถุประสงค์', condition_type: 'เงื่อนไข', item_type: 'ลักษณะรายการ', note: 'หมายเหตุ',
   start_date: 'วันเริ่มโปร', due_date: 'วันสิ้นสุดโปร', cost_start_date: 'วันเริ่มทุน', cost_end_date: 'วันสิ้นสุดทุน', is_npd: 'NPD', has_off_contract_cost: 'นอกสัญญา',
@@ -15337,7 +15377,8 @@ function _draftLogDetail(l) {
   if (d.verdicts) bits.push(`ผลตรวจสอบ ขายได้ ${d.verdicts.profit} · ขาดทุน ${d.verdicts.loss}`);
   if (d.channel === 'email') bits.push('ผ่านอีเมล');
   if (d.fields?.length) bits.push('แก้: ' + d.fields.map(k => DRAFT_LOG_FIELD_LABELS[k] || k).join(', '));
-  if (d.scope) bits.push(d.scope === 'all' ? 'ทั้งใบ' : 'รายสินค้า ' + (d.skus || []).join(', '));
+  if (d.scope === 'dates') { if (d.dates_to) bits.push(_draftDatesDiffText(d.dates_from, d.dates_to)); }
+  else if (d.scope) bits.push(d.scope === 'all' ? 'ทั้งใบ' : 'รายสินค้า ' + (d.skus || []).join(', '));
   if (d.approver) bits.push('ผู้อนุมัติ ' + d.approver);
   if (d.promo_no) bits.push('เลขใบโปร ' + d.promo_no);
   if (d.to_doc_no) bits.push(`ใบเคาะ ${d.from_doc_no} → ${d.to_doc_no}`);
@@ -15933,7 +15974,8 @@ function _draftFormExtraHtml(raw, canEdit, header) {
   const vlRd = (id, on, label, extra = '') => `<label class="esc-item" style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="fx-vl-mode" id="${id}" ${on ? 'checked' : ''} ${dis}>${label}${extra}</label>`;
   const num = (id, v, w = 64, ph = '') => `<input type="number" id="${id}" value="${esc(v ?? '')}" placeholder="${ph}" min="0" style="width:${w}px;padding:3px 6px;font-size:12px" ${dis}>`;
   const txt = (id, v, w = 150) => `<input type="text" id="${id}" value="${esc(v ?? '')}" style="width:${w}px;padding:3px 6px;font-size:12px" ${dis}>`;
-  const row = (label, body, cls = '', req = false) => `<div class="${cls}" data-acm-row="${esc(label)}" style="display:grid;grid-template-columns:130px 1fr;gap:6px;align-items:center;margin-top:6px"><b style="font-size:12px;color:var(--TX2)">${label}${req ? ' <span style="color:var(--R)" title="บังคับเลือก">*</span>' : ''}</b><div style="display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:12.5px">${body}</div></div>`;
+  // เส้นแบ่งระหว่างหัวข้อ (2026-10-12, ผู้ใช้ขอ) — .fx-row+.fx-row ใน <style>
+  const row = (label, body, cls = '', req = false) => `<div class="fx-row ${cls}" data-acm-row="${esc(label)}" style="display:grid;grid-template-columns:130px 1fr;gap:6px;align-items:center;padding:7px 0"><b style="font-size:12px;color:var(--TX2)">${label}${req ? ' <span style="color:var(--R)" title="บังคับเลือก">*</span>' : ''}</b><div style="display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:12.5px">${body}</div></div>`;
   // ค่าใช้จ่ายอื่นๆ: ยังไม่เคยบันทึก → ใช้ผลรวมตาราง 💵 ค่าใช้จ่ายอื่นๆ เป็นค่าเริ่มต้น
   const ocSum = _draftOtherCostSum();
   const oc = fx.other_cost || { on: ocSum > 0, amt: ocSum > 0 ? ocSum : null };

@@ -227,19 +227,29 @@ function simpleMail(header, title, rows, openUrl) {
 }
 const emailOf = (db, uid) => { const u = db.prepare('SELECT email, is_active FROM sc_users WHERE uid = ?').get(uid); return u?.email && u.is_active ? u.email : ''; };
 const openUrlOf = header => `${appUrl()}/?draft=${encodeURIComponent(header.draft_no)}`;
-const scopeText = rq => rq.scope === 'all' ? 'ยกเลิกทั้งใบ' : `ยกเลิกบางรายการ (${(rq.skus || []).join(', ')})`;
+const rangeText = (a, b) => `${fmtD(a)} – ${fmtD(b)}`;
+// scope 'dates' (2026-10-12) = ขอเปลี่ยนแปลงวันที่ — เลขเอกสารเดิม
+const dateRows = rq => {
+  const f = rq.dates_from || {}, t = rq.dates_to || {};
+  return [['วันโปร', `${rangeText(f.start_date, f.due_date)} → ${rangeText(t.start_date, t.due_date)}`],
+    ...(f.cost_start_date !== t.cost_start_date || f.cost_end_date !== t.cost_end_date ? [['วันทุน', `${rangeText(f.cost_start_date, f.cost_end_date)} → ${rangeText(t.cost_start_date, t.cost_end_date)}`]] : [])];
+};
+const scopeText = rq => rq.scope === 'all' ? 'ยกเลิกทั้งใบ' : rq.scope === 'dates' ? 'เปลี่ยนแปลงวันที่' : `ยกเลิกบางรายการ (${(rq.skus || []).join(', ')})`;
 async function notifyCancelRequest(db, header, rq) {
   const to = emailOf(db, rq.approver_uid);
   if (!to) return { sent: false, reason: 'NO_EMAIL' };
-  return sendMail({ to, ...simpleMail(header, '🚫 ขออนุมัติยกเลิกเอกสาร', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
-    ['รายการ', scopeText(rq)], ['ผู้ขอ', rq.requested_by_name || rq.requested_by], ['หมายเหตุ', rq.reason]], openUrlOf(header)) });
+  const isDates = rq.scope === 'dates';
+  return sendMail({ to, ...simpleMail(header, isDates ? '📅 ขออนุมัติเปลี่ยนแปลงวันที่' : '🚫 ขออนุมัติยกเลิกเอกสาร', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
+    ['รายการ', scopeText(rq)], ...(isDates ? dateRows(rq) : []), ['ผู้ขอ', rq.requested_by_name || rq.requested_by], ['หมายเหตุ', rq.reason]], openUrlOf(header)) });
 }
 async function notifyCancelDecision(db, header, d) {
   const to = emailOf(db, d.requested_by);
   if (!to) return { sent: false, reason: 'NO_EMAIL' };
-  return sendMail({ to, ...simpleMail(header, d.result === 'approved' ? '✅ อนุมัติการยกเลิกแล้ว' : '❌ ไม่อนุมัติการยกเลิก', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
-    ['รายการ', scopeText(d)], ['ผู้อนุมัติ', d.decided_by_name || d.decided_by], ['หมายเหตุ', d.manager_note || '—'],
-    ...(d.result === 'approved' ? [['หมายเหตุระบบ', 'ระบบไม่เขียน Express — ต้องยกเลิกโปรใน Express เองด้วย']] : [])], openUrlOf(header)) });
+  const isDates = d.scope === 'dates', ok = d.result === 'approved';
+  const title = isDates ? (ok ? '✅ อนุมัติเปลี่ยนแปลงวันที่แล้ว' : '❌ ไม่อนุมัติเปลี่ยนแปลงวันที่') : (ok ? '✅ อนุมัติการยกเลิกแล้ว' : '❌ ไม่อนุมัติการยกเลิก');
+  return sendMail({ to, ...simpleMail(header, title, [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
+    ['รายการ', scopeText(d)], ...(isDates ? dateRows(d) : []), ['ผู้อนุมัติ', d.decided_by_name || d.decided_by], ['หมายเหตุ', d.manager_note || '—'],
+    ...(ok ? [['หมายเหตุระบบ', isDates ? 'ระบบไม่เขียน Express — ต้องแก้วันที่โปรใน Express เองด้วย' : 'ระบบไม่เขียน Express — ต้องยกเลิกโปรใน Express เองด้วย']] : [])], openUrlOf(header)) });
 }
 async function notifyRecall(db, header, uids, byName, note) {
   const out = [];

@@ -337,6 +337,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   // ── ยกเลิกทั้งใบ / รายสินค้า (2026-09-30) — Sales ขอ (หมายเหตุบังคับ) เลือกผู้อนุมัติเอง → manager ตัดสิน ────
   const CANCELABLE = ['pending_approval', 'pending_exec_approval', 'approved', 'keyed_to_express'];
   const CANCEL_APPROVER_ROLES = ['sales_manager', 'manager', 'admin', 'superadmin'];
+  const DATE_FIELDS = ['start_date', 'due_date', 'cost_start_date', 'cost_end_date'];
   router.get('/cancel-approvers/list', (req, res) => {
     res.json(db.prepare(`SELECT uid, name, role, department, position FROM sc_users WHERE is_active = 1 AND role IN (${CANCEL_APPROVER_ROLES.map(() => '?').join(',')}) ORDER BY name`).all(...CANCEL_APPROVER_ROLES));
   });
@@ -350,8 +351,27 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     const body = req.body || {};
     const reason = String(body.reason || '').trim().slice(0, 1000);
     if (!reason) return res.status(400).json({ error: 'กรุณากรอกหมายเหตุการยกเลิก' });
-    const scope = body.scope === 'lines' ? 'lines' : body.scope === 'all' ? 'all' : null;
-    if (!scope) return res.status(400).json({ error: 'กรุณาเลือกยกเลิกทั้งใบ หรือรายสินค้า' });
+    const scope = ['lines', 'all', 'dates'].includes(body.scope) ? body.scope : null;
+    if (!scope) return res.status(400).json({ error: 'กรุณาเลือกยกเลิกทั้งใบ รายสินค้า หรือเปลี่ยนแปลงวันที่' });
+    // เปลี่ยนแปลงวันที่ (2026-10-12, ผู้ใช้ขอ) — อนุมัติแล้วแก้วันที่ในเอกสารเดิม (เลขเดิม) เก็บเดิม→ใหม่ไว้ในประวัติ
+    let datesFrom = null, datesTo = null, overlaps = [];
+    if (scope === 'dates') {
+      const inD = body.dates && typeof body.dates === 'object' ? body.dates : {};
+      datesFrom = Object.fromEntries(DATE_FIELDS.map(f => [f, t[f] || null]));
+      datesTo = { ...datesFrom };
+      for (const f of DATE_FIELDS) {
+        if (inD[f] === undefined) continue;
+        const v = inD[f] === null || inD[f] === '' ? null : String(inD[f]).slice(0, 10);
+        if (v !== null && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return res.status(400).json({ error: 'รูปแบบวันที่ไม่ถูกต้อง' });
+        datesTo[f] = v;
+      }
+      if (!datesTo.start_date || !datesTo.due_date) return res.status(400).json({ error: 'กรุณาระบุวันเริ่มและวันสิ้นสุดโปร' });
+      if (datesTo.start_date > datesTo.due_date) return res.status(400).json({ error: 'วันเริ่มโปรต้องไม่เกินวันสิ้นสุดโปร' });
+      if (datesTo.cost_start_date && datesTo.cost_end_date && datesTo.cost_start_date > datesTo.cost_end_date) return res.status(400).json({ error: 'วันเริ่มทุนต้องไม่เกินวันสิ้นสุดทุน' });
+      if (DATE_FIELDS.every(f => datesTo[f] === datesFrom[f])) return res.status(400).json({ error: 'วันที่ใหม่เหมือนวันที่เดิม — ไม่มีอะไรเปลี่ยน' });
+      // โปรซ้อนในช่วงใหม่ — แสดงเตือนผู้อนุมัติเท่านั้น (ไม่บล็อก)
+      overlaps = overlapsFor(db, { ...t, ...datesTo }).map(o => ({ kind: o.kind, ref: o.ref, start: o.start, due: o.due }));
+    }
     const cancelled = new Set(pj(t.cancelled_skus_json) || []);
     const docSkus = [...new Set(db.prepare('SELECT sku FROM promo_drafts WHERE draft_no = ?').all(t.draft_no).map(r => r.sku).filter(Boolean))];
     let skus = [];
@@ -365,9 +385,11 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     if (!ap || !ap.is_active || !CANCEL_APPROVER_ROLES.includes(ap.role)) return res.status(400).json({ error: 'กรุณาเลือกผู้อนุมัติการยกเลิก (Sales Manager ขึ้นไป)' });
     if (ap.uid === req.user.uid) return res.status(400).json({ error: 'ผู้ขอยกเลิกเป็นผู้อนุมัติเองไม่ได้' });
     const rq = { id: genId('PCX'), scope, skus, reason, requested_by: req.user.uid, requested_by_name: userName(req.user.uid),
-      requested_at: new Date().toISOString(), approver_uid: ap.uid, approver_name: ap.name || ap.uid, status_at_request: t.status };
+      requested_at: new Date().toISOString(), approver_uid: ap.uid, approver_name: ap.name || ap.uid, status_at_request: t.status,
+      ...(scope === 'dates' ? { dates_from: datesFrom, dates_to: datesTo, overlaps } : {}) };
     db.prepare('UPDATE promo_draft_headers SET cancel_request_json = ?, updated_at = ? WHERE draft_no = ?').run(JSON.stringify(rq), rq.requested_at, t.draft_no);
-    logDraft(db, t.draft_no, 'cancel_request', req.user, { scope, skus, reason, approver: rq.approver_name });
+    logDraft(db, t.draft_no, scope === 'dates' ? 'date_change_request' : 'cancel_request', req.user,
+      { scope, skus, reason, approver: rq.approver_name, ...(scope === 'dates' ? { dates_from: datesFrom, dates_to: datesTo } : {}) });
     mailLater(promoMail.notifyCancelRequest(db, t, rq));
     res.json(parseRow(getRaw(t.draft_no)));
   });
@@ -383,7 +405,8 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
       decided_at: now, manager_note: String(req.body?.note || '').trim().slice(0, 1000) };
     let status = t.status;
     let cancelled = pj(t.cancelled_skus_json) || [];
-    if (approve) {
+    const isDates = rq.scope === 'dates';
+    if (approve && !isDates) {
       if (rq.scope === 'all') status = 'cancelled';
       else {
         cancelled = [...new Set([...cancelled, ...rq.skus])];
@@ -391,10 +414,21 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
         if (docSkus.length && docSkus.every(x => cancelled.includes(x))) status = 'cancelled';
       }
     }
-    db.prepare(`UPDATE promo_draft_headers SET status = ?, cancel_request_json = NULL, cancel_history_json = ?, cancelled_skus_json = ?,
-      updated_by = ?, updated_at = ? WHERE draft_no = ?`).run(status, JSON.stringify([...(pj(t.cancel_history_json) || []), d]),
-      JSON.stringify(cancelled), req.user.uid, now, t.draft_no);
-    logDraft(db, t.draft_no, approve ? 'cancel_approve' : 'cancel_reject', req.user, { scope: rq.scope, skus: rq.skus, note: d.manager_note, status_after: status });
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      db.prepare(`UPDATE promo_draft_headers SET status = ?, cancel_request_json = NULL, cancel_history_json = ?, cancelled_skus_json = ?,
+        updated_by = ?, updated_at = ? WHERE draft_no = ?`).run(status, JSON.stringify([...(pj(t.cancel_history_json) || []), d]),
+        JSON.stringify(cancelled), req.user.uid, now, t.draft_no);
+      // เปลี่ยนวันที่: หัวเอกสาร + ทุกบรรทัด (บรรทัดใช้ช่วงวันที่ของหัวเอกสารเสมอ) · สถานะ/เลขเอกสารไม่เปลี่ยน
+      if (approve && isDates && rq.dates_to) {
+        const to = rq.dates_to;
+        db.prepare(`UPDATE promo_draft_headers SET ${DATE_FIELDS.map(f => `${f} = ?`).join(', ')} WHERE draft_no = ?`).run(...DATE_FIELDS.map(f => to[f] ?? null), t.draft_no);
+        db.prepare('UPDATE promo_drafts SET start_date = ?, due_date = ?, updated_at = ? WHERE draft_no = ?').run(to.start_date, to.due_date, now, t.draft_no);
+      }
+      logDraft(db, t.draft_no, isDates ? (approve ? 'date_change_approve' : 'date_change_reject') : (approve ? 'cancel_approve' : 'cancel_reject'), req.user,
+        { scope: rq.scope, skus: rq.skus, note: d.manager_note, status_after: status, ...(isDates ? { dates_from: rq.dates_from, dates_to: rq.dates_to } : {}) });
+      db.exec('COMMIT');
+    } catch (e) { if (db.isTransaction) db.exec('ROLLBACK'); return res.status(400).json({ error: e.message }); }
     mailLater(promoMail.notifyCancelDecision(db, t, d));
     res.json(parseRow(getRaw(t.draft_no)));
   });
@@ -407,7 +441,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     const now = new Date().toISOString();
     db.prepare('UPDATE promo_draft_headers SET cancel_request_json = NULL, cancel_history_json = ?, updated_at = ? WHERE draft_no = ?')
       .run(JSON.stringify([...(pj(t.cancel_history_json) || []), { ...rq, result: 'withdrawn', decided_by: req.user.uid, decided_at: now }]), now, t.draft_no);
-    logDraft(db, t.draft_no, 'cancel_withdraw', req.user, { scope: rq.scope, skus: rq.skus });
+    logDraft(db, t.draft_no, rq.scope === 'dates' ? 'date_change_withdraw' : 'cancel_withdraw', req.user, { scope: rq.scope, skus: rq.skus });
     res.json(parseRow(getRaw(t.draft_no)));
   });
 
