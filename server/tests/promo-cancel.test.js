@@ -143,6 +143,10 @@ test('date change request — approved updates header + all lines, keeps doc/pro
   const no = await mk('dates', ['P1', 'P2']);
   await call(r(no), 'PATCH', { start_date: '2026-10-01', due_date: '2026-10-15', cost_start_date: '2026-10-01', cost_end_date: '2026-10-15' });
   db.prepare("UPDATE promo_drafts SET start_date='2026-10-01', due_date='2026-10-15' WHERE draft_no=?").run(no);
+  // ส่งอนุมัติไม่ได้ถ้าวันเริ่มทุนหลังวันเริ่มโปร (2026-10-12)
+  await call(r(no), 'PATCH', { cost_start_date: '2026-10-02' });
+  assert.equal((await call(r(no), 'PATCH', { status: 'pending_approval' })).status, 400);
+  await call(r(no), 'PATCH', { cost_start_date: '2026-10-01' });
   await call(r(no), 'PATCH', { status: 'pending_approval' });
   const appr = (await call(r(no), 'PATCH', { status: 'pending_approval' }, 'M')).data[0];
   assert.equal(appr.status, 'approved');
@@ -151,6 +155,7 @@ test('date change request — approved updates header + all lines, keeps doc/pro
   assert.equal((await call(url, 'POST', { ...base, dates: { start_date: '2026-10-20', due_date: '2026-10-10' } })).status, 400); // ผิดลำดับ
   assert.equal((await call(url, 'POST', { ...base, dates: { start_date: '2026-10-01', due_date: '2026-10-15' } })).status, 400); // ไม่เปลี่ยน
   assert.equal((await call(url, 'POST', { ...base, dates: { start_date: 'bad', due_date: '2026-10-15' } })).status, 400);
+  assert.equal((await call(url, 'POST', { ...base, dates: { cost_start_date: '2026-10-03' } })).status, 400); // วันเริ่มทุนหลังวันเริ่มโปร
   assert.equal((await call(url, 'POST', { ...base, dates: { due_date: '2026-10-20' } }, 'S2')).status, 404); // ไม่ใช่เจ้าของ (มองไม่เห็น)
   // ไม่อนุมัติ → วันที่ไม่เปลี่ยน
   assert.equal((await call(url, 'POST', { ...base, dates: { due_date: '2026-10-20' } })).status, 200);

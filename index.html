@@ -15296,6 +15296,7 @@ async function draftCancelSubmit(no, btn) {
     if (!dates.start_date || !dates.due_date) { alert('กรุณาระบุวันเริ่มและวันสิ้นสุดโปร'); return; }
     if (dates.start_date > dates.due_date) { alert('วันเริ่มโปรต้องไม่เกินวันสิ้นสุดโปร'); return; }
     if (dates.cost_start_date && dates.cost_end_date && dates.cost_start_date > dates.cost_end_date) { alert('วันเริ่มทุนต้องไม่เกินวันสิ้นสุดทุน'); return; }
+    if (dates.cost_start_date && dates.cost_start_date > dates.start_date) { alert('วันที่เริ่มทุนต้องไม่หลังวันที่เริ่มโปร'); return; }
   }
   if (!approver) { alert('กรุณาเลือกผู้อนุมัติ'); return; }
   if (!reason) { alert('กรุณากรอกหมายเหตุ / เหตุผล'); document.getElementById('dcx-reason')?.focus(); return; }
@@ -15716,6 +15717,7 @@ function draftSyncCostDates() {
   const same = document.getElementById('draft-cost-same');
   const cs = document.getElementById('draft-cost-start'), ce = document.getElementById('draft-cost-end');
   if (!same || !cs || !ce) return;
+  cs.max = document.getElementById('draft-start')?.value || ''; // วันเริ่มทุนเลือกหลังวันเริ่มโปรไม่ได้ (2026-10-12)
   const lock = same.checked;
   if (lock) {
     cs.value = document.getElementById('draft-start')?.value || '';
@@ -15725,6 +15727,12 @@ function draftSyncCostDates() {
   if (!same.disabled) { cs.disabled = lock; ce.disabled = lock; }
 }
 function draftCostSameChanged() { draftSyncCostDates(); draftUpdateDayCounts(); }
+// วันเริ่มทุนต้องไม่หลังวันเริ่มโปร (2026-10-12, ผู้ใช้ขอ) — พิมพ์เกินมา (input max กันได้แค่ปฏิทิน) = ปรับเป็นวันเริ่มโปร
+function draftCostStartChanged(el) {
+  const ps = document.getElementById('draft-start')?.value || '';
+  if (el && ps && el.value && el.value > ps) { toast('วันที่เริ่มทุนต้องไม่หลังวันที่เริ่มโปร — ปรับเป็นวันเริ่มโปรให้แล้ว', 'warn'); el.value = ps; }
+  draftUpdateDayCounts();
+}
 // "มี Compensate" มาจาก checkbox "Compensate" ในลักษณะรายการ (2026-09-23 — แทนช่องติ๊กแยกเดิม)
 // header.has_compensate ยังบันทึกไว้เป็นค่าที่ derive จากตรงนี้
 const DRAFT_COMPENSATE_ITEM_TYPE = 'Compensate';
@@ -15837,6 +15845,9 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
         <input type="text" id="draft-condition-other" placeholder="ระบุเงื่อนไขอื่นๆ" value="${esc(_draftOtherText(DRAFT_CONDITION_TYPES, header?.condition_type))}" ${canEdit ? '' : 'disabled'}></div>
       <div class="field" style="grid-column:1/-1"><label>ลักษณะรายการ <span style="font-weight:400;color:var(--TX3);font-size:11px">(เลือกได้มากกว่า 1)</span></label>
         <div style="display:flex;gap:16px;flex-wrap:wrap">${DRAFT_ITEM_TYPES.map(t => `<label class="esc-item"><input type="checkbox" class="draft-item-type-chk" value="${esc(t)}" onchange="draftItemTypeChanged()" ${selectedItemTypes.includes(t) ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>${esc(t)}</label>`).join('')}</div></div>
+      <!-- สาขาอยู่ก่อนวันที่โปร (2026-10-12, ผู้ใช้ขอ) — เลือกสาขาก่อนแล้วค่อยกำหนดช่วงเวลา -->
+      <div class="field" style="grid-column:1/-1"><label>สาขา (เลือกได้มากกว่า 1 สาขา)</label><div style="max-width:420px">${draftMsButton()}</div>
+        <div id="draft-cust-summary" style="font-size:12.5px;color:var(--TX2);margin-top:5px"></div></div>
       <div class="field"><label>วันที่เริ่มโปร</label>
         <input type="date" id="draft-start" value="${esc(header?.start_date || '')}" onchange="draftSyncCostDates();draftUpdateDayCounts();draftRefreshLineRefData();draftSyncLineDates()" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>วันสิ้นสุดโปร</label>
@@ -15844,7 +15855,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
       <div class="field"><label>จำนวนวัน (โปร)</label><div id="draft-promo-days" style="padding:7px 0;font-weight:600;color:var(--TX)">—</div></div>
       <div class="field"><label style="display:flex;justify-content:space-between;align-items:center;gap:8px">วันที่เริ่มทุน
           <span class="esc-item" style="font-weight:400;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" id="draft-cost-same" style="margin:0" onchange="draftCostSameChanged()" ${_draftCostSameInitial(header) ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>ใช้วันเดียวกับวันโปร</span></label>
-        <input type="date" id="draft-cost-start" value="${esc(header?.cost_start_date || '')}" onchange="draftUpdateDayCounts()" ${canEdit ? '' : 'disabled'}></div>
+        <input type="date" id="draft-cost-start" value="${esc(header?.cost_start_date || '')}" max="${esc(header?.start_date || '')}" onchange="draftCostStartChanged(this)" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>วันสิ้นสุดทุน</label>
         <input type="date" id="draft-cost-end" value="${esc(header?.cost_end_date || '')}" onchange="draftUpdateDayCounts()" ${canEdit ? '' : 'disabled'}></div>
       <div class="field"><label>จำนวนวัน (ทุน)</label><div id="draft-cost-days" style="padding:7px 0;font-weight:600;color:var(--TX)">—</div></div>
@@ -15855,8 +15866,6 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
       ${_draftFormExtraHtml(header?.form_extra_json, canEdit, header)}
     </div>
     <div id="draft-esc-warn" style="margin-bottom:13px"></div>
-    <div class="field" style="margin-bottom:10px"><label>1. สาขา (เลือกได้มากกว่า 1 สาขา)</label>${draftMsButton()}
-      <div id="draft-cust-summary" style="font-size:12.5px;color:var(--TX2);margin-top:5px"></div></div>
     <!-- ติ๊ก "ค่าใช้จ่ายนอกสัญญา" (2026-09-24 v3): ซ่อนตารางสินค้า แสดงรายละเอียดข้อความ + ไฟล์แนบแทน (draftOffContractChanged) -->
     <div id="draft-offc-wrap" class="${header?.has_off_contract_cost ? '' : 'hidden'}" style="margin-bottom:10px">
       <div class="field"><label>📄 รายละเอียดค่าใช้จ่ายนอกสัญญา <span style="color:var(--R)">*</span></label>
@@ -16479,6 +16488,7 @@ function _draftSetAutoNormalPrice(i, price, tssCost = null) {
 // ผู้ใช้ยังแก้ราคาขายโปรทับเองได้ภายหลัง
 function _draftApplyCompensate(i) {
   const l = _draftLines[i];
+  if (!_draftHasCompensate()) return; // ไม่ได้เลือก Compensate = ช่องถูกปิด ไม่คำนวณราคาโปรจากค่านี้ (2026-10-12)
   if (!l || l.compensate === '' || l.compensate == null) return;
   const np = parseFloat(l.normalPrice), comp = parseFloat(l.compensate);
   if (isNaN(np) || isNaN(comp)) return;
@@ -16534,6 +16544,9 @@ function _draftMarkCompensateInput(i) {
   if (!el) return;
   const required = _draftHasCompensate();
   el.style.borderColor = required && _draftIsBlank(_draftLines[i]?.compensate) ? 'var(--R)' : '';
+  // ไม่ได้เลือก "Compensate" ในลักษณะรายการ = กรอกช่องนี้ไม่ได้ (2026-10-12, ผู้ใช้ขอ)
+  el.disabled = !required || !draftCanEditStatus(_draftEditStatus);
+  el.title = required ? 'Compensate (บาท/หน่วย) — ราคาขายโปร = ราคาปกติ − Compensate' : 'ติ๊ก "Compensate" ที่ลักษณะรายการก่อน จึงกรอกช่องนี้ได้';
 }
 function draftRenderLines() {
   const tbody = document.getElementById('draft-lines-tbody');
@@ -16569,7 +16582,7 @@ function draftRenderLines() {
     <td class="r"><input data-draft-line="${i}" data-draft-field="gpPct" type="number" step="0.01" value="${l.gpPct}" oninput="draftLineField(${i},'gpPct',this.value)" style="width:70px;text-align:right" ${dis} title="GP% (เริ่มต้นจาก Master ลูกค้า) — คำนวณราคาทุนสุทธิอัตโนมัติ (แก้ไขได้)"></td>
     <td class="r"><input data-draft-line="${i}" data-draft-field="billDiscPct" type="number" step="0.01" value="${l.billDiscPct ?? ''}" oninput="draftLineField(${i},'billDiscPct',this.value)" style="width:70px;text-align:right" ${dis} title="ส่วนลดท้ายบิล% — หักต่อจาก GP ในราคาทุนสุทธิ"></td>
     <td class="r" id="draft-line-cost-${i}">${fmt2(l.costPrice)}</td>
-    <td class="r"><input id="draft-line-compensate-${i}" type="number" step="0.01" min="0" value="${l.compensate ?? ''}" oninput="draftLineField(${i},'compensate',this.value)" style="width:80px;text-align:right${hasCompensate && _draftIsBlank(l.compensate) ? ';border-color:var(--R)' : ''}" ${dis} title="Compensate (บาท/หน่วย) — ราคาขายโปร = ราคาปกติ − Compensate"></td>
+    <td class="r"><input id="draft-line-compensate-${i}" type="number" step="0.01" min="0" value="${l.compensate ?? ''}" oninput="draftLineField(${i},'compensate',this.value)" style="width:80px;text-align:right${hasCompensate && _draftIsBlank(l.compensate) ? ';border-color:var(--R)' : ''}" ${hasCompensate ? dis : 'disabled'} title="${hasCompensate ? 'Compensate (บาท/หน่วย) — ราคาขายโปร = ราคาปกติ − Compensate' : 'ติ๊ก &quot;Compensate&quot; ที่ลักษณะรายการก่อน จึงกรอกช่องนี้ได้'}"></td>
     <td class="r"><input id="draft-line-unitprice-${i}" type="number" step="0.01" min="0" value="${l.unitPrice}" oninput="draftLineField(${i},'unitPrice',this.value)" style="width:90px;text-align:right" ${dis}></td>
     <td class="r"><input data-draft-line="${i}" data-draft-field="gpPctPromo" type="number" step="0.01" value="${l.gpPctPromo}" oninput="draftLineField(${i},'gpPctPromo',this.value)" style="width:70px;text-align:right" ${dis} title="GP% (เริ่มต้นจาก Master ลูกค้า) — คำนวณราคาทุนสุทธิอัตโนมัติ (แก้ไขได้)"></td>
     <td class="r"><input data-draft-line="${i}" data-draft-field="billDiscPctPromo" type="number" step="0.01" value="${l.billDiscPctPromo ?? ''}" oninput="draftLineField(${i},'billDiscPctPromo',this.value)" style="width:70px;text-align:right" ${dis} title="ส่วนลดท้ายบิล% — หักต่อจาก GP ในราคาทุนสุทธิ"></td>
@@ -17487,6 +17500,8 @@ async function saveDraftPromo(submitAfter = false) {
   // ยืนยันแล้ว (2026-09-14): 1 ใบเคาะราคา = 1 ช่วงเวลาเดียวเท่านั้น — วันที่ของหัวเอกสารจึงบังคับกรอกเสมอ
   // (เดิมเช็คว่าแต่ละบรรทัดมีวันที่ของตัวเอง อนุญาตให้ไม่กรอกวันที่หัวเอกสารได้ถ้าทุกบรรทัดมีวันที่ครบ)
   if (!promoStart || !promoDue) { alert('กรุณากรอกวันที่เริ่ม-สิ้นสุดโปร (หัวเอกสาร) — ใบเคาะราคา 1 ใบใช้ได้แค่ช่วงเวลาเดียว'); return; }
+  // วันเริ่มทุนต้องไม่หลังวันเริ่มโปร (2026-10-12, ผู้ใช้ขอ)
+  if (costStart && costStart > promoStart) { alert('วันที่เริ่มทุนต้องไม่หลังวันที่เริ่มโปร'); document.getElementById('draft-cost-start')?.focus(); return; }
   if (offContract) {
     if (!offText) { alert('ติ๊ก "ค่าใช้จ่ายนอกสัญญา" แล้ว กรุณากรอกรายละเอียดค่าใช้จ่ายนอกสัญญา'); return; }
     if (_draftLines.some(l => l.sku) && !confirm('เอกสารค่าใช้จ่ายนอกสัญญาจะไม่บันทึกตารางรายการสินค้า — รายการสินค้าที่กรอกไว้จะไม่ถูกบันทึก ยืนยันบันทึก?')) return;
@@ -17553,7 +17568,7 @@ async function saveDraftPromo(submitAfter = false) {
           gp_pct: numOrNull(l.gpPct), cost_price: numOrNull(l.costPrice),
           gp_pct_promo: numOrNull(l.gpPctPromo), cost_price_promo: numOrNull(l.costPricePromo),
           bill_disc_pct: numOrNull(l.billDiscPct), bill_disc_pct_promo: numOrNull(l.billDiscPctPromo),
-          compensate: numOrNull(l.compensate),
+          compensate: hasCompensate ? numOrNull(l.compensate) : null, // ไม่ได้เลือก Compensate = ไม่บันทึกค่า (2026-10-12)
           estimated_qty: numOrNull(l.estimatedQty),
           is_sub_item: l.subLevel || 0, // ข้อ 4.4 — 0=หลัก, 1=ย่อย (1.1), 2=ย่อยของย่อย (1.1.1)
           start_date: promoStart, due_date: promoDue, // ทุกบรรทัดใช้ช่วงเวลาของหัวเอกสารเสมอ (ข้อ 1)
@@ -19425,14 +19440,15 @@ async function draftPreviewPDF(orient = 'landscape') {
   const it = (on, label, extra = '') => ({ on: !!on, html: box(on, label, extra) });
   const optRow = (title, items, cls = '') => { const sel = items.filter(x => x && x.on);
     return `<b>${title}</b><div class="row ${cls}">${sel.length ? sel.map(x => x.html).join('') : '<span class="none">—</span>'}</div>`; };
-  // ส่วนลด: ค่าจริงจากบรรทัดสินค้า — เท่ากันทุกรายการ = ค่าเดียว, ต่างกัน = ช่วง min–max* (ดูรายสินค้าในตาราง)
+  // ส่วนลด: ค่าจริงจากบรรทัดสินค้า — เท่ากันทุกรายการ = ค่าเดียว, ต่างกัน = ทุกค่าคั่นด้วย "," (2026-10-12, ผู้ใช้ขอ — เดิมเป็นช่วง min – max)
   let discVaries = false;
   const discTxt = (key, defId) => {
     const vals = [...new Set(_draftLines.filter(l => l.sku && l[key] !== '' && l[key] != null && !isNaN(parseFloat(l[key]))).map(l => Math.round(parseFloat(l[key]) * 100) / 100))];
     if (!vals.length) return fv(gpv(defId), 48) + ' %';
     if (vals.length === 1) return fv(vals[0], 48) + ' %';
     discVaries = true;
-    return fv(`${Math.min(...vals)} – ${Math.max(...vals)}`, 78) + ' %';
+    const txt = vals.sort((a, b) => a - b).join(', ');
+    return fv(txt, Math.min(260, Math.max(78, txt.length * 7 + 12))) + ' %';
   };
   const condSel = document.getElementById('draft-condition')?.value || '';
   const condOther = condSel === 'อื่นๆ' ? (document.getElementById('draft-condition-other')?.value || '').trim() : '';

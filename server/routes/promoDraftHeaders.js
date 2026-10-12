@@ -368,6 +368,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
       if (!datesTo.start_date || !datesTo.due_date) return res.status(400).json({ error: 'กรุณาระบุวันเริ่มและวันสิ้นสุดโปร' });
       if (datesTo.start_date > datesTo.due_date) return res.status(400).json({ error: 'วันเริ่มโปรต้องไม่เกินวันสิ้นสุดโปร' });
       if (datesTo.cost_start_date && datesTo.cost_end_date && datesTo.cost_start_date > datesTo.cost_end_date) return res.status(400).json({ error: 'วันเริ่มทุนต้องไม่เกินวันสิ้นสุดทุน' });
+      if (datesTo.cost_start_date && datesTo.cost_start_date > datesTo.start_date) return res.status(400).json({ error: 'วันที่เริ่มทุนต้องไม่หลังวันที่เริ่มโปร' });
       if (DATE_FIELDS.every(f => datesTo[f] === datesFrom[f])) return res.status(400).json({ error: 'วันที่ใหม่เหมือนวันที่เดิม — ไม่มีอะไรเปลี่ยน' });
       // โปรซ้อนในช่วงใหม่ — แสดงเตือนผู้อนุมัติเท่านั้น (ไม่บล็อก)
       overlaps = overlapsFor(db, { ...t, ...datesTo }).map(o => ({ kind: o.kind, ref: o.ref, start: o.start, due: o.due }));
