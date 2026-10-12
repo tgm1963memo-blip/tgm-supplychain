@@ -26,6 +26,14 @@ function getTransporter() {
   return transporter;
 }
 
+// ผู้ส่ง (2026-10-12): SMTP_FROM ที่มีอีเมล (เช่น "ชื่อ" <a@b>) ใช้ตามนั้น · ไม่มี @ = ใช้เป็นชื่อผู้ส่ง + อีเมลจาก SMTP_USER
+// · ว่าง = "TSS Supply Chain" <SMTP_USER> — เดิมใส่แค่ชื่อแล้วเซิร์ฟเวอร์อีเมลปฏิเสธ/ส่งไม่ถึง
+function fromAddress() {
+  const f = String(process.env.SMTP_FROM || '').trim(), user = process.env.SMTP_USER;
+  if (f.includes('@')) return f;
+  return `"${(f || 'TSS Supply Chain').replace(/"/g, '')}" <${user}>`;
+}
+
 function escapeHtml(value) {
   return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -76,7 +84,7 @@ async function sendResetPasswordEmail({ to, name, resetLink }) {
   const rendered = renderResetEmail({ name, resetLink });
   try {
     await t.sendMail({
-      from: process.env.SMTP_FROM || `"TSS Supply Chain" <${process.env.SMTP_USER}>`,
+      from: fromAddress(),
       to,
       subject: rendered.subject,
       html: rendered.html,
@@ -99,7 +107,7 @@ async function sendMail({ to, cc, subject, html, text }) {
     return { sent: false, reason: 'SMTP_CONFIG_MISSING' };
   }
   try {
-    await t.sendMail({ from: process.env.SMTP_FROM || `"TSS Supply Chain" <${process.env.SMTP_USER}>`, to, ...(cc && cc.length ? { cc } : {}), subject, html, text });
+    await t.sendMail({ from: fromAddress(), to, ...(cc && cc.length ? { cc } : {}), subject, html, text });
     return { sent: true };
   } catch (e) {
     console.error(`[mailer] sendMail "${subject}" -> ${to} failed:`, e.message);
@@ -107,4 +115,4 @@ async function sendMail({ to, cc, subject, html, text }) {
   }
 }
 
-module.exports = { sendResetPasswordEmail, sendMail, COMPANY, escapeHtml };
+module.exports = { sendResetPasswordEmail, sendMail, COMPANY, escapeHtml, fromAddress };
