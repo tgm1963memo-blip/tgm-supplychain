@@ -76,7 +76,7 @@ const SALES_ONLY = [
   'draftMsLabel', 'draftMsButton', '_draftMsMineOv', '_draftMyCodes', '_draftMsMine', '_draftMsMineSet', 'draftMsItems', '_draftShipBranch', '_draftShipBranchLoading', '_draftLoadShipBranch', '_custNameParts', 'draftMsSearch', 'draftMsRefresh', 'draftMsToggle', 'draftMsSelectAll',
   '_draftSkuList', 'draftEnsureSkuCatalog', '_draftFindSku', 'draftApplySku',
   // เรียกจากฟอร์มใบเคาะราคาเท่านั้น แต่ตัวเองเรียก draftLineField/draftGroupRefresh/draftMsRefresh (sales-only)
-  'draftApplyDefaultGp', 'draftRefreshCustomerCatalog', 'draftCostSameChanged', '_draftRefreshLineRefDataNow', '_draftRefPromise',
+  'draftApplyDefaultGp', 'draftRefreshCustomerCatalog', 'draftCostSameChanged', 'draftCostStartChanged', '_draftRefreshCompensateMarks', '_draftMarkCompensateInput', '_draftRefreshLineRefDataNow', '_draftRefPromise',
   '_pdWfUsers', '_pdWfPickerHtml', 'pdWfPickerClose', 'pdWfPickerOpen', 'pdWfSetField',
   'draftRenderApprovalTrail', '_draftHoldOf', '_draftHoldActive', '_draftHoldBoxHtml', 'draftHoldRefresh', 'draftHoldClear', '_draftAnchorCmts', '_draftCmtMode', 'DRAFT_LINE_COL_LABELS', '_draftAnchorFor', '_draftElForAnchor',
   '_acmSplit', 'draftLoadAnchorComments', 'draftRenderAnchorPins', 'draftJumpToAnchor', 'draftToggleCommentMode',
