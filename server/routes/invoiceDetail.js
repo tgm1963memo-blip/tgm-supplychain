@@ -47,6 +47,51 @@ function invoiceDetailRoutes(db) {
       ORDER BY amount DESC
     `).all(COMPANY, ...params);
 
+    // สินค้าลูก (2026-10-12, ผู้ใช้ขอ Top 10 ให้เป็นสินค้าลูก): บรรทัดรหัสชุด (เช่น 90022-1) แตกเป็นไส้ใน
+    // · มีไส้ในจริง (invoice_line_components — ปัจจุบันมีเฉพาะฝากขาย CONSI) = แบ่งยอดบรรทัดตามสัดส่วนจำนวนลูก
+    // · ไม่มี (ใบกำกับ DD ของ TSS — Express ไม่มีหมายเหตุไส้ใน) = ประมาณจากสัดส่วนไส้ในของรหัสชุดเดียวกันในช่วงเวลาเดียวกัน
+    //   (ไม่มีในช่วง = 90 วันก่อนสิ้นช่วง) → estimated = true
+    const lineRows = db.prepare(`
+      SELECT l.doc_num, l.seq_num, l.sku, l.sku_name, l.unit_code, l.qty, l.line_value, c.child_code, c.child_name, c.child_qty
+      FROM invoices i
+      JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
+      LEFT JOIN invoice_line_components c ON c.doc_num = l.doc_num AND c.seq_num = l.seq_num AND c.company = l.company
+      WHERE ${whereSql}
+    `).all(COMPANY, ...params);
+    const shareRows = (lo, hi) => db.prepare(`SELECT c.parent_sku, c.child_code, MAX(c.child_name) AS child_name, SUM(c.child_qty) AS q
+      FROM invoice_line_components c JOIN invoice_lines l ON l.doc_num = c.doc_num AND l.seq_num = c.seq_num AND l.company = c.company
+      WHERE l.doc_date >= ? AND l.doc_date <= ? GROUP BY c.parent_sku, c.child_code`).all(lo, hi);
+    const sharesOf = rows => { const m = new Map(); rows.forEach(r => { if (!m.has(r.parent_sku)) m.set(r.parent_sku, []); m.get(r.parent_sku).push(r); }); return m; };
+    const shares = sharesOf(shareRows(from, to));
+    const back90 = new Date(new Date(to + 'T00:00:00Z').getTime() - 90 * 864e5).toISOString().slice(0, 10);
+    let sharesWide = null;
+    const byLine = new Map();
+    for (const r of lineRows) { const k = r.doc_num + '|' + r.seq_num; if (!byLine.has(k)) byLine.set(k, []); byLine.get(k).push(r); }
+    const agg = new Map();
+    const add = (sku, name, unit, qty, amount, parent, est) => {
+      const e = agg.get(sku) || { sku, sku_name: name, unit, qty: 0, amount: 0, parent_sku: parent || null, estimated: false };
+      e.qty += qty; e.amount += amount; if (est) e.estimated = true; if (!e.sku_name && name) e.sku_name = name;
+      agg.set(sku, e);
+    };
+    for (const rows of byLine.values()) {
+      const l = rows[0], val = Number(l.line_value) || 0, qty = Number(l.qty) || 0;
+      const kids = rows.filter(r => r.child_code);
+      if (kids.length) {
+        const tq = kids.reduce((a, r) => a + (Number(r.child_qty) || 0), 0) || kids.length;
+        kids.forEach(r => add(r.child_code, r.child_name, l.unit_code, Number(r.child_qty) || 0, val * ((Number(r.child_qty) || 1) / tq), l.sku, false));
+        continue;
+      }
+      let sh = /^90022(?:-|$)/.test(l.sku || '') ? shares.get(l.sku) : null;
+      if (!sh && /^90022(?:-|$)/.test(l.sku || '')) { sharesWide = sharesWide || sharesOf(shareRows(back90, to)); sh = sharesWide.get(l.sku); }
+      if (sh && sh.length) {
+        const tq = sh.reduce((a, r) => a + (Number(r.q) || 0), 0) || 1;
+        sh.forEach(r => { const f = (Number(r.q) || 0) / tq; add(r.child_code, r.child_name, l.unit_code, qty * f, val * f, l.sku, true); });
+      } else add(l.sku, l.sku_name, l.unit_code, qty, val, null, false);
+    }
+    const grp = db.prepare('SELECT group_name FROM products WHERE code = ?');
+    const productsChildren = [...agg.values()].map(e => ({ ...e, group_name: grp.get(e.sku)?.group_name || null }))
+      .sort((a, b) => b.amount - a.amount);
+
     const invoices = db.prepare(`
       SELECT i.doc_num, i.doc_date, i.cust_code, i.rectyp, i.slm_code, i.so_num, i.total,
              (SELECT SUM(l.line_value) FROM invoice_lines l WHERE l.doc_num = i.doc_num AND l.company = ?) AS line_value,
@@ -57,7 +102,7 @@ function invoiceDetailRoutes(db) {
       LIMIT 3000
     `).all(COMPANY, COMPANY, ...params);
 
-    const out = { cust: custs, from, to, coverage_from: db.prepare('SELECT MIN(doc_date) AS d FROM invoices').get()?.d || null, products, invoices };
+    const out = { cust: custs, from, to, coverage_from: db.prepare('SELECT MIN(doc_date) AS d FROM invoices').get()?.d || null, products, products_children: productsChildren, invoices };
     if (String(q.lines || '') === '1' || q.lines === true) {
       out.lines = db.prepare(`
         SELECT l.doc_num, i.doc_date, i.cust_code, l.sku, l.sku_name, l.qty, l.unit_code, l.line_value

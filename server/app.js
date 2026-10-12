@@ -163,7 +163,8 @@ function buildApp(db, opts = {}) {
     pk: 'code',
     fields: ['code', 'name', 'cust_group', 'slm_id', 'is_active', 'addr_branch'],
     readOnly: true,
-    scope: factScope({ cust: 'code', slm: 'slm_id' }),
+    // ownCustCodes = ลูกค้าตามรหัส Sales + เจ้า MT + ลูกค้าที่ขายจริงตามใบกำกับ (2026-10-12 — lib/customerScope.js)
+    scope: custScope('code'),
   }));
 
   app.use('/api/salesmen', authed, makeCrudRouter(db, 'salesmen', {

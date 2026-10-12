@@ -92,6 +92,10 @@ function resolveScope(db, user) {
     const own = new Set(mtCodes);
     if (slmCodes.length) {
       db.prepare(`SELECT code FROM customers WHERE slm_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(slmCodes)).forEach(r => own.add(r.code));
+      // ลูกค้าที่ขายจริงตามใบกำกับ (2026-10-12): ลูกค้าบางรายผูกกับรหัส Sales อื่นใน master แต่ใบกำกับออกในชื่อเรา
+      // (เช่น ท็อปส์ 01-MT-0006 ผูก 206 แต่ขายโดย 207) — ต้องเห็นชื่อ/กลุ่มของลูกค้าที่ตัวเองมียอด ไม่งั้นขึ้นเป็นรหัสใน "ยังไม่ถูกระบุ"
+      db.prepare(`SELECT DISTINCT cust_code FROM invoice_sales_monthly WHERE ym >= '2024-01' AND slm_code IN (SELECT value FROM json_each(?))`)
+        .all(JSON.stringify(slmCodes)).forEach(r => r.cust_code && own.add(r.cust_code));
     }
     scope = {
       all: false, restricted: true, version: ver, uids: sc.uids || [user.uid], slmCodes, mtCodes, ownCustCodes: [...own],
