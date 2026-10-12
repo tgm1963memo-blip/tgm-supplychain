@@ -6950,6 +6950,12 @@ function _dxCust(x,i,showCh=true){
   const split=tgm>0.5&&tss>0.5?` · TSS ${_dxMil(tss)} ล. · TGM ${_dxMil(tgm)} ล.`:'';
   return `<td><span class="dx-rk${i<3?' g':''}">${i+1}</span></td><td><div class="dx-cust"><b title="${esc(x.name)}">${esc(x.name)}</b><span>${showCh?`<i style="background:${DX_CH_COLORS[x.channel]||'#999'}"></i>${esc(l)}`:''}${x.branches>1?`${showCh?' · ':''}${x.branches} สาขา`:''}${split}</span></div></td>`;
 }
+// เทียบปีก่อน + มูลค่าส่วนต่าง (2026-10-12, ผู้ใช้ขอ) — % ด้านบน · ส่วนต่าง (ปีนี้ − ปีก่อน) ด้านล่าง หน่วยบาท (หรือ กก.)
+function _dxPillDiff(cur,prev,unit=''){
+  const d=(cur||0)-(prev||0);
+  const diff=Math.abs(d)<0.5?'':`<div style="font-size:11px;margin-top:2px;color:${d>0?'var(--G)':'var(--R)'};font-variant-numeric:tabular-nums">${d>0?'+':'−'}${_dxB(Math.abs(d))}${unit}</div>`;
+  return _dxPill(_dxPct(cur,prev))+diff;
+}
 function _dxTop(d){
   const s=_dxState(),r=_dxRange(),yy=String((r.y+543)%100),lyy=String((r.y+542)%100);
   const t=s.top,rows=d.top[t]||[];
@@ -6965,15 +6971,15 @@ function _dxTop(d){
     body=rows.map((x,i)=>`<tr>${_dxCust(x,i,false)}
       <td class="dx-n dx-sep mut">${x.ly_consi?_dxB(x.ly_consi):'—'}</td><td class="dx-n mut">${_dxKg(x.kg_ly_consi,x.kg_coverage)}</td><td class="dx-n">${x.ty_consi?_dxB(x.ty_consi):'—'}</td><td class="dx-n mut">${_dxKg(x.kg_ty_consi,x.kg_coverage)}</td>
       <td class="dx-n dx-sep mut">${x.ly_net?_dxB(x.ly_net):'—'}</td><td class="dx-n mut">${_dxKg(x.kg_ly_net,x.kg_coverage)}</td><td class="dx-n"><b>${x.ty_net?_dxB(x.ty_net):'—'}</b></td><td class="dx-n mut">${_dxKg(x.kg_ty_net,x.kg_coverage)}</td>
-      <td class="dx-n dx-sep">${_dxPill(_dxPct(x.ty_net+x.ty_consi,x.ly_net+x.ly_consi))}</td></tr>`).join('');
-    foot=`<tr class="tot"><td></td><td>รวม ${rows.length} ราย</td><td class="dx-n dx-sep">${_dxB(sum('ly_consi'))}</td><td class="dx-n">${_dxB(sum('kg_ly_consi'))}</td><td class="dx-n">${_dxB(sum('ty_consi'))}</td><td class="dx-n">${_dxB(sum('kg_ty_consi'))}</td><td class="dx-n dx-sep">${_dxB(sum('ly_net'))}</td><td class="dx-n">${_dxB(sum('kg_ly_net'))}</td><td class="dx-n">${_dxB(sum('ty_net'))}</td><td class="dx-n">${_dxB(sum('kg_ty_net'))}</td><td class="dx-n dx-sep">${_dxPill(_dxPct(sum('ty_net')+sum('ty_consi'),sum('ly_net')+sum('ly_consi')))}</td></tr>`;
+      <td class="dx-n dx-sep">${_dxPillDiff(x.ty_net+x.ty_consi,x.ly_net+x.ly_consi)}</td></tr>`).join('');
+    foot=`<tr class="tot"><td></td><td>รวม ${rows.length} ราย</td><td class="dx-n dx-sep">${_dxB(sum('ly_consi'))}</td><td class="dx-n">${_dxB(sum('kg_ly_consi'))}</td><td class="dx-n">${_dxB(sum('ty_consi'))}</td><td class="dx-n">${_dxB(sum('kg_ty_consi'))}</td><td class="dx-n dx-sep">${_dxB(sum('ly_net'))}</td><td class="dx-n">${_dxB(sum('kg_ly_net'))}</td><td class="dx-n">${_dxB(sum('ty_net'))}</td><td class="dx-n">${_dxB(sum('kg_ty_net'))}</td><td class="dx-n dx-sep">${_dxPillDiff(sum('ty_net')+sum('ty_consi'),sum('ly_net')+sum('ly_consi'))}</td></tr>`;
   }else if(t==='shop'){
     sub=`ทุกหมวดที่ไม่ใช่ห้างและ Makro · ยอดขายจริง (Net) ไม่รวมฝากขาย`;
     head=`<tr><th rowspan="3" style="width:36px"></th><th rowspan="3">ลูกค้า</th><th class="c nt dx-sep" colspan="4">Net</th><th class="dx-n dx-sep" rowspan="3">${yy} vs ${lyy}</th></tr>
       <tr><th class="c dx-sep" colspan="2">25${lyy}</th><th class="c" colspan="2">25${yy}</th></tr>
       <tr><th class="dx-n dx-sep">บาท</th><th class="dx-n">KG</th><th class="dx-n">บาท</th><th class="dx-n">KG</th></tr>`;
-    body=rows.map((x,i)=>`<tr>${_dxCust(x,i)}<td class="dx-n dx-sep mut">${_dxB(x.ly_net)}</td><td class="dx-n mut">${_dxKg(x.kg_ly_net,x.kg_coverage)}</td><td class="dx-n"><b>${_dxB(x.ty_net)}</b></td><td class="dx-n mut">${_dxKg(x.kg_ty_net,x.kg_coverage)}</td><td class="dx-n dx-sep">${_dxPill(_dxPct(x.ty_net,x.ly_net))}</td></tr>`).join('');
-    foot=`<tr class="tot"><td></td><td>รวม Top ${rows.length}</td><td class="dx-n dx-sep">${_dxB(sum('ly_net'))}</td><td class="dx-n">${_dxB(sum('kg_ly_net'))}</td><td class="dx-n">${_dxB(sum('ty_net'))}</td><td class="dx-n">${_dxB(sum('kg_ty_net'))}</td><td class="dx-n dx-sep">${_dxPill(_dxPct(sum('ty_net'),sum('ly_net')))}</td></tr>`;
+    body=rows.map((x,i)=>`<tr>${_dxCust(x,i)}<td class="dx-n dx-sep mut">${_dxB(x.ly_net)}</td><td class="dx-n mut">${_dxKg(x.kg_ly_net,x.kg_coverage)}</td><td class="dx-n"><b>${_dxB(x.ty_net)}</b></td><td class="dx-n mut">${_dxKg(x.kg_ty_net,x.kg_coverage)}</td><td class="dx-n dx-sep">${_dxPillDiff(x.ty_net,x.ly_net)}</td></tr>`).join('');
+    foot=`<tr class="tot"><td></td><td>รวม Top ${rows.length}</td><td class="dx-n dx-sep">${_dxB(sum('ly_net'))}</td><td class="dx-n">${_dxB(sum('kg_ly_net'))}</td><td class="dx-n">${_dxB(sum('ty_net'))}</td><td class="dx-n">${_dxB(sum('kg_ty_net'))}</td><td class="dx-n dx-sep">${_dxPillDiff(sum('ty_net'),sum('ly_net'))}</td></tr>`;
   }else{
     const c=s.consi,v=(x,p)=>x[p+'_net']+(c?x[p+'_consi']:0),kg=(x,p)=>x['kg_'+p+'_net']+(c?x['kg_'+p+'_consi']:0);
     const grand=d.kpi.ty_net+(c?d.kpi.ty_consi:0)||1,mxs=Math.max(...rows.map(x=>v(x,'ty')/grand),0.0001);
@@ -6981,9 +6987,9 @@ function _dxTop(d){
     head=`<tr><th rowspan="2" style="width:36px"></th><th rowspan="2">ลูกค้า</th><th class="c dx-sep" colspan="2">25${lyy}</th><th class="c" colspan="2">25${yy}</th><th class="dx-n dx-sep" rowspan="2">${yy} vs ${lyy}</th><th class="dx-n" rowspan="2">สัดส่วน</th></tr>
       <tr><th class="dx-n dx-sep">บาท</th><th class="dx-n">KG</th><th class="dx-n">บาท</th><th class="dx-n">KG</th></tr>`;
     body=rows.map((x,i)=>`<tr>${_dxCust(x,i)}<td class="dx-n dx-sep mut">${_dxB(v(x,'ly'))}</td><td class="dx-n mut">${_dxKg(kg(x,'ly'),x.kg_coverage)}</td><td class="dx-n"><b>${_dxB(v(x,'ty'))}</b></td><td class="dx-n mut">${_dxKg(kg(x,'ty'),x.kg_coverage)}</td>
-      <td class="dx-n dx-sep">${_dxPill(_dxPct(v(x,'ty'),v(x,'ly')))}</td><td class="dx-n"><div class="dx-share"><span>${(v(x,'ty')/grand*100).toFixed(1)}%</span><div class="bar"><span style="width:${v(x,'ty')/grand/mxs*100}%"></span></div></div></td></tr>`).join('');
+      <td class="dx-n dx-sep">${_dxPillDiff(v(x,'ty'),v(x,'ly'))}</td><td class="dx-n"><div class="dx-share"><span>${(v(x,'ty')/grand*100).toFixed(1)}%</span><div class="bar"><span style="width:${v(x,'ty')/grand/mxs*100}%"></span></div></div></td></tr>`).join('');
     const sv=p=>rows.reduce((a,x)=>a+v(x,p),0),sk=p=>rows.reduce((a,x)=>a+kg(x,p),0);
-    foot=`<tr class="tot"><td></td><td>รวม Top ${rows.length}</td><td class="dx-n dx-sep">${_dxB(sv('ly'))}</td><td class="dx-n">${_dxB(sk('ly'))}</td><td class="dx-n">${_dxB(sv('ty'))}</td><td class="dx-n">${_dxB(sk('ty'))}</td><td class="dx-n dx-sep">${_dxPill(_dxPct(sv('ty'),sv('ly')))}</td><td class="dx-n">${(sv('ty')/grand*100).toFixed(1)}%</td></tr>`;
+    foot=`<tr class="tot"><td></td><td>รวม Top ${rows.length}</td><td class="dx-n dx-sep">${_dxB(sv('ly'))}</td><td class="dx-n">${_dxB(sk('ly'))}</td><td class="dx-n">${_dxB(sv('ty'))}</td><td class="dx-n">${_dxB(sk('ty'))}</td><td class="dx-n dx-sep">${_dxPillDiff(sv('ty'),sv('ly'))}</td><td class="dx-n">${(sv('ty')/grand*100).toFixed(1)}%</td></tr>`;
   }
   // (2026-10-05) Makro นับเป็นห้างเสมอ (ไม่อยู่แท็บร้านค้า) · ปุ่มนี้เลือกแสดง/ซ่อน Makro ในแท็บรวมและแท็บห้าง
   const makroCk=t==='shop'?'':`<label class="dx-sw"><input type="checkbox" ${s.makro?'checked':''} onchange="dxSet('makro',this.checked)"><span class="tr"></span>รวม Makro</label>`;
@@ -7009,11 +7015,11 @@ function _dxTopProd(d){
   const body=rows.map((x,i)=>`<tr>${prod(x,i)}
       <td class="dx-n dx-sep mut">${x.ly_amount?_dxB(x.ly_amount):'—'}</td><td class="dx-n mut">${kgc(x.ly_kg,x)}</td>
       <td class="dx-n">${kg?_dxB(x.amount):`<b>${_dxB(x.amount)}</b>`}</td><td class="dx-n${kg?'':' mut'}">${kg?`<b>${kgc(x.kg,x)}</b>`:kgc(x.kg,x)}</td>
-      <td class="dx-n dx-sep">${mainLy(x)?_dxPill(_dxPct(main(x),mainLy(x))):'<span class="mut" title="ไม่มียอดช่วงเดียวกันปีก่อน">ใหม่</span>'}</td>
+      <td class="dx-n dx-sep">${mainLy(x)?_dxPillDiff(main(x),mainLy(x),kg?' กก.':''):'<span class="mut" title="ไม่มียอดช่วงเดียวกันปีก่อน">ใหม่</span>'}</td>
       <td class="dx-n"><div class="dx-share"><span>${(main(x)/grand*100).toFixed(1)}%</span><div class="bar"><span style="width:${main(x)/grand/mxs*100}%"></span></div></div></td></tr>`).join('');
   const sum=k=>rows.reduce((a,x)=>a+(x[k]||0),0);
   const foot=`<tr class="tot"><td></td><td>รวม Top ${rows.length}</td><td class="dx-n dx-sep">${_dxB(sum('ly_amount'))}</td><td class="dx-n">${_dxB(sum('ly_kg'))}</td><td class="dx-n">${_dxB(sum('amount'))}</td><td class="dx-n">${_dxB(sum('kg'))}</td>
-    <td class="dx-n dx-sep">${_dxPill(_dxPct(kg?sum('kg'):sum('amount'),kg?sum('ly_kg'):sum('ly_amount')))}</td><td class="dx-n">${((kg?sum('kg'):sum('amount'))/grand*100).toFixed(1)}%</td></tr>`;
+    <td class="dx-n dx-sep">${_dxPillDiff(kg?sum('kg'):sum('amount'),kg?sum('ly_kg'):sum('ly_amount'),kg?' กก.':'')}</td><td class="dx-n">${((kg?sum('kg'):sum('amount'))/grand*100).toFixed(1)}%</td></tr>`;
   const head=`<tr><th rowspan="2" style="width:36px"></th><th rowspan="2">สินค้า</th><th class="c dx-sep" colspan="2">25${lyy}</th><th class="c" colspan="2">25${yy}</th><th class="dx-n dx-sep" rowspan="2">${yy} vs ${lyy}</th><th class="dx-n" rowspan="2">สัดส่วน</th></tr>
       <tr><th class="dx-n dx-sep">บาท</th><th class="dx-n">KG</th><th class="dx-n">บาท</th><th class="dx-n">KG</th></tr>`;
   return `<div class="dx-card"><div class="dx-ch"><div><div class="t">Top 20 สินค้าขายดี</div><div class="s">เรียงตาม${kg?'น้ำหนัก (KG)':'ยอดขาย (บาท)'} · ${s.consi?'ขายจริง + ฝากขาย':'ขายจริง (Net)'} · สัดส่วนเทียบยอดรวมทุกสินค้า · ${_dxLabel(r)} เทียบ ${_dxLabel(r,-1)}</div></div>
