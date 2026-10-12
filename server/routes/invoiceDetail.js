@@ -102,6 +102,36 @@ function invoiceDetailRoutes(db) {
       LIMIT 3000
     `).all(COMPANY, COMPANY, ...params);
 
+    // ใบกำกับโรงงาน TGM จาก Bplus (2026-10-12) — ลูกค้าโรงงานเดิมขึ้น "ดูใบกำกับ 0 ใบ" เพราะตารางข้างบนมีแต่ TSS ของ Express
+    // รวมเข้าในรายการเดียวกัน (company = 'TGM') · ยอดขายในเครือ (BP-TGM-IC) ไม่นับ · ตัวกรอง Sales ใช้รหัสที่จับคู่แล้วแบบเดียวกับยอดขาย
+    try {
+      const bw = [`b.cust_code IN (${custs.map(() => '?').join(',')})`, 'b.doc_date >= ?', 'b.doc_date <= ?', "b.company = 'BP-TGM'"];
+      const bp = [...custs, from, to];
+      if (slms.length) { bw.push(`b.slm_code IN (${slms.map(() => '?').join(',')})`); bp.push(...slms); }
+      const bWhere = bw.join(' AND ');
+      const bInv = db.prepare(`SELECT 'BP:' || b.doc_key AS doc_num, b.doc_num AS doc_ref, b.doc_date, b.cust_code, CASE WHEN b.is_cn = 1 THEN '5' ELSE '0' END AS rectyp, b.slm_code,
+          NULL AS so_num, b.amount + b.vat_amount AS total,
+          (SELECT SUM(l.amount) FROM bplus_invoice_lines l WHERE l.doc_key = b.doc_key) AS line_value,
+          (SELECT COUNT(*) FROM bplus_invoice_lines l WHERE l.doc_key = b.doc_key) AS line_count, 'TGM' AS company
+        FROM bplus_invoices b WHERE ${bWhere} ORDER BY b.doc_date DESC, b.doc_num DESC LIMIT 3000`).all(...bp);
+      if (bInv.length) {
+        const bProd = db.prepare(`SELECT l.sku, MAX(COALESCE(s.name, p.name, l.sku)) AS sku_name, MAX(p.group_name) AS group_name, MAX(l.unit_code) AS unit,
+            SUM(l.qty) AS qty, SUM(l.amount) AS amount, COUNT(DISTINCT l.doc_key) AS invoices, COUNT(DISTINCT b.cust_code) AS custs
+          FROM bplus_invoices b JOIN bplus_invoice_lines l ON l.doc_key = b.doc_key
+          LEFT JOIN bplus_skus s ON s.code = l.sku LEFT JOIN products p ON p.code = l.sku
+          WHERE ${bWhere} AND b.is_cn = 0 GROUP BY l.sku`).all(...bp);
+        const merge = (list, extra) => {
+          const m = new Map(list.map(x => [x.sku, { ...x }]));
+          for (const x of extra) { const e = m.get(x.sku); if (e) { e.qty += x.qty; e.amount += x.amount; e.invoices += x.invoices; } else m.set(x.sku, { ...x }); }
+          return [...m.values()].sort((a, b) => b.amount - a.amount);
+        };
+        products.splice(0, products.length, ...merge(products, bProd));
+        productsChildren.splice(0, productsChildren.length, ...merge(productsChildren, bProd.map(x => ({ ...x, parent_sku: null, estimated: false }))));
+        invoices.push(...bInv);
+        invoices.sort((a, b) => String(b.doc_date).localeCompare(String(a.doc_date)) || String(b.doc_num).localeCompare(String(a.doc_num)));
+      }
+    } catch (e) { /* ยังไม่มีตาราง bplus_invoices (ก่อน migration) */ }
+
     const out = { cust: custs, from, to, coverage_from: db.prepare('SELECT MIN(doc_date) AS d FROM invoices').get()?.d || null, products, products_children: productsChildren, invoices };
     if (String(q.lines || '') === '1' || q.lines === true) {
       out.lines = db.prepare(`
@@ -111,6 +141,15 @@ function invoiceDetailRoutes(db) {
         ORDER BY i.doc_date DESC, l.doc_num DESC
         LIMIT 50000
       `).all(COMPANY, ...params);
+      // บรรทัดใบกำกับโรงงาน (Bplus) — 2026-10-12
+      try {
+        const bw = [`b.cust_code IN (${custs.map(() => '?').join(',')})`, 'b.doc_date >= ?', 'b.doc_date <= ?', "b.company = 'BP-TGM'"];
+        const bp = [...custs, from, to];
+        if (slms.length) { bw.push(`b.slm_code IN (${slms.map(() => '?').join(',')})`); bp.push(...slms); }
+        out.lines.push(...db.prepare(`SELECT 'BP:' || b.doc_key AS doc_num, b.doc_num AS doc_ref, b.doc_date, b.cust_code, l.sku, COALESCE(s.name, l.sku) AS sku_name,
+          l.qty, l.unit_code, l.amount AS line_value FROM bplus_invoices b JOIN bplus_invoice_lines l ON l.doc_key = b.doc_key
+          LEFT JOIN bplus_skus s ON s.code = l.sku WHERE ${bw.join(' AND ')} ORDER BY b.doc_date DESC LIMIT 50000`).all(...bp));
+      } catch (e) { /* ไม่มีตาราง */ }
     }
     res.json(out);
   }
@@ -148,6 +187,20 @@ function invoiceDetailRoutes(db) {
       ORDER BY CAST(l.seq_num AS INTEGER)
     `).all(doc, COMPANY);
     const head = db.prepare('SELECT doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_name, ship_to_address FROM invoices WHERE doc_num = ?').get(doc) || null;
+    if (!head && !lines.length) {
+      // ใบกำกับโรงงาน (Bplus) — 2026-10-12
+      try {
+        const key = doc.startsWith('BP:') ? doc.slice(3) : doc;
+        const bh = db.prepare(`SELECT doc_num, doc_date, cust_code, slm_code, NULL AS so_num, amount + vat_amount AS total,
+          CASE WHEN is_cn = 1 THEN '5' ELSE '0' END AS rectyp, NULL AS route_name, NULL AS ship_to_address, 'TGM' AS company FROM bplus_invoices WHERE doc_key = ?`).get(key);
+        if (bh) {
+          const bl = db.prepare(`SELECT ROW_NUMBER() OVER (ORDER BY l.rowid) AS seq_num, l.sku, COALESCE(s.name, p.name, l.sku) AS sku_name, NULL AS warehouse,
+            l.qty, l.unit_code, l.amount AS line_value, p.group_name FROM bplus_invoice_lines l LEFT JOIN bplus_skus s ON s.code = l.sku
+            LEFT JOIN products p ON p.code = l.sku WHERE l.doc_key = ?`).all(key);
+          return res.json({ head: bh, lines: bl });
+        }
+      } catch (e) { /* ไม่มีตาราง */ }
+    }
     res.json({ head, lines });
   });
 

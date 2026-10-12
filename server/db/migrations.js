@@ -566,6 +566,18 @@ function runMigrations(db) {
   addColumnIfMissing(db, 'customer_profiles', 'sales_category', 'sales_category TEXT');
   // เลขาสร้างใบเคาะแทน (2026-10-12) — created_by = เจ้าของ (Sales) · created_by_actual = ผู้กดสร้างจริง (เลขา)
   addColumnIfMissing(db, 'promo_draft_headers', 'created_by_actual', 'created_by_actual TEXT');
+  // ใบกำกับรายเอกสารจาก Bplus โรงงาน (2026-10-12) — jobs/importFromBplus.js · ใช้ใน /api/invoice_detail (Sales Overview)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bplus_invoices (
+      doc_key TEXT PRIMARY KEY, doc_num TEXT, doc_date TEXT, cust_code TEXT, slm_code TEXT, company TEXT, doc_code TEXT,
+      is_cn INTEGER NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0, vat_amount REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_bplus_invoices_cust ON bplus_invoices(cust_code, doc_date);
+    CREATE TABLE IF NOT EXISTS bplus_invoice_lines (
+      doc_key TEXT NOT NULL, sku TEXT, unit_code TEXT, qty REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_bplus_invoice_lines_doc ON bplus_invoice_lines(doc_key);
+  `);
   addColumnIfMissing(db, 'customer_profiles', 'sales_group', 'sales_group TEXT');
   addColumnIfMissing(db, 'customer_profiles', 'sales_group_by', 'sales_group_by TEXT');
   require('./customerProfilesV2').applySalesGroups20261012(db);

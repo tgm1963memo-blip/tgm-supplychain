@@ -86,7 +86,30 @@ async function fetchFromBplus() {
     const salesmen = (await pool.request().query('SELECT RTRIM(SLMN_CODE) AS code, RTRIM(SLMN_NAME) AS name FROM SALESMAN')).recordset;
     // ชื่อสินค้า (2026-10-05) — Sales Overview แท็บรายสินค้าแสดงชื่อสินค้าโรงงาน (รหัสอย่าง 20394-177 ไม่มีใน products ของ Express)
     const skus = (await pool.request().query('SELECT RTRIM(SKU_CODE) AS code, RTRIM(SKU_NAME) AS name FROM SKUMASTER')).recordset;
-    return { monthly, lines, customers, salesmen, skus };
+    // ใบกำกับรายเอกสาร (2026-10-12, ผู้ใช้ขอดูใบกำกับ/รายการสินค้าของลูกค้าโรงงานใน Sales Overview) — แยก try:
+    // query นี้ล้ม = ข้ามเฉพาะส่วนเอกสาร (docs = null) ยอดรวมด้านบนยัง sync ตามเดิม
+    let docs = null, docLines = null;
+    try {
+      docs = (await q(`
+        SELECT d.DI_KEY AS doc_key, RTRIM(d.DI_REF) AS doc_num, CONVERT(char(10), d.DI_DATE, 120) AS d, RTRIM(r.AR_CODE) AS cust_code,
+          ISNULL(RTRIM(r.AR_SLMNCODE), '') AS slmn, ${IS_IC} AS ic, RTRIM(dt.DT_DOCCODE) AS doc_code,
+          MAX(CASE WHEN ${IS_CN} THEN 1 ELSE 0 END) AS is_cn,
+          SUM(${SIGN} * (a.ARD_B_SV + a.ARD_B_SNV)) AS amount, SUM(${SIGN} * a.ARD_B_VAT) AS vat_amount
+        FROM ARDETAIL a JOIN DOCINFO d ON d.DI_KEY = a.ARD_DI JOIN DOCTYPE dt ON dt.DT_KEY = d.DI_DT JOIN ARFILE r ON r.AR_KEY = a.ARD_AR
+        WHERE ${WHERE_DOCS}
+        GROUP BY d.DI_KEY, d.DI_REF, CONVERT(char(10), d.DI_DATE, 120), r.AR_CODE, r.AR_SLMNCODE, r.AR_NAME, dt.DT_DOCCODE`)).recordset;
+      docLines = (await q(`
+        SELECT d.DI_KEY AS doc_key, RTRIM(s.SKU_CODE) AS sku, ISNULL(RTRIM(t.TRD_UTQNAME), '') AS unit,
+          SUM(t.TRD_QTY) AS qty, SUM(t.TRD_B_SELL) AS amount
+        FROM TRANSTKD t JOIN TRANSTKH h ON h.TRH_KEY = t.TRD_TRH JOIN DOCINFO d ON d.DI_KEY = h.TRH_DI JOIN DOCTYPE dt ON dt.DT_KEY = d.DI_DT
+        JOIN SKUMASTER s ON s.SKU_KEY = t.TRD_SKU
+        WHERE ${WHERE_DOCS} AND dt.DT_PROPERTIES IN (302, 307)
+        GROUP BY d.DI_KEY, s.SKU_CODE, t.TRD_UTQNAME`)).recordset;
+    } catch (e) {
+      console.warn('[importFromBplus] document-level fetch skipped:', e.message);
+      docs = null; docLines = null;
+    }
+    return { monthly, lines, customers, salesmen, skus, docs, docLines };
   } finally {
     await pool.close().catch(() => {});
   }
@@ -171,6 +194,16 @@ async function runBplusImport(db, { force = false } = {}) {
         const [company, day, cust, slm, sku, unit] = key.split('\u0001');
         insLineDaily.run(company, day, cust, slm, sku, unit, v.qty, v.qty_base, v.amount);
       }
+      // ใบกำกับรายเอกสาร (ถ้าดึงได้) — แทนที่ทั้งชุดทุกรอบ
+      if (Array.isArray(data.docs)) {
+        db.exec('DELETE FROM bplus_invoices'); db.exec('DELETE FROM bplus_invoice_lines');
+        // doc_key = DI_KEY (Bplus ใช้เลขที่ DI_REF ซ้ำข้ามประเภทเอกสาร ~500 เลข) · doc_num = เลขที่สำหรับแสดง
+        const insDoc = db.prepare(`INSERT OR REPLACE INTO bplus_invoices (doc_key, doc_num, doc_date, cust_code, slm_code, company, doc_code, is_cn, amount, vat_amount)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        const insDocLine = db.prepare('INSERT INTO bplus_invoice_lines (doc_key, sku, unit_code, qty, amount) VALUES (?, ?, ?, ?, ?)');
+        for (const r of data.docs) if (r.doc_key != null) insDoc.run(String(r.doc_key), r.doc_num || '', String(r.d).slice(0, 10), custCodeOf(r.cust_code), slmOf(r.slmn), companyOf(r.ic), r.doc_code || '', r.is_cn ? 1 : 0, Number(r.amount) || 0, Number(r.vat_amount) || 0);
+        for (const r of data.docLines || []) if (r.doc_key != null && r.sku) insDocLine.run(String(r.doc_key), r.sku, r.unit || '', Number(r.qty) || 0, Number(r.amount) || 0);
+      }
       for (const c of data.customers) upCust.run(custCodeOf(c.code), c.name || '', c.slmn || '', c.ic ? 1 : 0, c.has_export ? 1 : 0);
       // ตาราง SALESMAN ของ Bplus มีรายการที่ไม่ใช่คน (เช่น สาขาบิ๊กซี B01–B9x) — เก็บเฉพาะรหัสที่ผูกกับลูกค้าที่มียอดจริง
       const usedSlm = new Set(data.customers.map((c) => c.slmn).filter(Boolean));
@@ -188,7 +221,7 @@ async function runBplusImport(db, { force = false } = {}) {
     }
     const n = inv.size + lines.size;
     db.prepare("UPDATE sync_log SET finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), status = 'ok', rows_processed = ? WHERE id = ?").run(n, log.lastInsertRowid);
-    console.log(`[importFromBplus] ${inv.size} invoice rows, ${lines.size} line rows, ${data.customers.length} customers`);
+    console.log(`[importFromBplus] ${inv.size} invoice rows, ${lines.size} line rows, ${data.customers.length} customers, ${Array.isArray(data.docs) ? data.docs.length + ' docs' : 'docs skipped'}`);
     return n;
   } catch (e) {
     console.error('[importFromBplus] failed:', e.message);
