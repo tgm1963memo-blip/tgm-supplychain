@@ -11,8 +11,8 @@ const { buildApp } = require('../app');
 const { createSession } = require('../middleware/auth');
 const { runMigrations } = require('../db/migrations');
 
-// อีเมล CC ของเส้นทางอนุมัติใบเคาะราคา (2026-10-06)
-test('route CC: validated on save, info mail on submit (no token links), cc on final result', async t => {
+// อีเมล CC ของเส้นทางอนุมัติใบเคาะราคา (2026-10-06) · (2026-10-12) ส่ง CC ครั้งเดียวตอนคีย์เข้า Express แล้ว
+test('route CC: validated on save, info mail only when keyed to Express (no token links)', async t => {
   const db = new DatabaseSync(':memory:');
   db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
   runMigrations(db);
@@ -44,10 +44,7 @@ test('route CC: validated on save, info mail on submit (no token links), cc on f
   const route = `/promo_draft_headers?draft_no=eq.${no}`;
   assert.equal((await call(route, 'PATCH', { status: 'pending_approval' })).status, 200);
   await new Promise(r => setTimeout(r, 100));
-  const info = sent.find(m => /แจ้งเพื่อทราบ/.test(m.subject));
-  assert.ok(info, 'CC info mail sent on submit');
-  assert.equal(info.to, 'boss@tgm.co.th, s@x.co');
-  assert.ok(!/promo_approve\//.test(info.html), 'CC mail must not carry approval token links');
+  assert.ok(!sent.some(m => /แจ้งเพื่อทราบ/.test(m.subject)), 'no CC mail on submit');
   const approverMail = sent.find(m => m.to === 'm@x.co');
   assert.ok(approverMail && !approverMail.cc, 'approver token mail is not CC-ed');
 
@@ -57,6 +54,16 @@ test('route CC: validated on save, info mail on submit (no token links), cc on f
   const result = sent.find(m => /อนุมัติแล้ว/.test(m.subject));
   assert.ok(result, 'result mail sent');
   assert.equal(result.to, 's@x.co');
-  assert.deepEqual(result.cc, ['boss@tgm.co.th'], 'creator removed from cc');
-  assert.ok(!sent.some(m => /แจ้งเพื่อทราบ/.test(m.subject)), 'no repeat info mail when advancing');
+  assert.ok(!(result.cc || []).length, 'result mail goes to creator only');
+  assert.ok(!sent.some(m => /แจ้งเพื่อทราบ/.test(m.subject)), 'no CC mail on approval');
+
+  // คีย์ Express: Sales ทั่วไปกดไม่ได้ (ยังไม่ตั้งผู้มีสิทธิ์ = admin เท่านั้น) · admin กดได้ → CC ได้อีเมล
+  assert.equal((await call(route, 'PATCH', { status: 'keyed_to_express' }, 'S')).status, 400);
+  sent.length = 0;
+  assert.equal((await call(route, 'PATCH', { status: 'keyed_to_express', keyed_by: 'A' }, 'A')).status, 200);
+  await new Promise(r => setTimeout(r, 100));
+  const info = sent.find(m => /แจ้งเพื่อทราบ/.test(m.subject));
+  assert.ok(info, 'CC info mail sent when keyed');
+  assert.equal(info.to, 'boss@tgm.co.th, s@x.co');
+  assert.ok(!/promo_approve\//.test(info.html), 'CC mail must not carry approval token links');
 });

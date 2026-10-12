@@ -518,6 +518,8 @@ function buildApp(db, opts = {}) {
   //   promo_drafts — เหลือแค่ฟิลด์ราย SKU/สาขา (บรรทัดสินค้า) อ้าง draft_no กลับไปที่ header
   //   promo_draft_attachments — ไฟล์แนบ (BLOB, คัดลอกโครง custreg_attachments)
   app.use('/api/promo_draft_headers', require('./routes/promoDraftHeaders')(db, PROMO_DRAFT_ROLES));
+  // Inbox แจ้งเตือน (2026-10-12) — กระดิ่งมุมขวาบน · ดู routes/inbox.js
+  app.use('/api/inbox', authed, require('./routes/inbox')(db));
   // ราคากลางฐาน A–G (2026-10-07, ใบเสนอราคา รอบ 1) — ฝ่ายขายทุกระดับดูได้ (ใช้ออกใบเสนอราคา) แต่นำเข้า/แก้ได้
   // เฉพาะ admin/ผู้จัดการฝ่ายขาย ตามแผนที่ผู้ใช้อนุมัติ
   app.use('/api/price_tiers', require('./routes/priceTiers')(db, [...PROMO_DRAFT_ROLES, 'manager'], ['superadmin', 'admin', 'sales_manager']));
@@ -623,7 +625,7 @@ function buildApp(db, opts = {}) {
     orderBy: 'created_at',
     writeRoles: PROMO_DRAFT_ROLES,
     // บรรทัดของใบเคาะที่มองเห็นเท่านั้น (ส่งทั้งใบเสมอ ไม่ตัดบางสาขา) — ดู customerScope.visibleDraftNos
-    scope: req => { const nos = cs.visibleDraftNos(db, scopeOf(req), req.user.uid); return nos ? { sql: 'draft_no IN (SELECT value FROM json_each(?))', params: [JSON.stringify(nos)] } : null; },
+    scope: req => { const nos = cs.visibleDraftNos(db, scopeOf(req), req.user.uid, req.user); return nos ? { sql: 'draft_no IN (SELECT value FROM json_each(?))', params: [JSON.stringify(nos)] } : null; },
   }));
 
   app.use('/api/v_sc_dashboard_sales_monthly', authed, makeCrudRouter(db, 'v_sc_dashboard_sales_monthly', {

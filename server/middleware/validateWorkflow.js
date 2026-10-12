@@ -10,6 +10,8 @@ module.exports = function validateWorkflow(db) {
         // รายการเส้นทางอนุมัติใบเคาะราคา (2026-09-24) — levels_json ของแถวนี้คือรายชื่อเส้นทาง ไม่ใช่ขั้นอนุมัติ
         // ตารางรหัสเอกสาร (promo_code_map) บันทึกผ่าน PUT /promo_draft_headers/code-map เท่านั้น
         if (row.entity_type === 'promo_code_map') return res.status(400).json({ error: 'นำเข้าตารางรหัสเอกสารจากหน้าตั้งค่าเท่านั้น' });
+        // ผู้มีสิทธิ์คีย์ Express / เลขาแผนก (2026-10-12) บันทึกผ่าน PUT /promo_draft_headers/roles (admin) เท่านั้น
+        if (row.entity_type === 'promo_roles') return res.status(400).json({ error: 'ตั้งค่าผู้มีสิทธิ์คีย์ Express / เลขา จากหน้าตั้งค่าเส้นทางอนุมัติเท่านั้น' });
         if (row.entity_type === CC_ENTITY) {
           // อีเมล CC ของแต่ละเส้นทาง (2026-10-06) — levels_json เป็น object { route_id: [email] } ไม่ใช่ขั้นอนุมัติ
           const error = validateCc(levels);

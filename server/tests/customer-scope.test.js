@@ -111,11 +111,12 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   assert.equal(mix.status, 400);
   assert.match(mix.data.error, /ห้างเดียว/);
 
-  // ใบเคาะ: เห็นเมื่อมีสาขาที่มองเห็น
+  // ใบเคาะ (2026-10-12): เห็นเฉพาะของตัวเอง/ที่เกี่ยวข้อง — มีสาขาที่ตัวเองดูแลอยู่ในใบ ไม่ได้ทำให้เห็นแล้ว
   const made = await call('/promo_draft_headers', 'POST', { promo_name: 'Tops' });
   const no = made.data.draft_no;
   db.prepare("INSERT INTO promo_drafts(id,draft_no,cust_code,sku,normal_price,unit_price) VALUES('x1',?,'30-MJ-0001','A',10,9)").run(no);
-  assert.equal((await call(`/promo_draft_headers?draft_no=eq.${no}`, 'GET', undefined, 'S1')).data.length, 1);
+  assert.equal((await call(`/promo_draft_headers?draft_no=eq.${no}`, 'GET', undefined, 'S1')).data.length, 0);
+  assert.equal((await call(`/promo_draft_headers?draft_no=eq.${no}`, 'GET', undefined, 'ADM')).data.length, 1);
   assert.equal((await call(`/promo_draft_headers?draft_no=eq.${no}`, 'GET', undefined, 'S2')).data.length, 0);
   assert.equal((await call(`/promo_drafts?draft_no=eq.${no}`, 'GET', undefined, 'S2')).data.length, 0);
   assert.equal((await call(`/promo_draft_headers/${no}/logs`, 'GET', undefined, 'S2')).status, 404);

@@ -9,6 +9,7 @@ const promoMail = require('../lib/promoApprovalMail');
 const promoNo = require('../lib/promoNumber');
 const { nextPromoNoFor, nextDocNoFor, docCustCodes, ruleForCodes, loadCodeMap, docNoBase } = promoNo;
 const { logDraft, logHeaderChange } = require('../lib/promoLog');
+const promoRoles = require('../lib/promoRoles');
 
 // เอกสาร "ใบเคาะราคา" ระดับหัว (1 แถวต่อ 1 เอกสาร, draft_no เป็น PK) — ไม่ใช้ makeCrudRouter ทั่วไปเพราะ
 // ต้องคำนวณ doc_no (เลขที่เอกสารแบบรัน) แบบอะตอมมิกฝั่ง server และ derive created_by จาก session เสมอ
@@ -94,7 +95,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   router.use(requireAuth(db));
   // สิทธิ์การเห็นใบเคาะ (2026-10-06, lib/customerScope.js): ผู้สร้าง/ผู้อนุมัติ/ผู้เกี่ยวข้องการยกเลิก หรือมีสาขาที่มองเห็น
   // ผู้ที่ไม่จำกัด (admin/ผู้บริหาร/ฝ่ายแผน ฯลฯ) เห็นทั้งหมด · ใบที่มองไม่เห็น = 404 สำหรับ endpoint ราย draft_no
-  const visibleSet = req => { const nos = cs.visibleDraftNos(db, cs.resolveScope(db, req.user), req.user.uid); return nos ? new Set(nos) : null; };
+  const visibleSet = req => { const nos = cs.visibleDraftNos(db, null, req.user.uid, req.user); return nos ? new Set(nos) : null; };
   router.param('draftNo', (req, res, next, no) => {
     const vis = visibleSet(req);
     if (vis && !vis.has(no) && db.prepare('SELECT 1 FROM promo_draft_headers WHERE draft_no = ?').get(no)) return res.status(404).json({ error: 'ไม่พบเอกสาร หรือไม่มีสิทธิ์เห็นเอกสารนี้' });
@@ -169,21 +170,26 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
       const row = { ...body };
       validateChange(db, null, row, req.user);
       for (const f of JSON_FIELDS) if (row[f] !== undefined && typeof row[f] !== 'string') row[f] = JSON.stringify(row[f]);
-      const cols = ['draft_no', 'doc_no', 'created_by', ...FIELDS.filter((f) => row[f] !== undefined)];
+      // เลขาสร้างแทน (2026-10-12): _on_behalf_of = เจ้าของเอกสาร (ต้องอยู่ในแผนกที่เลขาดูแล) · created_by_actual = ผู้กดจริง
+      const behalf = body._on_behalf_of ? String(body._on_behalf_of) : '';
+      if (behalf && behalf !== req.user.uid && !promoRoles.canActFor(db, req.user, behalf)) throw Object.assign(new Error('สร้างแทนได้เฉพาะคนในแผนกที่คุณเป็นเลขา'), { status: 403 });
+      const owner = behalf || req.user.uid;
+      const cols = ['draft_no', 'doc_no', 'created_by', ...(owner !== req.user.uid ? ['created_by_actual'] : []), ...FIELDS.filter((f) => row[f] !== undefined)];
       const vals = cols.map((c) => {
         if (c === 'draft_no') return draftNo;
         if (c === 'doc_no') return docNo;
-        if (c === 'created_by') return req.user.uid; // never trust client body for this — same reasoning as audit_log
+        if (c === 'created_by') return owner; // never trust client body for this — same reasoning as audit_log (สร้างแทนตรวจสิทธิ์ด้านบนแล้ว)
+        if (c === 'created_by_actual') return req.user.uid;
         return row[c];
       });
       db.prepare(`INSERT INTO promo_draft_headers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...vals);
       const saved = parseRow(db.prepare('SELECT * FROM promo_draft_headers WHERE draft_no = ?').get(draftNo));
-      logDraft(db, draftNo, 'create', req.user, { doc_no: docNo, ...(body._copied_from ? { copied_from: String(body._copied_from).slice(0, 40) } : {}) });
+      logDraft(db, draftNo, 'create', req.user, { doc_no: docNo, ...(owner !== req.user.uid ? { on_behalf_of: owner } : {}), ...(body._copied_from ? { copied_from: String(body._copied_from).slice(0, 40) } : {}) });
       db.exec('COMMIT');
       res.status(201).json(saved);
     } catch (e) {
       if (db.isTransaction) db.exec('ROLLBACK');
-      res.status(400).json({ error: e.message });
+      res.status(e.status || 400).json({ error: e.message });
     }
   });
 
@@ -194,6 +200,9 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   const writerOrCurrentApprover = (req, res, next) => {
     if (writeRoles.includes(req.user.role)) return next();
     const deny = () => res.status(403).json({ error: 'ไม่มีสิทธิ์แก้ไขเอกสารนี้' });
+    // ผู้มีสิทธิ์คีย์ Express (2026-10-12) อาจไม่ใช่ role ฝ่ายขาย (เช่น บัญชี) — กดได้เฉพาะ "คีย์เข้า Express แล้ว" (validateChange ตรวจซ้ำ)
+    const KEY_KEYS = new Set(['status', 'keyed_by', 'keyed_at', 'updated_by']);
+    if (req.body?.status === 'keyed_to_express' && Object.keys(req.body).every(k => KEY_KEYS.has(k)) && promoRoles.isKeyer(db, req.user)) return next();
     if (Object.keys(req.body || {}).some(k => !APPROVAL_KEYS.has(k))) return deny();
     const { where, params } = buildWhere(req.query, [...FIELDS, 'draft_no', 'doc_no', 'created_by']);
     if (!where) return deny();
@@ -253,7 +262,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   router.post('/:draftNo/recall', requireRole(...writeRoles), (req, res) => {
     const t = getRaw(req.params.draftNo);
     if (!t) return res.status(404).json({ error: 'ไม่พบเอกสาร' });
-    if (t.created_by !== req.user.uid && !['admin', 'superadmin'].includes(req.user.role)) return res.status(403).json({ error: 'เรียกกลับได้เฉพาะผู้ส่งอนุมัติ' });
+    if (!promoRoles.canManageDraft(db, t, req.user)) return res.status(403).json({ error: 'เรียกกลับได้เฉพาะผู้ส่งอนุมัติ' });
     if (!['pending_approval', 'pending_exec_approval'].includes(t.status)) return res.status(400).json({ error: 'เรียกกลับได้เฉพาะเอกสารที่ยังรออนุมัติ' });
     const note = String(req.body?.note || '').trim().slice(0, 1000);
     const levels = pj(t.levels_json) || [];
@@ -282,7 +291,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
   router.post('/:draftNo/overlap_clear', (req, res) => {
     const t = getRaw(req.params.draftNo);
     if (!t) return res.status(404).json({ error: 'ไม่พบเอกสาร' });
-    if (t.created_by !== req.user.uid && !['admin', 'superadmin'].includes(req.user.role)) return res.status(403).json({ error: 'ยืนยันได้เฉพาะผู้สร้างเอกสาร (Sales)' });
+    if (!promoRoles.canManageDraft(db, t, req.user)) return res.status(403).json({ error: 'ยืนยันได้เฉพาะผู้สร้างเอกสาร (Sales)' });
     const h = holdOf(t);
     if (!h || h.cleared_at) return res.status(400).json({ error: 'เอกสารนี้ไม่ได้รอยกเลิกโปรเก่าที่ซ้อน' });
     if (!['pending_approval', 'pending_exec_approval'].includes(t.status)) return res.status(400).json({ error: 'เอกสารไม่ได้อยู่ระหว่างรออนุมัติ' });
@@ -334,6 +343,18 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     } catch (e) { if (db.isTransaction) db.exec('ROLLBACK'); res.status(400).json({ error: e.message }); }
   });
 
+  // ── บทบาทพิเศษ (2026-10-12): ผู้มีสิทธิ์คีย์ Express / เลขาแผนก — ดู lib/promoRoles.js ─────────────────
+  router.get('/roles', (req, res) => {
+    const r = promoRoles.loadPromoRoles(db);
+    res.json({ ...r, me: { is_keyer: promoRoles.isKeyer(db, req.user), secretary_of: promoRoles.secretaryDepartments(db, req.user.uid), is_admin: promoRoles.isAdmin(req.user) } });
+  });
+  router.put('/roles', requireRole('admin', 'superadmin'), (req, res) => {
+    try { res.json(promoRoles.savePromoRoles(db, req.body || {}, req.user.uid)); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  // คนที่ผู้ใช้นี้สร้างใบเคาะแทนได้ (เลขา = คนในแผนกที่ดูแล · admin = ทุกคน)
+  router.get('/act-for', (req, res) => res.json(promoRoles.membersFor(db, req.user)));
+
   // ── ยกเลิกทั้งใบ / รายสินค้า (2026-09-30) — Sales ขอ (หมายเหตุบังคับ) เลือกผู้อนุมัติเอง → manager ตัดสิน ────
   const CANCELABLE = ['pending_approval', 'pending_exec_approval', 'approved', 'keyed_to_express'];
   const CANCEL_APPROVER_ROLES = ['sales_manager', 'manager', 'admin', 'superadmin'];
@@ -345,7 +366,7 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     const t = getRaw(req.params.draftNo);
     if (!t) return res.status(404).json({ error: 'ไม่พบเอกสาร' });
     // เฉพาะเจ้าของเอกสาร (ผู้ส่งอนุมัติ) และ admin (2026-10-09, ผู้ใช้ขอ — เหมือน recall)
-    if (t.created_by !== req.user.uid && !['admin', 'superadmin'].includes(req.user.role)) return res.status(403).json({ error: 'ขอยกเลิกได้เฉพาะผู้ส่งอนุมัติ หรือ admin' });
+    if (!promoRoles.canManageDraft(db, t, req.user)) return res.status(403).json({ error: 'ขอยกเลิกได้เฉพาะผู้ส่งอนุมัติ หรือ admin' });
     if (!CANCELABLE.includes(t.status)) return res.status(400).json({ error: 'ขอยกเลิกได้เฉพาะเอกสารที่ส่งอนุมัติแล้ว (ร่าง/ไม่อนุมัติ แก้ไขหรือลบได้เลย)' });
     if (pj(t.cancel_request_json)) return res.status(400).json({ error: 'มีคำขอยกเลิกที่รออนุมัติอยู่แล้ว' });
     const body = req.body || {};

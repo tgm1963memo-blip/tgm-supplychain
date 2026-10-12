@@ -69,7 +69,15 @@ function resolveScope(db, user) {
   const hit = scopeCache.get(user.uid);
   if (hit && hit.ver === ver && Date.now() - hit.at < 60 * 1000) return hit.scope;
   const cfg = st.loadConfig(db), users = st.usersOf(db);
-  const sc = st.scopeFor(db, user.uid, cfg, users);
+  let sc = st.scopeFor(db, user.uid, cfg, users);
+  // เลขาแผนก (2026-10-12, lib/promoRoles.js): เห็นลูกค้า/ยอดของทุกคนในแผนกที่ดูแล — เพื่อเลือกสาขาให้ใบเคาะที่สร้างแทนได้
+  const roles = require('./promoRoles');
+  if (!sc.all && roles.secretaryDepartments(db, user.uid).length) {
+    const subs = roles.membersFor(db, user).map(m => st.scopeFor(db, m.uid, cfg, users));
+    sc = subs.some(x => x.all) ? { ...sc, all: true } : { ...sc,
+      codes: [...new Set([...(sc.codes || []), ...subs.flatMap(x => x.codes || [])])],
+      uids: [...new Set([...(sc.uids || [user.uid]), ...subs.flatMap(x => x.uids || [])])] };
+  }
   const me = users.find(u => u.uid === user.uid) || user;
   const salesSide = SALES_ROLES.has(me.role) || !!st.teamOfDept(cfg.teams, me.department);
   let scope;
@@ -115,7 +123,7 @@ function canSeeCust(scope, code) {
 // ใบเคาะ: เห็นเมื่อ ผู้สร้าง/ผู้คีย์ · ผู้อนุมัติ (ขั้นปัจจุบัน/ประวัติ) · ผู้อนุมัติการยกเลิก · หรือมีสาขาใดสาขาหนึ่งที่มองเห็น
 function draftParticipant(header, uid) {
   if (!header) return false;
-  if (header.created_by === uid || header.keyed_by === uid) return true;
+  if (header.created_by === uid || header.created_by_actual === uid || header.keyed_by === uid) return true;
   const levels = [...(parse(header.levels_json) || []), ...(parse(header.approval_history_json) || [])];
   if (levels.some(l => (l?.approvers || []).some(a => a.uid === uid))) return true;
   const cx = parse(header.cancel_request_json);
@@ -123,18 +131,22 @@ function draftParticipant(header, uid) {
   return (parse(header.cancel_history_json) || []).some(c => c.approver_uid === uid || c.requested_by === uid);
 }
 // draft_no ที่มองเห็นทั้งหมด (สำหรับกรองตารางลูกของใบเคาะ) — null = ทั้งหมด
-function visibleDraftNos(db, scope, uid) {
-  if (!scope || scope.all) return null;
-  const branches = new Map();
-  db.prepare('SELECT DISTINCT draft_no, cust_code FROM promo_drafts').all().forEach(r => {
-    if (!branches.has(r.draft_no)) branches.set(r.draft_no, []);
-    branches.get(r.draft_no).push(r.cust_code);
-  });
+// (2026-10-12, ผู้ใช้ขอ "เห็นเฉพาะของตัวเองหรือที่เกี่ยวข้อง"): admin/superadmin เห็นทั้งหมด · คนอื่นเห็นเมื่อ
+// ผู้สร้าง/เลขาที่สร้างแทนหรือดูแลแผนกของผู้สร้าง · ผู้อนุมัติ/ผู้เกี่ยวข้องการยกเลิก · ผู้คีย์ · ผู้มีสิทธิ์คีย์ Express เห็นใบที่อนุมัติแล้ว
+// เลิกใช้กฎ "มีสาขาที่มองเห็น" — scope ไม่ถูกใช้แล้ว (คงพารามิเตอร์ไว้ให้ผู้เรียกเดิม)
+function visibleDraftNos(db, scope, uid, user) {
+  const roles = require('./promoRoles');
+  const u = user || db.prepare('SELECT uid, role FROM sc_users WHERE uid = ?').get(uid) || { uid };
+  if (roles.isAdmin(u)) return null;
+  const keyer = roles.isKeyer(db, u);
+  const members = new Set(roles.membersFor(db, u).map(x => x.uid));
   const out = [];
   for (const h of db.prepare('SELECT * FROM promo_draft_headers').all()) {
-    let codes = branches.get(h.draft_no) || [];
-    if (!codes.length) codes = (parse(h.form_extra_json)?.branches || []).map(String);
-    if (draftParticipant(h, uid) || codes.some(c => canSeeCust(scope, c))) out.push(h.draft_no);
+    // ไม่มีเส้นทางอนุมัติ (levels ว่าง) = ผู้จัดการคนใดก็อนุมัติได้ (promoApproval) → ผู้จัดการต้องเห็นใบที่รออนุมัติแบบนี้
+    const noRoutePending = ['pending_approval', 'pending_exec_approval'].includes(h.status) && !(parse(h.levels_json) || []).length
+      && ['manager', 'sales_manager'].includes(u.role);
+    if (draftParticipant(h, uid) || (h.created_by && members.has(h.created_by)) || noRoutePending
+      || (keyer && ['approved', 'keyed_to_express'].includes(h.status))) out.push(h.draft_no);
   }
   return out;
 }

@@ -564,6 +564,8 @@ function runMigrations(db) {
   require('./customerProfilesV2').migrateCustomerProfilesV2(db);
   // กลุ่มลูกค้าฝั่ง Sales (2026-10-12) — แยกจากของผู้บริหาร (corporate/category/exec_channel)
   addColumnIfMissing(db, 'customer_profiles', 'sales_category', 'sales_category TEXT');
+  // เลขาสร้างใบเคาะแทน (2026-10-12) — created_by = เจ้าของ (Sales) · created_by_actual = ผู้กดสร้างจริง (เลขา)
+  addColumnIfMissing(db, 'promo_draft_headers', 'created_by_actual', 'created_by_actual TEXT');
   addColumnIfMissing(db, 'customer_profiles', 'sales_group', 'sales_group TEXT');
   addColumnIfMissing(db, 'customer_profiles', 'sales_group_by', 'sales_group_by TEXT');
   require('./customerProfilesV2').applySalesGroups20261012(db);

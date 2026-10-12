@@ -150,7 +150,7 @@ function validateChange(db, old, change, user) {
     change.route_id = route.entity === 'promo_draft' ? null : route.entity.slice('promo_draft@'.length);
     change.route_name = route.name;
     // แก้รายชื่อผู้อนุมัติขั้นปกติได้เฉพาะเจ้าของเอกสาร/admin — คนอื่นส่งมาก็ไม่รับ
-    if (overrides && Object.keys(overrides).length && old.created_by !== user.uid && !['admin', 'superadmin'].includes(user.role)) throw new Error('แก้ผู้อนุมัติได้เฉพาะผู้ส่ง (เจ้าของเอกสาร) หรือ admin');
+    if (overrides && Object.keys(overrides).length && !require('./promoRoles').canManageDraft(db, old, user)) throw new Error('แก้ผู้อนุมัติได้เฉพาะผู้ส่ง (เจ้าของเอกสาร) เลขาของแผนก หรือ admin');
     const levels = template(db, route.entity, true, picks, overrides, old.created_by || null);
     // เส้นทางเพิ่มเติมต้องมีขั้นอนุมัติ — ถ้าว่างจะตกไปกรณี "ไม่มี route" ที่ผู้จัดการคนใดก็อนุมัติเองได้ (ข้ามผู้อนุมัติ)
     if (route.entity !== 'promo_draft' && !levels.length) throw new Error(`เส้นทาง "${route.name}" ยังไม่ได้ตั้งขั้นอนุมัติ กรุณาเลือกเส้นทางอื่นหรือให้แอดมินตั้งค่า`);
@@ -238,6 +238,8 @@ function validateChange(db, old, change, user) {
     } else change.status = 'approved';
     return;
   }
+  // คีย์เข้า Express แล้ว (2026-10-12): เฉพาะผู้มีสิทธิ์ที่ตั้งไว้ (lib/promoRoles.js) และจากสถานะอนุมัติแล้วเท่านั้น
+  if (status === 'keyed_to_express' && status !== old.status && !require('./promoRoles').isKeyer(db, user)) throw new Error('คุณไม่มีสิทธิ์กด "คีย์เข้า Express แล้ว" — ติดต่อ admin เพื่อเพิ่มสิทธิ์');
   if (status && status !== old.status && !(old.status === 'approved' && status === 'keyed_to_express') && !(old.status === 'rejected' && status === 'draft')) throw new Error('ไม่สามารถเปลี่ยนสถานะข้ามขั้นอนุมัติ');
   if (['levels_json', 'current_level', 'approvers_json'].some(k => change[k] !== undefined)) throw new Error('ไม่สามารถแก้ข้อมูลขั้นอนุมัติโดยตรง');
 }

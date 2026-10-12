@@ -160,8 +160,10 @@ async function notifyCurrentApprovers(db, header, baseUrl) {
 
 async function notifyCreator(db, header, outcome, byUid, comment) {
   const creator = db.prepare('SELECT email FROM sc_users WHERE uid = ?').get(header.created_by);
-  // CC ของเส้นทาง (2026-10-06) — ผู้จัดทำไม่มีอีเมล ยังส่งถึง CC (ใส่เป็น to) · ตัดอีเมลผู้จัดทำออกจาก cc กันได้ซ้ำ
-  const cc = ccEmailsOf(db, header.route_id).filter(x => x.toLowerCase() !== String(creator?.email || '').toLowerCase());
+  // (2026-10-12, ผู้ใช้ขอ) CC ของเส้นทางได้อีเมลครั้งเดียวตอน "คีย์เข้า Express แล้ว" (notifyCcKeyed) — ผลอนุมัติส่งเฉพาะผู้จัดทำ
+  // เลขาที่สร้างแทนได้สำเนาด้วย
+  const actual = header.created_by_actual && header.created_by_actual !== header.created_by ? emailOf(db, header.created_by_actual) : '';
+  const cc = actual && actual.toLowerCase() !== String(creator?.email || '').toLowerCase() ? [actual] : [];
   if (!creator?.email && !cc.length) return { sent: false, reason: 'NO_EMAIL' };
   const byName = byUid ? (db.prepare('SELECT name FROM sc_users WHERE uid = ?').get(byUid)?.name || byUid) : '';
   const mail = renderResultEmail({ header, sum: docSummary(db, header), outcome, byName, comment,
@@ -177,23 +179,24 @@ async function notifyOverlapHold(db, header, hold) {
     [['เอกสาร', header.doc_no || header.draft_no], ...rows, ['ขั้นตอน', 'ยกเลิกโปรเก่าให้เรียบร้อย แล้วกด "ยืนยันยกเลิกครบ" ในใบเคาะ']], openUrlOf(header)) });
 }
 
-// แจ้ง CC ของเส้นทางเมื่อส่งอนุมัติ (2026-10-06) — อีเมลแจ้งเพื่อทราบ ไม่มีลิงก์อนุมัติ/ไม่อนุมัติ
-// (ลิงก์ token ผูกกับผู้อนุมัติแต่ละคน ส่งต่อให้ CC ไม่ได้ ไม่งั้นผู้รับ CC กดอนุมัติแทนได้)
-async function notifyCcSubmitted(db, header) {
+// แจ้ง CC ของเส้นทาง — (2026-10-12, ผู้ใช้ขอ) ส่งครั้งเดียวตอน "คีย์เข้า Express แล้ว" แทนตอนส่งอนุมัติ/ผลอนุมัติ
+// อีเมลแจ้งเพื่อทราบ ไม่มีลิงก์อนุมัติ (ลิงก์ token ผูกกับผู้อนุมัติแต่ละคน ส่งต่อให้ CC ไม่ได้)
+async function notifyCcKeyed(db, header) {
   const cc = ccEmailsOf(db, header.route_id);
   if (!cc.length) return { sent: false, reason: 'NO_CC' };
   const sum = docSummary(db, header);
-  const levels = parse(header.levels_json);
+  const levels = [...parse(header.approval_history_json), ...parse(header.levels_json)];
   const openUrl = openUrlOf(header);
-  const subject = `[แจ้งเพื่อทราบ] ส่งอนุมัติใบเคาะราคา ${header.doc_no || header.draft_no} — ${header.promo_name || ''}`.trim();
-  const html = shell(`<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#111">แจ้งเพื่อทราบ — มีใบเคาะราคาส่งเข้าขั้นอนุมัติ${header.route_name ? ` (เส้นทาง <b>${e(header.route_name)}</b>)` : ''}</p>
+  const keyer = header.keyed_by ? (db.prepare('SELECT name FROM sc_users WHERE uid = ?').get(header.keyed_by)?.name || header.keyed_by) : '';
+  const subject = `[แจ้งเพื่อทราบ] คีย์เข้า Express แล้ว — ${header.promo_no || header.doc_no || header.draft_no} ${header.promo_name || ''}`.trim();
+  const html = shell(`<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#111">แจ้งเพื่อทราบ — ใบเคาะราคาอนุมัติครบและคีย์เข้า Express แล้ว${keyer ? ` โดย <b>${e(keyer)}</b>` : ''}${header.route_name ? ` (เส้นทาง <b>${e(header.route_name)}</b>)` : ''}</p>
     ${summaryBlockHtml(header, sum, '')}
     ${itemsTableHtml(sum.items)}
     ${levels.length ? `<div style="font-size:13px;margin:8px 0"><b>ลำดับการอนุมัติ:</b> ${levels.map((lv, i) => `${i + 1}. ${e(lv.label || 'ขั้นที่ ' + (i + 1))} (${(lv.approvers || []).map(a => e(a.name || a.uid)).join(', ')})`).join(' → ')}</div>` : ''}
     <div style="text-align:center;margin:18px 0 4px">
       <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">🔎 เปิดดูในระบบ</a>
     </div>
-    <p style="margin:6px 0 0;font-size:11.5px;color:#6B7280;text-align:center">ท่านได้รับอีเมลนี้ในฐานะผู้รับสำเนา (CC) ของเส้นทางอนุมัติ — จะได้รับแจ้งอีกครั้งเมื่ออนุมัติครบหรือไม่อนุมัติ</p>`);
+    <p style="margin:6px 0 0;font-size:11.5px;color:#6B7280;text-align:center">ท่านได้รับอีเมลนี้ในฐานะผู้รับสำเนา (CC) ของเส้นทางอนุมัติ</p>`);
   return sendMail({ to: cc.join(', '), subject, html, text: `${subject}
 เปิดในระบบ: ${openUrl}` });
 }
@@ -208,7 +211,7 @@ async function afterChange(db, before, after, baseUrl) {
   // พักรอ Sales ยกเลิกโปรเก่าที่ซ้อน (2026-10-06) — ยังไม่แจ้งผู้อนุมัติลำดับถัดไป แจ้งผู้จัดทำแทน
   if (holdNow && !holdBefore) { await notifyOverlapHold(db, after, holdNow); return; }
   if (pending.includes(after.status) && levelChanged) await notifyCurrentApprovers(db, after, baseUrl);
-  if (after.status === 'pending_approval' && !pending.includes(before.status)) await notifyCcSubmitted(db, after);
+  if (after.status === 'keyed_to_express' && before.status !== 'keyed_to_express') await notifyCcKeyed(db, after);
   if (before.status !== after.status && (after.status === 'approved' || after.status === 'rejected')) {
     const acted = [...parse(after.approval_history_json), ...parse(after.levels_json)].flatMap(l => l.approvers || [])
       .filter(a => a.ts).sort((x, y) => String(y.ts).localeCompare(String(x.ts)))[0];
@@ -262,4 +265,4 @@ async function notifyRecall(db, header, uids, byName, note) {
   return out;
 }
 
-module.exports = { notifyCcSubmitted, notifyCancelRequest, notifyCancelDecision, notifyRecall, afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };
+module.exports = { notifyCcKeyed, notifyCancelRequest, notifyCancelDecision, notifyRecall, afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };
