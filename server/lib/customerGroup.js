@@ -25,7 +25,10 @@ const ALIASES = [
 ];
 
 function groupNameOf({ corporate = '', name = '', code = '' } = {}) {
-  let n = String(corporate || '').trim() || String(name || '').trim();
+  // (2026-10-12) ชื่อเดียวกันที่พิมพ์ต่างกันนิดหน่อยใน Bplus/Express ต้องรวมเป็นแถวเดียว — ยุบวรรคซ้ำ/nbsp
+  // และตัดวรรคหลังคำนำหน้า เช่น "นายสมนึก␣␣นำศรีเจริญสุข" = "นายสมนึก นำศรีเจริญสุข", "คุณ ฐิตติทนันต์" = "คุณฐิตติทนันต์"
+  const tidy = v => String(v || '').replace(/[\s ]+/g, ' ').trim().replace(/^(คุณ|นางสาว|นาง|นาย|น\.ส\.)\s+/, '$1');
+  let n = tidy(corporate) || tidy(name);
   if (!n) return code || '(ไม่ระบุ)';
   for (const re of STRIP_SUFFIXES) n = n.replace(re, '').trim();
   for (const [re, target] of ALIASES) if (re.test(n)) return target;
