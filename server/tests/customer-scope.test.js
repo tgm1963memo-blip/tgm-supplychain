@@ -78,6 +78,14 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   assert.equal((await dx('ADM')).data.kpi.ty_net, 700);
   assert.equal((await call('/dashboard/exec?from=2026-01&to=2026-01&co=tss&slm=555', 'GET', undefined, 'S1')).data.kpi.ty_net, 0, 'ปลอม slm=555');
 
+  // Top 20 สินค้า (2026-10-12): กรองตามสิทธิ์เหมือนส่วนอื่นของ Dashboard
+  db.prepare("INSERT INTO sales_lines_monthly(company,ym,cust_code,slm_code,sku,qty,amount) VALUES('TSS','2026-01','10-AA-0001','207','SKU-MINE',2,90),('TSS','2026-01','10-BB-0001','211','SKU-OTHER',1,500),('TSS-68','2025-01','10-AA-0001','207','SKU-MINE',1,60)").run();
+  const dxp = uid => call('/dashboard/exec?from=2026-01&to=2026-01&co=tss&makro_in_mall=1', 'GET', undefined, uid); // คนละ key กับแคชด้านบน
+  const tpS1 = (await dxp('S1')).data.top_products;
+  assert.deepEqual(tpS1.by_amount.map(x => x.sku), ['SKU-MINE']);
+  assert.equal(tpS1.by_amount[0].ly_amount, 60);
+  assert.deepEqual((await dxp('ADM')).data.top_products.by_amount.map(x => x.sku), ['SKU-OTHER', 'SKU-MINE']);
+
   // ยอดขายโรงงาน Bplus รายบรรทัด (2026-10-12, security review) — กรองตามสิทธิ์ + ส่งชื่อเฉพาะรหัสที่เห็น
   db.prepare("INSERT INTO sales_lines_monthly(company,ym,cust_code,slm_code,sku,qty,amount) VALUES('BP-TGM','2026-01','10-AA-0001','207','X',1,50),('BP-TGM','2026-01','50-ZZ-0001','BP-9','X',1,70)").run();
   db.prepare("INSERT INTO bplus_customers(code,name) VALUES('10-AA-0001','A'),('50-ZZ-0001','Z')").run();

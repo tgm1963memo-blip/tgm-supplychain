@@ -562,6 +562,11 @@ function runMigrations(db) {
   addColumnIfMissing(db, 'customer_profiles', 'business_type_source', 'business_type_source TEXT');
   // ตัด FK customers ออก (ลูกค้า Bplus บันทึกกลุ่มได้) + จัดกลุ่มลูกค้าที่ยังไม่ระบุ + เดาประเภทธุรกิจครั้งแรก
   require('./customerProfilesV2').migrateCustomerProfilesV2(db);
+  // กลุ่มลูกค้าฝั่ง Sales (2026-10-12) — แยกจากของผู้บริหาร (corporate/category/exec_channel)
+  addColumnIfMissing(db, 'customer_profiles', 'sales_category', 'sales_category TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'sales_group', 'sales_group TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'sales_group_by', 'sales_group_by TEXT');
+  require('./customerProfilesV2').applySalesGroups20261012(db);
 
   // ใบเสนอราคา รอบ 1 (2026-10-07) — ราคากลางฐาน A–G + ประวัติการแก้ (คำอธิบายเต็มดู schema.sql)
   db.exec(`

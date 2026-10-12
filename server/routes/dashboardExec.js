@@ -284,6 +284,58 @@ module.exports = function dashboardExecRoutes(db) {
     return out;
   }
 
+  // ยอดรายสินค้า (2026-10-12, ผู้ใช้ขอ Top 20 สินค้าขายดี) — จาก sales_lines (STCRD/Bplus รายบรรทัด) ตัวกรองชุดเดียวกับ /exec
+  // (บริษัท, ช่วงวันที่, Sales/สิทธิ์) ไม่นับบริษัทในเครือ/พนักงาน · KG = หน่วยกก. หรือ qty_base × น้ำหนัก WMS
+  // คืน Map(sku → { amount, qty, kg, kgKnown(ยอดที่คำนวณ KG ได้) })
+  function perProduct(from, to, slmCodes, withConsi) {
+    const { src, raw } = companyFilter(Number(from.slice(0, 4)));
+    const cos = withConsi ? raw : raw.filter((c) => src[c] !== 'CONSI');
+    const weights = loadWeights();
+    const skip = JSON.stringify([...reqNonSales.ic, ...reqNonSales.staff]);
+    const out = new Map();
+    if (!cos.length) return out;
+    const rows = parts(from, to, cos).flatMap((p) => db.prepare(`SELECT sku, unit_code, SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
+      FROM ${p.t.lines}
+      WHERE company IN (${inList(p.cos.length)}) AND ${p.t.col} >= ? AND ${p.t.col} <= ?
+        AND cust_code NOT IN (SELECT value FROM json_each(?))
+      ${slmCodes.sql}
+      GROUP BY sku, unit_code`).all(...p.cos, p.lo, p.hi, skip, ...slmCodes.params));
+    for (const r of rows) {
+      if (!r.sku) continue;
+      const cur = out.get(r.sku) || { amount: 0, qty: 0, kg: 0, kgAmt: 0 };
+      const amt = Number(r.amount) || 0;
+      cur.amount += amt;
+      cur.qty += Number(r.qty) || 0;
+      let kg = null;
+      if (KG_UNIT_RE.test(r.unit_code || '')) kg = Number(r.qty) || 0;
+      else if (weights.has(r.sku)) kg = (Number(r.qty_base) || 0) * weights.get(r.sku);
+      if (kg != null) { cur.kg += kg; cur.kgAmt += Math.abs(amt); }
+      out.set(r.sku, cur);
+    }
+    return out;
+  }
+  function topProducts(from, to, lyFrom, lyTo, slmCodes, withConsi) {
+    const ty = perProduct(from, to, slmCodes, withConsi);
+    const ly = perProduct(lyFrom, lyTo, slmCodes, withConsi);
+    const totals = { amount: 0, kg: 0 };
+    for (const v of ty.values()) { totals.amount += v.amount; totals.kg += v.kg; }
+    const names = db.prepare(`SELECT p.name AS p_name, p.group_name AS g, s.name AS s_name FROM (SELECT ? AS code) x
+      LEFT JOIN products p ON p.code = x.code LEFT JOIN bplus_skus s ON s.code = x.code`);
+    const shape = ([sku, v]) => {
+      const n = names.get(sku) || {};
+      const l = ly.get(sku);
+      return { sku, name: n.s_name || n.p_name || sku, group: n.g || '', amount: v.amount, qty: v.qty, kg: v.kg,
+        kg_coverage: Math.abs(v.amount) > 0 ? v.kgAmt / Math.abs(v.amount) : null,
+        ly_amount: l ? l.amount : 0, ly_kg: l ? l.kg : 0 };
+    };
+    const list = [...ty.entries()].filter(([, v]) => v.amount > 0);
+    return {
+      totals,
+      by_amount: [...list].sort((a, b) => b[1].amount - a[1].amount).slice(0, 20).map(shape),
+      by_kg: [...list].filter(([, v]) => v.kg > 0).sort((a, b) => b[1].kg - a[1].kg).slice(0, 20).map(shape),
+    };
+  }
+
   // GET /api/dashboard/exec?from=YYYY-MM&to=YYYY-MM&slm=101,110-1&consi=1&makro_in_mall=0
   // แคชผลลัพธ์ /exec (2026-10-09, ผู้ใช้ขอให้ระบบเร็วขึ้น — วัดจริง 0.6–1.5 วิ/ครั้ง) — ดู lib/responseCache.js
   router.get('/exec', cacheJson(db));
@@ -415,6 +467,7 @@ module.exports = function dashboardExecRoutes(db) {
         kpi,
         channels: EXEC_CHANNELS.map((c) => ({ key: c.key, label: c.label, ...channelAgg[c.key] })),
         top: { all: top.all.map(shape), mall: top.mall.map(shape), shop: top.shop.map(shape) },
+        top_products: topProducts(from, to, lyFrom, lyTo, slmCodes, withConsi),
         top_excluded: offTop.map((g) => ({ name: g.name, channel: g.channel, ty: g.ty_net + (withConsi ? g.ty_consi : 0) }))
           .filter((x) => Math.abs(x.ty) > 0.5).sort((a, b) => b.ty - a.ty),
         last_ym: freshness?.last_ym || null,

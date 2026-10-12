@@ -90,4 +90,39 @@ function migrateCustomerProfilesV2(db) {
   }
 }
 
-module.exports = { migrateCustomerProfilesV2 };
+// กลุ่มลูกค้าฝั่ง Sales (2026-10-12, ผู้ใช้ขอ) — แยกจาก corporate/category/exec_channel (ของผู้บริหาร)
+// ข้อมูลตั้งต้นจากไฟล์ Group ของเซลล์ 9 คน (scripts/build-sales-groups.py → data/sales-groups-20261012.json)
+// เขียนเฉพาะช่องที่ยังว่าง ไม่ทับที่คนแก้ไว้ · รันครั้งเดียว
+function applySalesGroups20261012(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const id = '20261012_sales_groups_v1';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const file = path.join(__dirname, 'data', 'sales-groups-20261012.json');
+  if (!fs.existsSync(file)) return;
+  const items = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
+  const upsert = db.prepare(`INSERT INTO customer_profiles (code, name, sales_category, sales_group, sales_group_by, edited_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'sales-groups-2026-10-12', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET
+      sales_category = COALESCE(NULLIF(TRIM(customer_profiles.sales_category), ''), excluded.sales_category),
+      sales_group = COALESCE(NULLIF(TRIM(customer_profiles.sales_group), ''), excluded.sales_group),
+      sales_group_by = COALESCE(NULLIF(TRIM(customer_profiles.sales_group_by), ''), excluded.sales_group_by),
+      name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name),
+      updated_at = excluded.updated_at`);
+  let n = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const it of items) {
+      const nm = nameOf.get(it.code, it.code);
+      n += upsert.run(it.code, nm.c ? null : (nm.b || null), it.sales_category || null, it.sales_group || null, it.by || null).changes;
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] sales groups 2026-10-12: ${n}/${items.length} customers`);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012 };

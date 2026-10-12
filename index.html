@@ -1342,6 +1342,8 @@ const SB = {
     if (profile.exec_channel_source !== undefined) payload.exec_channel_source = profile.exec_channel_source || null;
     if (profile.business_type !== undefined) payload.business_type = profile.business_type || null;
     if (profile.business_type_source !== undefined) payload.business_type_source = profile.business_type_source || null;
+    // กลุ่มลูกค้าฝั่ง Sales (2026-10-12) — ส่งเฉพาะเมื่อมีค่า ไม่ทับด้วย null ตอนบันทึกช่องอื่น
+    for (const k of ['sales_category', 'sales_group', 'sales_group_by']) if (profile[k] !== undefined) payload[k] = profile[k] || null;
     try {
       const { error } = await getSupabaseClient()
         .from('customer_profiles')
@@ -1369,6 +1371,7 @@ const SB = {
       ...(p.corp_confirmed !== undefined ? { corp_confirmed: p.corp_confirmed } : {}),
       ...(p.corp_confirmed_by !== undefined ? { corp_confirmed_by: p.corp_confirmed_by } : {}),
       ...(p.corp_confirmed_at !== undefined ? { corp_confirmed_at: p.corp_confirmed_at } : {}),
+      ...Object.fromEntries(['sales_category', 'sales_group', 'sales_group_by'].filter(k => p[k] !== undefined).map(k => [k, p[k] || null])),
     })).filter(r => r.code);
     if (!rows.length) return { ok: false, savedCount: 0, failedCount: 0, failedSamples: [] };
     // FIXED (2026-09-16): used to `if (error) throw error`, which — combined with the old crud.js
@@ -6575,7 +6578,7 @@ async function dxSet(k,v){
   else if(k==='mode'||k==='year'||k==='month'||k==='q') s[k]=(k==='mode')?v:Number(v);
   else if(k==='consi'||k==='makro'){s[k]=!!v;_dxSavePrefs();}
   else if(k==='co'){s.co=['tss','tgm'].includes(v)?v:'all';_dxSavePrefs();}
-  else if(k==='by'||k==='top'){s[k]=v;if(k==='by')_dxSavePrefs();dashExecRender();return;}
+  else if(k==='by'||k==='top'||k==='pm'){s[k]=v;if(k==='by')_dxSavePrefs();dashExecRender();return;}
   // ไม่ให้เลือกเดือน/ไตรมาสที่ยังไม่ถึงของปีปัจจุบัน
   const n=new Date();
   if(s.year>=n.getFullYear()){s.year=n.getFullYear();s.month=Math.min(s.month,n.getMonth()+1);s.q=Math.min(s.q,Math.floor(n.getMonth()/3)+1);}
@@ -6936,6 +6939,35 @@ function _dxTop(d){
     <div class="dx-foot">รวมลูกค้าตามเครือ (Makro TSS + TGM เป็นแถวเดียว, หลายสาขาเป็นแถวเดียว) · KG = จำนวนขาย × น้ำหนักต่อหน่วยจาก tgm-wms ไม่หักใบรับคืน${cov?` · <span class="dx-warn">⚠</span> ${cov} รายการคำนวณน้ำหนักได้ไม่ถึง 90% ของยอด (สินค้าบางตัวยังไม่มีน้ำหนักใน WMS)`:''}${d.kg_synced_at?` · KG อัปเดต ${new Date(d.kg_synced_at).toLocaleString('th-TH')}`:''}</div>
   </div>`;
 }
+// Top 20 สินค้าขายดี (2026-10-12, ผู้ใช้ขอ ตาม mockup) — server: dashboardExec.js topProducts · ตัวกรองเดียวกับทั้งหน้า
+// สลับ บาท / KG (s.pm) · % ของรวม = เทียบยอดรวมทุกสินค้าในช่วงเดียวกัน · เทียบปีก่อนช่วงเดียวกัน
+function _dxTopProd(d){
+  const tp=d.top_products;if(!tp)return '';
+  const s=_dxState(),r=_dxRange(),kg=s.pm==='kg';
+  const rows=(kg?tp.by_kg:tp.by_amount)||[];
+  const val=x=>kg?x.kg:x.amount, lyv=x=>kg?x.ly_kg:x.ly_amount;
+  const grand=(kg?tp.totals.kg:tp.totals.amount)||1, mx=Math.max(...rows.map(val),1);
+  const seg=[['amt','บาท'],['kg','KG']].map(([k,l])=>`<button type="button" class="${(kg?'kg':'amt')===k?'on':''}" aria-pressed="${(kg?'kg':'amt')===k}" onclick="dxSet('pm','${k}')">${l}</button>`).join('');
+  const body=rows.map((x,i)=>{
+    const ly=lyv(x),g=ly>0?_dxPill(_dxPct(val(x),ly)):'<span class="mut" title="ไม่มียอดช่วงเดียวกันปีก่อน">— ใหม่</span>';
+    return `<tr><td><span class="dx-rk${i<3?' g':''}">${i+1}</span></td><td><div class="dx-cust"><b title="${esc(x.sku+' '+x.name)}"><span class="mono" style="font-weight:500">${esc(x.sku)}</span> ${esc(x.name)}</b>${x.group?`<span>${esc(x.group)}</span>`:''}</div></td>
+      <td class="dx-n"><b>${_dxB(val(x))}</b></td><td class="dx-n mut">${kg?_dxB(x.amount):_dxB(x.kg)}</td>
+      <td class="dx-n"><div class="dx-share"><span>${(val(x)/grand*100).toFixed(1)}%</span><div class="bar"><span style="width:${val(x)/mx*100}%"></span></div></div></td>
+      <td class="dx-n dx-sep">${g}</td></tr>`;}).join('');
+  const sum=rows.reduce((a,x)=>a+val(x),0),sumLy=rows.reduce((a,x)=>a+lyv(x),0);
+  return `<div class="dx-card"><div class="dx-ch"><div><div class="t">Top 20 สินค้าขายดี</div><div class="s">เรียงตาม${kg?'น้ำหนัก (KG)':'ยอดขาย (บาท)'} · ${s.consi?'ขายจริง + ฝากขาย':'ขายจริง (Net)'} · ${_dxLabel(r)} เทียบ ${_dxLabel(r,-1)}</div></div>
+      <div class="r"><div class="dx-seg" role="group" aria-label="หน่วย">${seg}</div><button class="dx-btn" type="button" onclick="dxExportTopProd()">⬇ Excel</button></div></div>
+    ${rows.length?`<div class="dx-tw"><table class="dx-t"><thead><tr><th style="width:36px"></th><th>สินค้า</th><th class="dx-n">${kg?'KG':'บาท'}</th><th class="dx-n">${kg?'บาท':'KG'}</th><th class="dx-n">สัดส่วน</th><th class="dx-n dx-sep">เทียบปีก่อน</th></tr></thead>
+      <tbody>${body}<tr class="tot"><td></td><td>รวม Top ${rows.length}</td><td class="dx-n">${_dxB(sum)}</td><td></td><td class="dx-n">${(sum/grand*100).toFixed(1)}%</td><td class="dx-n dx-sep">${_dxPill(_dxPct(sum,sumLy))}</td></tr></tbody></table></div>`:'<div class="dx-empty">ไม่มีข้อมูลในช่วงนี้</div>'}
+    <div class="dx-foot">จากรายการขายรายสินค้า (ใบกำกับ Express + Bplus โรงงาน) ไม่นับบริษัทในเครือ/พนักงาน · ยอดรวมอาจต่างจาก KPI เล็กน้อยเพราะ KPI ใช้ยอดหัวใบกำกับ · KG = จำนวน × น้ำหนักต่อหน่วยจาก tgm-wms (สินค้าที่ไม่มีน้ำหนักไม่อยู่ในอันดับ KG)</div>
+  </div>`;
+}
+async function dxExportTopProd(){
+  const d=window._dxData;if(!d||!d.top_products)return;
+  const r=_dxRange(),yy=r.y+543,lyy=r.y+542,R=x=>Math.round(x||0);
+  const sheet=(name,list)=>[name,['#','รหัสสินค้า','ชื่อสินค้า','กลุ่มสินค้า',`${yy} บาท`,`${yy} KG`,`${yy} จำนวน`,`${lyy} บาท`,`${lyy} KG`],list.map((x,i)=>[i+1,x.sku,x.name,x.group,R(x.amount),R(x.kg),R(x.qty),R(x.ly_amount),R(x.ly_kg)])];
+  await toXLSX([sheet('Top20 ตามบาท',d.top_products.by_amount||[]),sheet('Top20 ตาม KG',d.top_products.by_kg||[])],`Top20_สินค้า_${r.from}_${r.to}.xlsx`);
+}
 async function dxExportTop(){
   const d=window._dxData;if(!d)return;
   const s=_dxState(),r=_dxRange(),yy=r.y+543,lyy=r.y+542;
@@ -6959,7 +6991,7 @@ function dashExecRender(){
   }
   const d=window._dxData,r=_dxRange();
   let html=_dxHead();
-  if(d&&d.from===r.from&&d.to===r.to&&(d.co||'all')===(_dxState().co||'all')) html+=_dxKpis(d)+_dxMonthly(d)+_dxChannels(d)+_dxTop(d);
+  if(d&&d.from===r.from&&d.to===r.to&&(d.co||'all')===(_dxState().co||'all')) html+=_dxKpis(d)+_dxMonthly(d)+_dxChannels(d)+_dxTop(d)+_dxTopProd(d);
   else if(window._dxErr&&!window._dxLoading) html+=`<div class="al ald">โหลดข้อมูล Dashboard ไม่สำเร็จ: ${esc(window._dxErr)} <button class="btn btn-sm" onclick="dxSet('mode',_dxState().mode)">ลองใหม่</button></div>`;
   else html+=`<div class="dx-card dx-empty">กำลังโหลดยอดขาย ${_dxLabel(r)}…</div>`;
   box.innerHTML=html;
@@ -7420,7 +7452,7 @@ const SD_CUSTS=[];
 const SD_PRODS=[];
 const SD_SALES=[];
 const SD_VS=[];
-let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'prod',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false};
+let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'prod',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false,groupBy:(()=>{try{const v=localStorage.getItem('sd_group_by');return ['corp','scat','sgrp'].includes(v)?v:'corp';}catch(e){return 'corp';}})()};
 let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[],yoy:null,yoyLoading:false,invoiceBased:false,_rows:[],_buildCache:{},_buildCacheKey:''};
 let _sdLoadSeq=0;
 const _SD_CACHE_TTL=5*60*1000;
@@ -9145,6 +9177,54 @@ async function sdInvToggleLines(doc,i){
     (lines.length?`<table style="font-size:12px"><thead><tr><th>#</th><th>รหัส</th><th>สินค้า</th><th class="r">จำนวน</th><th class="r">มูลค่า</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.seq_num)}</td><td class="mono">${esc(l.sku)}</td><td>${esc(l.sku_name||'')}</td><td class="r">${(Number(l.qty)||0).toLocaleString()} ${esc(l.unit_code||'')}</td><td class="r">${_sdF(l.line_value)}</td></tr>`).join('')}</tbody></table>`
     :'<div style="padding:6px;color:var(--TX3);font-size:12px">ไม่มีบรรทัดสินค้า (เช่น ใบลดหนี้)</div>');
 }
+// ── จัดกลุ่มลูกค้าตามฝั่ง Sales + Top 10 สินค้า (2026-10-12, ผู้ใช้ขอ ตาม mockup) ─────────────────────
+// groupBy: 'corp' = กลุ่มเดิม (Corporate) · 'scat' = Category (Sales) · 'sgrp' = กลุ่ม (Sales) จาก customer_profiles
+const SD_GROUP_BY=[['corp','กลุ่มเดิม (ผู้บริหาร)'],['scat','Category (Sales)'],['sgrp','กลุ่ม (Sales)']];
+function sdSetGroupBy(v){_sd.groupBy=v;_sd.op={};try{localStorage.setItem('sd_group_by',v);}catch(e){}sdRender();}
+function _sdRegroup(custs,mode){
+  if(mode!=='scat'&&mode!=='sgrp')return custs;
+  const profs=customerProfiles(),field=mode==='scat'?'sales_category':'sales_group',none=mode==='scat'?'ยังไม่ระบุ Category':'ไม่มีกลุ่ม';
+  const m=new Map();
+  custs.forEach(c=>(c.branches||[]).forEach(b=>{
+    const key=String(profs[b.c]?.[field]||'').trim()||none;
+    if(!m.has(key))m.set(key,{n:key,grp:'s:'+mode+':'+key,corp:key,ty:'',_tot:0,_x:{sb:0,sg:0,cb:0,cg:0},branches:[],_slms:new Set(),_regrouped:true,_none:key===none});
+    const g=m.get(key);g._tot+=b._tot||0;
+    if(b._x)for(const k of ['sb','sg','cb','cg'])g._x[k]+=b._x[k]||0;
+    g.branches.push(b);(c._slms||[]).forEach(x=>g._slms.add(x));
+  }));
+  return [...m.values()].map(g=>{g.branches.sort((a,b)=>(b._tot||0)-(a._tot||0));g.c=g.branches.length>1?`${g.branches.length} ราย`:(g.branches[0]?.c||'');return g;})
+    .sort((a,b)=>(a._none-b._none)||(b._tot-a._tot));
+}
+function _sdGroupByBar(){
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px"><span style="font-size:12px;color:var(--TX2)">จัดกลุ่มตาม</span>
+    <div style="display:inline-flex;border:1px solid var(--BD);border-radius:8px;overflow:hidden">${SD_GROUP_BY.map(([k,l])=>`<button type="button" class="btn btn-xs" style="border:0;border-radius:0;${_sd.groupBy===k?'background:var(--N);color:#fff':''}" aria-pressed="${_sd.groupBy===k}" onclick="sdSetGroupBy('${k}')">${l}</button>`).join('')}</div>
+    ${_sd.groupBy!=='corp'?'<span style="font-size:11px;color:var(--TX3)">ตั้งค่าได้ที่ จัดการกลุ่ม › กลุ่มลูกค้า · เทียบปีก่อนรายกลุ่มแสดงเฉพาะกลุ่มเดิม</span>':''}</div>`;
+}
+// กล่อง Top 10 สินค้าขายดีของกลุ่ม/ลูกค้าที่เปิดดู — โหมดใบกำกับใช้ /api/invoice_detail (เรียงตามยอดแล้ว) · โหมดเดิมรวมจาก branches[].g[].it[]
+function _sdTop10Row(c,slm,cols){
+  const codes=(c.branches||[]).map(b=>b.c).filter(Boolean);
+  let items=null,note='';
+  if(_sdApi.invoiceBased){
+    if(!codes.length)return '';
+    const d=_sdInvDetGet(codes,slm);
+    if(d.loading)return `<tr><td colspan="${cols}" style="padding:6px 20px;font-size:11.5px;color:var(--TX3)">⏳ กำลังโหลด Top 10 สินค้า…</td></tr>`;
+    if(d.error)return '';
+    items=(d.data?.products||[]).filter(x=>Number(x.amount)>0).slice(0,10).map(x=>({c:x.sku,n:x.sku_name||x.sku,v:Number(x.amount)||0,q:Number(x.qty)||0,u:x.unit||''}));
+    note='จากรายการในใบกำกับ TSS';
+  }else{
+    const by=new Map();
+    (c.branches||[]).forEach(b=>(b.g||[]).forEach(g=>(g.it||[]).forEach(it=>{const e=by.get(it.c)||{c:it.c,n:it.n,v:0,q:0,u:''};e.v+=it._tot||0;e.q+=it._qty||0;by.set(it.c,e);})));
+    items=[...by.values()].filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
+  }
+  if(!items.length)return '';
+  const tot=c._tot||items.reduce((a,x)=>a+x.v,0)||1;
+  return `<tr><td colspan="${cols}" style="padding:6px 12px 10px 20px;background:var(--bg)">
+    <div style="border:2px solid var(--A);border-radius:10px;padding:8px 12px;max-width:760px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px"><b>🏆 Top 10 สินค้าขายดี${(c.branches||[]).length>1?'ของกลุ่มนี้':''}</b><span style="font-size:11px;color:var(--TX3)">${note}${note?' · ':''}ช่วงเดียวกับที่เลือก</span></div>
+      <table style="margin-top:6px;font-size:12px"><thead><tr><th style="width:28px">#</th><th>สินค้า</th><th class="r">ยอด (บาท)</th><th class="r">จำนวน</th><th class="r">%</th></tr></thead><tbody>
+      ${items.map((x,i)=>`<tr><td style="font-weight:700;color:${i<3?'var(--A)':'var(--TX3)'}">${i+1}</td><td><span class="mono">${esc(x.c)}</span> ${esc(x.n)}</td><td class="r">${Math.round(x.v).toLocaleString('en-US')}</td><td class="r">${x.q?Math.round(x.q).toLocaleString('en-US')+(x.u?' '+esc(x.u):''):'—'}</td><td class="r">${(x.v/tot*100).toFixed(1)}%</td></tr>`).join('')}
+      </tbody></table></div></td></tr>`;
+}
 function sdCust(){
   if(!document.getElementById('sd-ta')) return; // page navigated away while an async load was in flight
   const isAll=isManager()&&_sd.mgrView;
@@ -9175,19 +9255,23 @@ function sdCust(){
     // corp groups can span >1 customer code/salesperson, so filter by membership (_slms) rather
     // than equality on the single .slm field left over from whichever row was merged in last
     let custs=F?F.custs:(isAll?_sdApi.custs:_sdApi.custs.filter(c=>custHasSlm(c,slmId)));
+    custs=_sdRegroup(custs,_sd.groupBy);
     if(q) custs=custs.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)
       ||(c.branches||[]).some(b=>b.n.toLowerCase().includes(q)||b.c.toLowerCase().includes(q)||(b.g||[]).some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))));
     let sorted=_sd.sort.col==='val'?_sdByValue(custs):[...custs];
-    let h=hHdr;
+    if(_sd.groupBy!=='corp') sorted.sort((a,b)=>(a._none?1:0)-(b._none?1:0)); // "ไม่มีกลุ่ม" ไว้ท้ายสุด
+    const nCols=(_sd.showYoY?5:4)+_sdValCols()-1;
+    let h=_sdGroupByBar()+hHdr;
     sorted.forEach(c=>{
       // toggle state keyed by the corp GROUP NAME (c.grp), not c.c — c.c is now "N สาขา" or a
       // single branch code, which isn't a stable/unique key across different corp groups.
       const cv=c._tot;const ck='c_'+c.grp;const oc=_sd.op[ck];
-      const cvYoY=yoyM.cust[c.grp]||0;
+      const cvYoY=c._regrouped?0:(yoyM.cust[c.grp]||0);
       const unassigned=c.grp===UNASSIGNED_CORP_LABEL;
       h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--LN)">
         <td style="font-weight:700">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span> <button class="btn btn-xs btn-g" onclick="event.stopPropagation();nav('groups')">ไปตั้งค่ากลุ่ม →</button>`:`<strong>${c.n}</strong>`} ${c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:''} <span style="font-size:11px;color:var(--TX3)">${(c.branches||[]).length} สาขา</span></td>
-        ${_sdVT(cv,c._x,null,{b:1})}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${_vc(cv,cvYoY)}</td></tr>`;
+        ${_sdVT(cv,c._x,null,{b:1})}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${c._regrouped?'—':_vc(cv,cvYoY)}</td></tr>`;
+      if(oc) h+=_sdTop10Row(c,F?F.slm:'',nCols);
       if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,F?F.slm:'',ck,20,(_sd.showYoY?5:4)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`);
       if(oc) (c.branches||[]).forEach((b,bi)=>{
         const bv=b._tot;const bk=ck+'_b'+bi;const ob=_sd.op[bk];
@@ -12998,8 +13082,13 @@ async function _applyCustomerProfileImportRows(rows){
   // before the "สาขา" column existed still import correctly rather than shifting later columns
   const idx=name=>hdr.findIndex(h=>h.includes(name));
   const iBranch=idx('สาขา')!==-1?idx('สาขา'):idx('branch');
-  const iCat=(()=>{const i=idx('category');return i!==-1?i:3;})();
-  const iSlm=(()=>{const i=idx('sales');return i!==-1?i:4;})();
+  // "Category (Sales)" / "กลุ่ม (Sales)" (2026-10-12) — คอลัมน์ฝั่ง Sales ต้องไม่ถูกจับเป็น Category / Sales เดิม
+  const isSalesCol=h=>h.includes('(sales)');
+  const idxPlain=name=>hdr.findIndex(h=>h.includes(name)&&!isSalesCol(h));
+  const iCat=(()=>{const i=idxPlain('category');return i!==-1?i:3;})();
+  const iSlm=(()=>{const i=hdr.findIndex(h=>h.trim()==='sales');const j=i!==-1?i:idxPlain('sales');return j!==-1?j:4;})();
+  const iScat=hdr.findIndex(h=>h.includes('category')&&isSalesCol(h));
+  const iSgrp=hdr.findIndex(h=>h.includes('กลุ่ม')&&isSalesCol(h));
   rows.slice(1).forEach(row=>{
     let code,name,corp,branch,category,slm;
     if(isNewFmt){
@@ -13027,6 +13116,13 @@ async function _applyCustomerProfileImportRows(rows){
     if(branch)profs[code].branch=branch;
     if(category)profs[code].category=category;
     if(slm)profs[code].slm=slm;
+    // ฝั่ง Sales: ว่าง = ไม่แก้ · "-" = ล้างค่า (ไม่มีกลุ่ม)
+    for(const [i,k] of [[iScat,'sales_category'],[iSgrp,'sales_group']]){
+      if(!isNewFmt||i<0)continue;
+      const v=row[i]?.toString().trim();
+      if(!v)continue;
+      profs[code][k]=v==='-'?null:v;profs[code].sales_group_by=UID;
+    }
     profs[code].edited_by=UID;
     profs[code].edited_at=new Date().toISOString();
     count++;
@@ -13159,6 +13255,8 @@ function _cgFilter(){
   const slmF=document.getElementById('cg-slm')?.value||'';
   const statF=document.getElementById('cg-stat')?.value||'';
   const bizF=document.getElementById('cg-biz')?.value||'';
+  const scatF=document.getElementById('cg-scat')?.value||'';
+  const sgrpF=document.getElementById('cg-sgrp')?.value||'';
   const rows=[...document.querySelectorAll('#cg-tbody tr')];
   rows.forEach(tr=>{
     const d=tr.dataset;
@@ -13170,6 +13268,10 @@ function _cgFilter(){
     if(slmF&&slm!==slmF)show=false;
     if(statF&&stat!==statF)show=false;
     if(bizF&&biz!==bizF)show=false;
+    // Category / กลุ่ม ฝั่ง Sales (2026-10-12) — data-7 / data-8 · '__none' = ยังไม่มี · '__has' = มีกลุ่ม
+    const scat=d['7']||'', sgrp=d['8']||'';
+    if(scatF&&(scatF==='__none'?scat:scat!==scatF))show=false;
+    if(sgrpF&&(sgrpF==='__none'?sgrp:sgrpF==='__has'?!sgrp:sgrp!==sgrpF))show=false;
     tr.style.display=show?'':'none';
   });
   const vis=rows.filter(r=>r.style.display!=='none').length;
@@ -13187,6 +13289,11 @@ function _renderCustGroupsTable(rows,profs,loading){
   const prevSlm=document.getElementById('cg-slm')?.value||'';
   const prevStat=document.getElementById('cg-stat')?.value||'';
   const prevBiz=document.getElementById('cg-biz')?.value||'';
+  const prevScat=document.getElementById('cg-scat')?.value||'';
+  const prevSgrp=document.getElementById('cg-sgrp')?.value||'';
+  // กลุ่มลูกค้าฝั่ง Sales (2026-10-12) — แยกจาก Corporate/Category/หมวดผู้บริหาร
+  const scats=[...new Set(Object.values(profs).map(p=>String(p.sales_category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'th'));
+  const sgrps=[...new Set(Object.values(profs).map(p=>String(p.sales_group||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'th'));
   document.getElementById('grp-body').innerHTML=`
   <div class="frow" style="flex-wrap:wrap;gap:8px">
     <input type="file" id="cg-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importCustomerGroupsFile()">
@@ -13197,7 +13304,7 @@ function _renderCustGroupsTable(rows,profs,loading){
     <button class="btn btn-sm btn-g" onclick="autofillExecChannels()" title="เดาหมวดผู้บริหารจาก Category/Corporate ให้ลูกค้าที่ยังไม่ได้ตั้งเอง (ไม่ทับค่าที่ตั้งเองแล้ว)">🏷️ เดาหมวดผู้บริหาร</button>
     <button class="btn btn-sm btn-g" onclick="autofillBusinessTypes()" title="เดาประเภทธุรกิจ (ร้านอาหาร / Modern Trade / โรงแรม …) จากชื่อ/Category/Corporate ให้ลูกค้าที่ยังไม่ได้ตั้งเอง (ไม่ทับค่าที่ตั้งเองแล้ว)">🍽️ เดาประเภทธุรกิจ</button>
     <button class="btn btn-sm" onclick="_cgExtraCodes=null;_cgExtraCodesPromise=null;renderCustGroups()">🔄 Reload</button>
-    <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / สาขา / Category / ประเภทธุรกิจ แล้วระบบจะบันทึกทันที</span>
+    <span style="font-size:12px;color:var(--TX3)">แก้ไขช่อง Corporate group / สาขา / Category / ประเภทธุรกิจ / Category·กลุ่ม (Sales) แล้วระบบจะบันทึกทันที</span>
   </div>
   <div class="frow" style="margin-bottom:8px">
     <input id="cg-q" type="text" value="${esc(prevQ)}" placeholder="ค้นหารหัส / ชื่อลูกค้า..." style="width:220px" oninput="_cgFilter()">
@@ -13212,6 +13319,14 @@ function _renderCustGroupsTable(rows,profs,loading){
     <label style="font-size:12px;font-weight:600;color:var(--TX2)">ประเภทธุรกิจ:</label>
     <select id="cg-biz" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
       <option value="">ทั้งหมด</option><option value="none" ${prevBiz==='none'?'selected':''}>— ยังไม่ระบุ —</option>${BIZ_TYPES.map(([k,l])=>`<option value="${k}" ${prevBiz===k?'selected':''}>${esc(l)}</option>`).join('')}
+    </select>
+    <label style="font-size:12px;font-weight:600;color:var(--TX2)">Category (Sales):</label>
+    <select id="cg-scat" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font);background:var(--LY)">
+      <option value="">ทั้งหมด</option><option value="__none" ${prevScat==='__none'?'selected':''}>— ยังไม่ระบุ —</option>${scats.map(g=>`<option value="${esc(g)}" ${prevScat===g?'selected':''}>${esc(g)}</option>`).join('')}
+    </select>
+    <label style="font-size:12px;font-weight:600;color:var(--TX2)">กลุ่ม (Sales):</label>
+    <select id="cg-sgrp" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font);background:var(--LY);max-width:220px">
+      <option value="">ทั้งหมด</option><option value="__has" ${prevSgrp==='__has'?'selected':''}>มีกลุ่ม</option><option value="__none" ${prevSgrp==='__none'?'selected':''}>ไม่มีกลุ่ม</option>${sgrps.map(g=>`<option value="${esc(g)}" ${prevSgrp===g?'selected':''}>${esc(g)}</option>`).join('')}
     </select>
     <label style="font-size:12px;font-weight:600;color:var(--TX2)">Sales:</label>
     <select id="cg-slm" onchange="_cgFilter()" style="padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;font-family:var(--font)">
@@ -13234,7 +13349,7 @@ function _renderCustGroupsTable(rows,profs,loading){
       </div>
     </div>
     <div class="tw tw-scroll"><table>
-      <thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th style="min-width:200px">Corporate group</th><th style="min-width:160px">สาขา</th><th style="min-width:160px" title="ข้อความอิสระเดิม (ใบเคาะราคาใช้แยกประเภทลูกค้า)">Category</th><th style="min-width:170px" title="ร้านอาหาร / Modern Trade / โรงแรม … — เลือกจากรายการ">ประเภทธุรกิจ</th><th style="min-width:150px" title="ใช้แบ่งยอดขายใน Dashboard ผู้บริหาร">หมวดผู้บริหาร</th><th style="min-width:200px">Sales</th><th style="min-width:80px">GP% (ใบเคาะราคา)</th><th>สถานะ</th><th>แก้ไขโดย</th></tr></thead>
+      <thead><tr><th>รหัสลูกค้า</th><th>ลูกค้า</th><th style="min-width:200px">Corporate group</th><th style="min-width:160px">สาขา</th><th style="min-width:160px" title="ข้อความอิสระเดิม (ใบเคาะราคาใช้แยกประเภทลูกค้า)">Category</th><th style="min-width:170px" title="ร้านอาหาร / Modern Trade / โรงแรม … — เลือกจากรายการ">ประเภทธุรกิจ</th><th style="min-width:150px" title="ใช้แบ่งยอดขายใน Dashboard ผู้บริหาร">หมวดผู้บริหาร</th><th style="min-width:170px;background:var(--LY)" title="Category ที่เซลล์ใช้ดูงาน (แยกจากของผู้บริหาร)">Category (Sales)</th><th style="min-width:190px;background:var(--LY)" title="กลุ่มลูกค้าที่เซลล์ใช้ดูงาน (ว่าง = ไม่มีกลุ่ม)">กลุ่ม (Sales)</th><th style="min-width:200px">Sales</th><th style="min-width:80px">GP% (ใบเคาะราคา)</th><th>สถานะ</th><th>แก้ไขโดย</th></tr></thead>
       <tbody id="cg-tbody">${rows.map(c=>{
         const p=profs[c.c]||{};
         // p.code only exists when this customer has a real customer_profiles row (from
@@ -13251,7 +13366,7 @@ function _renderCustGroupsTable(rows,profs,loading){
           : needsReview
             ? `<span class="badge bba">🤖 AI แนะนำ${confPct?' ('+confPct+')':''}</span> <button class="btn btn-xs btn-g" onclick="confirmCustomerGroup('${esc(c.c)}')">✓ ยืนยัน</button>`
             : `<span class="badge bbgr">ยังไม่ระบุ</span>`;
-        return `<tr data-0="${esc(c.c)}" data-1="${esc(c.n)}" data-2="${esc(c.corp||'อื่นๆ')}" data-3="${esc(c.category||'ไม่ระบุ')}" data-4="${esc(c.slm||'')}" data-5="${statVal}" data-6="${esc(p.business_type||'none')}">
+        return `<tr data-0="${esc(c.c)}" data-1="${esc(c.n)}" data-2="${esc(c.corp||'อื่นๆ')}" data-3="${esc(c.category||'ไม่ระบุ')}" data-4="${esc(c.slm||'')}" data-5="${statVal}" data-6="${esc(p.business_type||'none')}" data-7="${esc(p.sales_category||'')}" data-8="${esc(p.sales_group||'')}">
         <td class="mono">${esc(c.c)}</td>
         <td><input class="inp-cell" value="${esc(c.n)}" onchange="saveCustomerGroup('${esc(c.c)}','name',this.value)"></td>
         <td><input class="inp-cell" list="corp-list" value="${esc(c.corp||'')}" onchange="saveCustomerGroup('${esc(c.c)}','corporate',this.value);this.closest('tr').dataset['2']=this.value;_cgFilter()"></td>
@@ -13259,6 +13374,8 @@ function _renderCustGroupsTable(rows,profs,loading){
         <td><input class="inp-cell" list="cat-list" value="${esc(c.category||'')}" onchange="saveCustomerGroup('${esc(c.c)}','category',this.value);this.closest('tr').dataset['3']=this.value;_cgFilter()"></td>
         <td><select class="inp-cell" title="${p.business_type_source==='auto'?'ระบบเดาให้ — เลือกใหม่เพื่อยืนยันเอง':''}" onchange="saveCustomerGroup('${esc(c.c)}','business_type',this.value);this.closest('tr').dataset['6']=this.value||'none';_cgFilter()" style="${p.business_type_source==='auto'?'color:var(--TX3)':''}"><option value="">— ยังไม่ระบุ —</option>${BIZ_TYPES.map(([k,l])=>`<option value="${k}"${p.business_type===k?' selected':''}>${esc(l)}${p.business_type===k&&p.business_type_source==='auto'?' (ระบบเดา)':''}</option>`).join('')}</select></td>
         <td><select class="inp-cell" title="${p.exec_channel_source==='auto'?'ระบบเดาให้ — เลือกใหม่เพื่อยืนยันเอง':''}" onchange="saveCustomerGroup('${esc(c.c)}','exec_channel',this.value)" style="${p.exec_channel_source==='auto'?'color:var(--TX3)':''}"><option value="">— ยังไม่ระบุ —</option>${DX_CHANNELS.map(([k,l])=>`<option value="${k}"${p.exec_channel===k?' selected':''}>${esc(l)}${p.exec_channel===k&&p.exec_channel_source==='auto'?' (ระบบเดา)':''}</option>`).join('')}</select></td>
+        <td style="background:var(--LY)"><input class="inp-cell" list="scat-list" placeholder="—" value="${esc(p.sales_category||'')}" onchange="saveCustomerGroup('${esc(c.c)}','sales_category',this.value.trim());this.closest('tr').dataset['7']=this.value.trim();_cgFilter()"></td>
+        <td style="background:var(--LY)"><input class="inp-cell" list="sgrp-list" placeholder="ไม่มีกลุ่ม" value="${esc(p.sales_group||'')}" title="${esc(p.sales_group_by?'จากไฟล์ของ '+p.sales_group_by:'')}" onchange="saveCustomerGroup('${esc(c.c)}','sales_group',this.value.trim());this.closest('tr').dataset['8']=this.value.trim();_cgFilter()"></td>
         <td><input class="inp-cell" list="slm-list" value="${esc(c.slm||'')}" onchange="saveCustomerGroup('${esc(c.c)}','slm',this.value);this.closest('tr').dataset['4']=this.value;_cgFilter()"></td>
         <td><input class="inp-cell" type="number" step="0.01" min="0" max="100" placeholder="เช่น 18" value="${c.gpPct!=null?esc(String(c.gpPct)):''}" onchange="saveCustomerGroup('${esc(c.c)}','gp_pct',this.value)" style="width:70px"></td>
         <td>${statCell}</td>
@@ -13267,10 +13384,12 @@ function _renderCustGroupsTable(rows,profs,loading){
     </table></div>
     <datalist id="corp-list">${corps.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
     <datalist id="cat-list">${cats.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
+    <datalist id="scat-list">${scats.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
+    <datalist id="sgrp-list">${sgrps.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist>
     <datalist id="slm-list">${slms.map(s=>`<option value="${esc(s.code)}" label="${esc(s.code+' - '+(s.name||s.code))}"></option>`).join('')}</datalist>
   </div>`;
   // re-apply filter ถ้ามี
-  if(prevQ||prevCorp||prevCat||prevSlm||prevStat||prevBiz) _cgFilter();
+  if(prevQ||prevCorp||prevCat||prevSlm||prevStat||prevBiz||prevScat||prevSgrp) _cgFilter();
 }
 async function renderSalesMaster(){
   // FIXED (2026-09-16, /code-review): these two calls have no dependency on each other (different
@@ -13564,9 +13683,10 @@ async function expGroupTemplate(mode){
     toXLSX([['Product Group Template',['Product Group','SKU','Name','Plant'],rows]],'Product_Group_Template.xlsx');
   }
   else{
-    const custRows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.branch||'',c.category||'',c.slm||'']);
-    const data=custRows.length?custRows:[['01-LF-0001','ตัวอย่างลูกค้า','Sample Corporate','สาขาตัวอย่าง','ขายจริง','']];
-    toXLSX([['Customer Group Template',['รหัสลูกค้า','ชื่อลูกค้า','Corporate group','สาขา','Category','Sales'],data]],'Customer_Group_Template.xlsx');
+    const profs=customerProfiles();
+    const custRows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.branch||'',c.category||'',c.slm||'',profs[c.c]?.sales_category||'',profs[c.c]?.sales_group||'']);
+    const data=custRows.length?custRows:[['01-LF-0001','ตัวอย่างลูกค้า','Sample Corporate','สาขาตัวอย่าง','ขายจริง','','ร้านค้าทั่วไป','']];
+    toXLSX([['Customer Group Template',['รหัสลูกค้า','ชื่อลูกค้า','Corporate group','สาขา','Category','Sales','Category (Sales)','กลุ่ม (Sales)'],data]],'Customer_Group_Template.xlsx');
   }
 }
 function showGroupImport(mode){
@@ -13630,6 +13750,7 @@ function saveCustomerGroup(code,field,val){
   if(field==='exec_channel'){profs[code].exec_channel=val||null;profs[code].exec_channel_source=val?'manual':null;window._dxCache={};}
   // ประเภทธุรกิจ (2026-10-07): เลือกเอง = manual ปุ่ม "เดาประเภทธุรกิจ" จะไม่ทับ · ค่าว่าง = กลับไปให้ระบบเดา
   if(field==='business_type'){profs[code].business_type=val||null;profs[code].business_type_source=val?'manual':null;}
+  if(field==='sales_category'||field==='sales_group'){profs[code][field]=val||null;profs[code].sales_group_by=UID;}
   if(field==='corporate'){
     // a human editing the corporate value directly counts as confirming it — never let a
     // later AI run silently overwrite what someone just typed in.
@@ -13689,8 +13810,8 @@ async function runAiCorporateGrouping(){
 }
 async function expCustomerGroups(){
   const profs=customerProfiles();
-  const rows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.branch||'',c.category||'',bizTypeLabel(profs[c.c]?.business_type),c.slm||'']);
-  toXLSX([['Customer Groups',['รหัสลูกค้า','ลูกค้า','Corporate group','สาขา','Category','ประเภทธุรกิจ','Sales'],rows]],'Customer_Groups_'+todayStr()+'.xlsx');
+  const rows=(await allCustomerRowsComplete()).map(c=>[c.c,c.n,c.corp||'',c.branch||'',c.category||'',bizTypeLabel(profs[c.c]?.business_type),c.slm||'',profs[c.c]?.sales_category||'',profs[c.c]?.sales_group||'']);
+  toXLSX([['Customer Groups',['รหัสลูกค้า','ลูกค้า','Corporate group','สาขา','Category','ประเภทธุรกิจ','Sales','Category (Sales)','กลุ่ม (Sales)'],rows]],'Customer_Groups_'+todayStr()+'.xlsx');
 }
 
 // ── PERMISSIONS ───────────────────────────────────────────────────

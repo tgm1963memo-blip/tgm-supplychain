@@ -277,7 +277,9 @@ function buildApp(db, opts = {}) {
       // หมวดลูกค้าผู้บริหาร (2026-10-03) — ดู lib/execChannel.js
       'exec_channel', 'exec_channel_source',
       // ประเภทธุรกิจ (2026-10-07) — ดู lib/businessType.js
-      'business_type', 'business_type_source'],
+      'business_type', 'business_type_source',
+      // กลุ่มลูกค้าฝั่ง Sales (2026-10-12) — แยกจาก corporate/category/exec_channel ของผู้บริหาร
+      'sales_category', 'sales_group', 'sales_group_by'],
     writeRoles: MASTER_DATA_ROLES,
     scope: custScope('code'),
   }));
