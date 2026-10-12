@@ -321,13 +321,35 @@ async function syncProducts(db) {
   }
 }
 
+// ชื่อสาขาจากที่อยู่ใน ARMAS (2026-10-12, ผู้ใช้ขอ) — ห้างหลายสาขาใช้ CUSNAM เดียวกัน (เช่น วิลล่า มาร์เก็ท เจพี จำกัด)
+// ชื่อสาขาจริงอยู่ใน ADDR03 เช่น "(สาขาพาราไดร์)" / "(พาชิโอ ลาดกระบัง)" · ช่องนี้ปนเบอร์โทร/จังหวัด/รอบส่ง
+// จึงรับเฉพาะ: ข้อความหลังคำว่า "สาขา" (ADDR03→ADDR01, CUSNAM2) หรือวงเล็บต้น ADDR03 ที่ไม่ใช่ข้อมูลอื่น
+const _brClean = (v) => String(v || '').replace(/[\u00a0\ufffd]/g, ' ').replace(/\s+/g, ' ').trim();
+const _BR_JUNK = /สินค้า|แพ็?ค|ตู้|TGM|TSS|เงินสด|รอบ|ส่ง|โทร|คุณ|^จ\.|จังหวัด|เขต|แขวง|อ\.|ต\.|\d{5}|^\d[\d\s-]*$|เวลา|ขายขาด|เครดิต|บิล|ใบกำกับ|VAT/i;
+const _BR_BAD = /^(ใหม่|รอบ|แผนก|อุปกรณ์|LOTUS|สำนักงานใหญ่)|^\d+$/i;
+function branchFromArmas(r) {
+  const tidy = (v) => _brClean(v)
+    .replace(/\s*(ส่ง|รอบ)\s*[อจพศสฤ.,\s]*$/, '')
+    .replace(/\s*(ตู้\s*(TGM|TSS|สด)?|แพ็?คซอง\s*TGM|TGM|TSS)\s*$/i, '')
+    .replace(/[.\s-]+$/, '').trim();
+  for (const part of [r.ADDR03, r.ADDR02, r.ADDR01, r.CUSNAM2].map(_brClean)) {
+    const m = part.match(/สาขา\s*(?:ที่\s*)?([^()\[\],]+)/);
+    if (!m) continue;
+    const v = tidy(m[1]);
+    if (v && v.length <= 40 && !_BR_BAD.test(v)) return v;
+  }
+  const m = _brClean(r.ADDR03).match(/^\(([^()]{2,40})\)/);
+  if (m && !_BR_JUNK.test(m[1])) { const v = tidy(m[1]); if (v && !_BR_BAD.test(v)) return v; }
+  return null;
+}
+
 async function syncCustomers(db) {
   const seen = new Set();
   const upsertCust = db.prepare(`
-    INSERT INTO customers (code, name, slm_id, is_active, updated_at)
-    VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    INSERT INTO customers (code, name, slm_id, is_active, addr_branch, updated_at)
+    VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(code) DO UPDATE SET name = excluded.name, slm_id = excluded.slm_id,
-      is_active = excluded.is_active, updated_at = excluded.updated_at
+      is_active = excluded.is_active, addr_branch = excluded.addr_branch, updated_at = excluded.updated_at
   `);
   const upsertSlm = db.prepare(`
     INSERT INTO salesmen (slm_id, name, updated_at)
@@ -352,7 +374,7 @@ async function syncCustomers(db) {
       for (const r of rows) {
         if (!r.CUSCOD || seen.has(r.CUSCOD)) continue;
         seen.add(r.CUSCOD);
-        upsertCust.run(r.CUSCOD.trim(), (r.CUSNAM || '').trim(), normalizeSlmCode(r.SLMCOD) || null, r.STATUS === 'A' ? 1 : 0);
+        upsertCust.run(r.CUSCOD.trim(), (r.CUSNAM || '').trim(), normalizeSlmCode(r.SLMCOD) || null, r.STATUS === 'A' ? 1 : 0, branchFromArmas(r));
         imported++;
       }
     }
@@ -1498,4 +1520,4 @@ async function runImport(db) {
   }
 }
 
-module.exports = { runImport, refreshSalesRollups, syncSalesLinesMonthly, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { branchFromArmas, runImport, refreshSalesRollups, syncSalesLinesMonthly, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };

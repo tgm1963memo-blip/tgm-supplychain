@@ -78,6 +78,26 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   assert.equal((await dx('ADM')).data.kpi.ty_net, 700);
   assert.equal((await call('/dashboard/exec?from=2026-01&to=2026-01&co=tss&slm=555', 'GET', undefined, 'S1')).data.kpi.ty_net, 0, 'ปลอม slm=555');
 
+  // ยอดขายโรงงาน Bplus รายบรรทัด (2026-10-12, security review) — กรองตามสิทธิ์ + ส่งชื่อเฉพาะรหัสที่เห็น
+  db.prepare("INSERT INTO sales_lines_monthly(company,ym,cust_code,slm_code,sku,qty,amount) VALUES('BP-TGM','2026-01','10-AA-0001','207','X',1,50),('BP-TGM','2026-01','50-ZZ-0001','BP-9','X',1,70)").run();
+  db.prepare("INSERT INTO bplus_customers(code,name) VALUES('10-AA-0001','A'),('50-ZZ-0001','Z')").run();
+  db.prepare("INSERT INTO bplus_salesman_map(bp_code,bp_name) VALUES('9','BP Nine')").run();
+  const bp = uid => call('/dashboard/bplus/sales_lines?from=2026-01&to=2026-01', 'GET', undefined, uid);
+  const bs1 = (await bp('S1')).data;
+  assert.deepEqual(bs1.rows.map(r => r.cust_code), ['10-AA-0001']);
+  assert.deepEqual(Object.keys(bs1.customers), ['10-AA-0001']);
+  assert.deepEqual(bs1.salesmen, {});
+  const bad = (await bp('ADM')).data;
+  assert.equal(bad.rows.length, 2);
+  assert.equal(bad.salesmen['BP-9'], 'BP Nine');
+
+  // บรรทัดใบเคาะ (2026-10-12): ผู้ถูกจำกัดบันทึกได้เฉพาะสาขาที่มองเห็น · admin ได้ทุกสาขา
+  const pd = (cust, uid) => call('/promo_drafts', 'POST', { draft_no: 'PMD-T1', cust_code: cust, sku: 'X', unit_price: 1 }, uid);
+  assert.equal((await pd('10-BB-0001', 'S1')).status, 403, 'สาขาของคนอื่น');
+  assert.equal((await pd('10-AA-0001', 'S1')).status, 201, 'สาขาของตัวเอง');
+  assert.equal((await pd('30-MJ-0001', 'S1')).status, 201, 'เจ้า MT ที่ดูแล');
+  assert.equal((await pd('50-ZZ-0001', 'ADM')).status, 201);
+
   // ใบเคาะ: เห็นเมื่อมีสาขาที่มองเห็น
   const made = await call('/promo_draft_headers', 'POST', { promo_name: 'Tops' });
   const no = made.data.draft_no;

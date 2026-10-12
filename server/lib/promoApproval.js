@@ -31,7 +31,9 @@ const needsExec = row => ['is_npd', 'has_off_contract_cost', 'has_marketing_cost
 // { [levelId]: [uid,...] } — แทนที่รายชื่อ (ค่าแนะนำ) ในเทมเพลตของขั้นนั้น แล้วค่อย validate ทั้งเส้นทาง
 // overrides (2026-10-09, ผู้ใช้ขอ): ผู้ส่ง (เจ้าของเอกสาร)/admin แก้รายชื่อผู้อนุมัติของขั้นปกติในเอกสารนี้ได้ — { [lv.id]: [uid] }
 // ลบได้แต่ต้องเหลืออย่างน้อย 1 คนต่อขั้น (กันข้ามขั้น เช่น ขั้นตรวจสอบ) · ไม่แก้เทมเพลตกลาง
-function template(db, entity, allowEmpty = false, picks = null, overrides = null) {
+// (2026-10-12, security review) ห้ามผู้สร้างเอกสารใส่ตัวเองเป็นผู้อนุมัติผ่าน overrides ในขั้นที่เทมเพลตกลางไม่ได้มีชื่อเขาอยู่แล้ว
+// — เดิมเจ้าของเอกสารแทนรายชื่อทุกขั้นด้วย uid ตัวเองแล้วอนุมัติเองจนจบได้ (รวมขั้นตรวจสอบ) · เพิ่มคนอื่นยังทำได้ตามเดิม
+function template(db, entity, allowEmpty = false, picks = null, overrides = null, creatorUid = null) {
   const row = db.prepare('SELECT levels_json FROM approval_workflow_templates WHERE entity_type=?').get(entity);
   const users = db.prepare('SELECT uid,name,role,is_active FROM sc_users').all();
   const levels = (row ? parse(row.levels_json) : []).map(lv => {
@@ -39,6 +41,8 @@ function template(db, entity, allowEmpty = false, picks = null, overrides = null
       const ov = overrides && Array.isArray(overrides[lv.id]) ? [...new Set(overrides[lv.id].map(String).filter(Boolean))] : null;
       if (!ov) return lv;
       if (!ov.length) throw new Error(`ขั้น "${lv.label || lv.id}" ต้องมีผู้อนุมัติอย่างน้อย 1 คน`);
+      if (creatorUid && ov.includes(creatorUid) && !(lv.approvers || []).some(a => a.uid === creatorUid))
+        throw new Error(`ผู้สร้างเอกสารเพิ่มตัวเองเป็นผู้อนุมัติขั้น "${lv.label || lv.id}" ไม่ได้`);
       return { ...lv, approvers: ov.map(uid => { const u = users.find(x => x.uid === uid); return { uid, name: u?.name || uid, role: u?.role || '' }; }) };
     }
     const chosen = picks && Array.isArray(picks[lv.id]) ? [...new Set(picks[lv.id].map(String))] : null;
@@ -142,7 +146,7 @@ function validateChange(db, old, change, user) {
     change.route_name = route.name;
     // แก้รายชื่อผู้อนุมัติขั้นปกติได้เฉพาะเจ้าของเอกสาร/admin — คนอื่นส่งมาก็ไม่รับ
     if (overrides && Object.keys(overrides).length && old.created_by !== user.uid && !['admin', 'superadmin'].includes(user.role)) throw new Error('แก้ผู้อนุมัติได้เฉพาะผู้ส่ง (เจ้าของเอกสาร) หรือ admin');
-    const levels = template(db, route.entity, true, picks, overrides);
+    const levels = template(db, route.entity, true, picks, overrides, old.created_by || null);
     // เส้นทางเพิ่มเติมต้องมีขั้นอนุมัติ — ถ้าว่างจะตกไปกรณี "ไม่มี route" ที่ผู้จัดการคนใดก็อนุมัติเองได้ (ข้ามผู้อนุมัติ)
     if (route.entity !== 'promo_draft' && !levels.length) throw new Error(`เส้นทาง "${route.name}" ยังไม่ได้ตั้งขั้นอนุมัติ กรุณาเลือกเส้นทางอื่นหรือให้แอดมินตั้งค่า`);
     assign(levels);

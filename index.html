@@ -1306,7 +1306,7 @@ const SB = {
     while (true) {
       let q = getSupabaseClient()
         .from('customers')
-        .select('code,name,cust_group,slm_id,is_active')
+        .select('code,name,cust_group,slm_id,is_active,addr_branch')
         .order('code')
         .range(from, from + PAGE - 1);
       if (!opts.includeInactive) q = q.eq('is_active', true);
@@ -5123,7 +5123,7 @@ const DB={
     if(k==='customer_profiles') _customerProfilesMemo=null;
   },
 };
-const CLIENT_MASTER_CACHE_VERSION='2026-09-22-master-cache-v2';
+const CLIENT_MASTER_CACHE_VERSION='2026-10-12-master-cache-v3'; // v3: customers.addr_branch (ชื่อสาขาจาก Express)
 function ensureClientMasterCacheVersion(){
   try{
     if(localStorage.getItem('tgm_client_master_cache_version')===CLIENT_MASTER_CACHE_VERSION)return;
@@ -5941,6 +5941,13 @@ function allCustomerRows(extraCodes=null){
     });
   }
 
+  // ผู้ใช้ที่ถูกจำกัดสิทธิ์ (2026-10-12): ชั้นข้อมูลตายตัว (CUST_NAMES / PROD_CUST / CRITICAL_CONSI_CUSTOMERS / extraCodes)
+  // ไม่ผ่านการกรองของ server — เก็บเฉพาะรหัสที่ server ส่งมาแล้ว (customers / consi / customer_profiles ซึ่งกรองตาม lib/customerScope.js)
+  const sc=_scopeNow();
+  if(sc&&sc.restricted&&!sc.all){
+    const allow=new Set([...remCache.map(r=>String(r.code||'').trim()),...(DB.get('remote_consi_customers_cache')||[]).map(r=>String(r.code||'').trim()),...Object.keys(customerProfiles()||{})]);
+    return rows.filter(r=>allow.has(r.c)).sort((a,b)=>String(a.c).localeCompare(String(b.c),'th'));
+  }
   return rows.sort((a,b)=>String(a.c).localeCompare(String(b.c),'th'));
 }
 
@@ -8958,9 +8965,20 @@ function _sdLoadShipBranch(){
     .catch(e=>{console.warn('branch names',e.message||e);_sdShipBranch={};})
     .finally(()=>{_sdShipBranchLoading=false;});
 }
+// ชื่อสาขาจากที่อยู่ใน Express ARMAS (2026-10-12, customers.addr_branch — server/jobs/importFromExpress.js branchFromArmas)
+let _addrBranchMemo=null,_addrBranchTs=null;
+function _addrBranchOf(code){
+  const ts=DB.get('remote_customers_cache_ts');
+  if(!_addrBranchMemo||_addrBranchTs!==ts){
+    _addrBranchMemo=Object.fromEntries((DB.get('remote_customers_cache')||[]).filter(r=>r.addr_branch).map(r=>[String(r.code||''),r.addr_branch]));
+    _addrBranchTs=ts;
+  }
+  return _addrBranchMemo[code]||'';
+}
 function _sdBranchLabel(code,fallback){
   const p=customerProfiles()[code]||{};
   if(p.branch) return p.branch;
+  const ab=_addrBranchOf(code); if(ab) return 'สาขา'+ab;
   _sdLoadShipBranch();
   return (_sdShipBranch&&_sdShipBranch[code])||fallback||code;
 }
@@ -16208,6 +16226,7 @@ function draftMsButton() {
     <div class="ms-panel hidden" id="draft-ms-panel" style="min-width:380px">
       <input type="text" id="draft-ms-q" value="${esc(_draftMsQ)}" placeholder="พิมพ์ชื่อห้าง/รหัส/ชื่อสาขา..." oninput="draftMsSearch(this.value)"
         style="width:100%;padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12px;margin-bottom:4px;box-sizing:border-box">
+      ${_draftMyCodes().size ? `<label class="esc-item" style="font-size:12px;margin:0 2px 4px"><input type="checkbox" ${_draftMsMine() ? 'checked' : ''} onchange="_draftMsMineSet(this.checked)"> เฉพาะลูกค้าที่ฉันดูแล (รหัส Sales ${esc([..._draftMyCodes()].join(', '))})</label>` : ''}
       <div id="draft-ms-list" style="max-height:260px;overflow-y:auto">${draftMsItems()}</div>
       <div style="padding:6px 4px 2px;display:flex;gap:5px;border-top:1px solid var(--BD);margin-top:4px">
         <button class="btn btn-xs" onclick="document.getElementById('draft-ms-panel').classList.add('hidden')">ปิด</button>
@@ -16237,18 +16256,32 @@ function _custNameParts(code, rawName) {
   raw = clean(raw);
   const m = raw.match(/^(.*?)\s*\(?\s*สาขา\s*(?:ที่\s*)?(.+?)\)?$/);
   const company = clean((m ? m[1] : raw).replace(/\(?มหาชน\)?|บริษัท|บจ\.|จำกัด/g, ' '));
-  let branch = clean(prof.branch) || (m ? clean(m[2]) : '');
+  let branch = clean(prof.branch) || (m ? clean(m[2]) : '') || clean(_addrBranchOf(code));
   if (!branch) { _draftLoadShipBranch(); branch = clean((_draftShipBranch || {})[code]); }
   return { company, branch, inactive };
 }
+// "เฉพาะลูกค้าที่ฉันดูแล" (2026-10-12, ผู้ใช้ขอ) — ตามรหัส Sales ของผู้ใช้ · ค่าเริ่มต้นติ๊กสำหรับฝ่ายขายที่มีรหัสตัวเอง
+// แต่เห็นได้กว้างกว่า (ทีม/ทั้งแผนก) — ผู้ที่ถูกจำกัดสิทธิ์ server กรองให้แล้ว (รวมเจ้า MT ที่ดูแล) จึงไม่ติ๊กให้ ไม่งั้นเจ้า MT จะหาย
+// สาขาที่เลือกไว้แล้วแสดงเสมอแม้ไม่ใช่ของฉัน
+let _draftMsMineOv = null;
+function _draftMyCodes() { return new Set(String(mySlmKey() || '').split(',').map(s => s.trim()).filter(Boolean)); }
+function _draftMsMine() {
+  if (!_draftMyCodes().size) return false;
+  if (_draftMsMineOv !== null) return _draftMsMineOv;
+  const sc = _scopeNow();
+  return isSales() && !(sc && sc.restricted);
+}
+function _draftMsMineSet(on) { _draftMsMineOv = !!on; draftMsRefresh(); }
 function draftMsItems() {
   const q = _msSearchText(_draftMsQ).trim();
+  const mine = _draftMsMine(), myCodes = mine ? _draftMyCodes() : null;
   const groups = _draftBranchGroups().filter(([corp]) => !_draftSelGroups.size || _draftSelGroups.has(corp));
   const MAX_ITEMS = 120;
   const chunks = [];
   let total = 0, rendered = 0;
   for (const [corp, branches] of groups) {
     let shown = branches.filter(c => !_draftSelCats.size || _draftSelCats.has(c.category || 'ไม่ระบุประเภท'));
+    if (mine) shown = shown.filter(c => myCodes.has(String(c.slm || '')) || _draftSelectedBranches.has(c.c));
     if (q) shown = shown.filter(c => { const p = _custNameParts(c.c, c.n); return _msSearchText(corp + ' ' + c.c + ' ' + c.n + ' ' + (c.branch || '') + ' ' + p.branch + ' ' + p.company).includes(q); });
     total += shown.length;
     shown = shown.slice(0, Math.max(0, MAX_ITEMS - rendered));
@@ -16293,11 +16326,13 @@ function draftMsToggle(code) {
 }
 function draftMsSelectAll() {
   const q = _msSearchText(_draftMsQ).trim();
+  const myCodes = _draftMsMine() ? _draftMyCodes() : null;
   _draftBranchGroups().forEach(([corp, branches]) => {
     if (_draftSelGroups.size && !_draftSelGroups.has(corp)) return;
     branches.forEach(c => {
       const cat = c.category || 'ไม่ระบุประเภท';
       if (_draftSelCats.size && !_draftSelCats.has(cat)) return;
+      if (myCodes && !myCodes.has(String(c.slm || ''))) return;
       if (q && !_msSearchText(corp + ' ' + c.c + ' ' + c.n + ' ' + (c.branch || '')).includes(q)) return;
       _draftSelectedBranches.add(c.c);
     });
@@ -17052,6 +17087,8 @@ function draftPlanOverAdd(lvId, input) {
   const m = String(input.value || '').match(/·\s*([^·]+)$/), uid = m ? m[1].trim() : '';
   if (!_draftPlanUsers.some(u => u.uid === uid)) { toast('เลือกชื่อจากรายการที่ขึ้นมา', 'warn'); return; }
   const list = _draftPlanOverList(lvId);
+  // server ตรวจจริง (promoApproval.template: ผู้สร้างเพิ่มตัวเองในขั้นปกติไม่ได้) — ฝั่งนี้แค่เตือนเร็ว
+  if (uid === UID && !list.includes(uid)) { toast('เพิ่มตัวเองเป็นผู้อนุมัติไม่ได้', 'warn'); input.value = ''; return; }
   if (!list.includes(uid)) list.push(uid);
   _draftPlanOverSet(lvId, list);
 }
@@ -19044,7 +19081,7 @@ function pdWfRemLevel(kind, id) {
 }
 function pdWfAddApprover(kind, lvId, uid) {
   if (!uid) return;
-  const u = _pdWfUsers.find(x => x.uid === uid) || (DB.get('users') || []).find(x => x.uid === uid); if (!u) return;
+  const u = _pdWfUsers.find(x => x.uid === uid); if (!u) return;
   const lv = _pdWfLevelsFor(kind).find(l => l.id === lvId);
   if (kind === 'normal') _pdWfDirty = true;
   if (lv && !lv.approvers.find(a => a.uid === uid)) lv.approvers.push({ uid: u.uid, name: u.name, role: u.role, department: u.department || '' });
@@ -19071,7 +19108,9 @@ function pdWfSave(kind) {
   const badLoss = kind === 'normal' ? levels.findIndex((lv, i) => lv.only_if_loss && !levels.slice(0, i).some(x => x.audit_verdict)) : -1;
   if (badLoss >= 0) { toast(`ขั้นที่ ${badLoss + 1}: "เฉพาะเมื่อมีรายการขาดทุน" ต้องอยู่หลังขั้นตรวจสอบ (ขายได้/ขาดทุน)`, 'warn'); return; }
   const fixed = levels.filter(lv => !(kind === 'normal' && lv.pick_by_creator && !(lv.approvers || []).length));
-  const error = ApprovalWorkflow.validate(fixed, DB.get('users') || [], kind !== 'exec' || fixed.length > 0);
+  // (2026-10-12) ตรวจกับรายชื่อชุดเดียวกับช่องเลือก (_pdWfUsers โหลดจาก server ตอนเปิดหน้า) — เดิมใช้ DB.get('users')
+  // ซึ่งอัปเดตเฉพาะตอนเปิดหน้าจัดการผู้ใช้ ผู้ใช้ใหม่จึงเลือกได้แต่บันทึกไม่ผ่าน "ผู้อนุมัติไม่มีอยู่" · server ตรวจซ้ำกับ sc_users
+  const error = ApprovalWorkflow.validate(fixed, _pdWfUsers.length ? _pdWfUsers : null, kind !== 'exec' || fixed.length > 0);
   if (error) { toast(error, 'warn'); return; }
   const route = kind === 'exec' ? null : _pdWfCurRoute();
   if (route && !String(route.name || '').trim()) { toast('กรุณาตั้งชื่อเส้นทาง', 'warn'); return; }

@@ -495,19 +495,26 @@ module.exports = function dashboardExecRoutes(db) {
       const from = String(req.query.from || '');
       const to = String(req.query.to || '');
       if (!YM_RE.test(from) || !YM_RE.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM และ from ≤ to' });
+      // สิทธิ์การเห็น (2026-10-12, security review) — กรองแบบเดียวกับ /exec และ invoice_sales_monthly (lib/customerScope.js)
+      const scope = resolveScope(db, req.user);
+      const sc = factSql(scope, { cust: 'l.cust_code', slm: 'l.slm_code' });
       const rows = db.prepare(`SELECT l.ym, l.cust_code, l.slm_code, l.sku, SUM(l.qty) AS qty, SUM(l.amount) AS amount,
           p.name AS p_name, p.group_name AS p_group, s.name AS s_name
         FROM sales_lines_monthly l LEFT JOIN products p ON p.code = l.sku LEFT JOIN bplus_skus s ON s.code = l.sku
-        WHERE l.company = 'BP-TGM' AND l.ym >= ? AND l.ym <= ?
-        GROUP BY l.ym, l.cust_code, l.slm_code, l.sku`).all(from, to);
+        WHERE l.company = 'BP-TGM' AND l.ym >= ? AND l.ym <= ?${sc ? ` AND ${sc.sql}` : ''}
+        GROUP BY l.ym, l.cust_code, l.slm_code, l.sku`).all(from, to, ...(sc ? sc.params : []));
       const pre = productGroupByPrefix();
       const out = rows.map((r) => {
         const group = r.sku === '0000' ? 'ไม่ระบุสินค้า (TG)' : (r.p_group || pre.get(String(r.sku).split('-')[0]) || '');
         return { ym: r.ym, cust_code: r.cust_code, slm_code: r.slm_code, prod_code: r.sku, prod_name: r.s_name || r.p_name || r.sku,
           prod_group: group, qty: Number(r.qty) || 0, amount: Number(r.amount) || 0 };
       });
-      const customers = Object.fromEntries(db.prepare('SELECT code, name FROM bplus_customers').all().map((r) => [r.code, r.name]));
-      const salesmen = Object.fromEntries(db.prepare('SELECT bp_code, bp_name FROM bplus_salesman_map').all().map((r) => [`BP-${r.bp_code}`, r.bp_name]));
+      // ถูกจำกัดสิทธิ์ = ส่งชื่อเฉพาะรหัสที่อยู่ในแถวที่เห็น
+      const seenCust = new Set(out.map((r) => r.cust_code)), seenSlm = new Set(out.map((r) => r.slm_code));
+      const customers = Object.fromEntries(db.prepare('SELECT code, name FROM bplus_customers').all()
+        .filter((r) => scope.all || seenCust.has(r.code)).map((r) => [r.code, r.name]));
+      const salesmen = Object.fromEntries(db.prepare('SELECT bp_code, bp_name FROM bplus_salesman_map').all()
+        .filter((r) => scope.all || seenSlm.has(`BP-${r.bp_code}`)).map((r) => [`BP-${r.bp_code}`, r.bp_name]));
       res.json({ rows: out, customers, salesmen });
     } catch (e) {
       console.error('[dashboardExec] bplus/sales_lines failed:', e);

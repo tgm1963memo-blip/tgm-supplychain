@@ -57,6 +57,10 @@ test('owner can override approvers per level on submit; others cannot; level can
   assert.equal(empty.status, 400);
   const other = await call(r(no), 'PATCH', { status: 'pending_approval', approver_overrides: { l1: ['M'] } }, 'S2');
   assert.notEqual(other.status, 200);
+  // (2026-10-12, security review) ผู้สร้างใส่ตัวเองเป็นผู้อนุมัติแทนรายชื่อกลางไม่ได้ (เดิมอนุมัติเองจนจบได้)
+  const self = await call(r(no), 'PATCH', { status: 'pending_approval', approver_overrides: { l1: ['S'] } }, 'S');
+  assert.equal(self.status, 400);
+  assert.equal((await call(r(no), 'PATCH', { status: 'pending_approval', approver_overrides: { l1: ['M', 'S'] } }, 'S')).status, 400);
   const ok = await call(r(no), 'PATCH', { status: 'pending_approval', approver_overrides: { l1: ['M2'] } }, 'S');
   assert.equal(ok.status, 200);
   assert.deepEqual(ok.data[0].levels_json[0].approvers.map(a => a.uid), ['M2']);

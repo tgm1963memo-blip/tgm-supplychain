@@ -161,7 +161,7 @@ function buildApp(db, opts = {}) {
 
   app.use('/api/customers', authed, makeCrudRouter(db, 'customers', {
     pk: 'code',
-    fields: ['code', 'name', 'cust_group', 'slm_id', 'is_active'],
+    fields: ['code', 'name', 'cust_group', 'slm_id', 'is_active', 'addr_branch'],
     readOnly: true,
     scope: factScope({ cust: 'code', slm: 'slm_id' }),
   }));
@@ -584,7 +584,20 @@ function buildApp(db, opts = {}) {
   // อนุมัติใบเคาะราคาผ่านลิงก์ในอีเมล — ไม่ต้อง login (ใช้ token ส่วนตัว) ดู routes/promoEmailApprove.js
   app.use('/api/promo_approve', require('./routes/promoEmailApprove')(db));
 
-  app.use('/api/promo_drafts', authed, makeCrudRouter(db, 'promo_drafts', {
+  // (2026-10-12) ผู้ที่ถูกจำกัดสิทธิ์บันทึกบรรทัดใบเคาะได้เฉพาะสาขาที่มองเห็น (lib/customerScope.js) — กันยิง API ตรง
+  // สาขาที่อยู่ในใบนั้นอยู่แล้ว (เช่น ผู้ร่วมแก้เอกสารที่มีสาขาของคนอื่น) บันทึกซ้ำได้ตามเดิม
+  const promoDraftCustGuard = (req, res, next) => {
+    if (!['POST', 'PATCH'].includes(req.method)) return next();
+    const scope = scopeOf(req);
+    if (!scope || scope.all) return next();
+    const rows = (Array.isArray(req.body) ? req.body : [req.body || {}]).filter(r => r && r.cust_code !== undefined);
+    const existing = db.prepare('SELECT 1 FROM promo_drafts WHERE draft_no = ? AND cust_code = ? LIMIT 1');
+    const bad = [...new Set(rows.filter(r => !cs.canSeeCust(scope, String(r.cust_code)) && !(r.draft_no && existing.get(String(r.draft_no), String(r.cust_code))))
+      .map(r => String(r.cust_code)))];
+    if (bad.length) return res.status(403).json({ error: `ไม่มีสิทธิ์ทำเอกสารให้สาขา: ${bad.slice(0, 10).join(', ')}${bad.length > 10 ? ` และอีก ${bad.length - 10} สาขา` : ''}` });
+    next();
+  };
+  app.use('/api/promo_drafts', authed, promoDraftCustGuard, makeCrudRouter(db, 'promo_drafts', {
     pk: 'id',
     idPrefix: 'PMD',
     // weight/gp_pct_promo/cost_price_promo added 2026-09-16 — the "ราคาปกติ"/"ราคาโปรโมชั่น" columns
