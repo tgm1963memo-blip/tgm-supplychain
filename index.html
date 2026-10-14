@@ -834,7 +834,7 @@ const SB = {
   },
 
   async logout() {
-    try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
+    try { await apiFetch('/api/auth/logout', { method: 'POST', keepalive: true }); } catch (e) { /* ignore */ }
     setSessionToken(null);
   },
 
@@ -5142,15 +5142,26 @@ let _customerProfilesMemo=null;
 // สำเนาในหน่วยความจำ (2026-10-06): localStorage เต็ม (รายชื่อลูกค้า ~2 หมื่นแถว) ทำให้ set ล้มเงียบๆ แล้ว get คืนค่าเก่า/ว่าง
 // → ตัวเลือกสาขาในใบเคาะขึ้นแต่รหัสไม่มีชื่อ · เก็บค่าล่าสุดไว้ในหน่วยความจำเสมอ อ่านจากที่นี่ก่อน localStorage
 const _dbMem=new Map();
+const _dbNoPersist=new Set();
 const DB={
   get(k){if(_dbMem.has(k))return _dbMem.get(k);try{return JSON.parse(localStorage.getItem('tgm3_'+k)||'null')}catch{return null}},
   // ไม่มี try/catch มาก่อน — localStorage เต็มโควต้า (เช่น cache รายชื่อลูกค้า 15,000+ แถวทีเดียว) ทำให้
   // setItem throw ออกมาตรงๆ ไม่มีใครจับ พังฟังก์ชันเรียกใช้ทั้งฟังก์ชัน (เช่น SB.getCustomers() ที่เรียก
   // DB.set(...) ก่อน return ผลลัพธ์ — reject ทิ้งทั้งฟังก์ชัน ไม่ได้ข้อมูลกลับไปเลยทั้งที่ query จริงสำเร็จแล้ว)
   // การ cache ไว้ใน localStorage เป็นแค่ optimization รอบหน้า พลาดได้ไม่กระทบความถูกต้องของรอบนี้
+  // (2026-10-14) เขียนไม่ลง (เกินโควต้า) → ลบค่าเก่าของ key นั้นทิ้ง (ไม่งั้นโหลดหน้าใหม่ได้ข้อมูลค้างจากรอบก่อน + คืนที่ให้ key อื่น)
+  // แล้วไม่ลองเขียน key นั้นอีกในรอบนี้ — JSON.stringify ข้อมูลก้อนใหญ่ (customer_profiles หลายหมื่นแถว) ทุกครั้งทำให้หน้าหน่วง
+  // ข้อมูลยังอยู่ใน _dbMem ใช้งานได้ปกติ แค่ไม่ได้ cache ข้ามการโหลดหน้า
   set(k,v){
     _dbMem.set(k,v);
-    try{localStorage.setItem('tgm3_'+k,JSON.stringify(v))}catch(e){console.warn('DB.set (localStorage เต็ม?):',k,e.message||e)}
+    if(!_dbNoPersist.has(k)){
+      try{localStorage.setItem('tgm3_'+k,JSON.stringify(v))}
+      catch(e){
+        _dbNoPersist.add(k);
+        try{localStorage.removeItem('tgm3_'+k)}catch(_){}
+        console.info('DB.set: '+k+' ใหญ่เกินที่เก็บในเครื่อง — เก็บไว้ในหน่วยความจำอย่างเดียว ('+(e.name||e.message||e)+')');
+      }
+    }
     if(k==='customer_profiles') _customerProfilesMemo=null;
   },
 };
@@ -5344,9 +5355,15 @@ function _clearUserScopedCaches(){
     if(typeof _chainSwapCache!=='undefined')Object.keys(_chainSwapCache).forEach(k=>delete _chainSwapCache[k]);
   }catch(e){console.warn('clearUserScopedCaches',e);}
 }
+// (2026-10-14, ผู้ใช้แจ้ง "กดออกจากระบบแล้วค้าง") เดิมรอ POST /api/auth/logout ตอบก่อน — apiFetch ไม่มี timeout
+// ถ้าคำขอไปต่อคิวหลังคำขอหนักของ Dashboard (/exec หลายวินาที) หรือ tunnel ช้า ปุ่มค้างไปเรื่อยๆ
+// → รอ server ไม่เกิน 1.5 วิ (คำขอส่งแบบ keepalive ยังไปถึง server แม้หน้าโหลดใหม่แล้ว) แล้วล้าง session ในเครื่องต่อเลย
 async function doLogout(){
+  if(window._loggingOut)return;window._loggingOut=true;
+  try{document.querySelectorAll('button[onclick="doLogout()"]').forEach(b=>{b.disabled=true;b.textContent='กำลังออกจากระบบ…';});}catch(_){}
   _mySigCache=undefined;audit('LOGOUT','system',{});
-  try{await SB.logout();}catch(e){console.warn(e);}
+  try{await Promise.race([SB.logout(),new Promise(r=>setTimeout(r,1500))]);}catch(e){console.warn(e);}
+  setSessionToken(null);
   localStorage.removeItem('tgm_session');
   _clearUserScopedCaches();
   // โหลดหน้าใหม่ทั้งหน้า — ตัวแปรในหน่วยความจำทุกตัว (ตัวกรอง Sales, ตารางที่วาดค้าง ฯลฯ) หายหมด ไม่เหลือของผู้ใช้ก่อนหน้า
