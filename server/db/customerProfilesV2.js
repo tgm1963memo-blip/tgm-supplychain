@@ -331,15 +331,25 @@ function applySalesCategoryGroup20261014(db) {
 // แต่ไฟล์ไม่มีค่า Group · data/sales-category-manual-20261014.json (มี reason ต่อราย): ลูกค้าบริษัท/ชื่อเดียวกันในไฟล์ 9 ราย,
 // บุคคลธรรมดา → Direct Domestic (แบบเดียวกับในไฟล์) 15 ราย, ที่เหลือจัดจากชื่อร้าน/ประเภทกิจการ · ตั้งเฉพาะที่ยังว่าง · รันครั้งเดียว
 function applySalesCategoryManual20261014(db) {
+  applySalesCategoryList(db, '20261014_sales_category_manual_v1', 'sales-category-manual-20261014.json', 'sales-category-manual-2026-10-14');
+}
+// ลูกค้าทั้งระบบที่ยังไม่มี Category (Sales) (2026-10-14, ผู้ใช้ขอ "ระบุโดยใช้ข้อมูลกลุ่มเดิมในระบบก่อน") — 1,458 ราย
+// data/sales-category-fill2-20261014.json (reason ต่อราย): ห้าง/ซูเปอร์ฯ (หมวดผู้บริหาร mall/makro, modern_trade,
+// ตันตราภัณฑ์/สุวรรณชาด/สยามวิชโก้/สินทรัพย์ก้าวหน้า) → Retail · ส่งออก → Export (ใหม่) · Online → Online (ใหม่) ·
+// ประเภทธุรกิจในระบบ → Restaurant/Bakery/Hotel/… · ที่เหลือ (ร้านค้าทั่วไปไม่ทราบประเภท) → Direct Domestic (ผู้ใช้เลือก)
+// ไม่รวมลูกค้าที่ไม่นับเป็นยอดขาย (lib/nonSales.js) · ตั้งเฉพาะที่ยังว่าง · รันครั้งเดียว
+function applySalesCategoryFill2_20261014(db) {
+  applySalesCategoryList(db, '20261014_sales_category_fill2_v1', 'sales-category-fill2-20261014.json', 'sales-category-fill2-2026-10-14');
+}
+function applySalesCategoryList(db, id, fileName, editedBy) {
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
-  const id = '20261014_sales_category_manual_v1';
   if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
-  const file = path.join(__dirname, 'data', 'sales-category-manual-20261014.json');
+  const file = path.join(__dirname, 'data', fileName);
   if (!fs.existsSync(file)) return;
   const items = JSON.parse(fs.readFileSync(file, 'utf8'));
   const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
   const upsert = db.prepare(`INSERT INTO customer_profiles (code, name, sales_category, edited_by, updated_at)
-    VALUES (?, ?, ?, 'sales-category-manual-2026-10-14', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(code) DO UPDATE SET sales_category = excluded.sales_category,
       name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name), updated_at = excluded.updated_at
     WHERE COALESCE(TRIM(customer_profiles.sales_category), '') = ''`);
@@ -348,7 +358,7 @@ function applySalesCategoryManual20261014(db) {
   try {
     for (const it of items) {
       const nm = nameOf.get(it.code, it.code);
-      n += upsert.run(it.code, nm.c ? null : (nm.b || null), it.sales_category).changes;
+      n += upsert.run(it.code, nm.c ? null : (nm.b || null), it.sales_category, editedBy).changes;
     }
     db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
     db.exec('COMMIT');
@@ -356,7 +366,7 @@ function applySalesCategoryManual20261014(db) {
     db.exec('ROLLBACK');
     throw e;
   }
-  console.log(`[migrations] sales category manual 2026-10-14: ${n}/${items.length} customers`);
+  console.log(`[migrations] ${id}: ${n}/${items.length} customers`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014 };
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014 };

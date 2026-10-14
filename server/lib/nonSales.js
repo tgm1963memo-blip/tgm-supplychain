@@ -3,6 +3,8 @@
 // ลูกค้าที่ไม่นับเป็นยอดขาย — ตัดออกจากทุกหน้า (2026-10-14, ผู้ใช้ขอ: บริษัทในเครือ 3 กลุ่ม "รวมถึง shop ไม่ต้องเอามารวมเป็นยอดขายเลย")
 //   บริษัทในเครือ: corporate มีคำว่า "(บริษัทในเครือ)" (ไทย-เยอรมัน มีท โปรดักท์ / ไทยซอสเซส / ทีจี โคลด์ สตอเรจ) + ลูกค้า Bplus ที่ติดธง is_intercompany
 //   Shop ของบริษัท: หมวดผู้บริหาร shop_factory / shop_rama3 หรือ corporate เป็น TGM Shop / TGM. SHOP / Shop โรงงาน
+//   (2026-10-14 เพิ่ม ผู้ใช้เลือก) พนักงานซื้อ / เบิกตัวอย่าง / ออกบูธ / ทีจีเอ็ม + ได้รายเบ็ดเตล็ด / Shop บริษัท —
+//   ประเภทธุรกิจ employee / other / affiliate / company_shop หรือกลุ่มลูกค้า (category) ชุดเดียวกัน
 // ใช้ร่วมกันทุก endpoint ยอดขาย (invoice_sales_* / v_sales_overview / invoice_detail pivot / Dashboard / Dashboard ผู้บริหาร)
 // ผ่าน excludeSql() · แคช 60 วิ (ตั้งกลุ่มใหม่ในหน้าจัดการกลุ่มแล้วมีผลภายใน 1 นาที)
 const TTL_MS = 60 * 1000;
@@ -14,7 +16,9 @@ function nonSalesCodes(db) {
   for (const r of db.prepare(`SELECT code FROM customer_profiles
       WHERE corporate LIKE '%(บริษัทในเครือ)%'
          OR exec_channel IN ('shop_factory', 'shop_rama3')
-         OR corporate LIKE 'TGM Shop%' OR corporate LIKE 'TGM. SHOP%' OR corporate LIKE 'Shop โรงงาน%'`).all()) codes.add(r.code);
+         OR corporate LIKE 'TGM Shop%' OR corporate LIKE 'TGM. SHOP%' OR corporate LIKE 'Shop โรงงาน%'
+         OR business_type IN ('employee', 'other', 'affiliate', 'company_shop')
+         OR category IN ('พนักงาน', 'เบิกตัวอย่าง', 'ออกบูธ', 'ไทย-เยอรมัน', 'ได้รายเบ็ดเตล็ด/บริหารจัดการ')`).all()) codes.add(r.code);
   try {
     for (const r of db.prepare('SELECT code FROM bplus_customers WHERE is_intercompany = 1').all()) codes.add(r.code);
   } catch { /* ยังไม่มีตาราง Bplus */ }
