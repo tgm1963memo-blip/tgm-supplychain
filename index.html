@@ -8030,7 +8030,8 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     slm_name:name,
     cust_code:`SLM-${sp.raw}`,
     cust_name:name||`Sales ${sp.slm}`,
-    cust_group:_isConsiBranch(sp.branch)?'ฝากขาย':'ขายจริง',
+    // แถวออเดอร์ที่ไม่มีรหัสลูกค้า (ยอดรายพนักงานขาย) — เดิมขึ้นกลุ่ม "ขายจริง" + รหัส SLM-xxx ในแท็บรายสินค้า (2026-10-14, ผู้ใช้ขอเอาออก)
+    cust_group:_isConsiBranch(sp.branch)?'ฝากขาย · ไม่ระบุลูกค้า':'ไม่ระบุลูกค้า',
     // raw Express STKGRP, not the legacy productGroupForSku() heuristic — matches
     // _sbSalesOverviewAggRows() so Sales Overview's product tab (the one path that reads rows from
     // here instead of the aggregate — see _loadSalesFromSupabase's daily-vs-not branch) shows a
@@ -9939,7 +9940,7 @@ function sdProd(){
             ${_sdVT(ty._tot,_sdProdX(ty._tot),null,{fs:1})}<td class="r">${_sdBar(ty._tot,it._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
           if(ot) ty.cs.forEach(cu=>{
             h+=`<tr style="background:var(--bg);font-size:12px">
-              <td style="padding-left:64px"><span class="badge bbgr" style="font-size:10px">${cu.c}</span> ${cu.n}</td>
+              <td style="padding-left:64px">${String(cu.c||'').startsWith('SLM-')?`<span style="color:var(--TX3)">เซลส์:</span> ${cu.n}`:`<span class="badge bbgr" style="font-size:10px">${cu.c}</span> ${cu.n}`}</td>
               ${_sdVT(cu._tot,_sdProdX(cu._tot))}<td class="r">${_sdBar(cu._tot,ty._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
           });
         });
