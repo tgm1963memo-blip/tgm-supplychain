@@ -11,6 +11,7 @@ const { resolveScope, factSql } = require('../lib/customerScope');
 const chainSales = require('../lib/chainSales');
 const { buildProductGroupMatcher } = require('../lib/productGroupMatch');
 const { weightFromName } = require('../lib/weightFromName');
+const nonSales = require('../lib/nonSales');
 const CHAIN_CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
 
 // Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
@@ -253,6 +254,9 @@ module.exports = function dashboardExecRoutes(db) {
     // Bplus โรงงาน) และลูกค้า Bplus ที่ติดธง is_intercompany — ไม่นับเป็นยอดขาย ไม่แสดงใน Top 20 (ไปรวมใน "ยอดในเครือ")
     for (const r of db.prepare(`SELECT code FROM customer_profiles WHERE corporate LIKE '%(บริษัทในเครือ)%'
       UNION SELECT code FROM bplus_customers WHERE is_intercompany = 1`).all()) ic.add(r.code);
+    // (2026-10-14, ผู้ใช้ขอ) Shop ของบริษัท (TGM Shop โรงงาน / พระราม 3 / ตู้ทอด) ไม่นับเป็นยอดขาย — ตัดทิ้งเหมือนพนักงาน
+    // ชุดเดียวกับทุกหน้า (lib/nonSales.js) · บริษัทในเครือยังแสดงใน "ยอดในเครือ" ตามเดิม
+    for (const code of nonSales.nonSalesCodes(db)) if (!ic.has(code)) staff.add(code);
     return { ic, staff };
   }
   let reqNonSales = { ic: new Set(), staff: new Set() };
@@ -679,7 +683,7 @@ module.exports = function dashboardExecRoutes(db) {
       if (!YM_RE.test(from) || !YM_RE.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM และ from ≤ to' });
       // สิทธิ์การเห็น (2026-10-12, security review) — กรองแบบเดียวกับ /exec และ invoice_sales_monthly (lib/customerScope.js)
       const scope = resolveScope(db, req.user);
-      const sc = factSql(scope, { cust: 'l.cust_code', slm: 'l.slm_code' });
+      const sc = nonSales.withExclude(db, factSql(scope, { cust: 'l.cust_code', slm: 'l.slm_code' }), 'l.cust_code'); // + ตัดบริษัทในเครือ/Shop
       const rows = db.prepare(`SELECT l.ym, l.cust_code, l.slm_code, l.sku, SUM(l.qty) AS qty, SUM(l.amount) AS amount,
           p.name AS p_name, p.group_name AS p_group, s.name AS s_name
         FROM sales_lines_monthly l LEFT JOIN products p ON p.code = l.sku LEFT JOIN bplus_skus s ON s.code = l.sku

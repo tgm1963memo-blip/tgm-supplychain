@@ -158,6 +158,9 @@ function buildApp(db, opts = {}) {
   const scopeOf = req => cs.resolveScope(db, req.user);
   const factScope = cols => req => cs.factSql(scopeOf(req), cols);
   const custScope = col => req => cs.custSql(scopeOf(req), col);
+  // ยอดขาย: ตัดลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ + Shop ของบริษัท, 2026-10-14) ทุกผู้ใช้ — lib/nonSales.js
+  const ns = require('./lib/nonSales');
+  const salesScope = cols => req => ns.withExclude(db, cs.factSql(scopeOf(req), cols), cols.cust);
 
   app.use('/api/customers', authed, makeCrudRouter(db, 'customers', {
     pk: 'code',
@@ -668,7 +671,7 @@ function buildApp(db, opts = {}) {
     pk: 'cust_code',
     fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count', 'cn_count', 'cn_amount', 'vat_amount', 'gross_amount', 'cn_vat'],
     readOnly: true,
-    scope: factScope({ cust: 'cust_code', slm: 'slm_code' }),
+    scope: salesScope({ cust: 'cust_code', slm: 'slm_code' }),
   }));
 
   // ยอดรวมตามช่วงวันที่ (2026-10-14, ผู้ใช้ขอเทียบจำนวนวันเท่ากัน เช่น 1–14 ต.ค. กับ 1–14 ก.ย.) — จาก invoice_sales_daily
@@ -681,8 +684,8 @@ function buildApp(db, opts = {}) {
     const where = ['d >= ?', 'd <= ?'], params = [from, to];
     if (cos.length) { where.push(`company IN (${cos.map(() => '?').join(',')})`); params.push(...cos); }
     if (slms.length) { where.push(`slm_code IN (${slms.map(() => '?').join(',')})`); params.push(...slms); }
-    const sc = cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code' });
-    if (sc) { where.push(sc.sql); params.push(...sc.params); }
+    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code' }));
+    where.push(sc.sql); params.push(...sc.params);
     const r = db.prepare(`SELECT SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily WHERE ${where.join(' AND ')}`).get(...params);
     res.json({ from, to, amount: Number(r?.amount) || 0, invoice_count: Number(r?.invoice_count) || 0 });
   });
@@ -717,6 +720,7 @@ function buildApp(db, opts = {}) {
       where.push(fs2.sql);
       params.push(...fs2.params);
     }
+    { const ex = ns.excludeSql(db, 'cust_code'); where.push(ex.sql); params.push(...ex.params); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
     const archiveListSql = `'TSS-67','TSS-68','TSSN-67','TSSN-68','CONSI-67'`;
     const canonicalCompanySql = `
@@ -782,6 +786,7 @@ function buildApp(db, opts = {}) {
             AND UPPER(TRIM(o.company)) NOT IN (${archiveListSql})
             ${slmList.length ? `AND o.slm_id IN (${slmList.map(() => '?').join(',')})` : slmId && !scope.all ? 'AND 0' : ''}
             ${setScope ? `AND ${setScope.sql}` : ''}
+            AND o.cust_code NOT IN (SELECT value FROM json_each(?))
         )
         SELECT 'p' AS k, ln.sku AS code, NULL AS name, SUM(ln.line_value) AS amt FROM ln GROUP BY ln.sku
         UNION ALL
@@ -789,7 +794,7 @@ function buildApp(db, opts = {}) {
         FROM ln JOIN sales_line_components c ON c.order_id = ln.order_id AND c.seq_num = ln.seq_num
         JOIN cl ON cl.order_id = ln.order_id AND cl.seq_num = ln.seq_num
         GROUP BY c.child_code
-      `).all(startYm, endYm, ...slmList, ...(setScope ? setScope.params : []));
+      `).all(startYm, endYm, ...slmList, ...(setScope ? setScope.params : []), ...ns.excludeSql(db).params);
     } catch (e) { console.warn('[dashboard] set explode:', e.message); }
     const prodMap = new Map(topProducts.map(r => [r.prod_code, { ...r, from_sets: 0 }]));
     for (const r of setRows) {
@@ -851,7 +856,7 @@ function buildApp(db, opts = {}) {
     fields: ['ym', 'company', 'slm_owner', 'category', 'corporate', 'cust_code', 'cust_name',
       'prod_group', 'prod_code', 'prod_name', 'qty', 'amount', 'invoice_count'],
     readOnly: true,
-    scope: factScope({ cust: 'cust_code', slm: 'slm_owner' }),
+    scope: salesScope({ cust: 'cust_code', slm: 'slm_owner' }),
   }));
 
   // รายชื่อลูกค้า CONSI (2026-09-29): getConsiCustomerRows() เดิมดึง v_sc_consi_monthly ทั้งตาราง (select ถูกละเลย
@@ -930,7 +935,7 @@ function buildApp(db, opts = {}) {
     fields: ['ym', 'company', 'slm_owner', 'category', 'corporate', 'cust_code', 'cust_name',
       'prod_group', 'prod_code', 'prod_name', 'qty', 'amount', 'invoice_count'],
     readOnly: true,
-    scope: factScope({ cust: 'cust_code', slm: 'slm_owner' }),
+    scope: salesScope({ cust: 'cust_code', slm: 'slm_owner' }),
   }));
 
   // นับแถวตารางใหญ่ 0.5 วิ/ครั้ง และ Dashboard เรียกทุกครั้งที่เปิด — แคช 60 วิ (จำนวนการจองเปลี่ยนนอกรอบ sync จึงไม่ใช้ version)

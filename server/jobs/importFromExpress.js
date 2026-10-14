@@ -1325,18 +1325,25 @@ function refreshSalesRollups(db) {
   // fall back on — do one full rebuild in that case; every cycle after that, the table is non-empty
   // and this takes the fast scoped path.
   const isEmpty = db.prepare('SELECT COUNT(*) AS n FROM v_sc_dashboard_sales_monthly').get().n === 0;
-  const cutoffYm = isEmpty ? '0000-00' : db.prepare("SELECT strftime('%Y-%m','now','-1 month') AS ym").get().ym;
+  // (2026-10-14) ตัดลูกค้าที่ไม่นับยอดย้อนหลังด้วย — สร้างใหม่ทั้งหมดหนึ่งครั้ง (ข้อมูลเดิมยังแสดงระหว่างรอ ไม่ล้างตารางก่อน)
+  const FULL_ONCE = '20261014_rollup_exclude_nonsales_v1';
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const fullOnce = !db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(FULL_ONCE);
+  const cutoffYm = isEmpty || fullOnce ? '0000-00' : db.prepare("SELECT strftime('%Y-%m','now','-1 month') AS ym").get().ym;
 
   // 3 separate transactions instead of 1 — measured live at 12-20s+ combined, which sat well above
   // both connections' busy_timeout and was the main source of "database is locked" 500s on ordinary
   // user requests (e.g. the per-request session-expiry UPDATE in middleware/auth.js). Splitting this
   // doesn't reduce total work, but it releases the write lock between tables so a request queued up
   // behind one ~4-7s chunk isn't also stuck behind the other two.
+  // ลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ + Shop ของบริษัท, 2026-10-14 — lib/nonSales.js) ไม่เข้าตารางสรุปยอด
+  // (Dashboard รายสินค้า / ประวัติขาย / Sales Overview) · insertSql ทุกตัวรับ ? ที่ 2 = รายการรหัสที่ตัด
+  const excludeJson = JSON.stringify([...require('../lib/nonSales').nonSalesCodes(db)]);
   function runRollupStep(deleteSql, insertSql, label) {
     db.exec('BEGIN');
     try {
       db.prepare(deleteSql).run(cutoffYm);
-      db.prepare(insertSql).run(cutoffYm);
+      db.prepare(insertSql).run(cutoffYm, excludeJson);
 
       db.exec('COMMIT');
     } catch (e) {
@@ -1352,6 +1359,7 @@ function refreshSalesRollups(db) {
      FROM sales_transactions t
      LEFT JOIN products p ON p.code = t.sku
      WHERE t.tx_date IS NOT NULL AND t.sku IS NOT NULL AND strftime('%Y-%m', t.tx_date) >= ?
+       AND COALESCE(t.cust_code, '') NOT IN (SELECT value FROM json_each(?))
        AND p.group_name IN (${REAL_PRODUCT_GROUPS_SQL})
      GROUP BY 1, t.company, t.sku`,
   );
@@ -1363,6 +1371,7 @@ function refreshSalesRollups(db) {
      FROM sales_transactions t
      LEFT JOIN products p ON p.code = t.sku
      WHERE t.tx_date IS NOT NULL AND t.sku IS NOT NULL AND strftime('%Y-%m', t.tx_date) >= ?
+       AND COALESCE(t.cust_code, '') NOT IN (SELECT value FROM json_each(?))
        AND p.group_name IN (${REAL_PRODUCT_GROUPS_SQL})
      GROUP BY t.company, COALESCE(t.slm_id,''), t.sku, 3`,
   );
@@ -1378,10 +1387,12 @@ function refreshSalesRollups(db) {
      LEFT JOIN customers c ON c.code = t.cust_code
      LEFT JOIN customer_profiles cp ON cp.code = t.cust_code
      WHERE t.tx_date IS NOT NULL AND t.sku IS NOT NULL AND strftime('%Y-%m', t.tx_date) >= ?
+       AND COALESCE(t.cust_code, '') NOT IN (SELECT value FROM json_each(?))
        AND p.group_name IN (${REAL_PRODUCT_GROUPS_SQL})
      GROUP BY t.company, COALESCE(t.slm_id,''), COALESCE(t.cust_code,''), t.sku, 1`,
   );
 
+  if (fullOnce) db.prepare('INSERT OR IGNORE INTO app_migrations(id) VALUES (?)').run(FULL_ONCE);
   console.log(`[importFromExpress] refreshSalesRollups: done in ${Date.now() - t0}ms (${isEmpty ? 'full rebuild, first run' : `rebuilt ym >= ${cutoffYm}`})`);
 }
 

@@ -173,11 +173,12 @@ function invoiceDetailRoutes(db) {
       if (!DATE_RE.test(from) || !DATE_RE.test(to) || from > to) return res.status(400).json({ error: 'from, to (YYYY-MM-DD) are required' });
       const slms = list(q.slm);
       const cs = require('../lib/customerScope');
-      const sc = cs.factSql(cs.resolveScope(db, req.user), { cust: 'x.cust_code', slm: 'x.slm_code' });
+      // + ตัดลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ / Shop, 2026-10-14 — lib/nonSales.js)
+      const sc = require('../lib/nonSales').withExclude(db, cs.factSql(cs.resolveScope(db, req.user), { cust: 'x.cust_code', slm: 'x.slm_code' }), 'x.cust_code');
       const filt = (x) => {
         const w = [], p = [];
         if (slms.length) { w.push(`${x}.slm_code IN (${slms.map(() => '?').join(',')})`); p.push(...slms); }
-        if (sc) { w.push(sc.sql.replace(/x\./g, `${x}.`)); p.push(...sc.params); }
+        w.push(sc.sql.replace(/x\./g, `${x}.`)); p.push(...sc.params);
         return { sql: w.length ? ' AND ' + w.join(' AND ') : '', params: p };
       };
       const fi = filt('i');
