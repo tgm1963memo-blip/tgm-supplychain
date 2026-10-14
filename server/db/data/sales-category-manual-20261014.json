@@ -64,4 +64,5 @@
 {"code":"30-LF-0827","name":"วาวไทย จำกัด","sales_category":"Restaurant","reason":"จากชื่อ: ร้านอาหาร","oct_amount":2050},
 {"code":"AK-LF-3848","name":"สุวรรณา พุทธิวิสุทธิศักดิ์","sales_category":"Direct Domestic","reason":"บุคคลธรรมดา (แบบเดียวกับในไฟล์)","oct_amount":2040},
 {"code":"30-LF-1050","name":"สยามคอร์ท จำกัด","sales_category":"Hotel","reason":"จากชื่อ: ที่พัก/เซอร์วิสอพาร์ตเมนต์","oct_amount":1900},
-{"code":"BK-LD-0284","name":"แบล็ค แคนยอน (ประเทศไทย)","sales_category":"Bakery","reason":"ลูกค้าบริษัท/ชื่อเดียวกันในไฟล์","oct_amount":1605}]
+{"code":"BK-LD-0284","name":"แบล็ค แคนยอน (ประเทศไทย)","sales_category":"Bakery","reason":"ลูกค้าบริษัท/ชื่อเดียวกันในไฟล์","oct_amount":1605},
+{"code":"30-LD-0295","name":"ร็อคส์ ไวบส์ จำกัด","sales_category":"Restaurant","reason":"จากชื่อ: ร้านบาร์/ร้านอาหาร (ลูกค้าใหม่ ต.ค. 2026)","oct_amount":145}]

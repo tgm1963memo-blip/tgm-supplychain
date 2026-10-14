@@ -23,6 +23,8 @@ const { runImport } = require('./importFromExpress');
 const { runBplusImport } = require('./importFromBplus');
 const { runChainImport } = require('./importChainRooms');
 const { EXPRESS_ROOT } = require('./importFromExpress');
+// ลูกค้าใหม่ที่ยังไม่มี corporate → จัดกลุ่มอัตโนมัติ (2026-10-14) ดู lib/autoGroup.js
+const { autoGroupNewCustomers } = require('../lib/autoGroup');
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL');
@@ -69,6 +71,10 @@ parentPort.on('message', async (msg) => {
   await runBplusImport(db, { force: msg === 'run-bplus' }); // never throws
   // ยอดรายสาขาห้องจากห้อง SKU (TOPS-53/MAKRO/GOWHOLES, 2026-10-07) — อ่านเฉพาะเมื่อไฟล์เปลี่ยน ดู jobs/importChainRooms.js
   await runChainImport(db, EXPRESS_ROOT); // never throws
+  try {
+    const g = autoGroupNewCustomers(db);
+    if (g.updated) console.log(`[syncWorker] auto-group: ${g.updated} new customers → ${g.items.map((x) => `${x.code}=${x.corporate}`).join(', ')}`);
+  } catch (e) { console.warn('[syncWorker] auto-group failed:', e.message); }
   checkpoint();
   parentPort.postMessage('done');
 });
