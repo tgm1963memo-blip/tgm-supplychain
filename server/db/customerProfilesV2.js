@@ -176,4 +176,45 @@ function applySalesGroupsFix20261014(db) {
   console.log(`[migrations] sales groups fix 2026-10-14: ${g} groups, ${c} categories`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014 };
+// Corporate group ของลูกค้าเครือ Minor (2026-10-14, ผู้ใช้ขอ) — ไฟล์ Group Gike ชีต "corporate ไมเนอร์ กรุ๊ป" จัด 25 รายนี้
+// (ร้านอาหาร MI-LA-* + ซีเลค เซอร์วิส พาร์ทเนอร์ 30-LA-*) เป็นกลุ่ม Minor แยกไว้ แต่ corporate ยังเป็นชื่อนิติบุคคล 7 ชื่อ
+// → รวมเป็น "Minor Group" (ผู้ใช้เลือก: รวมเป็นกลุ่มเดียว แบรนด์อยู่ใน กลุ่ม (Sales) · ไม่รวมโรงแรม MI-LD-*)
+// แก้เฉพาะแถวที่ corporate ยังว่างหรือเป็นชื่อนิติบุคคลเดิม ไม่ทับที่คนตั้งเป็นอย่างอื่นไว้ · รันครั้งเดียว
+const MINOR_GROUP_CODES = [
+  'MI-LA-0001', 'MI-LA-0002', 'MI-LA-0003', 'MI-LA-0005', 'MI-LA-0006', 'MI-LA-0007', 'MI-LA-0008', 'MI-LA-0009',
+  'MI-LA-0010', 'MI-LA-0011', 'MI-LA-0012', 'MI-LA-0013', 'MI-LA-0014', 'MI-LA-0015', 'MI-LA-0016', 'MI-LA-0017', 'MI-LA-0018',
+  '30-LA-0152', '30-LA-0155', '30-LA-0158', '30-LA-0163', '30-LA-0164', '30-LA-0166', '30-LA-0171', '30-LA-0178',
+];
+const MINOR_OLD_CORPS = ['ซีเลค เซอร์วิส พาร์ทเนอร์', 'ไมเนอร์', 'เอ็มเอฟ คาเฟ่', 'ชิคเก้น ไทม์', 'เบอร์เกอร์', 'เบอรเกอร์', 'บีทีเอ็ม'];
+function applyMinorGroup20261014(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const id = '20261014_minor_group_v1';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const by = 'minor-group-2026-10-14';
+  const cur = db.prepare('SELECT corporate FROM customer_profiles WHERE code = ?');
+  const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
+  const upsert = db.prepare(`INSERT INTO customer_profiles (code, name, corporate, corp_source, corp_confirmed, corp_confirmed_by, corp_confirmed_at, edited_by, updated_at)
+    VALUES (?, ?, 'Minor Group', 'manual', 1, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET corporate = excluded.corporate, corp_source = 'manual', corp_confirmed = 1,
+      corp_confirmed_by = excluded.corp_confirmed_by, corp_confirmed_at = excluded.corp_confirmed_at,
+      name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name),
+      edited_by = excluded.edited_by, updated_at = excluded.updated_at`);
+  let n = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const code of MINOR_GROUP_CODES) {
+      const c = String(cur.get(code)?.corporate || '').replace(/[\s\u00a0]+/g, ' ').trim();
+      if (c && c !== 'Minor Group' && !MINOR_OLD_CORPS.some((x) => c.includes(x))) continue;
+      const nm = nameOf.get(code, code);
+      n += upsert.run(code, nm.c ? null : (nm.b || null), by, by).changes;
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] Minor Group 2026-10-14: corporate set on ${n}/${MINOR_GROUP_CODES.length} customers`);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014 };
