@@ -276,4 +276,55 @@ function applyMinorSalesGroup20261014(db) {
   console.log(`[migrations] Minor sales group 2026-10-14: ${n}/${MINOR_GROUP_CODES.length} customers`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014 };
+// Category (Sales) = คอลัมน์ "Group" ในไฟล์ Group ของเซลล์ (2026-10-14, ผู้ใช้ขอ) — แทนค่ารอบแรกจากคอลัมน์ A
+// (ร้านค้าทั่วไป / ชื่อห้าง) · Scripts/build-sales-category-group.py → data/sales-category-group-20261014.json
+//   groups: รหัส → Group (Restaurant / Bakery / Hotel / Retail / …) · old_map: ค่ารอบแรก → Group สำหรับรายที่ไฟล์ไม่มีค่า Group
+//   ("ร้านค้าทั่วไป" แปลงตรงไม่ได้ → เดาจากประเภทธุรกิจเฉพาะ 3 ประเภทที่แม่น ที่เหลือว่าง — ร้านอาหาร/เบเกอรี่ ตรงกับไฟล์แค่ ~60% ไม่ใช้)
+// เปลี่ยนเฉพาะแถวที่ยังว่าง หรือยังเป็นค่าแบบรอบแรก (คีย์ของ old_map) — ค่าที่คนตั้งใหม่แบบ Group แล้วไม่ทับ · รันครั้งเดียว
+function applySalesCategoryGroup20261014(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const id = '20261014_sales_category_group_v1';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const file = path.join(__dirname, 'data', 'sales-category-group-20261014.json');
+  if (!fs.existsSync(file)) return;
+  const { groups, old_map: oldMap } = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const isOld = (v) => !String(v || '').trim() || Object.prototype.hasOwnProperty.call(oldMap, String(v).trim());
+  const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
+  const set = db.prepare(`INSERT INTO customer_profiles (code, name, sales_category, edited_by, updated_at)
+    VALUES (?, ?, ?, 'sales-category-group-2026-10-14', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET sales_category = excluded.sales_category,
+      name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name), updated_at = excluded.updated_at`);
+  const cur = db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?');
+  let fromFile = 0, mapped = 0, cleared = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [code, g] of Object.entries(groups)) {
+      const row = cur.get(code);
+      if (row && !isOld(row.sales_category)) continue;
+      if (row && row.sales_category === g) continue;
+      const nm = nameOf.get(code, code);
+      fromFile += set.run(code, nm.c ? null : (nm.b || null), g).changes;
+    }
+    // ไม่อยู่ในไฟล์ (หรือไฟล์ไม่มีค่า Group) แต่ยังเป็นค่าแบบรอบแรก → แปลงตาม old_map
+    const left = db.prepare(`SELECT code, sales_category FROM customer_profiles WHERE COALESCE(TRIM(sales_category), '') <> ''`).all()
+      .filter((r) => !groups[r.code] && Object.prototype.hasOwnProperty.call(oldMap, r.sales_category.trim()));
+    const upd = db.prepare(`UPDATE customer_profiles SET sales_category = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE code = ?`);
+    // ล้างแล้ว ("ร้านค้าทั่วไป" ที่ไฟล์ไม่มี Group) → เดาจากประเภทธุรกิจเฉพาะที่ตรงกับไฟล์สูง (เทียบ 2,956 รายในไฟล์:
+    // modern_trade → Retail 92%, food_processor → Food Industry 100%, hotel → Hotel 79%) ที่เหลือว่างให้เซลล์กรอก
+    const BT_GROUP = { modern_trade: 'Retail', food_processor: 'Food Industry', hotel: 'Hotel' };
+    const bt = db.prepare('SELECT business_type FROM customer_profiles WHERE code = ?');
+    for (const r of left) {
+      const g = oldMap[r.sales_category.trim()] || BT_GROUP[bt.get(r.code)?.business_type] || null;
+      upd.run(g, r.code);
+      if (g) mapped++; else cleared++;
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] sales category = Group 2026-10-14: file ${fromFile}, mapped ${mapped}, cleared ${cleared}`);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014 };

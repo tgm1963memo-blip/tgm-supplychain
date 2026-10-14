@@ -4,7 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
 const { runMigrations } = require('../db/migrations');
-const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014 } = require('../db/customerProfilesV2');
+const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014 } = require('../db/customerProfilesV2');
 
 // กลุ่มลูกค้าฝั่ง Sales (2026-10-12): seed จากไฟล์ Group ของเซลล์ — ครั้งเดียว ไม่ทับค่าที่คนแก้
 test('sales groups seed applies once and never overwrites edited values', () => {
@@ -15,7 +15,7 @@ test('sales groups seed applies once and never overwrites edited values', () => 
   const withGroup = seed.find(x => x.sales_group);
   const row = db.prepare('SELECT sales_category, sales_group, sales_group_by FROM customer_profiles WHERE code = ?').get(withGroup.code);
   assert.equal(row.sales_group, withGroup.sales_group);
-  assert.equal(row.sales_category, withGroup.sales_category);
+  // Category ภายหลังแปลงเป็นค่าคอลัมน์ Group (20261014_sales_category_group_v1) — ดูเทสต์ท้ายไฟล์
   assert.ok(db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261012_sales_groups_v1'").get());
   // แก้เองแล้วรันซ้ำ = ไม่ทับ (marker กันไว้) · ถอด marker รันใหม่ก็ไม่ทับช่องที่มีค่าแล้ว
   db.prepare("UPDATE customer_profiles SET sales_group = 'แก้เอง' WHERE code = ?").run(withGroup.code);
@@ -35,7 +35,7 @@ test('sales groups fix corrects v1 seed values but keeps manual edits', () => {
   runMigrations(db);
   const get = code => db.prepare('SELECT sales_category, sales_group FROM customer_profiles WHERE code = ?').get(code);
   assert.match(get('MI-LA-0011').sales_group, /^Minor Group \(/); // ภายหลังรวมเป็นกลุ่ม Minor แบบ TCC (20261014_minor_sales_group_v1)
-  assert.equal(get('OIS-01-KF').sales_category, 'ร้านค้าทั่วไป');
+  assert.equal(get('OIS-01-KF').sales_category, 'Food Industry'); // ภายหลังเป็นค่า Group จากไฟล์
   // จำลอง DB ที่รัน v1 เก่าไปแล้ว
   db.prepare("UPDATE customer_profiles SET sales_group = 'The Coffee Club' WHERE code IN ('MI-LA-0011','MI-LA-0014')").run();
   db.prepare("UPDATE customer_profiles SET sales_group = 'แก้เอง' WHERE code = 'MI-LA-0001'").run();
@@ -74,8 +74,9 @@ test('sales category fill only fills empty values', () => {
   db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
   runMigrations(db);
   const get = code => db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?').get(code)?.sales_category;
-  assert.equal(get('NSL-01-KK'), 'ร้านค้าทั่วไป');
-  assert.equal(get('BD-LF-0134'), 'บิ๊กซี ซูเปอร์เซ็นเตอร์');
+  // หลังรันครบ: ร้านค้าทั่วไปที่ไฟล์ไม่มี Group → เดาจากประเภทธุรกิจที่แม่น · ห้าง → Retail
+  assert.equal(get('NSL-01-KK'), 'Food Industry'); // business_type food_processor (autofill)
+  assert.equal(get('BD-LF-0134'), 'Retail');
   db.prepare("UPDATE customer_profiles SET sales_category = 'ตั้งเอง' WHERE code = 'NSL-01-KK'").run();
   db.prepare("UPDATE customer_profiles SET sales_category = NULL WHERE code = 'MI-LA-0001'").run();
   db.prepare("DELETE FROM app_migrations WHERE id = '20261014_sales_category_fill_v1'").run();
@@ -99,4 +100,30 @@ test('Minor brand sales groups merge into one group like TCC', () => {
   assert.equal(sg('MI-LA-0006'), sg('MI-LA-0001'));
   assert.equal(sg('MI-LA-0011'), 'ตั้งเอง');
   assert.equal(sg('MI-LD-0001'), 'Minor Group');
+});
+
+// Category (Sales) = คอลัมน์ Group ในไฟล์ (2026-10-14): ค่าแบบรอบแรก → Group · ห้าง → Retail · ร้านค้าทั่วไปไม่มี Group →
+// เดาเฉพาะประเภทธุรกิจที่แม่น (food_processor → Food Industry) ไม่งั้นว่าง · ค่าที่ตั้งเป็นแบบ Group แล้วไม่ทับ
+test('sales category becomes the Group column, old values mapped or cleared', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  const { groups } = JSON.parse(fs.readFileSync(path.join(__dirname, '../db/data/sales-category-group-20261014.json'), 'utf8'));
+  const get = code => db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?').get(code)?.sales_category;
+  assert.equal(get('MI-LA-0001'), groups['MI-LA-0001']);
+  assert.equal(groups['MI-LA-0001'], 'Chain Restaurants');
+  const set = db.prepare(`INSERT INTO customer_profiles (code, sales_category, business_type) VALUES (?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET sales_category = excluded.sales_category, business_type = excluded.business_type`);
+  set.run('MI-LA-0001', 'ร้านค้าทั่วไป', null);        // ค่ารอบแรก → ค่า Group จากไฟล์
+  set.run('MI-LA-0013', 'Hotel', null);                // ตั้งเป็นแบบ Group แล้ว → ไม่ทับ
+  set.run('ZZ-TS-0001', 'โลตัส', null);                // ไม่อยู่ในไฟล์ + ชื่อห้าง → Retail
+  set.run('ZZ-TS-0002', 'ร้านค้าทั่วไป', 'food_processor');
+  set.run('ZZ-TS-0003', 'ร้านค้าทั่วไป', 'restaurant'); // เดาไม่แม่น → ว่าง
+  db.prepare("DELETE FROM app_migrations WHERE id = '20261014_sales_category_group_v1'").run();
+  applySalesCategoryGroup20261014(db);
+  assert.equal(get('MI-LA-0001'), 'Chain Restaurants');
+  assert.equal(get('MI-LA-0013'), 'Hotel');
+  assert.equal(get('ZZ-TS-0001'), 'Retail');
+  assert.equal(get('ZZ-TS-0002'), 'Food Industry');
+  assert.equal(get('ZZ-TS-0003'), null);
 });
