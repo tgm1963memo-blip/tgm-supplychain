@@ -10,6 +10,7 @@ const { cacheJson } = require('../lib/responseCache');
 const { resolveScope, factSql } = require('../lib/customerScope');
 const chainSales = require('../lib/chainSales');
 const { buildProductGroupMatcher } = require('../lib/productGroupMatch');
+const { weightFromName } = require('../lib/weightFromName');
 const CHAIN_CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
 
 // Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
@@ -257,6 +258,82 @@ module.exports = function dashboardExecRoutes(db) {
     return Number(r?.a) || 0;
   }
 
+  // KG ของ 1 บรรทัดขาย: หน่วยกิโลกรัม → qty · มีน้ำหนักใน WMS → qty_base × weight_per_unit
+  // · ไม่มีใน WMS → น้ำหนักจากชื่อสินค้า × qty (lib/weightFromName.js, 2026-10-14) — ลองชื่อรหัสคู่ A-xxx / xxx ด้วย
+  //   (เช่น TS0197 "แฮมหมู ตรา เอโร่" ไม่บอกน้ำหนัก แต่ A-TS0197 "แฮมหมู ตราเอโร่ 1000 กรัม") · ไม่รู้ = null (ไม่นับ KG)
+  let skuNameCache = { at: 0, map: null };
+  const nameKgMemo = new Map();
+  function skuNames() {
+    if (skuNameCache.map && Date.now() - skuNameCache.at < 10 * 60 * 1000) return skuNameCache.map;
+    const map = new Map();
+    for (const r of db.prepare('SELECT code, name FROM bplus_skus').all()) if (r.name) map.set(r.code, r.name);
+    for (const r of db.prepare('SELECT code, name FROM products').all()) if (r.name) map.set(r.code, r.name);
+    skuNameCache = { at: Date.now(), map };
+    nameKgMemo.clear();
+    return map;
+  }
+  // ชุดราคาพิเศษฝากขาย (90022-x "ทีจีเอ็มอาหารพร้อมทาน 99บาท" ฯลฯ) ไม่มีน้ำหนักในชื่อ แต่ invoice_line_components บอกสินค้าจริง
+  // ในแต่ละบิล → น้ำหนักเฉลี่ยต่อแพ็ค = KG ของสินค้าลูกทั้งหมด ÷ จำนวนแพ็ค (ใช้เมื่อรู้น้ำหนักสินค้าลูก ≥ 70% ของจำนวน)
+  let bundleCache = { at: 0, map: null };
+  function bundleWeights(weights) {
+    if (bundleCache.map && Date.now() - bundleCache.at < 10 * 60 * 1000) return bundleCache.map;
+    const parentQty = new Map(db.prepare(`SELECT l.sku, SUM(l.qty) AS q FROM invoice_lines l
+      WHERE EXISTS (SELECT 1 FROM invoice_line_components c WHERE c.company = l.company AND c.doc_num = l.doc_num AND c.seq_num = l.seq_num)
+      GROUP BY l.sku`).all().map((r) => [r.sku, Number(r.q) || 0]));
+    const acc = new Map();
+    for (const r of db.prepare(`SELECT parent_sku, child_code, MAX(child_name) AS child_name, SUM(child_qty) AS q FROM invoice_line_components
+      GROUP BY parent_sku, child_code`).all()) {
+      const a = acc.get(r.parent_sku) || { kg: 0, known: 0, all: 0 };
+      const q = Number(r.q) || 0;
+      const w = weights.has(r.child_code) ? weights.get(r.child_code) : weightFromName(r.child_name, '');
+      a.all += q;
+      if (w != null) { a.known += q; a.kg += q * w; }
+      acc.set(r.parent_sku, a);
+    }
+    const map = new Map();
+    for (const [sku, a] of acc) {
+      const pq = parentQty.get(sku);
+      if (pq > 0 && a.all > 0 && a.known / a.all >= 0.7) map.set(sku, a.kg / (a.known / a.all) / pq);
+    }
+    bundleCache = { at: Date.now(), map };
+    return map;
+  }
+  function lineKg(r, weights) {
+    if (KG_UNIT_RE.test(r.unit_code || '')) return Number(r.qty) || 0;
+    if (weights.has(r.sku)) return (Number(r.qty_base) || 0) * weights.get(r.sku);
+    const bundles = bundleWeights(weights);
+    if (bundles.has(r.sku)) return (Number(r.qty) || 0) * bundles.get(r.sku);
+    const names = skuNames();
+    const key = `${r.sku}|${r.unit_code || ''}`;
+    if (!nameKgMemo.has(key)) {
+      const sku = String(r.sku || '');
+      const twin = sku.startsWith('A-') ? sku.slice(2) : `A-${sku}`;
+      let w = weightFromName(names.get(sku), r.unit_code);
+      if (w == null && weights.has(twin) && !/^(กล่อง|ลัง|ลง|กล)/.test(r.unit_code || '')) w = weights.get(twin);
+      if (w == null) w = weightFromName(names.get(twin), r.unit_code);
+      nameKgMemo.set(key, w);
+    }
+    const w = nameKgMemo.get(key);
+    return w == null ? null : (Number(r.qty) || 0) * w;
+  }
+
+  // KG ของบรรทัดสรุป Bplus รหัส 0000 (ใบ Makro "A M" / EA ไม่มีสินค้า) — ใช้รายการสินค้าจริงของบิลชุดเดียวกันจาก
+  // Express TGM (tgm_detail_lines_daily, 2026-10-14) ต่อลูกค้าในช่วงเดียวกัน · ช่วงเดือน = ทั้งเดือน · คืน Map(cust → kg)
+  const TG_LUMP_SKU = '0000';
+  function tgmDetailKg(lo, hi, custs, weights) {
+    const out = new Map();
+    if (!custs.length) return out;
+    const d0 = lo.length === 7 ? `${lo}-01` : lo;
+    const d1 = hi.length === 7 ? `${hi}-31` : hi;
+    const rows = db.prepare(`SELECT cust_code, sku, unit_code, SUM(qty) AS qty, SUM(qty_base) AS qty_base FROM tgm_detail_lines_daily
+      WHERE d >= ? AND d <= ? AND cust_code IN (SELECT value FROM json_each(?)) GROUP BY cust_code, sku, unit_code`).all(d0, d1, JSON.stringify(custs));
+    for (const r of rows) {
+      const kg = lineKg(r, weights);
+      if (kg != null) out.set(r.cust_code, (out.get(r.cust_code) || 0) + kg);
+    }
+    return out;
+  }
+
   // KG ต่อรหัสลูกค้า แยก net/consi สำหรับช่วงที่ระบุ — คืน Map(code → { net, consi, amt, amtKg }) โดย amt/amtKg
   // ใช้บอกสัดส่วนยอดที่คำนวณน้ำหนักได้ (สินค้าที่ WMS ยังไม่มีน้ำหนัก → ไม่นับ KG)
   function kgPerCustomer(from, to, codes, slmCodes) {
@@ -267,23 +344,38 @@ module.exports = function dashboardExecRoutes(db) {
     const CHUNK = 800;
     for (let i = 0; i < codes.length; i += CHUNK) {
       const part = codes.slice(i, i + CHUNK);
+      const lump = new Map(); // `${lo}|${hi}` → Map(cust → ยอดบรรทัด 0000)
       const rows = parts(from, to, raw).flatMap((p) => db.prepare(`SELECT company, cust_code, sku, unit_code, SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
         FROM ${p.t.lines}
         WHERE company IN (${inList(p.cos.length)}) AND ${p.t.col} >= ? AND ${p.t.col} <= ? AND cust_code IN (${inList(part.length)})
         ${slmCodes.sql}
-        GROUP BY company, cust_code, sku, unit_code`).all(...p.cos, p.lo, p.hi, ...part, ...slmCodes.params));
+        GROUP BY company, cust_code, sku, unit_code`).all(...p.cos, p.lo, p.hi, ...part, ...slmCodes.params).map((r) => ({ ...r, range: `${p.lo}|${p.hi}` })));
       for (const r of rows) {
         const cur = out.get(r.cust_code) || { net: 0, consi: 0, amt: 0, amtKg: 0 };
-        let kg = null;
-        if (KG_UNIT_RE.test(r.unit_code || '')) kg = Number(r.qty) || 0;
-        else if (weights.has(r.sku)) kg = (Number(r.qty_base) || 0) * weights.get(r.sku);
         const amt = Math.abs(Number(r.amount) || 0);
         cur.amt += amt;
+        out.set(r.cust_code, cur);
+        if (r.sku === TG_LUMP_SKU && r.company === 'BP-TGM') {
+          const m = lump.get(r.range) || new Map();
+          m.set(r.cust_code, (m.get(r.cust_code) || 0) + amt);
+          lump.set(r.range, m);
+          continue;
+        }
+        const kg = lineKg(r, weights);
         if (kg != null) {
           cur.amtKg += amt;
           if (src[r.company] === 'CONSI') cur.consi += kg; else cur.net += kg;
         }
-        out.set(r.cust_code, cur);
+      }
+      for (const [range, m] of lump) {
+        const [lo, hi] = range.split('|');
+        const detail = tgmDetailKg(lo, hi, [...m.keys()], weights);
+        for (const [cust, amt] of m) {
+          if (!detail.has(cust)) continue;
+          const cur = out.get(cust);
+          cur.net += detail.get(cust);
+          cur.amtKg += amt;
+        }
       }
     }
     return out;
@@ -311,11 +403,26 @@ module.exports = function dashboardExecRoutes(db) {
       const amt = Number(r.amount) || 0;
       cur.amount += amt;
       cur.qty += Number(r.qty) || 0;
-      let kg = null;
-      if (KG_UNIT_RE.test(r.unit_code || '')) kg = Number(r.qty) || 0;
-      else if (weights.has(r.sku)) kg = (Number(r.qty_base) || 0) * weights.get(r.sku);
+      const kg = r.sku === TG_LUMP_SKU ? null : lineKg(r, weights);
       if (kg != null) { cur.kg += kg; cur.kgAmt += Math.abs(amt); }
       out.set(r.sku, cur);
+    }
+    // บรรทัด 0000 ของ Bplus → KG จากรายการจริงใน Express TGM ของลูกค้าที่มีบรรทัดนี้ (ตัวกรองเดียวกัน)
+    const lumpCur = out.get(TG_LUMP_SKU);
+    if (lumpCur && cos.includes('BP-TGM')) {
+      for (const p of parts(from, to, ['BP-TGM'])) {
+        const lumps = db.prepare(`SELECT cust_code, SUM(amount) AS amount FROM ${p.t.lines}
+          WHERE company = 'BP-TGM' AND sku = ? AND ${p.t.col} >= ? AND ${p.t.col} <= ?
+            AND cust_code NOT IN (SELECT value FROM json_each(?))
+          ${slmCodes.sql}
+          GROUP BY cust_code`).all(TG_LUMP_SKU, p.lo, p.hi, skip, ...slmCodes.params);
+        const detail = tgmDetailKg(p.lo, p.hi, lumps.map((r) => r.cust_code), weights);
+        for (const r of lumps) {
+          if (!detail.has(r.cust_code)) continue;
+          lumpCur.kg += detail.get(r.cust_code);
+          lumpCur.kgAmt += Math.abs(Number(r.amount) || 0);
+        }
+      }
     }
     return out;
   }

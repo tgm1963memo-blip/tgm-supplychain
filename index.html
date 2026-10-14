@@ -6943,7 +6943,7 @@ function _dxKg(v,cov){
   if(v==null)return '—';
   // ไม่มีบรรทัดสินค้าเลย (ลูกค้าที่ขายผ่าน TSS-NV/TGM ซึ่ง STCRD ไม่มีรายการขาย) — บอกเหตุผลแทนการโชว์ 0
   if(cov==null)return '<span class="mut" title="ไม่มีรายการสินค้าของลูกค้านี้ให้คำนวณน้ำหนัก (เช่น ขายผ่าน TSS-NV / TGM)">n/a</span>';
-  const warn=cov<0.9?`<span class="dx-warn" title="คำนวณน้ำหนักได้ ${Math.round(cov*100)}% ของยอด — สินค้าที่เหลือยังไม่มีน้ำหนักใน WMS">⚠</span>`:'';
+  const warn=cov<0.9?`<span class="dx-warn" title="คำนวณน้ำหนักได้ ${Math.round(cov*100)}% ของยอด — สินค้าที่เหลือยังหาน้ำหนักไม่ได้ (ไม่มีใน WMS / ชื่อสินค้าไม่ระบุน้ำหนัก)">⚠</span>`:'';
   return v?_dxB(v)+warn:'—';
 }
 function _dxCust(x,i,showCh=true){
@@ -7000,7 +7000,7 @@ function _dxTop(d){
       <div class="r"><div class="dx-seg" role="group" aria-label="กลุ่มลูกค้า">${tabs}</div>${makroCk}<button class="dx-btn" type="button" onclick="dxExportTop()">⬇ Excel</button></div></div>
     ${rows.length?`<div class="dx-tw"><table class="dx-t"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>`:'<div class="dx-empty">ไม่มีข้อมูลในช่วงนี้</div>'}
     ${(d.top_excluded||[]).length?`<div class="dx-foot" style="margin-top:8px">ไม่นับใน Top 20 (ยังรวมในยอดขายด้านบน): ${d.top_excluded.map(x=>`${esc(x.name)} ${_dxMil(x.ty)} ล.`).join(' · ')}</div>`:''}
-    <div class="dx-foot">รวมลูกค้าตามเครือ (Makro TSS + TGM เป็นแถวเดียว, หลายสาขาเป็นแถวเดียว) · KG = จำนวนขาย × น้ำหนักต่อหน่วยจาก tgm-wms ไม่หักใบรับคืน${cov?` · <span class="dx-warn">⚠</span> ${cov} รายการคำนวณน้ำหนักได้ไม่ถึง 90% ของยอด (สินค้าบางตัวยังไม่มีน้ำหนักใน WMS)`:''}${d.kg_synced_at?` · KG อัปเดต ${new Date(d.kg_synced_at).toLocaleString('th-TH')}`:''}</div>
+    <div class="dx-foot">รวมลูกค้าตามเครือ (Makro TSS + TGM เป็นแถวเดียว, หลายสาขาเป็นแถวเดียว) · KG = จำนวนขาย × น้ำหนักต่อหน่วย (tgm-wms → ไม่มีใช้น้ำหนักในชื่อสินค้า / ชุดราคาพิเศษเฉลี่ยจากสินค้าในชุด · ใบสรุป Makro/EA ของโรงงานใช้รายการจาก Express TGM) ไม่หักใบรับคืน${cov?` · <span class="dx-warn">⚠</span> ${cov} รายการคำนวณน้ำหนักได้ไม่ถึง 90% ของยอด (สินค้าบางตัวยังหาน้ำหนักไม่ได้)`:''}${d.kg_synced_at?` · KG อัปเดต ${new Date(d.kg_synced_at).toLocaleString('th-TH')}`:''}</div>
   </div>`;
 }
 // Top 20 สินค้าขายดี (2026-10-12, ผู้ใช้ขอ ตาม mockup) — server: dashboardExec.js topProducts · ตัวกรองเดียวกับทั้งหน้า
@@ -7014,7 +7014,7 @@ function _dxTopProd(d){
   const grand=(kg?tp.totals.kg:tp.totals.amount)||1, mxs=Math.max(...rows.map(x=>main(x)/grand),0.0001);
   const seg=[['amt','บาท'],['kg','KG']].map(([k,l])=>`<button type="button" class="${(kg?'kg':'amt')===k?'on':''}" aria-pressed="${(kg?'kg':'amt')===k}" onclick="dxSet('pm','${k}')">${l}</button>`).join('');
   const prod=(x,i)=>`<td><span class="dx-rk${i<3?' g':''}">${i+1}</span></td><td><div class="dx-cust"><b title="${esc(x.sku+' '+x.name)}">${esc(x.name)}</b><span><span class="mono">${esc(x.sku)}</span>${x.group?' · '+esc(x.group):''}</span></div></td>`;
-  const kgc=(v,x)=>x.kg_coverage!=null&&x.kg_coverage<0.9&&!v?'<span class="mut" title="สินค้านี้ยังไม่มีน้ำหนักใน WMS">n/a</span>':(v?_dxB(v):'—');
+  const kgc=(v,x)=>x.kg_coverage!=null&&x.kg_coverage<0.9&&!v?'<span class="mut" title="สินค้านี้ยังหาน้ำหนักไม่ได้ (ไม่มีใน WMS / ชื่อไม่ระบุน้ำหนัก)">n/a</span>':(v?_dxB(v):'—');
   const body=rows.map((x,i)=>`<tr>${prod(x,i)}
       <td class="dx-n dx-sep mut">${x.ly_amount?_dxB(x.ly_amount):'—'}</td><td class="dx-n mut">${kgc(x.ly_kg,x)}</td>
       <td class="dx-n">${kg?_dxB(x.amount):`<b>${_dxB(x.amount)}</b>`}</td><td class="dx-n${kg?'':' mut'}">${kg?`<b>${kgc(x.kg,x)}</b>`:kgc(x.kg,x)}</td>

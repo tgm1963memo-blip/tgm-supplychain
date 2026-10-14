@@ -583,6 +583,23 @@ function runMigrations(db) {
   require('./customerProfilesV2').applySalesGroups20261012(db);
   require('./customerProfilesV2').applySalesGroupsFix20261014(db);
 
+  // รายการสินค้าจริงของใบสรุปยอด Bplus รหัส 0000 (2026-10-14) — Bplus บันทึกใบ Makro (A M) / EA เป็นบรรทัดเดียว
+  // "ยอดขายสินค้ารหัส TG" ไม่มีสินค้า แต่ Express โฟลเดอร์ TGM (STCRD เอกสาร AM/EA) มีรายการสินค้าของบิลชุดเดียวกัน
+  // ใช้คำนวณ KG เท่านั้น — ไม่นับเป็นยอดขาย (ยอดขายยังมาจาก Bplus ตาม yearSources) · importFromExpress.syncTgmDetailLines
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tgm_detail_lines_daily (
+      d          TEXT NOT NULL,
+      cust_code  TEXT NOT NULL,
+      sku        TEXT NOT NULL,
+      unit_code  TEXT NOT NULL DEFAULT '',
+      qty        REAL NOT NULL DEFAULT 0,
+      qty_base   REAL NOT NULL DEFAULT 0,
+      amount     REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (d, cust_code, sku, unit_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tgm_detail_lines_cust ON tgm_detail_lines_daily(cust_code, d);
+  `);
+
   // ใบเสนอราคา รอบ 1 (2026-10-07) — ราคากลางฐาน A–G + ประวัติการแก้ (คำอธิบายเต็มดู schema.sql)
   db.exec(`
     CREATE TABLE IF NOT EXISTS price_tiers (

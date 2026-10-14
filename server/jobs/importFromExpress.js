@@ -1385,6 +1385,57 @@ function refreshSalesRollups(db) {
   console.log(`[importFromExpress] refreshSalesRollups: done in ${Date.now() - t0}ms (${isEmpty ? 'full rebuild, first run' : `rebuilt ym >= ${cutoffYm}`})`);
 }
 
+// รายการสินค้าของใบ Makro (AM) / EA ใน Express โฟลเดอร์ TGM (2026-10-14) — Bplus เก็บบิลชุดเดียวกันเป็นบรรทัดสรุป
+// รหัส 0000 ไม่มีสินค้า → Dashboard ใช้ตารางนี้คำนวณ KG ของบรรทัด 0000 (ยอด AM ตรงกับ Bplus ทุกเดือน, EA ราคาใน Express
+// สูงกว่า ~25% แต่จำนวนสินค้าเป็นของจริง) · ไม่ใช่ยอดขาย — TGM ไม่อยู่ใน sales_lines เพื่อกันยอดซ้ำกับ Bplus
+const TGM_DETAIL_PREFIXES = new Set(['AM', 'EA']);
+async function syncTgmDetailLines(db) {
+  const company = 'TGM';
+  const file = findFile(path.join(EXPRESS_ROOT, company), 'STCRD.DBF');
+  if (!file) return 0;
+  const source = `${company}/STCRD.DBF#detail`;
+  const mtimeMs = fs.statSync(file).mtimeMs;
+  const prev = db.prepare('SELECT mtime_ms FROM sync_file_state WHERE source = ?').get(source);
+  if (prev && prev.mtime_ms === mtimeMs) return 0;
+  const rows = await readTable(company, 'STCRD.DBF');
+  if (!rows.length) return 0;
+  const agg = new Map();
+  for (const r of rows) {
+    const docNum = cleanText(r.DOCNUM);
+    if (!TGM_DETAIL_PREFIXES.has(docNum.slice(0, 2))) continue;
+    const d = toIsoDate(r.DOCDAT);
+    const sku = cleanText(r.STKCOD);
+    const cust = cleanText(r.PEOPLE);
+    if (!d || !sku || !cust) continue;
+    const unit = cleanText(r.TQUCOD);
+    const qty = Math.abs(Number(r.XTRNQTY) || Number(r.TRNQTY) || 0);
+    const key = [d, cust, sku, unit].join('\u0001');
+    const cur = agg.get(key) || { qty: 0, qtyBase: 0, amount: 0 };
+    cur.qty += qty;
+    cur.qtyBase += qty * (Number(r.TFACTOR) || 1);
+    cur.amount += Number(r.TRNVAL) || 0;
+    agg.set(key, cur);
+  }
+  const insert = db.prepare(`INSERT INTO tgm_detail_lines_daily (d, cust_code, sku, unit_code, qty, qty_base, amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM tgm_detail_lines_daily').run();
+    for (const [key, v] of agg) {
+      const [d, cust, sku, unit] = key.split('\u0001');
+      insert.run(d, cust, sku, unit, v.qty, v.qtyBase, v.amount);
+    }
+    db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
+      ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`).run(source, mtimeMs, new Date().toISOString());
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[importFromExpress] TGM detail lines (AM/EA): ${agg.size} rows`);
+  return agg.size;
+}
+
 // ยอดขายรายสินค้าต่อลูกค้า × เดือน จาก STCRD.DBF (2026-10-03, Dashboard ผู้บริหาร — Top 20 ลูกค้า บาท/KG)
 // ARTRN (invoice_sales_monthly) ไม่มีมิติสินค้า และ invoice_lines ไม่เก็บรหัสลูกค้า — แต่ STCRD มี PEOPLE (รหัสลูกค้า)
 // และ SLMCOD ทุกบรรทัด (ตรวจกับ DBF จริง 2026-10-03) จึง rollup จากที่นี่ · ใช้เงื่อนไขเอกสารขายชุดเดียวกับ
@@ -1502,6 +1553,7 @@ async function runImport(db) {
     rowsProcessed += await syncPromoDocs(db);
     // เสริมสำหรับ KG ใน Dashboard — พังแล้วไม่ควรทำให้ทั้งรอบ sync ถูกนับว่า error (ข้อมูลหลักบันทึกไปแล้ว)
     try { rowsProcessed += await syncSalesLinesMonthly(db); } catch (e) { console.warn('[importFromExpress] sales lines monthly failed:', e.message); }
+    try { rowsProcessed += await syncTgmDetailLines(db); } catch (e) { console.warn('[importFromExpress] TGM detail lines failed:', e.message); }
 
     // standing tripwire: surface data-quality regressions automatically instead of needing a manual
     // DBF-reading investigation every time someone wonders "is the import still correct" — see
@@ -1520,4 +1572,4 @@ async function runImport(db) {
   }
 }
 
-module.exports = { branchFromArmas, runImport, refreshSalesRollups, syncSalesLinesMonthly, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { branchFromArmas, runImport, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
