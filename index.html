@@ -2693,7 +2693,26 @@ function refreshSharedMasterData(opts={}){
     if (rows?.length) { DB.set('remote_customers_cache', rows); DB.set('remote_customers_cache_ts', Date.now()); }
   }).catch(console.warn);
   SB.getConsiCustomerRows().catch(console.warn);
-  setTimeout(()=>SB.getCustomerProfiles().then(()=>refreshCustomerProfilesMemo()).catch(console.warn), profileDelay);
+  // FIXED (2026-10-14, ผู้ใช้แจ้ง Sales Overview ขึ้นกลุ่ม "ยังไม่ถูกระบุ" / BB / HH ทั้งที่ทุกลูกค้ามี corporate):
+  // profiles โหลดเบื้องหลังหลัง login — ถ้าเปิด Sales Overview ก่อนโหลดเสร็จ ตารางจัดกลุ่มจาก cache เก่า/ว่าง
+  // (ตกไปใช้รหัสกลุ่มเก่าของ Express ใน CUST_GROUPS) แล้วเก็บผลนั้นไว้ใน _sdApi._buildCache / snapshot รายปี ค้างไปตลอด
+  // → โหลดเสร็จแล้วกลุ่มเปลี่ยนจากเดิม = ล้างผลจัดกลุ่มเก่า แล้วโหลดหน้าที่เปิดอยู่ใหม่
+  setTimeout(()=>{
+    const before=_profGroupSig(DB.get('customer_profiles'));
+    SB.getCustomerProfiles().then(p=>{
+      refreshCustomerProfilesMemo();
+      if(_profGroupSig(p)===before) return;
+      invalidateCustomerGroupingCaches();
+      if(document.getElementById('sd-ta')&&typeof pgMySales==='function') pgMySales();
+    }).catch(console.warn);
+  }, profileDelay);
+}
+// ลายเซ็นค่าจัดกลุ่มของ profiles (corporate / category / กลุ่ม Sales) — ใช้ดูว่าโหลดใหม่แล้วกลุ่มเปลี่ยนไหม
+function _profGroupSig(p){
+  if(!p||typeof p!=='object') return '';
+  let h=0;const keys=Object.keys(p).sort();
+  for(const k of keys){const r=p[k]||{};const v=k+'|'+(r.corporate||'')+'|'+(r.category||'')+'|'+(r.sales_category||'')+'|'+(r.sales_group||'')+'|'+(r.exec_channel||'');for(let i=0;i<v.length;i++)h=(h*31+v.charCodeAt(i))|0;}
+  return keys.length+':'+h;
 }
 
 // ════════════════════════════════════════════════
@@ -6563,11 +6582,13 @@ function _dxState(){
       dFrom:iso(new Date(n.getFullYear(),n.getMonth(),1)),dTo:iso(n),
       consi:saved.consi!==false,by:saved.by==='ch'?'ch':'co',top:'all',makro:saved.makro===true,
       // ตัวกรองบริษัท (2026-10-05): all | tss (TSS+TSS-NV+CONSI) | tgm (โรงงาน Bplus)
-      co:['tss','tgm'].includes(saved.co)?saved.co:'all'};
+      co:['tss','tgm'].includes(saved.co)?saved.co:'all',
+      // ไม่รวม Non-VAT / ไม่รวมเบเกอรี่ (2026-10-14, ผู้ใช้ขอ — เทียบ Excel รายเซลล์ที่ไม่นับแฟ้ม TSS-NV และลูกค้ากลุ่มเบเกอรี่)
+      noNv:saved.noNv===true,noBakery:saved.noBakery===true};
   }
   return window._dx;
 }
-function _dxSavePrefs(){const s=_dxState();try{localStorage.setItem('dx_prefs',JSON.stringify({consi:s.consi,by:s.by,makro:s.makro,co:s.co}));}catch(e){}}
+function _dxSavePrefs(){const s=_dxState();try{localStorage.setItem('dx_prefs',JSON.stringify({consi:s.consi,by:s.by,makro:s.makro,co:s.co,noNv:s.noNv,noBakery:s.noBakery}));}catch(e){}}
 function _dxRange(){
   const s=_dxState(),n=new Date(),cy=n.getFullYear(),cm=n.getMonth()+1;
   let y=s.year,a,b;
@@ -6594,7 +6615,7 @@ function _dxLabel(r,dy=0){const yy=String((r.y+dy+543)%100).padStart(2,'0');
 function _dxSlm(){const k=window._dashSlmF||myScopeKey();return k?[...slmKeySet(k)].join(','):'';}
 function _dxQuery(){
   const r=_dxRange(),s=_dxState();
-  const qs=new URLSearchParams({from:r.from,to:r.to,consi:s.consi?'1':'0',makro_in_mall:s.makro?'1':'0',co:s.co||'all'});
+  const qs=new URLSearchParams({from:r.from,to:r.to,consi:s.consi?'1':'0',makro_in_mall:s.makro?'1':'0',co:s.co||'all',no_nv:s.noNv?'1':'0',no_bakery:s.noBakery?'1':'0'});
   const slm=_dxSlm();if(slm)qs.set('slm',slm);
   return qs.toString();
 }
@@ -6634,7 +6655,7 @@ async function dxSet(k,v){
     if(s.dFrom>s.dTo){const x=s.dFrom;s.dFrom=s.dTo;s.dTo=x;}
   }
   else if(k==='mode'||k==='year'||k==='month'||k==='q') s[k]=(k==='mode')?v:Number(v);
-  else if(k==='consi'||k==='makro'){s[k]=!!v;_dxSavePrefs();}
+  else if(k==='consi'||k==='makro'||k==='noNv'||k==='noBakery'){s[k]=!!v;_dxSavePrefs();}
   else if(k==='co'){s.co=['tss','tgm'].includes(v)?v:'all';_dxSavePrefs();}
   else if(k==='by'||k==='top'||k==='pm'){s[k]=v;if(k==='by')_dxSavePrefs();dashExecRender();return;}
   // ไม่ให้เลือกเดือน/ไตรมาสที่ยังไม่ถึงของปีปัจจุบัน
@@ -6792,9 +6813,11 @@ function _dxHead(){
   const qSel=s.mode!=='quarter'?'':`<select aria-label="ไตรมาส" onchange="dxSet('q',this.value)">${[1,2,3,4].map(q=>`<option value="${q}"${q===s.q?' selected':''}${s.year===cy&&q*3-2>cm?' disabled':''}>ไตรมาส ${q}</option>`).join('')}</select>`;
   return `<div class="dx-head">
     <div><div class="dx-title">ภาพรวมยอดขาย${s.co==='tss'?' · TSS':s.co==='tgm'?' · TGM (โรงงาน)':''}</div>
-      <div class="dx-sub"><b>${_dxLabel(r)}</b> เทียบ ${_dxLabel(r,-1)} · ยอดใบกำกับก่อน VAT${window._dxLoading?' · <span class="dx-load">กำลังโหลด…</span>':''}</div></div>
+      <div class="dx-sub"><b>${_dxLabel(r)}</b> เทียบ ${_dxLabel(r,-1)} · ยอดใบกำกับก่อน VAT${s.noNv&&s.co!=='tgm'?' · ไม่รวม Non-VAT':''}${s.noBakery?' · ไม่รวมเบเกอรี่':''}${window._dxLoading?' · <span class="dx-load">กำลังโหลด…</span>':''}</div></div>
     <div class="dx-ctl"><div class="dx-seg" role="group" aria-label="บริษัท">${coSeg}</div><div class="dx-seg" role="group" aria-label="ช่วงเวลา">${seg}</div>${yearSel}${monthSel}${qSel}${rangeSel}
-      ${s.co==='tgm'?'':`<label class="dx-sw"><input type="checkbox" ${s.consi?'checked':''} onchange="dxSet('consi',this.checked)"><span class="tr"></span>รวมฝากขาย (Consi)</label>`}</div>
+      ${s.co==='tgm'?'':`<label class="dx-sw"><input type="checkbox" ${s.consi?'checked':''} onchange="dxSet('consi',this.checked)"><span class="tr"></span>รวมฝากขาย (Consi)</label>`}
+      ${s.co==='tgm'?'':`<label class="dx-sw" title="ไม่นับแฟ้ม TSS-NV (ขายไม่มี VAT)"><input type="checkbox" ${s.noNv?'checked':''} onchange="dxSet('noNv',this.checked)"><span class="tr"></span>ไม่รวม Non-VAT</label>`}
+      <label class="dx-sw" title="ไม่นับลูกค้ากลุ่มเบเกอรี่ (เช่น Tops/เบเกอรี่, เบเกอรี่ในบิ๊กซี)"><input type="checkbox" ${s.noBakery?'checked':''} onchange="dxSet('noBakery',this.checked)"><span class="tr"></span>ไม่รวมเบเกอรี่</label></div>
   </div>`;
 }
 function _dxKpis(d){
@@ -9358,17 +9381,32 @@ function sdPvToggle(tab,k){
   _sdPv[tab]=cur;_sd.op={};_sdPvSave();sdRender();
 }
 function sdPvMove(tab,k,d){const cur=[...(_sdPv[tab]||SD_PV_DEFAULT[tab])],i=cur.indexOf(k),j=i+d;if(i<0||j<0||j>=cur.length)return;[cur[i],cur[j]]=[cur[j],cur[i]];_sdPv[tab]=cur;_sd.op={};_sdPvSave();sdRender();}
+// ลากชิป "แสดงตาม" เพื่อเรียงลำดับ (2026-10-14, ผู้ใช้ขอ) — วางบนชิปไหน = ไปอยู่ตำแหน่งนั้น · ลากชิปที่ยังไม่ติ๊กมาวาง = เพิ่มมิตินั้นที่ตำแหน่งนั้น
+// ลากไปวางบนชิปที่ไม่ได้ติ๊ก = ย้ายไปท้ายสุด · ปุ่ม ◀ ▶ ยังใช้ได้ (มือถือที่ลากไม่ได้)
+let _sdPvDragKey=null;
+function sdPvDragStart(ev,k){_sdPvDragKey=k;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',k);}catch(e){}ev.currentTarget.style.opacity='.5';}
+function sdPvDragEnd(ev){ev.currentTarget.style.opacity='';_sdPvDragKey=null;}
+function sdPvDragOver(ev){if(!_sdPvDragKey)return;ev.preventDefault();ev.currentTarget.style.outline='2px dashed var(--N)';}
+function sdPvDrop(ev,tab,target){
+  ev.preventDefault();ev.currentTarget.style.outline='';
+  const k=_sdPvDragKey;_sdPvDragKey=null;
+  if(!k||k===target)return;
+  const cur=[...(_sdPv[tab]||SD_PV_DEFAULT[tab])].filter(x=>x!==k);
+  const j=cur.indexOf(target);
+  if(j<0)cur.push(k);else cur.splice(j,0,k);
+  _sdPv[tab]=cur;_sd.op={};_sdPvSave();sdRender();
+}
 function sdPvReset(tab){delete _sdPv[tab];_sd.op={};_sdPvSave();sdRender();}
 function _sdPivotBar(tab){
   const custom=!!_sdPv[tab],cur=_sdPv[tab]||SD_PV_DEFAULT[tab];
   const chip=k=>{
     const on=cur.includes(k),i=cur.indexOf(k);
     const arrows=on&&cur.length>1?`<button type="button" title="เลื่อนไปก่อน" onclick="sdPvMove('${tab}','${k}',-1)" style="border:0;background:none;cursor:pointer;padding:0 2px;color:var(--TX3)" ${i===0?'disabled':''}>◀</button><button type="button" title="เลื่อนไปหลัง" onclick="sdPvMove('${tab}','${k}',1)" style="border:0;background:none;cursor:pointer;padding:0 2px;color:var(--TX3)" ${i===cur.length-1?'disabled':''}>▶</button>`:'';
-    return `<span style="display:inline-flex;align-items:center;gap:3px;border:1px solid ${on?'var(--N)':'var(--BD)'};background:${on?'var(--LBL)':'transparent'};border-radius:999px;padding:2px 8px;font-size:12px"><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${on?'checked':''} onchange="sdPvToggle('${tab}','${k}')" style="margin:0">${on?`<b style="color:var(--N)">${i+1}</b>`:''} ${SD_DIMS[k].l}</label>${arrows}</span>`;
+    return `<span draggable="true" ondragstart="sdPvDragStart(event,'${k}')" ondragend="sdPvDragEnd(event)" ondragover="sdPvDragOver(event)" ondragleave="this.style.outline=''" ondrop="sdPvDrop(event,'${tab}','${k}')" title="ลากเพื่อเรียงลำดับ" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ${on?'var(--N)':'var(--BD)'};background:${on?'var(--LBL)':'transparent'};border-radius:999px;padding:2px 8px;font-size:12px;cursor:grab"><span style="color:var(--TX3);font-size:11px;letter-spacing:-2px;margin-right:2px" aria-hidden="true">⋮⋮</span><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${on?'checked':''} onchange="sdPvToggle('${tab}','${k}')" style="margin:0">${on?`<b style="color:var(--N)">${i+1}</b>`:''} ${SD_DIMS[k].l}</label>${arrows}</span>`;
   };
   const order=[...cur,...Object.keys(SD_DIMS).filter(k=>!cur.includes(k))];
   return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px"><span style="font-size:12px;color:var(--TX2)">แสดงตาม</span>${order.map(chip).join('')}
-    ${custom?`<button type="button" class="btn btn-xs" onclick="sdPvReset('${tab}')" title="กลับไปมุมมองมาตรฐาน (มียอด CN / NET / เทียบปีก่อน)">↺ มุมมองมาตรฐาน</button>`:'<span style="font-size:11px;color:var(--TX3)">ติ๊ก / เรียงลำดับ เพื่อกำหนดเอง</span>'}</div>`;
+    ${custom?`<button type="button" class="btn btn-xs" onclick="sdPvReset('${tab}')" title="กลับไปมุมมองมาตรฐาน (มียอด CN / NET / เทียบปีก่อน)">↺ มุมมองมาตรฐาน</button>`:'<span style="font-size:11px;color:var(--TX3)">ติ๊ก / ลากเรียงลำดับ เพื่อกำหนดเอง</span>'}</div>`;
 }
 let _sdPvData={};
 function _sdPvLoad(slm){

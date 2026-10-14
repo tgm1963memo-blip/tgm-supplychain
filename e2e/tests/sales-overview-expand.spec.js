@@ -54,3 +54,41 @@ test.describe('Sales Overview expand keeps scroll + Top 10 popup', () => {
     await expect(modal.getByText(/ไม่มีรายการสินค้า|กำลังโหลด/)).toBeVisible();
   });
 });
+
+// (2026-10-14) ลากชิป "แสดงตาม" เรียงลำดับ + profiles โหลดเสร็จทีหลังแล้วกลุ่มไม่ค้างเป็น "ยังไม่ถูกระบุ"
+test.describe('Sales Overview pivot drag + late profiles', () => {
+  test('dragging a pivot chip onto another moves it to that position', async ({ page }) => {
+    await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":[]}' }));
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => {
+      document.getElementById('app').classList.remove('hidden');
+      document.getElementById('ls').classList.add('hidden');
+      document.body.insertAdjacentHTML('beforeend', '<div id="pvbar"></div>');
+      window._sdPv = {}; // ensure default
+      document.getElementById('pvbar').innerHTML = _sdPivotBar('cust');
+      window.sdRender = () => { document.getElementById('pvbar').innerHTML = _sdPivotBar('cust'); };
+    });
+    const chip = (label) => page.locator('#pvbar > div > span[draggable]', { hasText: label });
+    await chip('Category (Sales)').dragTo(chip('บริษัท / กลุ่มลูกค้า'));
+    expect(await page.evaluate(() => _sdPv.cust)).toEqual(['cat', 'corp', 'branch', 'pgrp', 'prod']);
+    await chip('สินค้า').filter({ hasNotText: 'กลุ่มสินค้า' }).dragTo(chip('สาขา / ลูกค้า'));
+    expect(await page.evaluate(() => _sdPv.cust)).toEqual(['cat', 'corp', 'prod', 'branch', 'pgrp']);
+  });
+
+  test('profiles arriving after Sales Overview was built clear the stale grouping', async ({ page }) => {
+    await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":[]}' }));
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const res = await page.evaluate(async () => {
+      DB.set('customer_profiles', {}); // cache ว่างตอนสร้างตาราง
+      _sdApi._buildCache = { custs: [{ n: 'ยังไม่ถูกระบุ' }] }; _sdApi._buildCacheKey = 'x'; _sdApi.loaded = true;
+      let reloaded = false; window.pgMySales = () => { reloaded = true; };
+      document.body.insertAdjacentHTML('beforeend', '<div id="sd-ta"></div>');
+      SB.getCustomers = async () => []; SB.getConsiCustomerRows = async () => [];
+      SB.getCustomerProfiles = async () => { const p = { 'C-1': { code: 'C-1', corporate: 'Minor Group' } }; DB.set('customer_profiles', p); return p; };
+      refreshSharedMasterData({ profileDelay: 0 });
+      await new Promise((r) => setTimeout(r, 300));
+      return { reloaded, built: Object.keys(_sdApi._buildCache).length, loaded: _sdApi.loaded, corp: customerGroupForCode('C-1') };
+    });
+    expect(res).toEqual({ reloaded: true, built: 0, loaded: false, corp: 'Minor Group' });
+  });
+});
