@@ -4,7 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
 const { runMigrations } = require('../db/migrations');
-const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014 } = require('../db/customerProfilesV2');
+const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014 } = require('../db/customerProfilesV2');
 
 // กลุ่มลูกค้าฝั่ง Sales (2026-10-12): seed จากไฟล์ Group ของเซลล์ — ครั้งเดียว ไม่ทับค่าที่คนแก้
 test('sales groups seed applies once and never overwrites edited values', () => {
@@ -66,4 +66,20 @@ test('Minor Group corporate replaces the old legal-entity names only', () => {
   assert.equal(corp('MI-LA-0018'), 'Minor Group'); // ยังไม่มีแถว → สร้างใหม่
   assert.equal(corp('30-LA-0152'), 'กลุ่มที่ตั้งเอง');
   assert.equal(corp('MI-LD-0001'), 'เจ้าพระยา รีซอร์ท จำกัด');
+});
+
+// Category (Sales) ที่ยังว่างของลูกค้าทีมร้านค้า (2026-10-14) — เติมเฉพาะช่องว่าง ไม่ทับที่ตั้งไว้
+test('sales category fill only fills empty values', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  const get = code => db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?').get(code)?.sales_category;
+  assert.equal(get('NSL-01-KK'), 'ร้านค้าทั่วไป');
+  assert.equal(get('BD-LF-0134'), 'บิ๊กซี ซูเปอร์เซ็นเตอร์');
+  db.prepare("UPDATE customer_profiles SET sales_category = 'ตั้งเอง' WHERE code = 'NSL-01-KK'").run();
+  db.prepare("UPDATE customer_profiles SET sales_category = NULL WHERE code = 'MI-LA-0001'").run();
+  db.prepare("DELETE FROM app_migrations WHERE id = '20261014_sales_category_fill_v1'").run();
+  applySalesCategoryFill20261014(db);
+  assert.equal(get('NSL-01-KK'), 'ตั้งเอง');
+  assert.equal(get('MI-LA-0001'), 'ร้านค้าทั่วไป');
 });

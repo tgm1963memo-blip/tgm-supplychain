@@ -63,11 +63,12 @@ test.describe('Sales Overview pivot drag + late profiles', () => {
     await page.evaluate(() => {
       document.getElementById('app').classList.remove('hidden');
       document.getElementById('ls').classList.add('hidden');
-      document.body.insertAdjacentHTML('beforeend', '<div id="pvbar"></div>');
+      document.body.insertAdjacentHTML('beforeend', '<div id="pvbar" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#fff"></div>');
       window._sdPv = {}; // ensure default
       document.getElementById('pvbar').innerHTML = _sdPivotBar('cust');
       window.sdRender = () => { document.getElementById('pvbar').innerHTML = _sdPivotBar('cust'); };
     });
+    await page.waitForTimeout(800); // ให้หน้าแรกของแอป render เสร็จก่อน ไม่ให้ layout ขยับระหว่างลาก
     const chip = (label) => page.locator('#pvbar > div > span[draggable]', { hasText: label });
     await chip('Category (Sales)').dragTo(chip('บริษัท / กลุ่มลูกค้า'));
     expect(await page.evaluate(() => _sdPv.cust)).toEqual(['cat', 'corp', 'branch', 'pgrp', 'prod']);
@@ -90,5 +91,57 @@ test.describe('Sales Overview pivot drag + late profiles', () => {
       return { reloaded, built: Object.keys(_sdApi._buildCache).length, loaded: _sdApi.loaded, corp: customerGroupForCode('C-1') };
     });
     expect(res).toEqual({ reloaded: true, built: 0, loaded: false, corp: 'Minor Group' });
+  });
+});
+
+// (2026-10-14) ปุ่มขยาย / ย่อทั้งหมด + hover แถวหัวข้อพื้นเข้มยังอ่านออก
+test.describe('Sales Overview expand/collapse all', () => {
+  test('expand all opens every level, collapse all closes them', async ({ page }) => {
+    await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":[]}' }));
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => {
+      document.getElementById('app').classList.remove('hidden');
+      document.getElementById('ls').classList.add('hidden');
+      ROLE = 'superadmin'; UID = 'TESTUID'; CURRENT_USER = { uid: 'TESTUID', role: 'superadmin' };
+      window.sdLoad = async () => {};
+    });
+    await page.evaluate(() => window.pgMySales());
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => {
+      // มุมมองเลือกมิติ: ข้อมูลจาก /api/invoice_detail/pivot (ใส่ cache ตรงๆ) — กลุ่ม › สาขา › สินค้า
+      const p = _sdInvPeriod();
+      _sdPvData[[p.from, p.to, ''].join('|')] = { loading: false, rows: [
+        { c: 'T-1', s: 'S1', k: 'P1', n: 'สินค้า 1', g: '002', q: 1, a: 100 },
+        { c: 'T-2', s: 'S1', k: 'P2', n: 'สินค้า 2', g: '003', q: 1, a: 50 },
+      ] };
+      const rows = [
+        { cust_code: 'T-1', cust_name: 'สาขา 1', cust_group: 'กลุ่ม A', category: 'ขายจริง', srv_corp: true, amount: 100, qty: 1, slm_id: 'S1', prod_code: 'P1', prod_name: 'สินค้า 1', prod_group: '002', ym: '2026-10' },
+        { cust_code: 'T-2', cust_name: 'สาขา 2', cust_group: 'กลุ่ม B', category: 'ขายจริง', srv_corp: true, amount: 50, qty: 1, slm_id: 'S1', prod_code: 'P2', prod_name: 'สินค้า 2', prod_group: '003', ym: '2026-10' },
+      ];
+      Object.assign(_sdApi, { loaded: true, invoiceBased: true, _rows: rows, _buildCacheKey: '', _buildCache: {}, total: 150, monthly: [] });
+      _sd.mgrView = true; _sdPv.cust = ['corp', 'branch', 'prod'];
+      const tab = [...document.querySelectorAll('#sd-root .tab')].find((e) => e.textContent.trim() === 'รายลูกค้า');
+      sdTab(tab, 'cust'); _sdApi.loaded = true; _sdEnsureBuilt('cust'); _sdPv.cust = ['corp', 'branch', 'prod']; sdRender();
+    });
+    const ta = page.locator('#sd-ta');
+    await expect(ta.getByText('P1 — สินค้า 1')).toHaveCount(0);
+    await page.getByRole('button', { name: /ขยายทั้งหมด/ }).click();
+    await expect(ta.getByText('P1 — สินค้า 1')).toBeVisible();
+    await expect(ta.getByText('P2 — สินค้า 2')).toBeVisible();
+    await page.getByRole('button', { name: /ย่อทั้งหมด/ }).click();
+    await expect(ta.getByText('P1 — สินค้า 1')).toHaveCount(0);
+    await expect(ta.getByText('สาขา 1')).toHaveCount(0);
+  });
+
+  test('hovering a dark header row keeps a dark background', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const bg = await page.evaluate(() => {
+      document.getElementById('ls').classList.add('hidden');
+      document.body.insertAdjacentHTML('beforeend', '<table id="hv" style="position:fixed;top:0;left:0;z-index:99999"><tr style="cursor:pointer;background:var(--N);color:#fff"><td>หัวข้อ</td></tr></table>');
+      return null;
+    });
+    await page.locator('#hv td').hover();
+    const color = await page.locator('#hv td').evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(color).toBe('rgb(43, 76, 126)');
   });
 });

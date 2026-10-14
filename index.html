@@ -81,6 +81,8 @@ table{width:100%;border-collapse:collapse;font-size:13px;min-width:400px}
 th{background:var(--bg2);padding:8px 12px;text-align:left;font-weight:600;font-size:11.5px;color:var(--TX2);border-bottom:1px solid var(--BD);white-space:nowrap;position:sticky;top:0;z-index:1}
 td{padding:8px 12px;border-bottom:1px solid var(--bg2);vertical-align:middle}
 tr:last-child td{border-bottom:none} tr:hover td{background:#FAFBFD}
+/* แถวหัวข้อพื้นเข้ม ตัวอักษรขาว (เช่น หัวข้อ Category ใน Sales Overview) — hover เดิมทาพื้นขาวทับจนอ่านไม่ออก (2026-10-14) */
+tr[style*="color:#fff"]:hover td{background:#2B4C7E}
 .mono{font-family:var(--mono);font-size:12px}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
 .bbl{background:var(--LBL);color:var(--BL)}.bbg{background:var(--LG);color:var(--G)}
@@ -9396,6 +9398,36 @@ function sdPvDrop(ev,tab,target){
   if(j<0)cur.push(k);else cur.splice(j,0,k);
   _sdPv[tab]=cur;_sd.op={};_sdPvSave();sdRender();
 }
+// ขยาย / ย่อทั้งหมด (2026-10-14, ผู้ใช้ขอ) — ใช้ได้ทั้งมุมมองมาตรฐานและแบบเลือกมิติ: อ่าน key จากแถวที่กดเปิดได้ในตาราง
+// (sdTogOp('…') / หัวข้อ Category ที่ใช้ _sd.op['cat_…']) แล้วเปิดทีละระดับจนครบ · กันตารางใหญ่เกิน/ยิงโหลดรายสาขาถี่เกิน:
+// ระดับไหนจะเปิดเพิ่มเกิน 150 แถว หรือรวมเกิน 400 แถว = หยุดที่ระดับก่อนหน้าแล้วแจ้ง
+function _sdToggleKeys(){
+  const out=[];
+  document.querySelectorAll('#sd-ta tr[onclick]').forEach(tr=>{
+    const a=tr.getAttribute('onclick')||'';
+    let m=a.match(/^sdTogOp\('((?:\\.|[^'\\])*)'\)/);
+    if(m){out.push({k:m[1].replace(/\\(.)/g,'$1'),cat:false});return;}
+    m=a.match(/^_sd\.op\['((?:\\.|[^'\\])*)'\]=/);
+    if(m)out.push({k:m[1].replace(/\\(.)/g,'$1'),cat:true});
+  });
+  return out;
+}
+function sdExpandAll(){
+  let opened=0,stopped=false;
+  for(let round=0;round<8;round++){
+    const closed=_sdToggleKeys().filter(x=>x.cat?_sd.op[x.k]===false:!_sd.op[x.k]);
+    if(!closed.length)break;
+    if(closed.length>150||opened+closed.length>400){stopped=true;break;}
+    closed.forEach(x=>{if(x.cat)delete _sd.op[x.k];else _sd.op[x.k]=true;});
+    opened+=closed.length;sdRender();
+  }
+  if(stopped)toast('ข้อมูลมาก เปิดได้ถึงระดับที่แสดงอยู่ — ใช้ค้นหา / เลือก Sales เพื่อเปิดลึกกว่านี้','warn');
+}
+function sdCollapseAll(){
+  const cats=_sdToggleKeys().filter(x=>x.cat);
+  _sd.op={};cats.forEach(x=>{_sd.op[x.k]=false;});
+  sdRender();
+}
 function sdPvReset(tab){delete _sdPv[tab];_sd.op={};_sdPvSave();sdRender();}
 function _sdPivotBar(tab){
   const custom=!!_sdPv[tab],cur=_sdPv[tab]||SD_PV_DEFAULT[tab];
@@ -9406,6 +9438,7 @@ function _sdPivotBar(tab){
   };
   const order=[...cur,...Object.keys(SD_DIMS).filter(k=>!cur.includes(k))];
   return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px"><span style="font-size:12px;color:var(--TX2)">แสดงตาม</span>${order.map(chip).join('')}
+    <span style="display:inline-flex;gap:4px;margin-left:auto"><button type="button" class="btn btn-xs" onclick="sdExpandAll()" title="เปิดทุกระดับ (ข้อมูลมากจะเปิดเท่าที่ไหว)">⊞ ขยายทั้งหมด</button><button type="button" class="btn btn-xs" onclick="sdCollapseAll()" title="ปิดทุกระดับ">⊟ ย่อทั้งหมด</button></span>
     ${custom?`<button type="button" class="btn btn-xs" onclick="sdPvReset('${tab}')" title="กลับไปมุมมองมาตรฐาน (มียอด CN / NET / เทียบปีก่อน)">↺ มุมมองมาตรฐาน</button>`:'<span style="font-size:11px;color:var(--TX3)">ติ๊ก / ลากเรียงลำดับ เพื่อกำหนดเอง</span>'}</div>`;
 }
 let _sdPvData={};
