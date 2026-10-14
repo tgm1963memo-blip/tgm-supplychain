@@ -18,6 +18,12 @@ function invoiceDetailRoutes(db) {
   // สิทธิ์การเห็นลูกค้า (2026-10-12, security review) — ผู้ถูกจำกัดเห็นเฉพาะลูกค้าในสิทธิ์ (lib/customerScope.js)
   const cs = require('../lib/customerScope');
   const scopeOf = user => cs.resolveScope(db, user);
+  // เติม group_name ที่ว่างด้วยตัวหากลุ่มจากรหัส/ชื่อ (lib/productGroupMatch.js) — ใช้ใน detail / lines
+  function fillGroups(list) {
+    const { resolve } = productGroupResolver(db);
+    for (const r of list || []) if (!r.group_name && r.sku) r.group_name = resolve(r.sku, r.sku_name, '') || null;
+    return list;
+  }
   function detail(q, res, user) {
     const scope = scopeOf(user);
     let custs = list(q.cust);
@@ -141,6 +147,9 @@ function invoiceDetailRoutes(db) {
       }
     } catch (e) { /* ยังไม่มีตาราง bplus_invoices (ก่อน migration) */ }
 
+    // สินค้าที่ไม่มีกลุ่มใน products (รหัสโรงงาน เช่น 10396-18 ไส้กรอกไก่สโมคกี้) → หากลุ่มจากรหัสขึ้นต้น/ชื่อ
+    // แบบเดียวกับ /pivot (2026-10-14, ผู้ใช้แจ้งยังมี "ไม่ระบุกลุ่ม" ในรายการสินค้าจากใบกำกับจริงของสาขา)
+    fillGroups(products); fillGroups(productsChildren);
     const out = { cust: custs, from, to, coverage_from: db.prepare('SELECT MIN(doc_date) AS d FROM invoices').get()?.d || null, products, products_children: productsChildren, invoices };
     if (String(q.lines || '') === '1' || q.lines === true) {
       out.lines = db.prepare(`
@@ -250,11 +259,11 @@ function invoiceDetailRoutes(db) {
           const bl = db.prepare(`SELECT ROW_NUMBER() OVER (ORDER BY l.rowid) AS seq_num, l.sku, COALESCE(s.name, p.name, l.sku) AS sku_name, NULL AS warehouse,
             l.qty, l.unit_code, l.amount AS line_value, p.group_name FROM bplus_invoice_lines l LEFT JOIN bplus_skus s ON s.code = l.sku
             LEFT JOIN products p ON p.code = l.sku WHERE l.doc_key = ?`).all(key);
-          return res.json({ head: bh, lines: bl });
+          return res.json({ head: bh, lines: fillGroups(bl) });
         }
       } catch (e) { /* ไม่มีตาราง */ }
     }
-    res.json({ head, lines });
+    res.json({ head, lines: fillGroups(lines) });
   });
 
   return router;
