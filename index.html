@@ -8981,10 +8981,16 @@ function sdRender(){
     return;
   }
   sdKPI();
+  // คงตำแหน่ง scroll ของตาราง (2026-10-14, ผู้ใช้แจ้ง): กด expand / โหลด Top 10 เสร็จ → sdRender วาดตารางใหม่ทั้งก้อน
+  // กล่อง .tw (scroll ในตัว, max-height) ตัวใหม่เริ่มที่บนสุด ตารางเลยเด้งกลับรายการแรก — จำไว้แล้วคืนค่า เฉพาะแท็บเดิม
+  const tw0=document.querySelector('#sd-ta .tw'),keep=tw0&&_sdLastTab===_sd.at?{t:tw0.scrollTop,l:tw0.scrollLeft,y:window.scrollY}:null;
+  _sdLastTab=_sd.at;
   if(_sd.at==='cust') sdCust();
   else if(_sd.at==='prod') sdProd();
   else sdSlm();
+  if(keep){const tw=document.querySelector('#sd-ta .tw');if(tw){tw.scrollTop=keep.t;tw.scrollLeft=keep.l;}if(window.scrollY!==keep.y)window.scrollTo(window.scrollX,keep.y);}
 }
+var _sdLastTab=null;
 
 function sdUpdateLabel(){
   const lbl=document.getElementById('sd-lbl'); if(!lbl) return;
@@ -9164,6 +9170,7 @@ function _sdInvDetGet(cust,slm,lines){
       if(document.getElementById('sd-ta')) sdRender();
       const m=window._sdInvModal;
       if(m&&document.getElementById('sd-inv-modal')&&(_sdInvKey(m.cust,m.slm,false)===key||_sdInvKey(m.cust,m.slm,true)===key)) sdShowInvoices(m.cust,m.slm,m.name);
+      if(window._sdTop10Open&&document.getElementById('sd-top10-modal')&&!document.getElementById('modal-bg').classList.contains('hidden')) sdShowTop10(window._sdTop10Open);
     });
   }
   return e;
@@ -9222,7 +9229,10 @@ function _sdInvReg(cust,slm,name){const k=cust+'|'+(slm||'');let i=_sdInvRegList
 function sdShowInvoicesAt(i){const r=_sdInvRegList[i];if(r){window._sdInvView='doc';window._sdInvOpen={};sdShowInvoices(r.cust,r.slm,r.name);}}
 const _SD_RECTYP={'0':'ใบกำกับ','1':'ขายสด','3':'ขายเชื่อ','4':'เพิ่มหนี้','5':'ลดหนี้'};
 function sdInvSetView(v){window._sdInvView=v;const m=window._sdInvModal;if(m) sdShowInvoices(m.cust,m.slm,m.name);}
-function sdInvTogProd(k){const o=window._sdInvOpen=window._sdInvOpen||{};o[k]=!o[k];const m=window._sdInvModal;if(m) sdShowInvoices(m.cust,m.slm,m.name);}
+function sdInvTogProd(k){const o=window._sdInvOpen=window._sdInvOpen||{};o[k]=!o[k];const m=window._sdInvModal;if(!m)return;
+  // วาดหน้าต่างใหม่ทั้งก้อน → คงตำแหน่ง scroll ของตารางไว้ ไม่ให้เด้งกลับบนสุด (2026-10-14)
+  const tw=document.querySelector('#sd-inv-modal .tw'),t=tw?tw.scrollTop:0;sdShowInvoices(m.cust,m.slm,m.name);
+  const tw2=document.querySelector('#sd-inv-modal .tw');if(tw2)tw2.scrollTop=t;}
 function sdShowInvoices(cust,slm,name){
   const custs=_sdInvCusts(cust),multi=custs.length>1,p=_sdInvPeriod();
   const view=window._sdInvView||'doc',open=window._sdInvOpen||{};
@@ -9434,15 +9444,15 @@ function _sdGroupByBar(){
     <div style="display:inline-flex;border:1px solid var(--BD);border-radius:8px;overflow:hidden">${SD_GROUP_BY.map(([k,l])=>`<button type="button" class="btn btn-xs" style="border:0;border-radius:0;${_sd.groupBy===k?'background:var(--N);color:#fff':''}" aria-pressed="${_sd.groupBy===k}" onclick="sdSetGroupBy('${k}')">${l}</button>`).join('')}</div>
     ${_sd.groupBy!=='corp'?'<span style="font-size:11px;color:var(--TX3)">ตั้งค่าได้ที่ จัดการกลุ่ม › กลุ่มลูกค้า · เทียบปีก่อนรายกลุ่มแสดงเฉพาะกลุ่มเดิม</span>':''}</div>`;
 }
-// กล่อง Top 10 สินค้าขายดีของกลุ่ม/ลูกค้าที่เปิดดู — โหมดใบกำกับใช้ /api/invoice_detail (เรียงตามยอดแล้ว) · โหมดเดิมรวมจาก branches[].g[].it[]
-function _sdTop10Row(c,slm,cols){
+// Top 10 สินค้าขายดีของกลุ่ม/ลูกค้า (popup) — โหมดใบกำกับใช้ /api/invoice_detail (เรียงตามยอดแล้ว) · โหมดเดิมรวมจาก branches[].g[].it[]
+function _sdTop10Html(c,slm){
   const codes=(c.branches||[]).map(b=>b.c).filter(Boolean);
   let items=null,note='';
   if(_sdApi.invoiceBased){
-    if(!codes.length)return '';
+    if(!codes.length)return '<div style="padding:16px;color:var(--TX3)">ไม่มีรหัสลูกค้า</div>';
     const d=_sdInvDetGet(codes,slm);
-    if(d.loading)return `<tr><td colspan="${cols}" style="padding:6px 20px;font-size:11.5px;color:var(--TX3)">⏳ กำลังโหลด Top 10 สินค้า…</td></tr>`;
-    if(d.error)return '';
+    if(d.loading)return '<div style="padding:20px;text-align:center;color:var(--TX3)">⏳ กำลังโหลด Top 10 สินค้า…</div>';
+    if(d.error)return `<div class="al ald">${esc(d.error)}</div>`;
     // สินค้าลูก (2026-10-12, ผู้ใช้ขอ): รหัสชุด 90022-x แตกเป็นไส้ใน — server: invoiceDetail products_children (≈ = ประมาณจากสัดส่วนไส้ใน)
     items=(d.data?.products_children||d.data?.products||[]).filter(x=>Number(x.amount)>0).slice(0,10).map(x=>({c:x.sku,n:x.sku_name||x.sku,v:Number(x.amount)||0,q:Number(x.qty)||0,u:x.unit||'',est:!!x.estimated,par:x.parent_sku||''}));
     note='จากรายการในใบกำกับ TSS · รหัสชุดแตกเป็นสินค้าลูก';
@@ -9451,14 +9461,25 @@ function _sdTop10Row(c,slm,cols){
     (c.branches||[]).forEach(b=>(b.g||[]).forEach(g=>(g.it||[]).forEach(it=>{const e=by.get(it.c)||{c:it.c,n:it.n,v:0,q:0,u:''};e.v+=it._tot||0;e.q+=it._qty||0;by.set(it.c,e);})));
     items=[...by.values()].filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
   }
-  if(!items.length)return '';
+  if(!items.length)return '<div style="padding:20px;text-align:center;color:var(--TX3)">ไม่มีรายการสินค้าในช่วงนี้</div>';
   const tot=c._tot||items.reduce((a,x)=>a+x.v,0)||1;
-  return `<tr><td colspan="${cols}" style="padding:6px 12px 10px 20px;background:var(--bg)">
-    <div style="border:2px solid var(--A);border-radius:10px;padding:8px 12px;max-width:760px">
-      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px"><b>🏆 Top 10 สินค้าขายดี${(c.branches||[]).length>1?'ของกลุ่มนี้':''}</b><span style="font-size:11px;color:var(--TX3)">${note}${note?' · ':''}ช่วงเดียวกับที่เลือก</span></div>
-      <table style="margin-top:6px;font-size:12px"><thead><tr><th style="width:28px">#</th><th>สินค้า</th><th class="r">ยอด (บาท)</th><th class="r">จำนวน</th><th class="r">%</th></tr></thead><tbody>
+  return `<div style="font-size:11px;color:var(--TX3);margin-bottom:6px">${note}${note?' · ':''}ช่วงเดียวกับที่เลือก</div>
+    <div class="tw"><table style="font-size:12.5px"><thead><tr><th style="width:28px">#</th><th>สินค้า</th><th class="r">ยอด (บาท)</th><th class="r">จำนวน</th><th class="r">%</th></tr></thead><tbody>
       ${items.map((x,i)=>`<tr><td style="font-weight:700;color:${i<3?'var(--A)':'var(--TX3)'}">${i+1}</td><td><span class="mono">${esc(x.c)}</span> ${esc(x.n)}${x.par?` <span style="font-size:10.5px;color:var(--TX3)" title="${x.est?'ประมาณจากสัดส่วนไส้ในของชุดนี้ในช่วงเดียวกัน (ใบกำกับไม่มีรายการไส้ใน)':'แตกจากรหัสชุดตามไส้ในจริง'}">${x.est?'≈ ':''}จาก ${esc(x.par)}</span>`:''}</td><td class="r">${x.est?'≈':''}${Math.round(x.v).toLocaleString('en-US')}</td><td class="r">${x.q?Math.round(x.q).toLocaleString('en-US')+(x.u?' '+esc(x.u):''):'—'}</td><td class="r">${(x.v/tot*100).toFixed(1)}%</td></tr>`).join('')}
-      </tbody></table>${items.some(x=>x.est)?'<div style="font-size:10.5px;color:var(--TX3);margin-top:4px">≈ = ใบกำกับไม่มีรายการไส้ในของสินค้าชุด ระบบประมาณจากสัดส่วนไส้ในของชุดรหัสเดียวกันในช่วงเวลาเดียวกัน</div>':''}</div></td></tr>`;
+      </tbody></table></div>${items.some(x=>x.est)?'<div style="font-size:10.5px;color:var(--TX3);margin-top:4px">≈ = ใบกำกับไม่มีรายการไส้ในของสินค้าชุด ระบบประมาณจากสัดส่วนไส้ในของชุดรหัสเดียวกันในช่วงเวลาเดียวกัน</div>':''}`;
+}
+// ปุ่ม Top 10 ในแถวกลุ่ม → popup (2026-10-14, ผู้ใช้ขอ: เดิมแทรกเป็นกล่องในตารางเมื่อเปิดกลุ่ม ดูยาก)
+// ลงทะเบียนกลุ่มตอนวาดแถว (key = ck) ให้ popup หา c/slm ได้ · โหลดเสร็จ _sdInvDetGet เรียก sdShowTop10 ซ้ำ
+window._sdTop10Reg={};
+function _sdTop10Btn(key,c,slm){
+  window._sdTop10Reg[key]={c,slm};
+  return `<button type="button" class="btn btn-xs" style="margin-left:6px;padding:1px 8px;font-size:11px;border-color:var(--A);color:var(--A)" title="ดู Top 10 สินค้าขายดี" onclick="event.stopPropagation();sdShowTop10('${_promoJsKey(key)}')">🏆 Top 10</button>`;
+}
+function sdShowTop10(key){
+  const r=window._sdTop10Reg[key];if(!r)return;
+  window._sdTop10Open=key;
+  const c=r.c,multi=(c.branches||[]).length>1;
+  openMod(`<div id="sd-top10-modal"><div class="mh"><div class="mt2">🏆 Top 10 สินค้าขายดี — ${esc(c.n)} ${multi?`<span class="badge bbgr" style="font-size:11px">${(c.branches||[]).length} สาขา</span>`:''}</div><span class="mx" onclick="window._sdTop10Open=null;closeM()">✕</span></div>${_sdTop10Html(c,r.slm)}</div>`);
 }
 function sdCust(){
   if(!document.getElementById('sd-ta')) return; // page navigated away while an async load was in flight
@@ -9514,9 +9535,8 @@ function sdCust(){
       const cvYoY=c._regrouped?0:(yoyM.cust[c.grp]||0);
       const unassigned=c.grp===UNASSIGNED_CORP_LABEL;
       h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--LN)">
-        <td style="font-weight:700">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span> <button class="btn btn-xs btn-g" onclick="event.stopPropagation();nav('groups')">ไปตั้งค่ากลุ่ม →</button>`:`<strong>${c.n}</strong>`} ${(()=>{const sc=_sdCatOf(c);return sc?`<span class="badge bbl" style="font-size:10px" title="Category (Sales)">🏷 ${esc(sc)}</span>`:(c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:'');})()} <span style="font-size:11px;color:var(--TX3)">${(c.branches||[]).length} สาขา</span></td>
+        <td style="font-weight:700">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span> <button class="btn btn-xs btn-g" onclick="event.stopPropagation();nav('groups')">ไปตั้งค่ากลุ่ม →</button>`:`<strong>${c.n}</strong>`} ${(()=>{const sc=_sdCatOf(c);return sc?`<span class="badge bbl" style="font-size:10px" title="Category (Sales)">🏷 ${esc(sc)}</span>`:(c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:'');})()} <span style="font-size:11px;color:var(--TX3)">${(c.branches||[]).length} สาขา</span>${_sdTop10Btn(ck,c,F?F.slm:'')}</td>
         ${_sdVT(cv,c._x,null,{b:1})}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${c._regrouped?'—':_vc(cv,cvYoY)}</td></tr>`;
-      if(oc) h+=_sdTop10Row(c,F?F.slm:'',nCols);
       // บริษัท › สินค้า / สาขา › สินค้า: เปิดแล้วเห็นรายการสินค้าทันที ไม่มีแถวสาขา
       if(oc&&(_sd.level==='corp_prod'||_sd.level==='branch_prod')){
         h+=_sdApi.invoiceBased?_sdInvBranchHtml({c:(c.branches||[]).map(b=>b.c),n:c.n,_tot:c._tot,_x:c._x},F?F.slm:'',ck+'_p',20,nCols,(v,par,x)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
