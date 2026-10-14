@@ -7836,7 +7836,7 @@ function _sdFiltered(){
     }else yoy={total:sum(yr,'amount'),qty:sum(yr,'qty'),invoices:yr.length,custs:_sdBuildCusts(yr),prods:_sdBuildProds(yr),slms:_sdBuildSlms(yr,_sdApi.slmList||[])};
   }
   const name=slmKeySet(s).size>1?slmKeyName(s):((_sdApi.slmList||[]).find(x=>String(x.code)===s)?.name||salesNameFor(s)||s);
-  _sdApi._filt={key,slm:s,name,total,qty:sum(rows,'qty'),invoices,vs,monthly,custs,prods,extras,x,slms:slms.filter(x=>slmKeySet(s).has(String(x.code))),yoy};
+  _sdApi._filt={key,slm:s,name,total,qty:sum(rows,'qty'),invoices,vs,monthly,custs,prods,extras,x,slms:slms.filter(x=>{const k=slmKeySet(s);return [...slmKeySet(x.code)].some(c=>k.has(c));}),yoy};
   return _sdApi._filt;
 }
 
@@ -8584,19 +8584,55 @@ function _sdBuildProds(rows){
 }
 // Same corp-group -> branch -> product-group -> product hierarchy as _sdBuildCusts, nested one
 // level deeper under each salesperson.
+// แท็บรายเซลส์ (2026-10-14, ผู้ใช้ขอ): คนเดียวกันที่มีทั้งรหัส Express (TSS) และรหัส Bplus โรงงาน (BP-xx) ผูกไว้ที่ผู้ใช้
+// (sc_users.slm_codes + bplus_codes) → แสดงเป็นแถวเดียวด้วยชื่อผู้ใช้ แล้วแยกยอดด้านในเป็น TSS / TGM
+// รหัสที่ไม่มีผู้ใช้ผูก หรือมีผู้ใช้มากกว่า 1 คนอ้างรหัสเดียวกัน = แยกแถวตามรหัสเหมือนเดิม
+// รายชื่อคนจาก /api/sales_teams/me (people — ทุก role ได้รับ, รหัสรวม BP-xx แล้ว) · ยังไม่โหลด = ใช้ผู้ใช้ในเครื่อง (admin)
+function _sdSlmOwners(){
+  const claim=new Map(),sc=typeof _scopeNow==='function'?_scopeNow():null;
+  const people=(sc&&sc.people&&sc.people.length)?sc.people
+    :(DB.get('users')||[]).filter(u=>u.is_active!==0&&u.is_active!==false).map(u=>({name:u.name,codes:userSlmCodes(u)}));
+  people.forEach(u=>{
+    const codes=(u.codes||[]).map(c=>String(c).trim()).filter(Boolean);if(!codes.length) return;
+    codes.forEach(c=>claim.set(c,claim.has(c)?null:{name:u.name||c,codes}));
+  });
+  const out=new Map();
+  claim.forEach((o,c)=>{if(o) out.set(c,{key:o.codes.join(','),name:o.name});});
+  return out;
+}
+// บริษัทของแถวยอดขาย: BP-TGM / TGM = TGM (โรงงาน) · TSS / CONSI / TSS-NV = TSS
+function _sdSlmCo(r){const c=String(r?.company||'').toUpperCase();return c?(c.includes('TGM')?'TGM':'TSS'):(_rowCompany(r)==='TGM'?'TGM':'TSS');}
+function _sdSlmCoBucket(s,r,sid,amt){
+  const co=_sdSlmCo(r);
+  const C=s._cos[co]=s._cos[co]||{co,_codes:new Set(),_tot:0,custs:{}};
+  C._codes.add(sid);C._tot+=amt;
+  return C;
+}
+function _sdSlmFinish(m,branchesOf,label){
+  return Object.values(m).map(s=>{
+    const cos=Object.values(s._cos).map(C=>({co:C.co,codes:[...C._codes].join(','),_tot:C._tot,_x:C._x,custs:Object.values(C.custs).map(c=>{
+      const branches=branchesOf(c);
+      return {...c,c:branches.length>1?`${branches.length} ${label}`:(branches[0]?.c||''),branches};
+    }).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
+    const {_cos,...rest}=s;
+    return {...rest,cos,custs:cos.flatMap(C=>C.custs)};
+  });
+}
 function _sdBuildSlms(rows,slmList){
-  const m={};
+  const m={},own=_sdSlmOwners();
   for(const r of rows){
     const prof=getCustomerProfile({c:r.cust_code,n:r.cust_name,ty:r.cust_group||'ขายจริง',grp:r.cust_group||'อื่นๆ',slm:r.slm_id});
     const sid=String(prof.slm||r.slm_id||'').trim();
     if(!sid || String(sid).toUpperCase()==='ALL') continue;
-    if(!m[sid])m[sid]={code:sid,name:salesNameFor(sid)||r.slm_name||sid,_tot:0,custs:{}};
-    m[sid]._tot+=r.amount;
+    const o=own.get(sid),pk=o?o.key:sid;
+    if(!m[pk])m[pk]={code:pk,name:o?o.name:(salesNameFor(sid)||r.slm_name||sid),_tot:0,_cos:{}};
+    m[pk]._tot+=r.amount;
+    const C=_sdSlmCoBucket(m[pk],r,sid,r.amount);
     const custCode=r.cust_code||`SLM-${sid}`;
     // Same srv_corp preference as _sdBuildCusts above.
     const corpGrp=r.srv_corp?(r.cust_group||UNASSIGNED_CORP_LABEL):customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
-    if(!m[sid].custs[corpGrp])m[sid].custs[corpGrp]={n:corpGrp,ty:prof.category||r.category||r.cust_group||'ขายจริง',category:prof.category||r.category||r.cust_group||'ขายจริง',grp:corpGrp,_tot:0,_branches:{}};
-    const c=m[sid].custs[corpGrp];c._tot+=r.amount;
+    if(!C.custs[corpGrp])C.custs[corpGrp]={n:corpGrp,ty:prof.category||r.category||r.cust_group||'ขายจริง',category:prof.category||r.category||r.cust_group||'ขายจริง',grp:corpGrp,_tot:0,_branches:{}};
+    const c=C.custs[corpGrp];c._tot+=r.amount;
     if(!c._branches[custCode])c._branches[custCode]={n:prof.branch||prof.n||r.cust_name||custCode,c:custCode,_tot:0,_g:{}};
     const b=c._branches[custCode];b._tot+=r.amount;
     const pg=expressGroupLabel(r.prod_group);
@@ -8605,10 +8641,8 @@ function _sdBuildSlms(rows,slmList){
     if(!b._g[pg].it[r.prod_code])b._g[pg].it[r.prod_code]={n:r.prod_name,c:r.prod_code,_tot:0};
     b._g[pg].it[r.prod_code]._tot+=r.amount;
   }
-  return Object.values(m).map(s=>({...s,custs:Object.values(s.custs).map(c=>{
-    const branches=Object.values(c._branches).map(b=>({...b,g:Object.values(b._g).map(g=>({...g,it:Object.values(g.it).sort((x,y)=>y._tot-x._tot)})).sort((x,y)=>y._tot-x._tot)})).sort((x,y)=>y._tot-x._tot);
-    return {...c,c:branches.length>1?`${branches.length} สาขา`:(branches[0]?.c||''),branches};
-  }).sort((a,b)=>b._tot-a._tot)})).filter(s=>s._tot>0).sort((a,b)=>b._tot-a._tot);
+  return _sdSlmFinish(m,c=>Object.values(c._branches).map(b=>({...b,g:Object.values(b._g).map(g=>({...g,it:Object.values(g.it).sort((x,y)=>y._tot-x._tot)})).sort((x,y)=>y._tot-x._tot)})).sort((x,y)=>y._tot-x._tot),'สาขา')
+    .filter(s=>s._tot>0).sort((a,b)=>b._tot-a._tot);
 }
 // ── invoice-based breakdown (real ARTRN invoices, company+customer+salesperson dimensions only —
 // no SKU/product dimension exists in Express's AR ledger, so these two feed the รายลูกค้า/รายเซลส์
@@ -8790,31 +8824,30 @@ function _sdBuildCustsFromInvoice(invRows){
 }
 function _sdBuildSlmsFromInvoice(invRows){
   const custCache=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),x]));
-  const m={};
+  const m={},own=_sdSlmOwners();
   for(const r of invRows){
     // Some invoices carry no SLMCOD in Express at all — keep these under an explicit "unattributed"
     // bucket rather than dropping them, or this breakdown stops footing to the invoice-based total
     // above it (confirmed live: ~฿415K/month of real invoices have a blank SLMCOD).
     const rawSid=String(r.slm_code||'').trim();
     const sid=(!rawSid||rawSid==='(none)')?'(ไม่ระบุ)':rawSid;
-    if(!m[sid])m[sid]={code:sid,name:sid==='(ไม่ระบุ)'?'ไม่ระบุพนักงานขาย':(salesNameFor(sid)||sid),_tot:0,custs:{}};
-    m[sid]._tot+=Number(r.amount)||0;_sdXAdd(m[sid],r);
+    const o=own.get(sid),pk=o?o.key:sid;
+    if(!m[pk])m[pk]={code:pk,name:o?o.name:(sid==='(ไม่ระบุ)'?'ไม่ระบุพนักงานขาย':(salesNameFor(sid)||sid)),_tot:0,_cos:{}};
+    m[pk]._tot+=Number(r.amount)||0;_sdXAdd(m[pk],r);
+    const C=_sdSlmCoBucket(m[pk],r,sid,Number(r.amount)||0);_sdXAdd(C,r);
     const custCode=r.cust_code||'(ไม่ระบุ)';
     // ลูกค้าโรงงาน (Bplus) ที่ไม่มีใน Express ใช้ชื่อจาก Bplus แทนรหัส (2026-10-05)
     const rec=custCache[custCode]||(r._name?{name:r._name}:null)||(window._bpCustNames&&window._bpCustNames[custCode]?{name:window._bpCustNames[custCode]}:{});
     const prof=getCustomerProfile({c:custCode,n:rec.name||custCode,ty:rec.cust_group||'ขายจริง',grp:rec.cust_group||'อื่นๆ',slm:rec.slm_id||''});
     const grp=r._corp||customerGroupForCode(custCode,UNASSIGNED_CORP_LABEL);
-    if(!m[sid].custs[grp])m[sid].custs[grp]={n:grp,ty:prof.category||'ขายจริง',category:prof.category||'ขายจริง',grp,_tot:0,_branches:{}};
-    const c=m[sid].custs[grp];c._tot+=Number(r.amount)||0;_sdXAdd(c,r);
+    if(!C.custs[grp])C.custs[grp]={n:grp,ty:prof.category||'ขายจริง',category:prof.category||'ขายจริง',grp,_tot:0,_branches:{}};
+    const c=C.custs[grp];c._tot+=Number(r.amount)||0;_sdXAdd(c,r);
     if(!c._branches[custCode])c._branches[custCode]={n:prof.branch||prof.n||rec.name||custCode,c:custCode,_tot:0,g:[]};
     c._branches[custCode]._tot+=Number(r.amount)||0;_sdXAdd(c._branches[custCode],r);
   }
   // no >0 filter here (unlike the order-based build above) — a salesperson whose month nets to
   // zero/negative from a credit note must still appear, or the rows stop summing to the total
-  return Object.values(m).map(s=>({...s,custs:Object.values(s.custs).map(c=>{
-    const branches=Object.values(c._branches).sort((a,b)=>b._tot-a._tot);
-    return {...c,c:branches.length>1?`${branches.length} ราย`:(branches[0]?.c||''),branches};
-  }).sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
+  return _sdSlmFinish(m,c=>Object.values(c._branches).sort((a,b)=>b._tot-a._tot),'ราย').sort((a,b)=>b._tot-a._tot);
 }
 function _sdUpdateSlmDrop(){
   const sel=document.getElementById('sd-slm-f');if(!sel)return;
@@ -9979,48 +10012,54 @@ function sdSlm(){
     const F=_sdFiltered();
     let slms=[...(F?F.slms:_sdApi.slms)];
     if(q) slms=slms.filter(s=>s.name.toLowerCase().includes(q)||s.code.toLowerCase().includes(q));
-    if(sf&&!F) slms=slms.filter(s=>s.code===sf);
+    if(sf&&!F) slms=slms.filter(s=>slmKeySet(s.code).has(sf)||s.code===sf);
     if(_sd.sort.col==='val') slms=_sdByValue(slms);
     const T=(F?F.total:_sdApi.total)||1;
     slms.forEach(s=>{
       const sk='s'+s.code;const os=_sd.op[sk];
       h+=`<tr onclick="sdTogOp('${sk}')" style="cursor:pointer">
-        <td>${_xa(os)}<strong>${s.name}</strong> <span class="badge bbgr" style="font-size:10px">${s.code}</span></td>
+        <td>${_xa(os)}<strong>${s.name}</strong> <span class="badge bbgr" style="font-size:10px">${s.cos?[...new Set(s.cos.flatMap(C=>C.codes.split(',')))].join(' · '):s.code}</span></td>
         ${_sdVT(s._tot,s._x,null,{b:1})}
         ${(()=>{const tg=_sdTargetFor(s.code);if(tg==null)return `<td class="r" style="color:var(--TX3)">—</td><td class="r">${_sdBar(s._tot,T)}</td>`;const p=tg?Math.round(_sdV(s._tot)/tg*100):0;const col=p>=100?'var(--G)':p>=80?'var(--A)':'var(--R)';return `<td class="r">${_sdF(tg)}</td><td class="r" style="color:${col};font-weight:700">${p}%</td>`;})()}${_sdYoYCell(yoyM.slm[s.code]||0)}<td class="r">${_vc(s._tot,yoyM.slm[s.code]||0)}</td></tr>`;
-      if(os){
-        _sdByValue(s.custs).forEach(c=>{
+      // ระดับบริษัท TSS / TGM (2026-10-14, ผู้ใช้ขอ) — คนเดียวกันรวมรหัส Express + Bplus เป็นแถวเดียว แยกยอดด้านใน
+      if(os) (s.cos||[]).forEach(C=>{
+        const kk=sk+'_'+C.co;const ok=_sd.op[kk];
+        h+=`<tr onclick="sdTogOp('${kk}')" style="cursor:pointer;background:var(--LBL)">
+          <td style="padding-left:22px;font-size:12px;color:var(--BL);font-weight:600">${_xa(ok)}${C.co==='TGM'?'🏭 TGM (โรงงาน)':'🏢 TSS'} <span class="badge bbgr" style="font-size:10px">${C.codes.split(',').join(' · ')}</span></td>
+          ${_sdVT(C._tot,C._x,null,{fs:1})}
+          <td class="r"></td><td class="r">${_sdBar(C._tot,s._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
+        if(ok) _sdByValue(C.custs).forEach(c=>{
           // keyed by c.grp (corp group name, stable/unique) not c.c (now "N สาขา" or one code)
-          const ck='sc'+s.code+'_'+c.grp;const oc=_sd.op[ck];
+          const ck='sc'+s.code+'_'+C.co+'_'+c.grp;const oc=_sd.op[ck];
           const unassigned=c.grp===UNASSIGNED_CORP_LABEL;
           h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--bg2)">
-            <td style="padding-left:22px;font-size:12px">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span>`:c.n} ${c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:''}</td>
+            <td style="padding-left:42px;font-size:12px">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span>`:c.n} ${c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:''}</td>
             ${_sdVT(c._tot,c._x,null,{fs:1})}
-            <td class="r"></td><td class="r">${_sdBar(c._tot,s._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
-          if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,s.code,ck,42,(_sd.showYoY?6:5)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}<td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`);
+            <td class="r"></td><td class="r">${_sdBar(c._tot,C._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
+          if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,C.codes,ck,62,(_sd.showYoY?6:5)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}<td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`);
           if(oc) (c.branches||[]).forEach((b,bi)=>{
             const bk=ck+'_b'+bi;const ob=_sd.op[bk];
             h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg)">
-              <td style="padding-left:42px;font-size:12px">${_xa(ob)}${_sdBranchCell(b)}</td>
+              <td style="padding-left:62px;font-size:12px">${_xa(ob)}${_sdBranchCell(b)}</td>
               ${_sdVT(b._tot,b._x,null,{fs:1})}
               <td class="r"></td><td class="r">${_sdBar(b._tot,c._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
             if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased
-              ?_sdInvBranchHtml(b,s.code,bk,62,(_sd.showYoY?6:5)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(b._x),{fs:1})}<td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`)
-              :`<tr style="background:var(--bg2)"><td style="padding-left:62px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า)</td></tr>`;
+              ?_sdInvBranchHtml(b,C.codes,bk,82,(_sd.showYoY?6:5)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(b._x),{fs:1})}<td class="r"></td><td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r"></td>`)
+              :`<tr style="background:var(--bg2)"><td style="padding-left:82px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า)</td></tr>`;
             if(ob) (b.g||[]).forEach((g,gi)=>{
               const pgk=bk+'_g'+gi;const opg=_sd.op[pgk];
               h+=`<tr onclick="sdTogOp('${pgk}')" style="cursor:pointer;background:var(--bg2);font-size:12px">
-                <td style="padding-left:62px">${_xa(opg)}${g.n}</td>
+                <td style="padding-left:82px">${_xa(opg)}${g.n}</td>
                 <td class="r">${_sdFmtTotal(_sdV(g._tot))}</td><td class="r"></td><td class="r">${_sdBar(g._tot,b._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
               if(opg) g.it.forEach(it=>{
                 h+=`<tr style="background:var(--bg);font-size:12px">
-                  <td style="padding-left:82px"><span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
+                  <td style="padding-left:102px"><span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
                   <td class="r">${_sdFmtTotal(_sdV(it._tot))}</td><td class="r"></td><td class="r">${_sdBar(it._tot,g._tot)}</td>${_sdYoYCell(0)}<td class="r"></td></tr>`;
               });
             });
           });
         });
-      }
+      });
     });
     document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
     return;
@@ -10241,7 +10280,7 @@ function sdExport(){
       const F=_sdFiltered();
       let slms=[...((F?F.slms:_sdApi.slms)||[])];
       if(q) slms = slms.filter(s=>s.name.toLowerCase().includes(q)||s.code.toLowerCase().includes(q));
-      if(sf&&!F) slms = slms.filter(s=>s.code===sf);
+      if(sf&&!F) slms = slms.filter(s=>slmKeySet(s.code).has(sf)||s.code===sf);
       if(_sd.sort.col==='val') slms=_sdByValue(slms);
       else if(_sd.sort.col==='vs') slms.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
       slms.forEach(s=>rows.push([s.name,s.code,_sdV(s._tot),(s.custs||[]).length]));
