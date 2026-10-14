@@ -9357,11 +9357,13 @@ async function sdSaveBranch(code){
 }
 const _sdInvDet={};
 function _sdInvPeriod(){
-  if(_sd.pt==='year'){const y=_sdApiYear();return{from:`${y}-01-01`,to:`${y}-12-31`};}
+  // ตัดถึงวันนี้ (2026-10-14, ผู้ใช้ขอ) — ใบลงวันที่ล่วงหน้าไม่นับในยอดรวมแล้ว (jobs/importFrom*.js) รายละเอียด/จำนวน/รายการใบจึงตัดเท่ากัน
+  const today=new Date().toLocaleDateString('sv-SE'),cap=p=>p.to>today&&p.from<=today?{from:p.from,to:today}:p;
+  if(_sd.pt==='year'){const y=_sdApiYear();return cap({from:`${y}-01-01`,to:`${y}-12-31`});}
   // (2026-10-14) โหมดกำหนดเอง — เดิมตกไปใช้เดือนปัจจุบัน ตาราง pivot / ใบกำกับรายสาขาจึงไม่ตรงช่วงที่เลือก
-  if(_sd.pt==='custom'&&_sd.dateFrom&&_sd.dateTo) return{from:_sd.dateFrom,to:_sd.dateTo};
+  if(_sd.pt==='custom'&&_sd.dateFrom&&_sd.dateTo) return cap({from:_sd.dateFrom,to:_sd.dateTo});
   const ym=_sdApi.month||_sdApiMonth();
-  return{from:`${ym}-01`,to:_ymLastDate(ym)};
+  return cap({from:`${ym}-01`,to:_ymLastDate(ym)});
 }
 const _sdInvCusts=c=>(Array.isArray(c)?c:String(c||'').split(',')).map(x=>String(x).trim()).filter(Boolean);
 function _sdInvKey(cust,slm,lines){const p=_sdInvPeriod();return[_sdInvCusts(cust).join(','),p.from,p.to,slm||'',lines?'L':''].join('|');}
@@ -9897,7 +9899,7 @@ function sdProd(){
   const hHdr=`${_sdApi.loaded&&_sdApi.invoiceBased?_sdPivotBar('prod'):''}<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:42%">กลุ่มสินค้า / สินค้า / ประเภทลูกค้า / ลูกค้า</th>
-      ${_sdValHead(sDn)}
+      ${_sdValHead(sDn)}${_sdApi.loaded&&_sdApi.invoiceBased?'<th class="r">จำนวน</th>':''}
       <th class="r" style="width:110px">สัดส่วน</th>${_sdYoYHead()}<th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
   const q=(_sd.q||'').toLowerCase();
@@ -9922,26 +9924,46 @@ function sdProd(){
     const prodBasisNote=_sdApi.invoiceBased
       ?`<div class="al alw" style="margin:8px 0;font-size:12px">ℹ️ ยอดต่อสินค้าเป็นการ<strong>ประมาณ</strong>โดยปรับสัดส่วนจากข้อมูลออเดอร์ให้รวมเท่ากับยอดขายรวม (Invoice จริง) ด้านบน เนื่องจากระบบบัญชีไม่มีข้อมูลสินค้าผูกกับใบกำกับภาษีโดยตรง</div>`
       :'';
+    // จำนวน (2026-10-14, ผู้ใช้ขอ — มุมมองมาตรฐานไม่มีคอลัมน์จำนวน มีแต่ใน pivot): จำนวนจริงจากบรรทัดใบกำกับ
+    // (/api/invoice_detail/pivot ชุดเดียวกับ pivot) แยกตามหน่วย ไม่บวกต่างหน่วยรวมกัน · ยอดเงินยังเป็นแบบประมาณเหมือนเดิม
+    let QC=()=>'';
+    if(_sdApi.invoiceBased){
+      const isAllQ=isManager()&&_sd.mgrView,meQ=mySlmKey();
+      const pv=_sdPvLoad(F?F.slm:'');
+      if(pv.loading) QC=()=>'<td class="r" style="color:var(--TX3);font-size:11px">⏳</td>';
+      else{
+        const okC=F||isAllQ?null:new Set(_sdApi.custs.filter(c=>custHasSlm(c,meQ)).flatMap(c=>(c.branches||[]).map(b=>b.c)));
+        const M=new Map(),add=(k,u,v)=>{const o=M.get(k)||{};o[u]=(o[u]||0)+v;M.set(k,o);};
+        (pv.rows||[]).forEach(r=>{
+          const v=Number(r.q)||0;if(!v||r.k==='(none)'||(okC&&!okC.has(r.c)))return;
+          const u=String(r.u||'').trim();
+          add('g|'+(expressGroupLabel(r.g)||'อื่นๆ'),u,v);add('i|'+r.k,u,v);add('c|'+r.k+'|'+r.c,u,v);
+        });
+        const fmt=o=>Object.entries(o||{}).filter(([,v])=>Math.round(v)).sort((x,y)=>y[1]-x[1]).map(([u,v])=>`${Math.round(v).toLocaleString('en-US')}${u?' '+esc(u):''}`).join(' · ');
+        const sumOf=keys=>{const o={};keys.forEach(k=>Object.entries(M.get(k)||{}).forEach(([u,v])=>{o[u]=(o[u]||0)+v;}));return o;};
+        QC=(key,keys,fs)=>`<td class="r" style="${fs?'font-size:12px;':''}white-space:nowrap">${fmt(keys?sumOf(keys):M.get(key))||'<span style="color:var(--TX3)">—</span>'}</td>`;
+      }
+    }
     let h=prodBasisNote+hHdr;
     prods.forEach(p=>{
       const ok='p'+p.n;const oo=_sd.op[ok];
       h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
         <td>${_xa(oo)}<strong>${p.n}</strong></td>
-        ${_sdVT(p._tot,_sdProdX(p._tot),null,{b:1})}<td class="r">${_sdBar(p._tot,T)}</td>${_sdYoYCell(yoyM.grp[p.n]||0)}<td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
+        ${_sdVT(p._tot,_sdProdX(p._tot),null,{b:1})}${QC('g|'+p.n)}<td class="r">${_sdBar(p._tot,T)}</td>${_sdYoYCell(yoyM.grp[p.n]||0)}<td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
       if(oo) p.it.forEach(it=>{
         const ik='pi'+it.c;const oi=_sd.op[ik];
         h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
-          ${_sdVT(it._tot,_sdProdX(it._tot))}<td class="r">${_sdBar(it._tot,p._tot)}</td>${_sdYoYCell(yoyM.prod[it.c]||0)}<td class="r">${_vc(it._tot,yoyM.prod[it.c]||0)}</td></tr>`;
+          ${_sdVT(it._tot,_sdProdX(it._tot))}${QC('i|'+it.c)}<td class="r">${_sdBar(it._tot,p._tot)}</td>${_sdYoYCell(yoyM.prod[it.c]||0)}<td class="r">${_vc(it._tot,yoyM.prod[it.c]||0)}</td></tr>`;
         if(oi) it.custs.forEach(ty=>{
           const tyk='pit'+it.c+'_'+ty.n;const ot=_sd.op[tyk];
           h+=`<tr onclick="sdTogOp('${tyk}')" style="cursor:pointer;background:var(--LN)">
             <td style="padding-left:44px;font-size:12px">${_xa(ot)}<span class="badge bbl" style="font-size:10px">${ty.n}</span></td>
-            ${_sdVT(ty._tot,_sdProdX(ty._tot),null,{fs:1})}<td class="r">${_sdBar(ty._tot,it._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+            ${_sdVT(ty._tot,_sdProdX(ty._tot),null,{fs:1})}${QC('',(ty.cs||[]).map(cu=>'c|'+it.c+'|'+cu.c),1)}<td class="r">${_sdBar(ty._tot,it._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
           if(ot) ty.cs.forEach(cu=>{
             h+=`<tr style="background:var(--bg);font-size:12px">
               <td style="padding-left:64px">${String(cu.c||'').startsWith('SLM-')?`<span style="color:var(--TX3)">เซลส์:</span> ${cu.n}`:`<span class="badge bbgr" style="font-size:10px">${cu.c}</span> ${cu.n}`}</td>
-              ${_sdVT(cu._tot,_sdProdX(cu._tot))}<td class="r">${_sdBar(cu._tot,ty._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+              ${_sdVT(cu._tot,_sdProdX(cu._tot))}${QC('c|'+it.c+'|'+cu.c,null,1)}<td class="r">${_sdBar(cu._tot,ty._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
           });
         });
       });
@@ -9949,7 +9971,7 @@ function sdProd(){
     if(_sdSplitOn()){
       // ลดหนี้ไม่มีรหัสสินค้าใน Express (ARTRN ไม่มี SKU) — แสดงเป็นแถวรวมแยกท้ายตาราง
       const X=F?F.x:_sdApi.x;
-      if(X&&Math.round(X.cb)) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td>↩️ ลดหนี้ (CN) — ไม่ผูกกับสินค้า</td>${_sdVT(0,{sb:null,sg:null,cb:X.cb,cg:X.cg})}<td class="r"></td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+      if(X&&Math.round(X.cb)) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td>↩️ ลดหนี้ (CN) — ไม่ผูกกับสินค้า</td>${_sdVT(0,{sb:null,sg:null,cb:X.cb,cg:X.cg})}<td class="r"></td><td class="r"></td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
     }
     document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
     return;
