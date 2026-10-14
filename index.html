@@ -9362,9 +9362,13 @@ function _sdRegroupCat2(custs){
   return groups.sort((a,b)=>((a._cat==='ยังไม่ระบุ Category')-(b._cat==='ยังไม่ระบุ Category'))||(catTot[b._cat]-catTot[a._cat])||a._cat.localeCompare(b._cat,'th')||(b._tot-a._tot));
 }
 // ชื่อร้าน + สาขา (2026-10-12, ผู้ใช้ขอ — เดิมลูกค้าที่ไม่มีกลุ่มขึ้นเป็นรหัส)
+// (2026-10-14, ผู้ใช้ขอ "ชื่อเดียวกันให้รวมกัน") ชื่อเป็นตัวจัดกลุ่มมิติ สาขา / ลูกค้า — ยุบช่องว่างทุกแบบเป็นวรรคเดียว
+// ชื่อจาก Express บางรหัสใช้ nbsp (U+00A0) แทนวรรค เช่น MI-LA-0016 "เอ็มเอฟ คาเฟ่ …" หน้าตาเหมือนกันแต่แยกเป็นคนละแถว
 function _sdCustDisplayName(code,fallback,remote,p){
-  const r=remote[code]||{},name=String(p.name||r.name||'').trim();
-  const br=String(p.branch||'').trim()||(r.addr_branch?'สาขา'+r.addr_branch:'');
+  const tidy=v=>String(v||'').replace(/\s+/g,' ').trim();
+  const r=remote[code]||{},name=tidy(p.name||r.name);
+  const br=tidy(p.branch)||(r.addr_branch?'สาขา'+tidy(r.addr_branch):'');
+  fallback=tidy(fallback);
   const base=name&&name!==code?name:(fallback&&fallback!==code?fallback:code);
   return br&&!base.includes(br.replace(/^สาขา/,''))?`${base} (${br})`:base;
 }
