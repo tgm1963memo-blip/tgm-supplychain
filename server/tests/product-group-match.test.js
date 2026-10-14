@@ -22,3 +22,28 @@ test('factory SKUs get the Express STKGRP group of the closest-named product', (
   assert.equal(by('รายได้เบ็ดเตล็ดอื่นๆ'), '');
   assert.equal(by(''), '');
 });
+
+// ตัวหากลุ่มของรหัส (ใช้ใน /api/invoice_detail/pivot, 2026-10-14) — รหัสตรง → รหัสขึ้นต้นเดียวกัน → ชื่อ
+test('productGroupResolver: own group, then shared code prefix, then name', () => {
+  const { DatabaseSync } = require('node:sqlite');
+  const { productGroupResolver } = require('../lib/productGroupMatch');
+  const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE products (code TEXT, name TEXT, group_name TEXT)');
+  db.exec(`INSERT INTO products VALUES ('20018-10','โทสต์แฮม 1000 ก.','002'), ('20018-11','โทสต์แฮม 500 ก.','002'), ('10200','ไส้กรอกไก่ 3นิ้ว','003')`);
+  const { resolve } = productGroupResolver(db);
+  assert.equal(resolve('X1', 'อะไรก็ได้', '005'), '005');
+  assert.equal(resolve('20018-227', 'โทสต์แฮม สไลด์ 2.2mm. 500 กรัม แช่แข็ง', ''), '002');
+  assert.equal(resolve('10396-18', 'ไส้กรอกไก่สโมคกี้ 3.5 นิ้ว (พาสเจอร์ไรซ์)', ''), '003');
+  assert.equal(resolve('99-1', 'รายได้เบ็ดเตล็ดอื่นๆ', ''), '');
+});
+
+// หน่วยขาย: รหัสย่อ Express กับชื่อเต็ม Bplus เป็นชื่อเดียวกัน (ไม่แยกเป็นคนละหน่วยในตาราง)
+test('unitLabel normalizes Express codes and Bplus names', () => {
+  const { unitLabel } = require('../lib/productGroupMatch');
+  assert.equal(unitLabel('กก'), 'กก.');
+  assert.equal(unitLabel('กิโลกรัม'), 'กก.');
+  assert.equal(unitLabel('แพ'), 'แพ็ค');
+  assert.equal(unitLabel('Pack'), 'แพ็ค');
+  assert.equal(unitLabel(' ขวด '), 'ขวด');
+  assert.equal(unitLabel(''), '');
+});

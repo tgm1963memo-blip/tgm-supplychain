@@ -5870,16 +5870,17 @@ function _scopeFilterOptions(){
 // รหัสที่ไม่อยู่แผนกไหน (ยังไม่ผูกผู้ใช้ / ตัวเลือก "อื่นๆ") ไปรวมท้ายใต้ "ไม่ระบุแผนก" · value ทุกตัวเลือกเหมือนเดิม
 // ตัวกรองพนักงานขาย (2026-10-07, ผู้ใช้ขอ): เลือก "คน" = ยอดของทุกรหัสที่ตั้งให้ผู้ใช้นั้น (รหัส Express + รหัส Bplus โรงงาน "BP-xx")
 // รายชื่อคนมาจาก /api/sales_teams/me (people) · จัดใต้แผนกตามตัวกรองทีม/แผนก · รหัสที่ไม่ผูกกับผู้ใช้ใดแสดงเป็นรหัสเดี่ยวท้ายรายการ
-function _slmGroupedOptionsHtml(list,selected,allLabel){
-  const s=_scopeNow(),sel=String(selected||'');
-  const opt=(v,l,dis)=>`<option value="${esc(v)}"${!dis&&String(v)===sel?' selected':''}${dis?' disabled':''}>${esc(l)}</option>`;
+// รายการตัวเลือก Sales แบบจัดกลุ่ม (ทีม/แผนก → คน → รหัสที่ยังไม่ผูกผู้ใช้) — [{v: รหัสคั่น ',', l: ข้อความ, dis, kind}]
+function _slmGroupedOptions(list,allLabel){
+  const s=_scopeNow(),out=[];
+  const opt=(v,l,dis,kind)=>{out.push({v,l,dis:!!dis,kind:kind||''});return '';};
   const people=((s&&s.people)||[]).filter(p=>(p.codes||[]).length).slice().sort((x,y)=>x.name.localeCompare(y.name,'th'));
   const short=n=>{const m=String(n||'').match(/\(([^)]+)\)\s*$/);return m?`${String(n).replace(/\s*\([^)]*\)\s*$/,'').trim()} (${m[1]})`:String(n||'');};
-  const personOpt=(p,indent)=>opt(p.codes.join(','),`${indent}👤 ${short(p.name)} · ${p.codes.join(', ')}`);
+  const personOpt=(p,indent)=>opt(p.codes.join(','),`${indent}👤 ${short(p.name)} · ${p.codes.join(', ')}`,false,'person');
   let h=opt('',allLabel);
   const placedCodes=new Set(),shown=new Set();
   ((s&&s.filters)||[]).filter(f=>f.codes&&f.codes.length).forEach(f=>{
-    h+=opt(f.codes.join(','),(f.kind==='team'?'👥 ':'　· ')+f.label);
+    h+=opt(f.codes.join(','),(f.kind==='team'?'👥 ':'　· ')+f.label,false,f.kind==='team'?'team':'dept');
     if(f.kind==='team') return;
     people.filter(p=>p.department===f.label&&!shown.has(p.uid)).forEach(p=>{shown.add(p.uid);p.codes.forEach(c=>placedCodes.add(String(c)));h+=personOpt(p,'　　　');});
   });
@@ -5893,10 +5894,70 @@ function _slmGroupedOptionsHtml(list,selected,allLabel){
   const rest=list.filter(x=>!placedCodes.has(String(x.code)));
   if(rest.length){
     if(shown.size) h+=opt('__no_user','── รหัสที่ยังไม่ผูกผู้ใช้ ──',true);
-    rest.forEach(x=>{h+=opt(x.code,(shown.size?'　　　':'')+x.name);});
+    rest.forEach(x=>{h+=opt(x.code,(shown.size?'　　　':'')+x.name,false,'code');});
   }
-  return h;
+  return out;
 }
+// ── เลือก Sales ได้หลายคน (2026-10-14, ผู้ใช้ขอ — Sales Overview + Dashboard) ──────────────────────────────
+// ค่าที่เลือก = รหัส Sales คั่น ',' (รวมรหัสของทุกรายการที่ติ๊ก) — ตัวกรองเดิมทุกจุดรับรูปนี้อยู่แล้ว (slmKeySet)
+// ติ๊กทีม/แผนก = เลือกรหัสทุกคนในกลุ่ม · รายการขึ้นติ๊กเมื่อรหัสของรายการนั้นถูกเลือกครบ · onApply(key) เรียกเมื่อกด "ตกลง"/"ทั้งหมด"
+const _slmMs={};
+function _slmMultiHtml(id,list,selected,allLabel,onApply){
+  const items=_slmGroupedOptions(list,allLabel).slice(1);
+  _slmMs[id]={items,sel:slmKeySet(selected),allLabel,onApply};
+  return `<span class="slm-ms" id="${id}" style="position:relative;display:inline-block">
+    <button type="button" class="btn btn-sm" onclick="_slmMsToggle('${id}',event)" style="font-weight:600;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" aria-haspopup="true">${esc(_slmMsLabel(id))} ▾</button>
+    <div class="slm-ms-pop" hidden onclick="event.stopPropagation()" style="position:absolute;z-index:300;top:calc(100% + 4px);left:0;min-width:340px;max-width:92vw;background:var(--bg,#fff);border:1px solid var(--BD);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:8px">
+      <input type="search" placeholder="ค้นหาชื่อ / รหัส…" oninput="_slmMsFilter('${id}',this.value)" style="width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid var(--BD);border-radius:6px;font-size:12.5px;margin-bottom:6px">
+      <div class="slm-ms-list" style="max-height:340px;overflow:auto">${_slmMsListHtml(id)}</div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;border-top:1px solid var(--BD);padding-top:8px">
+        <button type="button" class="btn btn-sm" onclick="_slmMsApply('${id}',true)">${esc(allLabel)}</button>
+        <button type="button" class="btn btn-sm" style="background:var(--N);color:#fff;border-color:var(--N)" onclick="_slmMsApply('${id}')">ตกลง</button>
+      </div>
+    </div>
+  </span>`;
+}
+function _slmMsChecked(st,o){const c=[...slmKeySet(o.v)];return c.length&&c.every(x=>st.sel.has(x));}
+function _slmMsListHtml(id){
+  const st=_slmMs[id];
+  return st.items.map((o,i)=>o.dis
+    ?`<div data-q="" style="font-size:11px;color:var(--TX3);padding:6px 6px 2px">${esc(o.l)}</div>`
+    :`<label data-q="${esc((o.l+' '+o.v).toLowerCase())}" style="display:flex;gap:6px;align-items:center;padding:3px 6px 3px ${6+(o.l.match(/^[　]*/)[0].length?18:0)}px;font-size:12.5px;cursor:pointer;white-space:nowrap${o.kind==='team'||o.kind==='dept'?';font-weight:600':''}"><input type="checkbox" ${_slmMsChecked(st,o)?'checked':''} onchange="_slmMsChange('${id}',${i},this.checked)">${esc(o.l.replace(/^[　\s]+/,''))}</label>`).join('');
+}
+// ชื่อบนปุ่ม: รายการที่ติ๊ก (ข้ามรายการที่ถูกรวมอยู่ในรายการก่อนหน้าแล้ว เช่น คนในทีมที่ติ๊กทั้งทีม)
+function _slmMsLabel(id){
+  const st=_slmMs[id];if(!st.sel.size) return st.allLabel;
+  const covered=new Set(),names=[];
+  st.items.forEach(o=>{if(o.dis||!_slmMsChecked(st,o))return;const c=[...slmKeySet(o.v)];if(c.every(x=>covered.has(x)))return;c.forEach(x=>covered.add(x));names.push(o.l.replace(/^[　\s·👤👥]+/u,'').replace(/\s·\s.*$/,''));});
+  const extra=[...st.sel].filter(x=>!covered.has(x));
+  if(extra.length) names.push(...extra);
+  return names.length<=2?'👤 '+names.join(', '):`👤 ${names.slice(0,2).join(', ')} +${names.length-2}`;
+}
+function _slmMsToggle(id,ev){
+  if(ev)ev.stopPropagation();
+  const pop=document.querySelector(`#${id} .slm-ms-pop`);if(!pop)return;
+  document.querySelectorAll('.slm-ms-pop').forEach(p=>{if(p!==pop)p.hidden=true;});
+  pop.hidden=!pop.hidden;
+  if(!pop.hidden)pop.querySelector('input[type=search]')?.focus();
+}
+function _slmMsChange(id,i,on){
+  const st=_slmMs[id],o=st.items[i];
+  slmKeySet(o.v).forEach(c=>on?st.sel.add(c):st.sel.delete(c));
+  const box=document.querySelector(`#${id} .slm-ms-list`);if(!box)return;
+  const q=document.querySelector(`#${id} input[type=search]`)?.value||'';
+  box.innerHTML=_slmMsListHtml(id);_slmMsFilter(id,q);
+}
+function _slmMsFilter(id,q){
+  q=String(q||'').toLowerCase().trim();
+  document.querySelectorAll(`#${id} .slm-ms-list [data-q]`).forEach(el=>{el.style.display=!q||(el.dataset.q&&el.dataset.q.includes(q))?'':'none';});
+}
+function _slmMsApply(id,all){
+  const st=_slmMs[id];if(!st)return;
+  if(all)st.sel.clear();
+  const pop=document.querySelector(`#${id} .slm-ms-pop`);if(pop)pop.hidden=true;
+  st.onApply([...st.sel].join(','));
+}
+document.addEventListener('click',()=>document.querySelectorAll('.slm-ms-pop').forEach(p=>{p.hidden=true;}));
 const _SCOPE_LABELS={self:'เฉพาะตัวเอง',dept:'ทั้งแผนก',team:'ทั้งทีม',teams:'เฉพาะทีมที่เลือก',members:'เฉพาะคนที่เลือก',all:'ทั้งหมด'};
 // เปิดแอปจาก session เดิม: ดึงข้อมูลผู้ใช้ล่าสุด (รหัส Sales ที่เพิ่งผูก, แผนก/ตำแหน่ง) จาก server ก่อนแสดงหน้า
 async function _refreshCurrentUser(){
@@ -6545,7 +6606,7 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
   const _dashHasSalesCluster=typeof _sdBuildProds==='function';
   const slmDropHtml=_scopeMulti()&&_dashHasSalesCluster?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
     <label style="font-size:12.5px;color:var(--TX2);font-weight:600">👤 พนักงานขาย:</label>
-    <select id="dash-slm-f" onchange="dashSetSlmFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--BD);font-size:12.5px;font-weight:600"><option value="">${myScopeKey()?'ทั้งหมดในความดูแล':'ทั้งหมด (ภาพรวมบริษัท)'}</option></select>
+    <span id="dash-slm-f"></span>
   </div>`:'';
   // (2026-10-03) Dashboard ใหม่ทั้งหน้า — ส่วนยอดขายทั้งหมด (KPI / กราฟรายเดือน / หมวดลูกค้า / Top 20) อยู่ใน #dx-root
   // วาดโดย dashExecRender() จาก /api/dashboard/exec ตามช่วงเวลาที่เลือก แทน KPI 4 ใบ + Top 10 + "สรุปมูลค่าการขาย (฿)" เดิม
@@ -7113,7 +7174,8 @@ function dashExecRender(){
 function dashFillSlmSelect(){
   const slmSel=document.getElementById('dash-slm-f');if(!slmSel)return;
   const slmF=window._dashSlmF||'';
-  slmSel.innerHTML=_slmGroupedOptionsHtml(dashVisibleSalesList(),slmF,myScopeKey()?'ทั้งหมดในความดูแล':'ทั้งหมด (ภาพรวมบริษัท)');
+  // เลือกได้หลายคน (2026-10-14, ผู้ใช้ขอ) — ค่า = รหัส Sales คั่น ',' ส่งต่อ /api/dashboard/exec?slm=… ได้ตรงๆ
+  slmSel.innerHTML=_slmMultiHtml('dash-slm-ms',dashVisibleSalesList(),slmF,myScopeKey()?'ทั้งหมดในความดูแล':'ทั้งหมด (ภาพรวมบริษัท)',v=>dashSetSlmFilter(v));
 }
 function dashSetSlmFilter(v){
   window._dashSlmF=v||'';
@@ -7665,6 +7727,21 @@ async function _sdInvMonth(ym){
   const parts=await Promise.all(_sdCosFor(ym).map(c=>_sbInvoiceSalesRows(ym,c).then(rs=>rs.map(r=>({...r,company:c})))));
   return parts.flat();
 }
+// ยอดใบกำกับตามช่วงวันที่ (2026-10-14) — โหมด "กำหนดเอง" · แยกช่วงตามปี เพราะแฟ้มบริษัทต่างกันแต่ละปี (_sdCosFor)
+// แถวรูปเดียวกับ _sdInvRange (รวมทั้งช่วงต่อลูกค้า×Sales) แต่ไม่มี CN/VAT แยก
+async function _sdInvDays(from,to){
+  const segs=[];
+  for(let y=Number(from.slice(0,4));y<=Number(to.slice(0,4));y++){
+    const a=y===Number(from.slice(0,4))?from:`${y}-01-01`,b=y===Number(to.slice(0,4))?to:`${y}-12-31`;
+    _sdCosFor(`${y}-01`).forEach(c=>segs.push({a,b,c}));
+  }
+  const parts=await Promise.all(segs.map(async s=>{
+    const r=await apiFetch(`/api/invoice_sales_daily_rows?from=${s.a}&to=${s.b}&company=${encodeURIComponent(s.c)}`);
+    if(r.error) throw new Error(r.error.message);
+    return (r.data||[]).map(x=>({...x,company:s.c}));
+  }));
+  return parts.flat();
+}
 async function _sdInvRange(a,b){
   const parts=await Promise.all(_sdCosFor(a).map(c=>_sbInvoiceSalesRowsRange(a,b,c).then(rs=>rs.map(r=>({...r,company:c})))));
   return parts.flat();
@@ -7909,6 +7986,20 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     products=await CACHE.get((opts.includeTgm?'products_all':'products')+(opts.includeConsi?'_consi':''),()=>SB.getProducts({includeTgm:opts.includeTgm===true,includeConsi:opts.includeConsi===true}));
   }
   const prodMap=Object.fromEntries((products||[]).map(p=>[String(p.code||p.sku||''),p]));
+  // ชื่อ/กลุ่มสินค้าของรหัสที่ถูกกรองออกจาก prodMap (2026-10-14, ผู้ใช้แจ้ง "สินค้าไม่ขึ้นชื่อ" เช่น 10154, TS0198 —
+  // สินค้า plant TGM1 ถูก _filterTgmRecords ตัดทิ้งเมื่อไม่ includeTgm แถวเลยขึ้นแค่รหัส + กลุ่ม "อื่นๆ")
+  // ใช้เฉพาะชื่อ/กลุ่ม — prodMap (ใช้เดาบริษัทของแถว) ไม่เปลี่ยน ยอดแยกบริษัทจึงเหมือนเดิม
+  let nameMap={};
+  {
+    const named=new Set(allData.filter(r=>r.product_name).map(r=>String(r.sku||'')));
+    const missing=[...new Set(allData.map(r=>String(r.sku||'')).filter(c=>c&&!prodMap[c]&&!named.has(c)))];
+    if(missing.length){
+      try{
+        const extra=await CACHE.get('products_names_'+missing.length+'_'+missing.slice(0,20).join('_'),()=>SB.getProductsByCodes(missing,{includeTgm:true,includeConsi:true}));
+        nameMap=Object.fromEntries((extra||[]).map(p=>[String(p.code||''),p]));
+      }catch(e){console.warn('product names:',e.message||e);}
+    }
+  }
   if(useDaily){
     const codes=[...new Set(allData.map(r=>String(r.cust_code||'').trim()).filter(Boolean))];
     const cached=DB.get('remote_customers_cache')||[];
@@ -7928,7 +8019,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
       const name=names[sp.slm]||names[sp.raw]||(isAll?'ทั้งหมด':sp.slm);
       const qty=Number(r.qty ?? r.quantity ?? 0)||0;
       const amount=Number(r.amount ?? r.total ?? r.sales_amount ?? r.net_amount ?? r.value ?? 0)||0;
-      const prod={...(prodMap[r.sku]||{}), code:r.sku, name:r.product_name || prodMap[r.sku]?.name, group_name:r.group_name || prodMap[r.sku]?.group_name, plant:r.plant || prodMap[r.sku]?.plant, company:r.company || prodMap[r.sku]?.company};
+      const prod={...(prodMap[r.sku]||{}), code:r.sku, name:r.product_name || prodMap[r.sku]?.name || nameMap[r.sku]?.name, group_name:r.group_name || prodMap[r.sku]?.group_name || nameMap[r.sku]?.group_name, plant:r.plant || prodMap[r.sku]?.plant, company:r.company || prodMap[r.sku]?.company};
       const rowCompany=String(r.company||'').trim().toUpperCase();
       const base={
     branch:sp.branch,
@@ -7963,7 +8054,9 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
         return [{...base,cust_code:code,cust_name:prof.n||code,cust_group:prof.corp||grp,category:prof.category}];
       }
       // monthly mode: กระจายตาม PROD_CUST weights (ข้อมูลตั้งต้น)
-      const custWeights=(PROD_CUST?.[r.sku]?.[sp.slm])||null;
+      // opts.noCustWeights (2026-10-14): Sales Overview โหมดกำหนดเอง — ไม่กระจายด้วยน้ำหนักเก่า (PROD_CUST) ที่ทำให้มีชื่อลูกค้า
+      // ที่ไม่ได้ซื้อจริงในช่วงนั้น (ผู้ใช้แจ้งวิลล่าโผล่ในมุมมองทีมที่ไม่ได้ขายวิลล่า) — แถวคงเป็นรายพนักงานขายแทน
+      const custWeights=opts.noCustWeights?null:((PROD_CUST?.[r.sku]?.[sp.slm])||null);
       if(isAll || !custWeights || !Object.keys(custWeights).length) return [base];
       const totalW=Object.values(custWeights).reduce((a,b)=>a+(Number(b)||0),0)||1;
       return Object.entries(custWeights).map(([code,w])=>{
@@ -8607,7 +8700,8 @@ async function _sbInvoiceSalesRowsRange(startYm,endYm,company='TSS'){
 // measurement — sdProd() labels it as such rather than presenting it as real per-SKU invoice data.
 // CN + VAT (2026-09-30) จากแถว invoice_sales_monthly — null = ไม่มีข้อมูล (ยอดแบบออเดอร์)
 function _sdInvExtras(inv){
-  if(!Array.isArray(inv)) return null;
+  // แถวรายวัน (/api/invoice_sales_daily_rows — โหมดกำหนดเอง) ไม่มี CN/VAT แยก → null = การ์ดแสดง "—" แทน ฿0
+  if(!Array.isArray(inv)||!inv.some(r=>r.vat_amount!=null)) return null;
   const sum=k=>inv.reduce((a,r)=>a+(Number(r[k])||0),0);
   return {vat:sum('vat_amount'),gross:sum('gross_amount'),cnCount:sum('cn_count'),cnAmount:sum('cn_amount')};
 }
@@ -8733,8 +8827,7 @@ function _sdUpdateSlmDrop(){
   // (2026-10-03) ดูได้บางส่วน (ทีม/แผนก/ลูกทีม) → เฉพาะรหัสในความดูแล + ตัวเลือกกรองตามทีม/แผนก/คน
   const sk=myScopeKey(),allow=sk?slmKeySet(sk):null;
   const list=(_sdApi.slmList.length?_sdApi.slmList:SD_SALES.map(s=>({code:s.c,name:s.n}))).filter(s=>!allow||allow.has(String(s.code)));
-  sel.innerHTML=_slmGroupedOptionsHtml(list,_sd.slmF,sk?'ทั้งหมดในความดูแล':'ทุก Sales');
-  if(_sd.slmF)sel.value=_sd.slmF;
+  sel.innerHTML=_slmMultiHtml('sd-slm-ms',list,_sd.slmF,sk?'ทั้งหมดในความดูแล':'ทุก Sales',v=>{_sd.slmF=v;_sd.op={};sdRender();_sdUpdateSlmDrop();});
 }
 
 function _sdD(){
@@ -8900,10 +8993,20 @@ async function sdLoadCustom(){
   badge.textContent='⏳ โหลดข้อมูล...';document.body.appendChild(badge);
   const el=document.getElementById('sd-ta');
   if(el) el.innerHTML=`<div class="al ali" style="margin:12px">⏳ กำลังโหลดข้อมูล ${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}…</div>`;
+  const loadSeq=++_sdLoadSeq;
   try{
-    const rows=await _sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,dateFrom:_sd.dateFrom,dateTo:_sd.dateTo});
+    // ยอดใบกำกับรายวัน (2026-10-14, ผู้ใช้แจ้ง "ดึงข้อมูลแบบกำหนดเอง ยอดไม่ตรง") — เดิมโหมดนี้ใช้แต่ยอดออเดอร์รายเดือน
+    // (ไม่รวม TGM, ลูกค้ากระจายด้วยน้ำหนัก PROD_CUST ข้อมูลตั้งต้นแบบเก่า → ชื่อ/กลุ่มลูกค้าเพี้ยน เช่น วิลล่าแยกทีละสาขา)
+    // ตอนนี้ยอดรวม/รายลูกค้า/ราย Sales ใช้ใบกำกับจริงตามวันที่ (TSS + TGM ตามบริษัทที่เลือก) เหมือนโหมด Month/Year
+    // แถวออเดอร์ยังใช้ทำรายสินค้าฝั่ง TSS (ปรับสัดส่วนให้รวมเท่ายอดใบกำกับ) — เงื่อนไข !slmId แบบเดียวกับ Year
+    const [rows,invRows,bpRows]=await Promise.all([
+      _sbSalesRows(startYm,endYm,slmId,{includeConsi:false,fastProducts:true,includeTgm:!slmId,noCustWeights:true,dateFrom:_sd.dateFrom,dateTo:_sd.dateTo}),
+      slmId?[]:_sdInvDays(_sd.dateFrom,_sd.dateTo).catch(e=>{console.warn('invoice_sales_daily_rows unavailable; showing order-based figures',e.message||e);return [];}),
+      slmId?[]:_sdBpLines(startYm,endYm),
+    ]);
+    if(loadSeq!==_sdLoadSeq) return;
     const monthly=_sdKpiFromRows(rows);
-    _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;_sdApi.invoiceBased=false;_sdApi._invRows=null;_sdApi._invRowsSlm=null;
+    _sdApi.valueMode='amount';_sdApi.loaded=true;_sdApi.histFallback=false;_sdApi.invoiceBased=false;_sdApi._invRows=null;_sdApi._invRowsSlm=null;_sdApi.extras=null;
     _sdApi.rangeMode=rows.some(r=>r.doc_date)?'daily':'monthly';
     _sdApi.monthly=monthly;
     _sdApi.total=rows.reduce((a,r)=>a+(Number(r.amount)||0),0);
@@ -8914,6 +9017,26 @@ async function sdLoadCustom(){
     _sdResetBuildCache();
     _sdApi.slmList=_sdSalesListFromRows(rows);
     _sdEnsureBuilt(_sd.at==='prod'?'prod':(_sd.at==='slm'?'slm':'cust'));
+    _sdApi._bpRows=bpRows;
+    if(invRows.length){
+      const invTotal=invRows.reduce((a,r)=>a+(Number(r.amount)||0),0);
+      const invCount=invRows.reduce((a,r)=>a+(Number(r.invoice_count)||0),0);
+      _sdApi.total=invTotal;
+      if(invCount) _sdApi.invoices=invCount;
+      _sdApi.invoiceBased=true;
+      _sdApi._invRows=invRows;
+      _sdApi.extras=_sdInvExtras(invRows);_sdApi.x=_sdXOf(invRows);
+      const invCusts=_sdBuildCustsFromInvoice(invRows);
+      _sdApi.custs=invCusts;_sdApi._buildCache.custs=invCusts;
+      const swapRows=_chainSwapInvRows(invRows,await _chainSwap(_sd.dateFrom,_sd.dateTo).catch(()=>null),_sdCosFor(startYm));
+      if(loadSeq!==_sdLoadSeq) return;
+      _sdApi._invRowsSlm=swapRows;
+      const invSlms=_sdBuildSlmsFromInvoice(swapRows);
+      _sdApi.slms=invSlms;_sdApi._buildCache.slms=invSlms;
+      const scaledProds=_sdProdsInv(rows,invRows,bpRows,invTotal);
+      _sdApi.prods=scaledProds;_sdApi._buildCache.prods=scaledProds;
+      if(_scopeNow()?.restricted) _sdUseSwapAll(swapRows,rows,bpRows);
+    }
     _sdApi.error=null;
     _sdUpdateSlmDrop();
     if(_sd.showYoY){
@@ -8985,7 +9108,7 @@ function pgMySales(){
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
     <input id="sd-q" type="text" placeholder="🔍 ค้นหา..." oninput="sdSetQ(this.value)" style="padding:6px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;font-family:var(--font);color:var(--TX);outline:none;min-width:180px;flex:1;max-width:280px">
-    ${isAll?`<select id="sd-slm-f" class="btn btn-sm" onchange="_sd.slmF=this.value;_sd.op={};sdRender()"><option value="">ทุก Sales</option></select>`:''}
+    ${isAll?`<span id="sd-slm-f"></span>`:''}
     <button class="btn btn-sm" onclick="sdClear()" style="color:var(--TX3)">ล้าง</button>
   </div>
   <div id="sd-wbar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
@@ -9087,7 +9210,7 @@ function sdKPI(){
   const yoy=F?F.yoy:_sdApi.yoy;
   const isCustom=_sd.pt==='custom';
   const customRangeLbl=isCustom&&_sd.dateFrom&&_sd.dateTo?`${_dateToDisplayTh(_sd.dateFrom)} – ${_dateToDisplayTh(_sd.dateTo)}`:'';
-  const customGranularityNote=isCustom&&_sdApi.loaded&&_sdApi.rangeMode==='monthly'
+  const customGranularityNote=isCustom&&_sdApi.loaded&&!_sdApi.invoiceBased&&_sdApi.rangeMode==='monthly'
     ? '<div class="kh" style="color:var(--A)">ยังไม่มีข้อมูลรายวันใน Supabase — แสดงยอดรวมรายเดือน</div>'
     : '';
   // (2026-10-03, ผู้ใช้ขอ) ผู้จัดการที่ดูแล Sales หลายรหัส รายชื่อยาวจนดันการ์ด KPI สูง — ถ้ายาวให้แสดงเป็นไอคอน ℹ️ กดดู
@@ -9100,7 +9223,7 @@ function sdKPI(){
     ? `<div class="kh" style="color:var(--TX3)">ยอดจากใบกำกับภาษีจริง (${_sdCoLabel()}) — รายสินค้าฝั่ง TSS ปรับสัดส่วนจากข้อมูลออเดอร์ · ฝั่ง TGM ใช้บรรทัดสินค้าจริงจากโรงงาน</div>`
     : '';
   // (2026-10-05) โหมดกำหนดเอง / เทียบปีที่แล้ว ยังคิดจากข้อมูลออเดอร์ ซึ่งไม่มียอดโรงงาน — แจ้งไว้จนกว่าจะทำส่วนนี้
-  const coLimitNote=_sdCo()!=='tss'&&(_sd.pt==='custom'||(_sd.showYoY&&yoy&&!_sdApi.yoy?.invoiceBased))?`<div class="kh" style="color:var(--A)">${_sd.pt==='custom'?'โหมดกำหนดเอง':'ตัวเลขเทียบปีที่แล้ว'}ยังไม่รวมยอด TGM (โรงงาน)</div>`:'';
+  const coLimitNote=_sdCo()!=='tss'&&((_sd.pt==='custom'&&!_sdApi.invoiceBased)||(_sd.showYoY&&yoy&&!_sdApi.yoy?.invoiceBased))?`<div class="kh" style="color:var(--A)">${_sd.pt==='custom'?'โหมดกำหนดเอง':'ตัวเลขเทียบปีที่แล้ว'}ยังไม่รวมยอด TGM (โรงงาน)</div>`:'';
   const _yoyLine=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${_sdFmtTotal(prev)} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳ กำลังโหลดข้อมูลปีที่แล้ว…':'')}</div>`:'';
   const _yoyLineNum=(cur,prev,lbl)=>_sd.showYoY?`<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--BD);font-size:11px;color:var(--TX3)">${yoy?`${lbl}: ${Math.round(prev).toLocaleString()} ${_yoyPct(cur,prev)}`:(_sdApi.yoyLoading?'⏳':'')}</div>`:'';
   kr.innerHTML=`
@@ -9201,6 +9324,8 @@ async function sdSaveBranch(code){
 const _sdInvDet={};
 function _sdInvPeriod(){
   if(_sd.pt==='year'){const y=_sdApiYear();return{from:`${y}-01-01`,to:`${y}-12-31`};}
+  // (2026-10-14) โหมดกำหนดเอง — เดิมตกไปใช้เดือนปัจจุบัน ตาราง pivot / ใบกำกับรายสาขาจึงไม่ตรงช่วงที่เลือก
+  if(_sd.pt==='custom'&&_sd.dateFrom&&_sd.dateTo) return{from:_sd.dateFrom,to:_sd.dateTo};
   const ym=_sdApi.month||_sdApiMonth();
   return{from:`${ym}-01`,to:_ymLastDate(ym)};
 }
@@ -9491,6 +9616,16 @@ function _sdPvRows(custs,raw){
   info.forEach((i,c)=>{const rem=i.tot-(lineSum.get(c)||0);if(Math.abs(rem)>=1)rows.push({c,s:'',k:'(none)',n:'',g:'',q:0,a:rem,_corp:i.corp,_bname:i.bname});});
   return rows;
 }
+// ค้นหาในแท็บรายลูกค้า (2026-10-14, ผู้ใช้แจ้ง "ค้นหา วิลล่า ทำไมมี Chatrium") — เดิมจับชื่อสินค้าด้วย เลยติดลูกค้าที่ซื้อ
+// "ชอคโกแลต วิลล์" มา · ตอนนี้หาจากชื่อ/รหัสกลุ่มลูกค้าและสาขาก่อน ไม่เจอเลยค่อยหาจากชื่อ/รหัสสินค้า (ค้นหาสินค้าในแท็บนี้ยังได้)
+const _SD_PROD_DIMS=new Set(['pgrp','prod']);
+function _sdCustSearch(custs,q){
+  if(!q) return custs;
+  const hit=s=>String(s||'').toLowerCase().includes(q);
+  const byCust=custs.filter(c=>hit(c.n)||hit(c.c)||(c.branches||[]).some(b=>hit(b.n)||hit(b.c)));
+  if(byCust.length) return byCust;
+  return custs.filter(c=>(c.branches||[]).some(b=>(b.g||[]).some(g=>hit(g.n)||(g.it||[]).some(i=>hit(i.n)||hit(i.c)))));
+}
 function _sdPivotHtml(tab,custs,slm){
   const d=_sdPvLoad(slm);
   if(d.loading)return '<div class="al ali" style="margin-top:8px">⏳ กำลังโหลดข้อมูลรายสินค้าจากใบกำกับ…</div>';
@@ -9498,14 +9633,29 @@ function _sdPivotHtml(tab,custs,slm){
   const dims=_sdPv[tab]||SD_PV_DEFAULT[tab];
   let rows=_sdPvRows(custs,d.rows||[]);
   const q=(_sd.q||'').toLowerCase().trim();
-  if(q)rows=rows.filter(r=>String(r.c).toLowerCase().includes(q)||dims.some(k=>String(SD_DIMS[k].key(r)).toLowerCase().includes(q)));
-  const root={a:0,q:0,ch:new Map()};
+  if(q){
+    // ลูกค้าก่อน สินค้าทีหลัง (2026-10-14) — ดู _sdCustSearch
+    const hit=r=>String(r.c).toLowerCase().includes(q)||dims.some(k=>!_SD_PROD_DIMS.has(k)&&String(SD_DIMS[k].key(r)).toLowerCase().includes(q));
+    const byCust=rows.filter(hit);
+    rows=byCust.length?byCust:rows.filter(r=>dims.some(k=>_SD_PROD_DIMS.has(k)&&String(SD_DIMS[k].key(r)).toLowerCase().includes(q)));
+  }
+  // จำนวนแยกตามหน่วย (2026-10-14, ผู้ใช้ขอ) — r.u จาก server (กก. / แพ็ค / ซอง …) · ไม่บวกต่างหน่วยรวมกัน
+  const root={a:0,qu:{},ch:new Map()};
   rows.forEach(r=>{
-    let n=root;const a=Number(r.a)||0,qq=Number(r.q)||0;n.a+=a;n.q+=qq;
-    dims.forEach(k=>{const v=String(SD_DIMS[k].key(r));if(!n.ch.has(v))n.ch.set(v,{a:0,q:0,ch:new Map()});n=n.ch.get(v);n.a+=a;n.q+=qq;});
+    let n=root;const a=Number(r.a)||0,qq=Number(r.q)||0,u=String(r.u||'').trim();
+    const add=x=>{x.a+=a;if(qq)x.qu[u]=(x.qu[u]||0)+qq;};
+    add(n);
+    dims.forEach(k=>{const v=String(SD_DIMS[k].key(r));if(!n.ch.has(v))n.ch.set(v,{a:0,qu:{},ch:new Map()});n=n.ch.get(v);add(n);});
   });
   const showQ=dims.includes('prod');
-  let h=`<div class="tw" style="margin-top:8px"><table><thead><tr><th style="width:52%">${dims.map(k=>SD_DIMS[k].l).join(' › ')}</th><th class="r">ยอดขาย (บาท)</th>${showQ?'<th class="r">จำนวน</th>':''}<th class="r" style="width:120px">สัดส่วน</th></tr></thead><tbody>`;
+  // ทุกแถวหน่วยเดียวกัน (เช่น กก. ทั้งหมด) → บอกหน่วยที่หัวตาราง · หลายหน่วย → ต่อหน่วยท้ายตัวเลขทุกช่อง
+  const units=Object.keys(root.qu),oneUnit=units.length===1?units[0]:null;
+  const qtyCell=qu=>{
+    const e=Object.entries(qu).filter(([,v])=>Math.round(v)).sort((x,y)=>y[1]-x[1]);
+    if(oneUnit!=null) return e.length?Math.round(e[0][1]).toLocaleString('en-US'):'';
+    return e.map(([u,v])=>`${Math.round(v).toLocaleString('en-US')}${u?' '+esc(u):''}`).join(' · ');
+  };
+  let h=`<div class="tw" style="margin-top:8px"><table><thead><tr><th style="width:52%">${dims.map(k=>SD_DIMS[k].l).join(' › ')}</th><th class="r">ยอดขาย (บาท)</th>${showQ?`<th class="r">จำนวน${oneUnit?` (${esc(oneUnit)})`:''}</th>`:''}<th class="r" style="width:120px">สัดส่วน</th></tr></thead><tbody>`;
   h+=`<tr style="background:var(--LN);font-weight:700"><td>รวมทั้งหมด</td><td class="r">${_sdFmtTotal(root.a)}</td>${showQ?'<td></td>':''}<td class="r">100%</td></tr>`;
   const walk=(node,depth,path)=>{
     [...node.ch.entries()].sort((a,b)=>b[1].a-a[1].a).forEach(([v,c])=>{
@@ -9513,7 +9663,7 @@ function _sdPivotHtml(tab,custs,slm){
       const hasProd=dims.slice(0,depth+1).includes('prod');
       h+=`<tr ${leaf?'':`onclick="sdTogOp('${_promoJsKey(key)}')" style="cursor:pointer${depth===0?';background:var(--bg2)':''}"`}>
         <td style="padding-left:${12+depth*20}px${depth===0?';font-weight:700':''}">${leaf?'':_xa(open)}${esc(v)}${!leaf?` <span style="font-size:11px;color:var(--TX3)">${c.ch.size.toLocaleString()} ${SD_DIMS[dims[depth+1]].l}</span>`:''}</td>
-        <td class="r"${depth===0?' style="font-weight:700"':''}>${_sdFmtTotal(c.a)}</td>${showQ?`<td class="r" style="font-size:12px;color:var(--TX2)">${hasProd?Math.round(c.q).toLocaleString('en-US'):''}</td>`:''}
+        <td class="r"${depth===0?' style="font-weight:700"':''}>${_sdFmtTotal(c.a)}</td>${showQ?`<td class="r" style="font-size:12px;color:var(--TX2)">${hasProd?qtyCell(c.qu):''}</td>`:''}
         <td class="r">${_sdBar(c.a,node.a||1)}</td></tr>`;
       if(open)walk(c,depth+1,path+'/'+v);
     });
@@ -9615,8 +9765,7 @@ function sdCust(){
     _sd.groupBy=_sdGroupByForRole();
     custs=_sdRegroup(custs,_sd.groupBy);
     if(_sd.level==='branch_prod'){const keepCat=_sd.groupBy==='cat2';custs=_sdFlattenBranches(custs);if(keepCat)custs.sort((a,b)=>String(a._cat).localeCompare(String(b._cat),'th')||(b._tot-a._tot));else _sd.groupBy='corp';}
-    if(q) custs=custs.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)
-      ||(c.branches||[]).some(b=>b.n.toLowerCase().includes(q)||b.c.toLowerCase().includes(q)||(b.g||[]).some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))));
+    if(q) custs=_sdCustSearch(custs,q);
     let sorted=_sd.sort.col==='val'?_sdByValue(custs):[...custs];
     // เรียงตาม Category (ลำดับจาก _sdRegroupCat2) แล้วยอด NET ตามทิศที่กดหัวคอลัมน์ (2026-10-14: เดิมใช้ลำดับตายตัวมาก→น้อย
     // กดสลับทิศที่หัว NET แล้วไม่เปลี่ยน)
@@ -9993,8 +10142,7 @@ function sdSetQ(v){_sd.q=v;sdRender();}
 function sdClear(){
   _sd.q='';_sd.slmF='';
   const qi=document.getElementById('sd-q');if(qi)qi.value='';
-  const si=document.getElementById('sd-slm-f');if(si)si.value='';
-  sdRender();
+  sdRender();_sdUpdateSlmDrop();
 }
 function refreshSalesOverviewGrouping(){
   if(sessionStorage.getItem('_pg')!=='mysales'||!_sdApi.loaded)return;
@@ -10019,8 +10167,7 @@ function sdExport(){
       // corp groups can span >1 customer code/salesperson, so filter by membership (_slms) rather
       // than equality on the single .slm field — see the matching note in sdCust().
       let custs=F?[...F.custs]:(isManager()&&_sd.mgrView)?[...(_sdApi.custs||[])]:(_sdApi.custs||[]).filter(c=>custHasSlm(c,slmId));
-      if(q) custs=custs.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)
-        ||(c.branches||[]).some(b=>b.n.toLowerCase().includes(q)||b.c.toLowerCase().includes(q)||(b.g||[]).some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))));
+      if(q) custs=_sdCustSearch(custs,q);
       if(_sd.sort.col==='val') custs=_sdByValue(custs);
       custs.forEach(c=>{
         rows.push([c.n,c.c,c.category||c.ty||'',_sdV(c._tot),Math.round((c._tot||0)/T2*100)]);

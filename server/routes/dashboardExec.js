@@ -9,7 +9,7 @@ const { autofillBusinessTypes } = require('../lib/businessType');
 const { cacheJson } = require('../lib/responseCache');
 const { resolveScope, factSql } = require('../lib/customerScope');
 const chainSales = require('../lib/chainSales');
-const { buildProductGroupMatcher } = require('../lib/productGroupMatch');
+const { productGroupResolver } = require('../lib/productGroupMatch');
 const { weightFromName } = require('../lib/weightFromName');
 const nonSales = require('../lib/nonSales');
 const CHAIN_CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
@@ -661,21 +661,8 @@ module.exports = function dashboardExecRoutes(db) {
   // กลุ่มสินค้าใช้ products.group_name (STKGRP) ชุดเดียวกับ TSS — รหัสโรงงานที่ไม่มีใน Express (เช่น 20394-177 "ตราทีจีเอ็ม (HK)")
   // ใช้กลุ่มของสินค้า Express ที่ขึ้นต้นรหัสเดียวกัน (20394-xx) · รหัส 0000 = ยอดสรุปสินค้ารหัส TG ที่ Bplus ไม่แยกรายตัว
   // ไม่มีทั้งรหัสตรงและขึ้นต้นรหัส (บาร์โค้ด 8850826…, 20368-177 HK) → เทียบชื่อกับสินค้า Express (lib/productGroupMatch.js, 2026-10-14)
-  let prefixCache = { at: 0, map: null, byName: null };
-  function productGroupByPrefix() {
-    if (prefixCache.map && Date.now() - prefixCache.at < 10 * 60 * 1000) return prefixCache;
-    const counts = new Map();
-    const all = db.prepare("SELECT code, name, group_name FROM products WHERE group_name IS NOT NULL AND group_name <> ''").all();
-    for (const p of all) {
-      const pre = String(p.code).split('-')[0];
-      const m = counts.get(pre) || new Map();
-      m.set(p.group_name, (m.get(p.group_name) || 0) + 1);
-      counts.set(pre, m);
-    }
-    const map = new Map([...counts].map(([pre, m]) => [pre, [...m].sort((a, b) => b[1] - a[1])[0][0]]));
-    prefixCache = { at: Date.now(), map, byName: buildProductGroupMatcher(all) };
-    return prefixCache;
-  }
+  // กลุ่มสินค้าจากรหัสขึ้นต้น / ชื่อ — ย้ายไป lib/productGroupMatch.js (ใช้ร่วมกับ /api/invoice_detail/pivot, 2026-10-14)
+  const productGroupByPrefix = () => productGroupResolver(db);
   router.get('/bplus/sales_lines', (req, res) => {
     try {
       const from = String(req.query.from || '');

@@ -690,6 +690,20 @@ function buildApp(db, opts = {}) {
     res.json({ from, to, amount: Number(r?.amount) || 0, invoice_count: Number(r?.invoice_count) || 0 });
   });
 
+  // ยอดใบกำกับรายลูกค้า×Sales ตามช่วงวันที่ (2026-10-14, ผู้ใช้แจ้ง Sales Overview โหมด "กำหนดเอง" ยอดไม่ตรง — เดิมโหมดนี้ใช้ยอดออเดอร์
+  // รายเดือน + น้ำหนักกระจายลูกค้าแบบเก่า) — รูปเดียวกับแถว invoice_sales_monthly ที่รวมทั้งช่วงแล้ว ให้หน้าเว็บใช้ฟังก์ชันเดิมต่อได้
+  // GET ?from=YYYY-MM-DD&to=YYYY-MM-DD&company=TSS → [{ cust_code, slm_code, amount, invoice_count }] · กรองตามสิทธิ์ + ตัดลูกค้าไม่นับยอดขาย
+  // ตารางรายวันไม่มี CN/VAT แยก (amount = สุทธิหลังหัก CN แล้ว เหมือนรายเดือน)
+  app.get('/api/invoice_sales_daily_rows', authed, (req, res) => {
+    const from = String(req.query.from || ''), to = String(req.query.to || ''), company = String(req.query.company || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM-DD และ from ≤ to' });
+    if (!company) return res.status(400).json({ error: 'company is required' });
+    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code' }));
+    const rows = db.prepare(`SELECT cust_code, slm_code, SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily
+      WHERE company = ? AND d >= ? AND d <= ? AND ${sc.sql} GROUP BY cust_code, slm_code`).all(company, from, to, ...sc.params);
+    res.json(rows.map(r => ({ cust_code: r.cust_code, slm_code: r.slm_code, amount: Number(r.amount) || 0, invoice_count: Number(r.invoice_count) || 0 })));
+  });
+
   // แคชตาม version ข้อมูล (2026-10-09 — วัดจริง 2–4.6 วิ/ครั้ง) ดู lib/responseCache.js
   app.get('/api/dashboard_sales_summary', authed, cacheJson(db), (req, res) => {
     const startYm = String(req.query.startYm || '').slice(0, 7);

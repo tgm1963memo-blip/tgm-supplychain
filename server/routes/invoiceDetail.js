@@ -1,4 +1,5 @@
 const express = require('express');
+const { productGroupResolver, unitLabel } = require('../lib/productGroupMatch');
 
 // รายละเอียดใบกำกับของลูกค้า (2026-09-28) — Sales Overview แบบยอดใบกำกับ (invoice_sales_monthly) ไม่มีมิติสินค้า
 // จึงดึงรายการสินค้าจาก invoice_lines (STCRD) ผูกกับหัวใบกำกับ invoices (ARTRN: cust_code/slm_code) ด้วย doc_num
@@ -182,21 +183,30 @@ function invoiceDetailRoutes(db) {
         return { sql: w.length ? ' AND ' + w.join(' AND ') : '', params: p };
       };
       const fi = filt('i');
+      // u = หน่วยขาย (2026-10-14, ผู้ใช้ขอ) — แยกแถวตามหน่วย ไม่บวกจำนวนต่างหน่วยรวมกัน (กก. + แพ็ค)
       const rows = db.prepare(`SELECT i.cust_code AS c, COALESCE(NULLIF(TRIM(i.slm_code), ''), '(ไม่ระบุ)') AS s, l.sku AS k, MAX(l.sku_name) AS n,
-          MAX(p.group_name) AS g, SUM(l.qty) AS q, SUM(l.line_value) AS a
+          MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.line_value) AS a
         FROM invoices i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
         LEFT JOIN products p ON p.code = l.sku
         WHERE i.doc_date >= ? AND i.doc_date <= ? AND COALESCE(i.rectyp, '') <> '5'${fi.sql}
-        GROUP BY i.cust_code, i.slm_code, l.sku`).all(COMPANY, from, to, ...fi.params);
+        GROUP BY i.cust_code, i.slm_code, l.sku, u`).all(COMPANY, from, to, ...fi.params);
       try {
         const fb = filt('b');
         rows.push(...db.prepare(`SELECT b.cust_code AS c, b.slm_code AS s, l.sku AS k, MAX(COALESCE(sk.name, p.name, l.sku)) AS n,
-            MAX(p.group_name) AS g, SUM(l.qty) AS q, SUM(l.amount) AS a
+            MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.amount) AS a
           FROM bplus_invoices b JOIN bplus_invoice_lines l ON l.doc_key = b.doc_key
           LEFT JOIN bplus_skus sk ON sk.code = l.sku LEFT JOIN products p ON p.code = l.sku
           WHERE b.company = 'BP-TGM' AND b.is_cn = 0 AND b.doc_date >= ? AND b.doc_date <= ?${fb.sql}
-          GROUP BY b.cust_code, b.slm_code, l.sku`).all(from, to, ...fb.params));
+          GROUP BY b.cust_code, b.slm_code, l.sku, u`).all(from, to, ...fb.params));
       } catch (e) { /* ยังไม่มีตาราง Bplus */ }
+      // สินค้าที่ไม่มีกลุ่มใน products (รหัสโรงงาน/บาร์โค้ด) → หากลุ่มจากรหัสขึ้นต้น/ชื่อ แบบเดียวกับแท็บรายสินค้า
+      // (2026-10-14, ผู้ใช้แจ้ง "สินค้าบางรายการไม่ถูกจัดกลุ่ม" เช่น 20018-227 โทสต์แฮม) · หน่วยแปลงเป็นชื่อเดียวกัน
+      // ทั้ง Express (รหัสย่อ กก/แพ) และ Bplus (ชื่อเต็ม กิโลกรัม/แพ็ค)
+      const { resolve } = productGroupResolver(db);
+      for (const r of rows) {
+        if (!r.g && r.k) r.g = resolve(r.k, r.n, '') || null;
+        r.u = unitLabel(r.u);
+      }
       res.json({ from, to, rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
