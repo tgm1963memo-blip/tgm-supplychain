@@ -592,7 +592,28 @@ function buildApp(db, opts = {}) {
   // (2026-10-12) ผู้ที่ถูกจำกัดสิทธิ์บันทึกบรรทัดใบเคาะได้เฉพาะสาขาที่มองเห็น (lib/customerScope.js) — กันยิง API ตรง
   // สาขาที่อยู่ในใบนั้นอยู่แล้ว (เช่น ผู้ร่วมแก้เอกสารที่มีสาขาของคนอื่น) บันทึกซ้ำได้ตามเดิม
   const promoDraftCustGuard = (req, res, next) => {
-    if (!['POST', 'PATCH'].includes(req.method)) return next();
+    if (!['POST', 'PATCH', 'DELETE'].includes(req.method)) return next();
+    // ใบเคาะที่บรรทัดจะถูกเขียน/ลบ (2026-10-12, security review): ต้องเป็นเจ้าของ/เลขาที่ดูแล/admin (lib/promoRoles.canManageDraft)
+    // และเพิ่ม/แก้ได้เฉพาะใบที่ยังแก้ไขได้ (ร่าง / ไม่อนุมัติ) — เดิมเช็คแค่รหัสสาขา ทำให้เพิ่มบรรทัดเข้าใบของคนอื่น/ใบที่อนุมัติแล้วได้
+    {
+      const roles = require('./lib/promoRoles');
+      let nos;
+      if (req.method === 'POST') nos = [...new Set((Array.isArray(req.body) ? req.body : [req.body || {}]).map(r => r && r.draft_no).filter(Boolean).map(String))];
+      else {
+        const { buildWhere } = require('./lib/pgQuery');
+        const { where, params } = buildWhere(req.query, ['id', 'draft_no', 'cust_code', 'sku']);
+        if (!where) return res.status(400).json({ error: 'ต้องระบุบรรทัดที่จะแก้ไข/ลบ' });
+        nos = db.prepare(`SELECT DISTINCT draft_no FROM promo_drafts ${where}`).all(...params).map(r => r.draft_no);
+        if (req.method === 'PATCH' && req.body && req.body.draft_no !== undefined) nos.push(String(req.body.draft_no));
+      }
+      if (req.method === 'POST' && (Array.isArray(req.body) ? req.body : [req.body || {}]).some(r => r && !r.draft_no)) return res.status(400).json({ error: 'บรรทัดใบเคาะต้องระบุ draft_no' });
+      for (const no of new Set(nos)) {
+        const h = db.prepare('SELECT draft_no, status, created_by, created_by_actual FROM promo_draft_headers WHERE draft_no = ?').get(no);
+        if (!h) return res.status(404).json({ error: `ไม่พบใบเคาะ ${no}` });
+        if (!roles.canManageDraft(db, h, req.user)) return res.status(403).json({ error: 'แก้รายการได้เฉพาะเจ้าของเอกสาร เลขาของแผนก หรือ admin' });
+        if (req.method !== 'DELETE' && !['draft', 'rejected'].includes(h.status)) return res.status(400).json({ error: 'เอกสารนี้ส่งอนุมัติแล้ว — เรียกกลับเป็นร่างก่อนจึงแก้รายการได้' });
+      }
+    }
     // ใบเคาะ 1 ใบ = ห้างเดียว (2026-10-12) — รวมบรรทัดที่มีอยู่แล้วของใบเดียวกัน (client ส่งเป็นหลายก้อน)
     try {
       const byDraft = new Map();

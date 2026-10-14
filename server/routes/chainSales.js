@@ -31,6 +31,20 @@ module.exports = function chainSalesRoutes(db) {
       const sync = db.prepare('SELECT synced_at FROM sync_file_state WHERE source LIKE ?').get(`chain/%${k === 'GO' ? 'GOWHOLES' : k === 'TOPS' ? 'TOPS-53' : 'MAKRO'}/ARTRN.DBF`);
       stats[k] = { ...s, synced_at: sync?.synced_at || null, ytd_total: total, ytd_by_slm: bySlm, labels };
     }
+    // สิทธิ์ (2026-10-12, security review): ผู้ถูกจำกัดเห็นเฉพาะยอด/สาขาของรหัส Sales ตัวเอง — admin/ผู้เห็นทั้งหมดได้ครบเหมือนเดิม
+    const scope = require('../lib/customerScope').resolveScope(db, req.user);
+    if (!scope.all) {
+      const mine = new Set((scope.slmCodes || []).map(String));
+      const own = slm => mine.has(String(slm));
+      const chains = {};
+      for (const [k, c] of Object.entries(map.chains || {})) {
+        chains[k] = { ...c, cust: Object.fromEntries(Object.entries(c.cust || {}).filter(([code]) => own(ch.slmFor(map, k, code)))), aliases: {}, groups: [] };
+      }
+      for (const k of Object.keys(stats)) {
+        stats[k] = { ...stats[k], ytd_total: undefined, labels: {}, ytd_by_slm: Object.fromEntries(Object.entries(stats[k].ytd_by_slm || {}).filter(([slm]) => own(slm))) };
+      }
+      return res.json({ ...map, chains, stats });
+    }
     res.json({ ...map, stats });
   });
 

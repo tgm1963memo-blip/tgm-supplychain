@@ -18,6 +18,9 @@ async function setup(t) {
     db.prepare('INSERT INTO sc_users(uid,name,role,pwd_hash) VALUES(?,?,?,?)').run(uid, 'User ' + uid, role, 'x');
     tokens[uid] = createSession(db, uid).token;
   }
+  // ลูกค้า C1 ต้องมีใน master และอยู่ในสิทธิ์ผู้สร้าง (2026-10-12, security review — ราคาพิเศษผูกกับรหัส)
+  db.prepare("UPDATE sc_users SET slm_codes = '101' WHERE uid IN ('S', 'S2')").run();
+  db.prepare("INSERT INTO customers(code,name,slm_id,is_active) VALUES('C1','ลูกค้า 1','101',1),('C9','ลูกค้าคนอื่น','999',1)").run();
   db.prepare(`INSERT INTO price_tiers (code, name_th, unit, price_a, price_b, price_c, price_d, price_e, price_f, price_g)
     VALUES ('P1', 'สินค้า 1', 'กก.', 100, 110, 120, 130, 140, 150, 160)`).run();
   const server = buildApp(db).listen(0, '127.0.0.1');
@@ -72,4 +75,17 @@ test('reject needs a reason, owner can edit and resubmit; recall returns to draf
   // อยู่ในสิทธิ์ทั้งหมด → ส่งขออนุมัติไม่ได้ ให้ออกเองได้เลย
   const q3 = (await call('', 'POST', doc(150))).data;
   assert.equal((await call(`/${q3.id}/submit`, 'POST', { approver_uid: 'M' })).status, 400);
+});
+
+// security review 2026-10-12: รหัสลูกค้าต้องมีจริง/อยู่ในสิทธิ์ และชื่อต้องเป็นลูกค้ารายเดียวกับรหัส
+test('quotation customer code must exist, be in scope, and match the name', async t => {
+  const { call } = await setup(t);
+  const body = (code, name) => ({ customer_code: code, customer_name: name, price_tier: 'E', lines: [{ product_code: 'P1', quoted_price: 140 }] });
+  assert.equal((await call('', 'POST', body('ZZ-NOPE', 'ใครก็ได้'))).status, 400);
+  assert.equal((await call('', 'POST', body('C9', 'ลูกค้าคนอื่น'))).status, 403);
+  const ok = await call('', 'POST', body('C1', 'บริษัทอื่นที่ไม่เกี่ยว'));
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.equal(ok.data.customer_name, 'ลูกค้า 1');
+  // ราคาพิเศษของลูกค้านอกสิทธิ์ = ว่าง
+  assert.deepEqual((await call('/special-prices?customer_code=C9')).data, []);
 });

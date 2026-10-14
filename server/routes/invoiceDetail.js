@@ -14,8 +14,16 @@ const list = v => [...new Set((Array.isArray(v) ? v : String(v ?? '').split(',')
 function invoiceDetailRoutes(db) {
   const router = express.Router();
 
-  function detail(q, res) {
-    const custs = list(q.cust);
+  // สิทธิ์การเห็นลูกค้า (2026-10-12, security review) — ผู้ถูกจำกัดเห็นเฉพาะลูกค้าในสิทธิ์ (lib/customerScope.js)
+  const cs = require('../lib/customerScope');
+  const scopeOf = user => cs.resolveScope(db, user);
+  function detail(q, res, user) {
+    const scope = scopeOf(user);
+    let custs = list(q.cust);
+    if (!scope.all) custs = custs.filter(c => cs.canSeeCust(scope, c));
+    if (!custs.length && list(q.cust).length) {
+      return res.json({ cust: [], from: String(q.from || ''), to: String(q.to || ''), coverage_from: null, products: [], products_children: [], invoices: [], ...(q.lines ? { lines: [] } : {}) });
+    }
     const from = String(q.from || '');
     const to = String(q.to || '');
     if (!custs.length || !DATE_RE.test(from) || !DATE_RE.test(to)) {
@@ -192,8 +200,8 @@ function invoiceDetailRoutes(db) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/', (req, res) => detail(req.query, res));
-  router.post('/', (req, res) => detail(req.body || {}, res));
+  router.get('/', (req, res) => detail(req.query, res, req.user));
+  router.post('/', (req, res) => detail(req.body || {}, res, req.user));
 
   // ชื่อสาขาจากที่อยู่จัดส่งของใบกำกับ (ARSHIP) เช่น "บมจ.ซีพี แอ็กซ์ตร้า (สาขา ราไวย์ 2) ..." → "ราไวย์ 2"
   // ใช้แสดงแทนชื่อบริษัทซ้ำๆ ในแถวสาขาของ Sales Overview (ชื่อที่ตั้งใน customer_profiles.branch มาก่อนเสมอ — ทำที่ client)
@@ -205,8 +213,10 @@ function invoiceDetailRoutes(db) {
     `).all();
     const re = /\(\s*สาขา\s*([^)]+?)\s*\)|สาขา\s*([^\s,()]+(?:\s+\d+)?)/;
     const out = {};
+    const scope = scopeOf(req.user);
     for (const r of rows) {
       if (out[r.cust_code]) continue; // ใบล่าสุดก่อน
+      if (!scope.all && !cs.canSeeCust(scope, r.cust_code)) continue;
       const m = String(r.ship_to_address).match(re);
       const name = m && String(m[1] || m[2] || '').trim().replace(/[.,:;\s-]+$/, '');
       if (name && !/^\d+$/.test(name) && !/^(ที่|เลขที่)$/.test(name)) out[r.cust_code] = name;
@@ -225,6 +235,10 @@ function invoiceDetailRoutes(db) {
       ORDER BY CAST(l.seq_num AS INTEGER)
     `).all(doc, COMPANY);
     const head = db.prepare('SELECT doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_name, ship_to_address FROM invoices WHERE doc_num = ?').get(doc) || null;
+    const scope = scopeOf(req.user);
+    const deny = () => res.status(404).json({ error: 'ไม่พบใบกำกับ หรือไม่มีสิทธิ์เห็นลูกค้ารายนี้' });
+    // ผู้ถูกจำกัด: ต้องรู้ลูกค้าของใบ (มีหัวใบ) และลูกค้าอยู่ในสิทธิ์ · ใบที่ไม่มีหัวใบตรวจลูกค้าไม่ได้ = ไม่แสดง
+    if (!scope.all && (lines.length || head) && (!head || !cs.canSeeCust(scope, head.cust_code))) return deny();
     if (!head && !lines.length) {
       // ใบกำกับโรงงาน (Bplus) — 2026-10-12
       try {
@@ -232,6 +246,7 @@ function invoiceDetailRoutes(db) {
         const bh = db.prepare(`SELECT doc_num, doc_date, cust_code, slm_code, NULL AS so_num, amount + vat_amount AS total,
           CASE WHEN is_cn = 1 THEN '5' ELSE '0' END AS rectyp, NULL AS route_name, NULL AS ship_to_address, 'TGM' AS company FROM bplus_invoices WHERE doc_key = ?`).get(key);
         if (bh) {
+          if (!scope.all && !cs.canSeeCust(scope, bh.cust_code)) return deny();
           const bl = db.prepare(`SELECT ROW_NUMBER() OVER (ORDER BY l.rowid) AS seq_num, l.sku, COALESCE(s.name, p.name, l.sku) AS sku_name, NULL AS warehouse,
             l.qty, l.unit_code, l.amount AS line_value, p.group_name FROM bplus_invoice_lines l LEFT JOIN bplus_skus s ON s.code = l.sku
             LEFT JOIN products p ON p.code = l.sku WHERE l.doc_key = ?`).all(key);

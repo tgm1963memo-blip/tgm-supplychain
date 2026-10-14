@@ -92,6 +92,16 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   const pv = uid => call('/invoice_detail/pivot', 'POST', { from: '2026-01-01', to: '2026-01-31' }, uid);
   assert.deepEqual((await pv('S1')).data.rows.map(r => r.k), ['P-MINE']);
   assert.deepEqual((await pv('ADM')).data.rows.map(r => r.k).sort(), ['P-MINE', 'P-OTHER']);
+  // รายละเอียดใบกำกับ (security review 2026-10-12): ลูกค้านอกสิทธิ์ = ไม่ได้ข้อมูล
+  const det = (cust, uid) => call('/invoice_detail', 'POST', { cust: [cust], from: '2026-01-01', to: '2026-01-31' }, uid);
+  assert.equal((await det('10-BB-0001', 'S1')).data.invoices.length, 0);
+  assert.equal((await det('10-AA-0001', 'S1')).data.invoices.length, 1);
+  assert.equal((await det('10-BB-0001', 'ADM')).data.invoices.length, 1);
+  assert.equal((await call('/invoice_detail/lines?doc=IV2', 'GET', undefined, 'S1')).status, 404);
+  assert.equal((await call('/invoice_detail/lines?doc=IV1', 'GET', undefined, 'S1')).status, 200);
+  // แผนที่ยอดเชน: ผู้ถูกจำกัดเห็นเฉพาะยอดของรหัสตัวเอง
+  const cm = (await call('/chain_sales/map', 'GET', undefined, 'S1')).data;
+  for (const st of Object.values(cm.stats || {})) assert.ok(Object.keys(st.ytd_by_slm || {}).every(k => k === '207'));
 
   // ยอดขายโรงงาน Bplus รายบรรทัด (2026-10-12, security review) — กรองตามสิทธิ์ + ส่งชื่อเฉพาะรหัสที่เห็น
   db.prepare("INSERT INTO sales_lines_monthly(company,ym,cust_code,slm_code,sku,qty,amount) VALUES('BP-TGM','2026-01','10-AA-0001','207','X',1,50),('BP-TGM','2026-01','50-ZZ-0001','BP-9','X',1,70)").run();
@@ -107,13 +117,20 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   assert.equal(bad.salesmen['BP-9'], 'BP Nine');
 
   // บรรทัดใบเคาะ (2026-10-12): ผู้ถูกจำกัดบันทึกได้เฉพาะสาขาที่มองเห็น · admin ได้ทุกสาขา
-  const pd = (cust, uid, no = 'PMD-' + cust) => call('/promo_drafts', 'POST', { draft_no: no, cust_code: cust, sku: 'X', unit_price: 1 }, uid);
+  // หัวใบต้องมีจริงและผู้บันทึกต้องจัดการใบได้ (2026-10-12) — สร้างหัวใบให้ผู้เรียกถ้ายังไม่มี
+  const pd = (cust, uid, no = 'PMD-' + cust) => { db.prepare("INSERT OR IGNORE INTO promo_draft_headers(draft_no, doc_no, created_by, status) VALUES (?, ?, ?, 'draft')").run(no, 'D-' + no, uid); return call('/promo_drafts', 'POST', { draft_no: no, cust_code: cust, sku: 'X', unit_price: 1 }, uid); };
   assert.equal((await pd('10-BB-0001', 'S1')).status, 403, 'สาขาของคนอื่น');
   assert.equal((await pd('10-AA-0001', 'S1')).status, 201, 'สาขาของตัวเอง');
   assert.equal((await pd('30-MJ-0001', 'S1')).status, 201, 'เจ้า MT ที่ดูแล');
   assert.equal((await pd('50-ZZ-0001', 'ADM')).status, 201);
   // ใบเคาะ 1 ใบ = ห้างเดียว: ท๊อปส์ (30-MJ) + โลตัส (BB-L2) ใบเดียวกันไม่ได้ · ห้างเดียวกันหลายสาขาได้
   assert.equal((await pd('30-MJ-0002', 'ADM', 'PMD-30-MJ-0001')).status, 201, 'ท๊อปส์ 2 สาขา');
+  // บรรทัดใบเคาะ (security review 2026-10-12): เพิ่มเข้าใบของคนอื่นไม่ได้ · ใบที่ส่งอนุมัติแล้วเพิ่ม/แก้ไม่ได้
+  assert.equal((await call('/promo_drafts', 'POST', { draft_no: 'PMD-30-MJ-0001', cust_code: '30-MJ-0001', sku: 'Y', unit_price: 1 }, 'S2')).status, 403);
+  assert.equal((await call('/promo_drafts', 'POST', { draft_no: 'PMD-NOPE', cust_code: '10-AA-0001', sku: 'Y', unit_price: 1 }, 'S1')).status, 404);
+  db.prepare("UPDATE promo_draft_headers SET status = 'approved' WHERE draft_no = 'PMD-10-AA-0001'").run();
+  assert.equal((await call('/promo_drafts', 'POST', { draft_no: 'PMD-10-AA-0001', cust_code: '10-AA-0001', sku: 'Y', unit_price: 1 }, 'S1')).status, 400);
+  assert.equal((await call('/promo_drafts?draft_no=eq.PMD-30-MJ-0001', 'DELETE', undefined, 'S2')).status, 403, 'ลบบรรทัดในใบของคนอื่นไม่ได้');
   const mix = await pd('BB-L2-0005', 'ADM', 'PMD-30-MJ-0001');
   assert.equal(mix.status, 400);
   assert.match(mix.data.error, /ห้างเดียว/);

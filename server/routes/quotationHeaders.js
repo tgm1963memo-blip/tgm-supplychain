@@ -60,6 +60,17 @@ function buildDoc(db, body, user) {
     sales_name: txt(b.sales_name, 120) || user.name || user.uid, from_text: txt(b.from_text, 200), note: txt(b.note, 1000),
     remarks_json: JSON.stringify(remarks), signer_json: JSON.stringify(signer),
   };
+  // รหัสลูกค้า (2026-10-12, security review): ราคาพิเศษผูกกับรหัส — รหัสต้องมีจริงใน master และอยู่ในสิทธิ์ผู้สร้าง
+  // ชื่อที่พิมพ์ต้องเป็นลูกค้ารายเดียวกับรหัส (ไม่ตรง = ใช้ชื่อจาก master) กันใช้รหัสลูกค้าอื่นที่มีราคาพิเศษเลี่ยงการขออนุมัติ
+  if (head.customer_code) {
+    const m = db.prepare(`SELECT name FROM customers WHERE code = ? UNION ALL SELECT name FROM bplus_customers WHERE code = ? LIMIT 1`).get(head.customer_code, head.customer_code);
+    if (!m) throw httpErr(400, `ไม่พบรหัสลูกค้า ${head.customer_code} ในระบบ — เลือกลูกค้าจากรายการ หรือเว้นรหัสว่างสำหรับลูกค้าใหม่`);
+    const cs = require('../lib/customerScope');
+    if (!cs.canSeeCust(cs.resolveScope(db, user), head.customer_code)) throw httpErr(403, 'รหัสลูกค้านี้ไม่อยู่ในความดูแลของผู้สร้างเอกสาร');
+    const norm = v => String(v || '').replace(/\(.*?\)|บริษัท|จำกัด|มหาชน|\s+/g, '').toLowerCase();
+    const a = norm(head.customer_name), mm = norm(m.name);
+    if (mm && !(a.includes(mm) || mm.includes(a))) head.customer_name = String(m.name).replace(/\s+/g, ' ').trim().slice(0, 200);
+  }
 
   const raw = Array.isArray(b.lines) ? b.lines : [];
   if (!raw.length) throw httpErr(400, 'กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ');
@@ -144,7 +155,10 @@ module.exports = function quotationHeadersRoutes(db, roles) {
 
   // ── ราคาพิเศษประจำลูกค้า / ผู้อนุมัติ (ต้องประกาศก่อน /:id) ──
   router.get('/special-prices', (req, res) => send(res, () => {
-    const key = custKeyOf(txt(req.query.customer_code, 40), req.query.customer_name);
+    const code = txt(req.query.customer_code, 40);
+    // ราคาพิเศษของลูกค้าที่ไม่อยู่ในสิทธิ์ = ไม่ส่ง (2026-10-12, security review) · ผู้จัดการเห็นได้ทั้งหมด
+    if (code && !isManager(req.user)) { const cs = require('../lib/customerScope'); if (!cs.canSeeCust(cs.resolveScope(db, req.user), code)) return []; }
+    const key = custKeyOf(code, req.query.customer_name);
     return db.prepare('SELECT product_code, price, approved_by, approved_at, source_quotation_id FROM customer_special_prices WHERE cust_key = ? AND is_active = 1').all(key);
   }));
   router.get('/special-prices/all', (req, res) => send(res, () => {
