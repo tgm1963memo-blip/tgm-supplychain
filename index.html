@@ -9272,7 +9272,7 @@ let _sdShipBranch=null,_sdShipBranchLoading=false;
 function _sdLoadShipBranch(){
   if(_sdShipBranch||_sdShipBranchLoading) return;
   _sdShipBranchLoading=true;
-  CACHE.get('ship_branch_names',async()=>{const r=await apiFetch('/api/invoice_detail/branch_names');if(r.error) throw new Error(r.error.message);return r.data||{};},{ttl:60*60*1000})
+  CACHE.get('ship_branch_names_v2',async()=>{const r=await apiFetch('/api/invoice_detail/branch_names');if(r.error) throw new Error(r.error.message);return r.data||{};},{ttl:60*60*1000})
     .then(m=>{_sdShipBranch=m||{};if(document.getElementById('sd-ta')) sdRender();})
     .catch(e=>{console.warn('branch names',e.message||e);_sdShipBranch={};})
     .finally(()=>{_sdShipBranchLoading=false;});
@@ -16926,7 +16926,7 @@ let _draftShipBranch = null, _draftShipBranchLoading = false;
 function _draftLoadShipBranch() {
   if (_draftShipBranch || _draftShipBranchLoading) return;
   _draftShipBranchLoading = true;
-  CACHE.get('ship_branch_names', async () => { const r = await apiFetch('/api/invoice_detail/branch_names'); if (r.error) throw new Error(r.error.message); return r.data || {}; }, { ttl: 60 * 60 * 1000 })
+  CACHE.get('ship_branch_names_v2', async () => { const r = await apiFetch('/api/invoice_detail/branch_names'); if (r.error) throw new Error(r.error.message); return r.data || {}; }, { ttl: 60 * 60 * 1000 })
     .then(m => { _draftShipBranch = m || {}; const l = document.getElementById('draft-ms-list'); if (l) l.innerHTML = draftMsItems(); })
     .catch(e => { console.warn('branch names', e.message || e); _draftShipBranch = {}; })
     .finally(() => { _draftShipBranchLoading = false; });
