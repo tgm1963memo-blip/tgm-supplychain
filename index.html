@@ -7681,6 +7681,15 @@ function _sdProdsMixed(orderRows,invRows,bpRows){
   }
   return _sdBuildProds(out);
 }
+// ขายเงินสดหน้าร้าน Shop (2026-10-14, ผู้ใช้ขอ): ลูกค้า POS ของ Bplus โรงงาน (BP-POS "เงินสด(รายได้จากเครื่องPOS ซุปเปอร์ โรงงาน2)")
+// ไม่แสดงในแท็บรายสินค้า — ตัดทั้งบรรทัดสินค้าและยอดใบกำกับของ BP-POS ก่อนปรับสัดส่วน ไม่งั้นสินค้าอื่นถูกขยายแทนยอดที่ตัดไป
+// (แท็บรายลูกค้า/รายเซลส์ยังนับยอด BP-POS ตามเดิม)
+const _SD_CASH_POS=new Set(['BP-POS']);
+const _sdNoPos=rows=>(rows||[]).filter(r=>!_SD_CASH_POS.has(String(r.cust_code||'').trim()));
+function _sdProdsInv(orderRows,invRows,bpRows,total){
+  const pos=(invRows||[]).reduce((t,r)=>t+(_SD_CASH_POS.has(String(r.cust_code||'').trim())?Number(r.amount)||0:0),0);
+  return _sdScaleProdsToTotal(_sdProdsMixed(orderRows,_sdNoPos(invRows),_sdNoPos(bpRows)),total-pos);
+}
 function sdSetCo(c){
   _sd.co=['tss','tgm'].includes(c)?c:'all';
   try{localStorage.setItem('sd_co',_sd.co);}catch(e){}
@@ -7694,7 +7703,7 @@ function _sdUseSwapAll(swapRows,rows,bpRows){
   _sdApi.total=tot;_sdApi._invRows=swapRows;
   _sdApi.extras=_sdInvExtras(swapRows);_sdApi.x=_sdXOf(swapRows);
   const c=_sdBuildCustsFromInvoice(swapRows);_sdApi.custs=c;_sdApi._buildCache.custs=c;
-  const p=_sdScaleProdsToTotal(_sdProdsMixed(rows,swapRows,bpRows),tot);_sdApi.prods=p;_sdApi._buildCache.prods=p;
+  const p=_sdProdsInv(rows,swapRows,bpRows,tot);_sdApi.prods=p;_sdApi._buildCache.prods=p;
 }
 function _sdFiltered(){
   const s=_sdEffSlm();
@@ -7709,7 +7718,7 @@ function _sdFiltered(){
   if(inv){
     total=sum(inv,'amount');const ic=sum(inv,'invoice_count');if(ic) invoices=ic;
     custs=_sdBuildCustsFromInvoice(inv);slms=_sdBuildSlmsFromInvoice(inv);
-    prods=_sdScaleProdsToTotal(_sdProdsMixed(rows,inv,(_sdApi._bpRows||[]).filter(r=>slmKeySet(s).has(String(r.slm_id||'').trim()))),total);
+    prods=_sdProdsInv(rows,inv,(_sdApi._bpRows||[]).filter(r=>slmKeySet(s).has(String(r.slm_id||'').trim())),total);
     extras=_sdInvExtras(inv);x=_sdXOf(inv);
   }else{custs=_sdBuildCusts(rows);slms=_sdBuildSlms(rows,_sdApi.slmList||[]);}
   // กราฟแท่ง/เทียบเดือนก่อน: ใช้ข้อมูลหลายเดือนในเครื่อง (มีเฉพาะโหมดรายเดือน) — ไม่มีเดือนก่อน = แสดง "—"
@@ -7729,7 +7738,7 @@ function _sdFiltered(){
     if(yInv){
       const yt=sum(yInv,'amount'),yic=sum(yInv,'invoice_count');
       yoy={total:yt,qty:sum(yr,'qty'),invoices:yic||yr.length,custs:_sdBuildCustsFromInvoice(yInv),slms:_sdBuildSlmsFromInvoice(yInv),
-        prods:_sdScaleProdsToTotal(_sdProdsMixed(yr,yInv,(Y._bpRows||[]).filter(r=>slmKeySet(s).has(String(r.slm_id||'').trim()))),yt)};
+        prods:_sdProdsInv(yr,yInv,(Y._bpRows||[]).filter(r=>slmKeySet(s).has(String(r.slm_id||'').trim())),yt)};
     }else yoy={total:sum(yr,'amount'),qty:sum(yr,'qty'),invoices:yr.length,custs:_sdBuildCusts(yr),prods:_sdBuildProds(yr),slms:_sdBuildSlms(yr,_sdApi.slmList||[])};
   }
   const name=slmKeySet(s).size>1?slmKeyName(s):((_sdApi.slmList||[]).find(x=>String(x.code)===s)?.name||salesNameFor(s)||s);
@@ -8141,7 +8150,7 @@ async function _loadSalesFromSupabase(startYm,endYm,activeMonth,slmId='',opts={}
         _sdApi._invRowsSlm=swapRows;
         const invSlms=_sdBuildSlmsFromInvoice(swapRows);
         _sdApi.slms=invSlms;_sdApi._buildCache.slms=invSlms;
-        const scaledProds=_sdScaleProdsToTotal(_sdProdsMixed(rows,invRows,bpRows),invTotal);
+        const scaledProds=_sdProdsInv(rows,invRows,bpRows,invTotal);
         _sdApi.prods=scaledProds;_sdApi._buildCache.prods=scaledProds;
         if(_scopeNow()?.restricted) _sdUseSwapAll(swapRows,rows,bpRows);
       }
@@ -8344,7 +8353,7 @@ async function sdLoadYear(){
           _sdApi._invRowsSlm=swapRows;
           const invSlms=_sdBuildSlmsFromInvoice(swapRows);
           _sdApi.slms=invSlms;_sdApi._buildCache.slms=invSlms;
-          const scaledProds=_sdScaleProdsToTotal(_sdProdsMixed(rows,invRows,bpRows),invTotal);
+          const scaledProds=_sdProdsInv(rows,invRows,bpRows,invTotal);
           _sdApi.prods=scaledProds;_sdApi._buildCache.prods=scaledProds;
           if(_scopeNow()?.restricted) _sdUseSwapAll(swapRows,rows,bpRows);
         }
@@ -8813,7 +8822,7 @@ async function _sdLoadYoY(seq){
     Y._invRows=inv;Y._invRowsSlm=swapRows;Y._bpRows=bpRows||[];
     Y.custs=_sdBuildCustsFromInvoice(base);
     Y.slms=_sdBuildSlmsFromInvoice(swapRows);
-    Y.prods=_sdScaleProdsToTotal(_sdProdsMixed(rows,base,Y._bpRows),Y.total);
+    Y.prods=_sdProdsInv(rows,base,Y._bpRows,Y.total);
     Y.invoiceBased=true;
   }else{
     Y.custs=_sdBuildCusts(rows);Y.prods=_sdBuildProds(rows);Y.slms=_sdBuildSlms(rows,_sdApi.slmList||[]);
