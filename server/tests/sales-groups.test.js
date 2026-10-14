@@ -4,7 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
 const { runMigrations } = require('../db/migrations');
-const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014 } = require('../db/customerProfilesV2');
+const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014 } = require('../db/customerProfilesV2');
 
 // กลุ่มลูกค้าฝั่ง Sales (2026-10-12): seed จากไฟล์ Group ของเซลล์ — ครั้งเดียว ไม่ทับค่าที่คนแก้
 test('sales groups seed applies once and never overwrites edited values', () => {
@@ -126,4 +126,20 @@ test('sales category becomes the Group column, old values mapped or cleared', ()
   assert.equal(get('ZZ-TS-0001'), 'Retail');
   assert.equal(get('ZZ-TS-0002'), 'Food Industry');
   assert.equal(get('ZZ-TS-0003'), null);
+});
+
+// 67 รายที่ไฟล์ไม่มีค่า Group (2026-10-14) — ตั้งเฉพาะที่ยังว่าง
+test('manual sales categories fill only the remaining blanks', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  const get = code => db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?').get(code)?.sales_category;
+  assert.equal(get('BK-LD-0282'), 'Bakery');
+  assert.equal(get('AK-LD-0053'), 'Direct Domestic');
+  db.prepare("UPDATE customer_profiles SET sales_category = 'Hotel' WHERE code = 'BK-LD-0282'").run();
+  db.prepare("UPDATE customer_profiles SET sales_category = NULL WHERE code = 'AK-LD-0053'").run();
+  db.prepare("DELETE FROM app_migrations WHERE id = '20261014_sales_category_manual_v1'").run();
+  applySalesCategoryManual20261014(db);
+  assert.equal(get('BK-LD-0282'), 'Hotel');
+  assert.equal(get('AK-LD-0053'), 'Direct Domestic');
 });

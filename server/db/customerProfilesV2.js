@@ -327,4 +327,36 @@ function applySalesCategoryGroup20261014(db) {
   console.log(`[migrations] sales category = Group 2026-10-14: file ${fromFile}, mapped ${mapped}, cleared ${cleared}`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014 };
+// Category (Sales) ของ 67 รายที่ยังว่างหลังใช้คอลัมน์ Group (2026-10-14, ผู้ใช้ขอ "ทำให้เรียบร้อย") — ลูกค้าทีมร้านค้าที่มียอด ต.ค.
+// แต่ไฟล์ไม่มีค่า Group · data/sales-category-manual-20261014.json (มี reason ต่อราย): ลูกค้าบริษัท/ชื่อเดียวกันในไฟล์ 9 ราย,
+// บุคคลธรรมดา → Direct Domestic (แบบเดียวกับในไฟล์) 15 ราย, ที่เหลือจัดจากชื่อร้าน/ประเภทกิจการ · ตั้งเฉพาะที่ยังว่าง · รันครั้งเดียว
+function applySalesCategoryManual20261014(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const id = '20261014_sales_category_manual_v1';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const file = path.join(__dirname, 'data', 'sales-category-manual-20261014.json');
+  if (!fs.existsSync(file)) return;
+  const items = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
+  const upsert = db.prepare(`INSERT INTO customer_profiles (code, name, sales_category, edited_by, updated_at)
+    VALUES (?, ?, ?, 'sales-category-manual-2026-10-14', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET sales_category = excluded.sales_category,
+      name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name), updated_at = excluded.updated_at
+    WHERE COALESCE(TRIM(customer_profiles.sales_category), '') = ''`);
+  let n = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const it of items) {
+      const nm = nameOf.get(it.code, it.code);
+      n += upsert.run(it.code, nm.c ? null : (nm.b || null), it.sales_category).changes;
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] sales category manual 2026-10-14: ${n}/${items.length} customers`);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014 };
