@@ -671,6 +671,22 @@ function buildApp(db, opts = {}) {
     scope: factScope({ cust: 'cust_code', slm: 'slm_code' }),
   }));
 
+  // ยอดรวมตามช่วงวันที่ (2026-10-14, ผู้ใช้ขอเทียบจำนวนวันเท่ากัน เช่น 1–14 ต.ค. กับ 1–14 ก.ย.) — จาก invoice_sales_daily
+  // GET ?from=YYYY-MM-DD&to=YYYY-MM-DD&companies=TSS,BP-TGM&slm=101,207 → { amount, invoice_count } · กรองตามสิทธิ์
+  app.get('/api/invoice_sales_daily_sum', authed, (req, res) => {
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM-DD และ from ≤ to' });
+    const csv = v => [...new Set(String(v || '').split(',').map(x => x.trim()).filter(Boolean))].slice(0, 50);
+    const cos = csv(req.query.companies), slms = csv(req.query.slm);
+    const where = ['d >= ?', 'd <= ?'], params = [from, to];
+    if (cos.length) { where.push(`company IN (${cos.map(() => '?').join(',')})`); params.push(...cos); }
+    if (slms.length) { where.push(`slm_code IN (${slms.map(() => '?').join(',')})`); params.push(...slms); }
+    const sc = cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code' });
+    if (sc) { where.push(sc.sql); params.push(...sc.params); }
+    const r = db.prepare(`SELECT SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily WHERE ${where.join(' AND ')}`).get(...params);
+    res.json({ from, to, amount: Number(r?.amount) || 0, invoice_count: Number(r?.invoice_count) || 0 });
+  });
+
   // แคชตาม version ข้อมูล (2026-10-09 — วัดจริง 2–4.6 วิ/ครั้ง) ดู lib/responseCache.js
   app.get('/api/dashboard_sales_summary', authed, cacheJson(db), (req, res) => {
     const startYm = String(req.query.startYm || '').slice(0, 7);

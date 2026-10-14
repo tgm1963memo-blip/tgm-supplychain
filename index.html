@@ -7555,6 +7555,35 @@ function _sdRowSlmMatch(r,s){return slmRowMatch(r,s);}
 // ฝากขาย CONSI ไม่รวม (มีหน้า ฝากขาย CONSI แยก) · TGM ใน Express ซ้ำกับ Bplus จึงไม่ใช้ตั้งแต่ 2568
 function _sdCo(){if(_sd.co==null){try{_sd.co=localStorage.getItem('sd_co')||'all';}catch(e){_sd.co='all';}}return ['tss','tgm'].includes(_sd.co)?_sd.co:'all';}
 function _sdCoLabel(){const c=_sdCo();return c==='tss'?'TSS':c==='tgm'?'TGM โรงงาน':'TSS + TGM';}
+// ── เทียบช่วงเวลาเท่ากัน (2026-10-14, ผู้ใช้ขอ) — server: /api/invoice_sales_daily_sum (ยอดรายวัน กรองตามสิทธิ์)
+// ดูเดือนปัจจุบัน = 1–วันนี้ ของเดือนนี้ เทียบ 1–วันเดียวกัน ของเดือนก่อน · ดูปีปัจจุบัน = 1 ม.ค.–วันนี้ เทียบช่วงเดียวกันปีก่อน
+// ช่วงที่จบแล้ว (เดือน/ปีก่อนหน้า) ใช้การเทียบทั้งเดือน/ทั้งปีแบบเดิม (คืน null)
+let _sdVsEqCache={};
+function _sdVsEq(slm){
+  const n=new Date(),pad=x=>String(x).padStart(2,'0'),iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,today=iso(n);
+  const th=d=>new Date(d+'T00:00:00').toLocaleDateString('th-TH',{day:'numeric',month:'short'});
+  let cur,prev,label;
+  if(_sd.pt==='month'){
+    const ym=_sdApi.month||_sdApiMonth();if(ym!==today.slice(0,7))return null;
+    const pym=_ymAdd(ym,-1),last=new Date(+pym.slice(0,4),+pym.slice(5,7),0).getDate(),D=Math.min(n.getDate(),last);
+    cur=[ym+'-01',today];prev=[pym+'-01',`${pym}-${pad(D)}`];label=`vs ${D===1?'1':'1–'+D} ${th(prev[1]).replace(/^\d+\s*/,'')}`;
+  }else{
+    const y=_sdApiYear();if(y!==n.getFullYear())return null;
+    const pd=new Date(y-1,n.getMonth(),n.getDate());if(pd.getMonth()!==n.getMonth())pd.setDate(0); // 29 ก.พ. → 28 ก.พ.
+    cur=[`${y}-01-01`,today];prev=[`${y-1}-01-01`,iso(pd)];label=`vs 1 ม.ค.–${th(prev[1])} ${y+542}`;
+  }
+  const slms=slm?[...slmKeySet(slm)].join(','):'';
+  const key=[cur,prev,slms,_sdCo()].join('|');
+  const e=_sdVsEqCache[key];
+  if(e)return e.done?{pct:e.pct,label}:{loading:true,label};
+  _sdVsEqCache[key]={done:false};
+  const q=([f,t])=>apiFetch(`/api/invoice_sales_daily_sum?from=${f}&to=${t}&companies=${encodeURIComponent(_sdCosFor(f).join(','))}${slms?'&slm='+encodeURIComponent(slms):''}`);
+  Promise.all([q(cur),q(prev)]).then(([a,b])=>{
+    const ca=Number(a.data?.amount)||0,pb=Number(b.data?.amount)||0;
+    _sdVsEqCache[key]={done:true,pct:!a.error&&!b.error&&pb?Math.round((ca/pb-1)*100):null};
+  }).catch(()=>{_sdVsEqCache[key]={done:true,pct:null};}).finally(()=>{if(document.getElementById('sd-krow'))sdRender();});
+  return {loading:true,label};
+}
 function _sdCosFor(ym){
   const y=Number(String(ym||'').slice(0,4)),co=_sdCo();
   const tss=y>=2026?['TSS','TSS-NV']:y===2025?['TSS-68','TSSN-68']:['TSS-67','TSSN-67'];
@@ -8993,7 +9022,9 @@ function sdKPI(){
     sparks=SD_MD.map((m,i)=>`<div style="flex:1;border-radius:2px 2px 0 0;min-height:2px;height:${Math.round(m.t/maxT*24)}px;background:var(--BL);opacity:${i===_sd.cm&&_sd.pt==='month'?1:.35}"></div>`).join('');
     lbl2=_sd.pt==='week'?'สัปดาห์ที่ '+_sd.cw:SD_MTH[_sd.cm];
   }
-  const vsLbl=_sd.pt==='year'?'vs ปีก่อน':'vs เดือนก่อน';
+  let vsLbl=_sd.pt==='year'?'vs ปีก่อน':'vs เดือนก่อน';
+  // เทียบจำนวนวันเท่ากัน (2026-10-14, ผู้ใช้ขอ): เดือน/ปีปัจจุบันที่ยังไม่จบ → 1–14 ต.ค. เทียบ 1–14 ก.ย. (ไม่ใช่ทั้งเดือน)
+  if(_sdApi.loaded&&(_sd.pt==='month'||_sd.pt==='year')){const eq=_sdVsEq(F?F.slm:'');if(eq){vsLbl=eq.label;vs=eq.loading?null:eq.pct;}}
   const vsC=vs==null?'var(--TX3)':vs>=0?'var(--G)':'var(--R)';
   const avg=inv?_sdF(Math.round(total/inv)):'—';
   const yoy=F?F.yoy:_sdApi.yoy;
