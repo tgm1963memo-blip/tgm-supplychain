@@ -86,6 +86,13 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   assert.equal(tpS1.by_amount[0].ly_amount, 60);
   assert.deepEqual((await dxp('ADM')).data.top_products.by_amount.map(x => x.sku), ['SKU-OTHER', 'SKU-MINE']);
 
+  // Pivot ลูกค้า×สินค้า (2026-10-12): กรองตามสิทธิ์ลูกค้า
+  db.prepare("INSERT INTO invoices(doc_num,doc_date,cust_code,slm_code,rectyp) VALUES('IV1','2026-01-05','10-AA-0001','207','0'),('IV2','2026-01-06','10-BB-0001','211','0')").run();
+  db.prepare("INSERT INTO invoice_lines(company,doc_num,seq_num,doc_date,sku,sku_name,qty,line_value) VALUES('TSS','IV1','1','2026-01-05','P-MINE','x',1,100),('TSS','IV2','1','2026-01-06','P-OTHER','y',1,200)").run();
+  const pv = uid => call('/invoice_detail/pivot', 'POST', { from: '2026-01-01', to: '2026-01-31' }, uid);
+  assert.deepEqual((await pv('S1')).data.rows.map(r => r.k), ['P-MINE']);
+  assert.deepEqual((await pv('ADM')).data.rows.map(r => r.k).sort(), ['P-MINE', 'P-OTHER']);
+
   // ยอดขายโรงงาน Bplus รายบรรทัด (2026-10-12, security review) — กรองตามสิทธิ์ + ส่งชื่อเฉพาะรหัสที่เห็น
   db.prepare("INSERT INTO sales_lines_monthly(company,ym,cust_code,slm_code,sku,qty,amount) VALUES('BP-TGM','2026-01','10-AA-0001','207','X',1,50),('BP-TGM','2026-01','50-ZZ-0001','BP-9','X',1,70)").run();
   db.prepare("INSERT INTO bplus_customers(code,name) VALUES('10-AA-0001','A'),('50-ZZ-0001','Z')").run();

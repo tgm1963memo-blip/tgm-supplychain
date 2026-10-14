@@ -7521,7 +7521,7 @@ const SD_CUSTS=[];
 const SD_PRODS=[];
 const SD_SALES=[];
 const SD_VS=[];
-let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'prod',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false,groupBy:'corp',level:(()=>{try{const v=localStorage.getItem('sd_level');return ['full','noprodgrp','corp_prod','branch_prod'].includes(v)?v:'full';}catch(e){return 'full';}})()};
+let _sd={pt:'month',cm:4,cy:2569,cw:1,cy_y:2569,at:'prod',mgrView:true,op:{},q:'',slmF:'',sort:{col:'val',dir:1},dateFrom:'',dateTo:'',showYoY:false,groupBy:'corp',level:'full'}; // ตัวเลือก 'แสดงแบบ' เดิมแทนด้วย pivot ติ๊กเลือกมิติ (_sdPv) แล้ว
 let _sdApi={loaded:false,month:null,total:0,qty:0,invoices:0,ar:0,vs:0,monthly:[],custs:[],prods:[],slms:[],slmList:[],yoy:null,yoyLoading:false,invoiceBased:false,_rows:[],_buildCache:{},_buildCacheKey:''};
 let _sdLoadSeq=0;
 const _SD_CACHE_TTL=5*60*1000;
@@ -9293,6 +9293,92 @@ function _sdCustDisplayName(code,fallback,remote,p){
   const base=name&&name!==code?name:(fallback&&fallback!==code?fallback:code);
   return br&&!base.includes(br.replace(/^สาขา/,''))?`${base} (${br})`:base;
 }
+// ── Pivot ติ๊กเลือกมิติ (2026-10-12, ผู้ใช้ขอ) — แท็บรายลูกค้า / รายสินค้า เลือกได้ว่าจะแสดงชั้นไหน ลำดับไหน
+// ข้อมูล: POST /api/invoice_detail/pivot (บรรทัดใบกำกับ TSS + Bplus ลูกค้า×Sales×สินค้า) + ส่วนต่างกับยอดหัวใบรายสาขา
+// เพิ่มมิติใหม่: เพิ่ม 1 รายการใน SD_DIMS (l = ชื่อที่แสดง · key(row) = ค่าที่ใช้จัดกลุ่ม/แสดง)
+const SD_DIMS={
+  cat:{l:'Category (Sales)',key:r=>String(customerProfiles()[r.c]?.sales_category||'').trim()||'ยังไม่ระบุ Category'},
+  sgrp:{l:'กลุ่ม (Sales)',key:r=>String(customerProfiles()[r.c]?.sales_group||'').trim()||'ไม่มีกลุ่ม'},
+  corp:{l:'บริษัท / กลุ่มลูกค้า',key:r=>r._corp||customerGroupForCode(r.c,UNASSIGNED_CORP_LABEL)},
+  exec:{l:'หมวดผู้บริหาร',key:r=>{const k=customerProfiles()[r.c]?.exec_channel;return (DX_CHANNELS.find(c=>c[0]===k)||[k,'ยังไม่ระบุหมวด'])[1];}},
+  branch:{l:'สาขา / ลูกค้า',key:r=>r._bname||r.c},
+  slm:{l:'พนักงานขาย',key:r=>r.s==='(ไม่ระบุ)'||!r.s?'ไม่ระบุพนักงานขาย':(salesNameFor(r.s)||r.s)},
+  pgrp:{l:'กลุ่มสินค้า',key:r=>r.k==='(none)'?'—':(expressGroupLabel(r.g)||'อื่นๆ')},
+  prod:{l:'สินค้า',key:r=>r.k==='(none)'?'(ไม่มีรายการสินค้า / ลดหนี้)':`${r.k} — ${r.n||r.k}`},
+};
+const SD_PV_DEFAULT={cust:['corp','branch','pgrp','prod'],prod:['pgrp','prod','corp']};
+// {cust:[...], prod:[...]} — ไม่มีค่า = มุมมองมาตรฐานเดิม (มี CN / NET / เทียบปีก่อน)
+let _sdPv=(()=>{try{return JSON.parse(localStorage.getItem('sd_pivot')||'{}')||{};}catch(e){return {};}})();
+function _sdPvSave(){try{localStorage.setItem('sd_pivot',JSON.stringify(_sdPv));}catch(e){}}
+function sdPvToggle(tab,k){
+  const cur=[...(_sdPv[tab]||SD_PV_DEFAULT[tab])];
+  const i=cur.indexOf(k);if(i>=0)cur.splice(i,1);else cur.push(k);
+  if(!cur.length){toast('ต้องเลือกอย่างน้อย 1 มิติ','warn');return;}
+  _sdPv[tab]=cur;_sd.op={};_sdPvSave();sdRender();
+}
+function sdPvMove(tab,k,d){const cur=[...(_sdPv[tab]||SD_PV_DEFAULT[tab])],i=cur.indexOf(k),j=i+d;if(i<0||j<0||j>=cur.length)return;[cur[i],cur[j]]=[cur[j],cur[i]];_sdPv[tab]=cur;_sd.op={};_sdPvSave();sdRender();}
+function sdPvReset(tab){delete _sdPv[tab];_sd.op={};_sdPvSave();sdRender();}
+function _sdPivotBar(tab){
+  const custom=!!_sdPv[tab],cur=_sdPv[tab]||SD_PV_DEFAULT[tab];
+  const chip=k=>{
+    const on=cur.includes(k),i=cur.indexOf(k);
+    const arrows=on&&cur.length>1?`<button type="button" title="เลื่อนไปก่อน" onclick="sdPvMove('${tab}','${k}',-1)" style="border:0;background:none;cursor:pointer;padding:0 2px;color:var(--TX3)" ${i===0?'disabled':''}>◀</button><button type="button" title="เลื่อนไปหลัง" onclick="sdPvMove('${tab}','${k}',1)" style="border:0;background:none;cursor:pointer;padding:0 2px;color:var(--TX3)" ${i===cur.length-1?'disabled':''}>▶</button>`:'';
+    return `<span style="display:inline-flex;align-items:center;gap:3px;border:1px solid ${on?'var(--N)':'var(--BD)'};background:${on?'var(--LBL)':'transparent'};border-radius:999px;padding:2px 8px;font-size:12px"><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${on?'checked':''} onchange="sdPvToggle('${tab}','${k}')" style="margin:0">${on?`<b style="color:var(--N)">${i+1}</b>`:''} ${SD_DIMS[k].l}</label>${arrows}</span>`;
+  };
+  const order=[...cur,...Object.keys(SD_DIMS).filter(k=>!cur.includes(k))];
+  return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px"><span style="font-size:12px;color:var(--TX2)">แสดงตาม</span>${order.map(chip).join('')}
+    ${custom?`<button type="button" class="btn btn-xs" onclick="sdPvReset('${tab}')" title="กลับไปมุมมองมาตรฐาน (มียอด CN / NET / เทียบปีก่อน)">↺ มุมมองมาตรฐาน</button>`:'<span style="font-size:11px;color:var(--TX3)">ติ๊ก / เรียงลำดับ เพื่อกำหนดเอง</span>'}</div>`;
+}
+let _sdPvData={};
+function _sdPvLoad(slm){
+  const p=_sdInvPeriod(),key=[p.from,p.to,slm||''].join('|');
+  const e=_sdPvData[key];if(e)return e;
+  const n=_sdPvData[key]={loading:true};
+  apiFetch('/api/invoice_detail/pivot',{method:'POST',body:JSON.stringify({from:p.from,to:p.to,...(slm?{slm}:{})})})
+    .then(r=>{if(r.error)throw new Error(r.error.message);n.rows=r.data.rows||[];}).catch(e=>{n.error=e.message||String(e);})
+    .finally(()=>{n.loading=false;if(document.getElementById('sd-ta'))sdRender();});
+  return n;
+}
+// แถวข้อมูล pivot + ส่วนต่างกับยอดหัวใบรายสาขา (ลดหนี้ / ใบที่ไม่มีบรรทัดสินค้า) ให้ยอดรวมเท่ากับยอด NET ด้านบน
+function _sdPvRows(custs,raw){
+  const profs=customerProfiles(),remote=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),x]));
+  const info=new Map();
+  custs.forEach(c=>(c.branches||[]).forEach(b=>info.set(b.c,{corp:c.n,bname:_sdCustDisplayName(b.c,b.n,remote,profs[b.c]||{}),tot:b._tot||0})));
+  const lineSum=new Map(),rows=[];
+  raw.forEach(r=>{const i=info.get(r.c);if(!i)return;lineSum.set(r.c,(lineSum.get(r.c)||0)+(Number(r.a)||0));rows.push({...r,_corp:i.corp,_bname:i.bname});});
+  info.forEach((i,c)=>{const rem=i.tot-(lineSum.get(c)||0);if(Math.abs(rem)>=1)rows.push({c,s:'',k:'(none)',n:'',g:'',q:0,a:rem,_corp:i.corp,_bname:i.bname});});
+  return rows;
+}
+function _sdPivotHtml(tab,custs,slm){
+  const d=_sdPvLoad(slm);
+  if(d.loading)return '<div class="al ali" style="margin-top:8px">⏳ กำลังโหลดข้อมูลรายสินค้าจากใบกำกับ…</div>';
+  if(d.error)return `<div class="al alw" style="margin-top:8px">โหลดข้อมูลไม่สำเร็จ: ${esc(d.error)}</div>`;
+  const dims=_sdPv[tab]||SD_PV_DEFAULT[tab];
+  let rows=_sdPvRows(custs,d.rows||[]);
+  const q=(_sd.q||'').toLowerCase().trim();
+  if(q)rows=rows.filter(r=>String(r.c).toLowerCase().includes(q)||dims.some(k=>String(SD_DIMS[k].key(r)).toLowerCase().includes(q)));
+  const root={a:0,q:0,ch:new Map()};
+  rows.forEach(r=>{
+    let n=root;const a=Number(r.a)||0,qq=Number(r.q)||0;n.a+=a;n.q+=qq;
+    dims.forEach(k=>{const v=String(SD_DIMS[k].key(r));if(!n.ch.has(v))n.ch.set(v,{a:0,q:0,ch:new Map()});n=n.ch.get(v);n.a+=a;n.q+=qq;});
+  });
+  const showQ=dims.includes('prod');
+  let h=`<div class="tw" style="margin-top:8px"><table><thead><tr><th style="width:52%">${dims.map(k=>SD_DIMS[k].l).join(' › ')}</th><th class="r">ยอดขาย (บาท)</th>${showQ?'<th class="r">จำนวน</th>':''}<th class="r" style="width:120px">สัดส่วน</th></tr></thead><tbody>`;
+  h+=`<tr style="background:var(--LN);font-weight:700"><td>รวมทั้งหมด</td><td class="r">${_sdFmtTotal(root.a)}</td>${showQ?'<td></td>':''}<td class="r">100%</td></tr>`;
+  const walk=(node,depth,path)=>{
+    [...node.ch.entries()].sort((a,b)=>b[1].a-a[1].a).forEach(([v,c])=>{
+      const key='pv:'+tab+':'+path+'/'+v,leaf=depth===dims.length-1,open=!leaf&&_sd.op[key];
+      const hasProd=dims.slice(0,depth+1).includes('prod');
+      h+=`<tr ${leaf?'':`onclick="sdTogOp('${_promoJsKey(key)}')" style="cursor:pointer${depth===0?';background:var(--bg2)':''}"`}>
+        <td style="padding-left:${12+depth*20}px${depth===0?';font-weight:700':''}">${leaf?'':_xa(open)}${esc(v)}${!leaf?` <span style="font-size:11px;color:var(--TX3)">${c.ch.size.toLocaleString()} ${SD_DIMS[dims[depth+1]].l}</span>`:''}</td>
+        <td class="r"${depth===0?' style="font-weight:700"':''}>${_sdFmtTotal(c.a)}</td>${showQ?`<td class="r" style="font-size:12px;color:var(--TX2)">${hasProd?Math.round(c.q).toLocaleString('en-US'):''}</td>`:''}
+        <td class="r">${_sdBar(c.a,node.a||1)}</td></tr>`;
+      if(open)walk(c,depth+1,path+'/'+v);
+    });
+  };
+  walk(root,0,'');
+  return h+`</tbody></table></div><div style="font-size:11px;color:var(--TX3);margin-top:6px">ยอดขายจากบรรทัดใบกำกับ TSS + โรงงาน TGM · ส่วนต่างกับยอดหัวใบ (ลดหนี้ / ใบที่ไม่มีรายการสินค้า) แสดงเป็น "(ไม่มีรายการสินค้า / ลดหนี้)" ยอดรวมจึงเท่ายอด NET ด้านบน · สัดส่วน = เทียบชั้นแม่</div>`;
+}
 // ระดับการแสดงผลแท็บรายลูกค้า (2026-10-12, ผู้ใช้ขอเลือกการจัดกลุ่มได้)
 const SD_LEVELS=[['full','บริษัท › สาขา › กลุ่มสินค้า › สินค้า'],['noprodgrp','บริษัท › สาขา › สินค้า'],['corp_prod','บริษัท › สินค้า'],['branch_prod','สาขา › สินค้า (ไม่จัดกลุ่ม)']];
 function sdSetLevel(v){_sd.level=v;_sd.op={};try{localStorage.setItem('sd_level',v);}catch(e){}sdRender();}
@@ -9382,7 +9468,8 @@ function sdCust(){
     if(_sd.groupBy==='cat2') sorted=custs; // เรียงตาม Category แล้วยอด (ดู _sdRegroupCat2)
     else if(_sd.groupBy!=='corp') sorted.sort((a,b)=>(a._none?1:0)-(b._none?1:0)); // "ไม่มีกลุ่ม" ไว้ท้ายสุด
     const nCols=(_sd.showYoY?5:4)+_sdValCols()-1;
-    let h=_sdLevelBar()+hHdr,curCat=null;
+    if(_sdPv.cust&&_sdApi.invoiceBased){document.getElementById('sd-ta').innerHTML=_sdPivotBar('cust')+_sdPivotHtml('cust',F?F.custs:(isAll?_sdApi.custs:_sdApi.custs.filter(c=>custHasSlm(c,slmId))),F?F.slm:'');return;}
+    let h=(_sdApi.invoiceBased?_sdPivotBar('cust'):'')+hHdr,curCat=null;
     const catSum={};if(_sd.groupBy==='cat2')sorted.forEach(c=>{const s=catSum[c._cat]=catSum[c._cat]||{t:0,n:0,x:{sb:0,sg:0,cb:0,cg:0}};s.t+=c._tot;s.n+=(c.branches||[]).length;for(const k in s.x)s.x[k]+=c._x?.[k]||0;});
     sorted.forEach(c=>{
       if(_sd.groupBy==='cat2'&&c._cat!==curCat){
@@ -9464,7 +9551,7 @@ function sdProd(){
   if(!document.getElementById('sd-ta')) return; // page navigated away while an async load was in flight
   const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
   const vsHdr=_sd.showYoY?'vs ปีที่แล้ว':'vs';
-  const hHdr=`<div class="tw" style="margin-top:8px"><table>
+  const hHdr=`${_sdApi.loaded&&_sdApi.invoiceBased?_sdPivotBar('prod'):''}<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:42%">กลุ่มสินค้า / สินค้า / ประเภทลูกค้า / ลูกค้า</th>
       ${_sdValHead(sDn)}
@@ -9475,6 +9562,8 @@ function sdProd(){
   if(_sdApi.loaded){
     _sdEnsureBuilt('prod');
     const F=_sdFiltered();
+    // Pivot ติ๊กเลือกมิติ (2026-10-12) — กำหนดเองแล้วใช้ตาราง pivot แทนมุมมองมาตรฐาน
+    if(_sdPv.prod&&_sdApi.invoiceBased){_sdEnsureBuilt('cust');const isAllP=isManager()&&_sd.mgrView,me=mySlmKey();document.getElementById('sd-ta').innerHTML=_sdPivotBar('prod')+_sdPivotHtml('prod',F?F.custs:(isAllP?_sdApi.custs:_sdApi.custs.filter(c=>custHasSlm(c,me))),F?F.slm:'');return;}
     const T=(F?F.total:_sdApi.total)||1;
     const yoyM=_sdYoYMaps();
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';

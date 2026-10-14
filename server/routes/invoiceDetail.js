@@ -154,6 +154,44 @@ function invoiceDetailRoutes(db) {
     res.json(out);
   }
 
+  // ── Pivot รายลูกค้า × สินค้า × Sales (2026-10-12, ผู้ใช้ขอ "ติ๊กเลือกมิติที่จะแสดง") ─────────────────────────────
+  // POST { from, to, slm? } → rows [{ c: cust_code, s: slm_code, k: sku, n: ชื่อสินค้า, g: group_name, q: qty, a: amount }]
+  // ยอดขายจากบรรทัดใบกำกับ TSS (invoice_lines) + โรงงาน TGM (bplus_invoice_lines) ไม่รวมใบลดหนี้ — ส่วนต่างกับยอดหัวใบ
+  // (CN / ใบที่ไม่มีบรรทัด) client แสดงเป็น "(ไม่มีรายการสินค้า)" · กรองตามสิทธิ์ลูกค้า (lib/customerScope.js)
+  router.post('/pivot', (req, res) => {
+    try {
+      const q = req.body || {};
+      const from = String(q.from || ''), to = String(q.to || '');
+      if (!DATE_RE.test(from) || !DATE_RE.test(to) || from > to) return res.status(400).json({ error: 'from, to (YYYY-MM-DD) are required' });
+      const slms = list(q.slm);
+      const cs = require('../lib/customerScope');
+      const sc = cs.factSql(cs.resolveScope(db, req.user), { cust: 'x.cust_code', slm: 'x.slm_code' });
+      const filt = (x) => {
+        const w = [], p = [];
+        if (slms.length) { w.push(`${x}.slm_code IN (${slms.map(() => '?').join(',')})`); p.push(...slms); }
+        if (sc) { w.push(sc.sql.replace(/x\./g, `${x}.`)); p.push(...sc.params); }
+        return { sql: w.length ? ' AND ' + w.join(' AND ') : '', params: p };
+      };
+      const fi = filt('i');
+      const rows = db.prepare(`SELECT i.cust_code AS c, COALESCE(NULLIF(TRIM(i.slm_code), ''), '(ไม่ระบุ)') AS s, l.sku AS k, MAX(l.sku_name) AS n,
+          MAX(p.group_name) AS g, SUM(l.qty) AS q, SUM(l.line_value) AS a
+        FROM invoices i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
+        LEFT JOIN products p ON p.code = l.sku
+        WHERE i.doc_date >= ? AND i.doc_date <= ? AND COALESCE(i.rectyp, '') <> '5'${fi.sql}
+        GROUP BY i.cust_code, i.slm_code, l.sku`).all(COMPANY, from, to, ...fi.params);
+      try {
+        const fb = filt('b');
+        rows.push(...db.prepare(`SELECT b.cust_code AS c, b.slm_code AS s, l.sku AS k, MAX(COALESCE(sk.name, p.name, l.sku)) AS n,
+            MAX(p.group_name) AS g, SUM(l.qty) AS q, SUM(l.amount) AS a
+          FROM bplus_invoices b JOIN bplus_invoice_lines l ON l.doc_key = b.doc_key
+          LEFT JOIN bplus_skus sk ON sk.code = l.sku LEFT JOIN products p ON p.code = l.sku
+          WHERE b.company = 'BP-TGM' AND b.is_cn = 0 AND b.doc_date >= ? AND b.doc_date <= ?${fb.sql}
+          GROUP BY b.cust_code, b.slm_code, l.sku`).all(from, to, ...fb.params));
+      } catch (e) { /* ยังไม่มีตาราง Bplus */ }
+      res.json({ from, to, rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   router.get('/', (req, res) => detail(req.query, res));
   router.post('/', (req, res) => detail(req.body || {}, res));
 
