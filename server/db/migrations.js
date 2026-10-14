@@ -584,6 +584,7 @@ function runMigrations(db) {
   require('./customerProfilesV2').applySalesGroupsFix20261014(db);
   require('./customerProfilesV2').applyMinorGroup20261014(db);
   require('./customerProfilesV2').applySalesCategoryFill20261014(db);
+  require('./customerProfilesV2').applyMinorSalesGroup20261014(db);
 
   // รายการสินค้าจริงของใบสรุปยอด Bplus รหัส 0000 (2026-10-14) — Bplus บันทึกใบ Makro (A M) / EA เป็นบรรทัดเดียว
   // "ยอดขายสินค้ารหัส TG" ไม่มีสินค้า แต่ Express โฟลเดอร์ TGM (STCRD เอกสาร AM/EA) มีรายการสินค้าของบิลชุดเดียวกัน

@@ -4,7 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
 const { runMigrations } = require('../db/migrations');
-const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014 } = require('../db/customerProfilesV2');
+const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014 } = require('../db/customerProfilesV2');
 
 // กลุ่มลูกค้าฝั่ง Sales (2026-10-12): seed จากไฟล์ Group ของเซลล์ — ครั้งเดียว ไม่ทับค่าที่คนแก้
 test('sales groups seed applies once and never overwrites edited values', () => {
@@ -34,7 +34,7 @@ test('sales groups fix corrects v1 seed values but keeps manual edits', () => {
   db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
   runMigrations(db);
   const get = code => db.prepare('SELECT sales_category, sales_group FROM customer_profiles WHERE code = ?').get(code);
-  assert.equal(get('MI-LA-0011').sales_group, 'Burgerking');
+  assert.match(get('MI-LA-0011').sales_group, /^Minor Group \(/); // ภายหลังรวมเป็นกลุ่ม Minor แบบ TCC (20261014_minor_sales_group_v1)
   assert.equal(get('OIS-01-KF').sales_category, 'ร้านค้าทั่วไป');
   // จำลอง DB ที่รัน v1 เก่าไปแล้ว
   db.prepare("UPDATE customer_profiles SET sales_group = 'The Coffee Club' WHERE code IN ('MI-LA-0011','MI-LA-0014')").run();
@@ -82,4 +82,21 @@ test('sales category fill only fills empty values', () => {
   applySalesCategoryFill20261014(db);
   assert.equal(get('NSL-01-KK'), 'ตั้งเอง');
   assert.equal(get('MI-LA-0001'), 'ร้านค้าทั่วไป');
+});
+
+// กลุ่ม (Sales) Minor แบบ TCC (2026-10-14): แบรนด์เดิมจากไฟล์ → กลุ่มเดียว · ไม่ทับค่าที่ตั้งเป็นอย่างอื่น · ไม่แตะโรงแรม
+test('Minor brand sales groups merge into one group like TCC', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  const sg = code => db.prepare('SELECT sales_group FROM customer_profiles WHERE code = ?').get(code)?.sales_group;
+  assert.match(sg('MI-LA-0001'), /^Minor Group \(The Pizza Company\//);
+  db.prepare("UPDATE customer_profiles SET sales_group = 'Sizzler' WHERE code = 'MI-LA-0006'").run();
+  db.prepare("UPDATE customer_profiles SET sales_group = 'ตั้งเอง' WHERE code = 'MI-LA-0011'").run();
+  db.prepare("INSERT INTO customer_profiles (code, sales_group) VALUES ('MI-LD-0001', 'Minor Group') ON CONFLICT(code) DO UPDATE SET sales_group = 'Minor Group'").run();
+  db.prepare("DELETE FROM app_migrations WHERE id = '20261014_minor_sales_group_v1'").run();
+  applyMinorSalesGroup20261014(db);
+  assert.equal(sg('MI-LA-0006'), sg('MI-LA-0001'));
+  assert.equal(sg('MI-LA-0011'), 'ตั้งเอง');
+  assert.equal(sg('MI-LD-0001'), 'Minor Group');
 });

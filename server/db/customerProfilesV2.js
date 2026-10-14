@@ -250,4 +250,30 @@ function applySalesCategoryFill20261014(db) {
   console.log(`[migrations] sales category fill 2026-10-14: ${n}/${items.length} customers`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014 };
+// กลุ่ม (Sales) ของเครือ Minor แบบเดียวกับ TCC (2026-10-14, ผู้ใช้ขอ) — TCC ใช้กลุ่มเดียว "TCC Group (Marriott/Hilton/…)"
+// ครอบหลายบริษัท · Minor เดิมแยก 7 กลุ่มตามแบรนด์ในชีต (The Pizza Company / The Coffee Club / …) ทำให้ Sales Overview
+// กระจายหลายแถว → รวมเป็นกลุ่มเดียว ชื่อบอกแบรนด์ในวงเล็บ · 25 รายเดียวกับ corporate Minor Group (ไม่รวมโรงแรม MI-LD-*)
+// เปลี่ยนเฉพาะแถวที่ยังว่าง หรือยังเป็นชื่อแบรนด์เดิมจากไฟล์ ไม่ทับที่ตั้งเป็นอย่างอื่น · รันครั้งเดียว
+const MINOR_SALES_GROUP = 'Minor Group (The Pizza Company/The Coffee Club/Sizzler/Bonchon/Burger King/Breadtalk/Select Service Partner)';
+const MINOR_BRAND_GROUPS = ['The Pizza Company', 'The Coffee Club', 'Sizzler', 'Bonchon', 'Burgerking', 'Breadtalk', 'Select Service Partner'];
+function applyMinorSalesGroup20261014(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const id = '20261014_minor_sales_group_v1';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const upd = db.prepare(`UPDATE customer_profiles SET sales_group = ?, sales_group_by = COALESCE(NULLIF(TRIM(sales_group_by), ''), 'Gike'),
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE code = ? AND (COALESCE(TRIM(sales_group), '') = '' OR sales_group IN (SELECT value FROM json_each(?)))`);
+  let n = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const code of MINOR_GROUP_CODES) n += upd.run(MINOR_SALES_GROUP, code, JSON.stringify(MINOR_BRAND_GROUPS)).changes;
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] Minor sales group 2026-10-14: ${n}/${MINOR_GROUP_CODES.length} customers`);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014 };

@@ -9588,7 +9588,9 @@ function sdCust(){
     if(q) custs=custs.filter(c=>c.n.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)
       ||(c.branches||[]).some(b=>b.n.toLowerCase().includes(q)||b.c.toLowerCase().includes(q)||(b.g||[]).some(g=>g.n.toLowerCase().includes(q)||g.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)))));
     let sorted=_sd.sort.col==='val'?_sdByValue(custs):[...custs];
-    if(_sd.groupBy==='cat2') sorted=custs; // เรียงตาม Category แล้วยอด (ดู _sdRegroupCat2)
+    // เรียงตาม Category (ลำดับจาก _sdRegroupCat2) แล้วยอด NET ตามทิศที่กดหัวคอลัมน์ (2026-10-14: เดิมใช้ลำดับตายตัวมาก→น้อย
+    // กดสลับทิศที่หัว NET แล้วไม่เปลี่ยน)
+    if(_sd.groupBy==='cat2'){const ci=new Map();custs.forEach(c=>{if(!ci.has(c._cat))ci.set(c._cat,ci.size);});sorted=[...custs].sort((a,b)=>(ci.get(a._cat)-ci.get(b._cat))||_sdCmp(a._tot,b._tot,_sd.sort?.dir||1));}
     else if(_sd.groupBy!=='corp') sorted.sort((a,b)=>(a._none?1:0)-(b._none?1:0)); // "ไม่มีกลุ่ม" ไว้ท้ายสุด
     const nCols=(_sd.showYoY?5:4)+_sdValCols()-1;
     if(_sdPv.cust&&_sdApi.invoiceBased){document.getElementById('sd-ta').innerHTML=_sdPivotBar('cust')+_sdPivotHtml('cust',F?F.custs:(isAll?_sdApi.custs:_sdApi.custs.filter(c=>custHasSlm(c,slmId))),F?F.slm:'');return;}
