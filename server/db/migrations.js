@@ -581,6 +581,7 @@ function runMigrations(db) {
   addColumnIfMissing(db, 'customer_profiles', 'sales_group', 'sales_group TEXT');
   addColumnIfMissing(db, 'customer_profiles', 'sales_group_by', 'sales_group_by TEXT');
   require('./customerProfilesV2').applySalesGroups20261012(db);
+  require('./customerProfilesV2').applySalesGroupsFix20261014(db);
 
   // ใบเสนอราคา รอบ 1 (2026-10-07) — ราคากลางฐาน A–G + ประวัติการแก้ (คำอธิบายเต็มดู schema.sql)
   db.exec(`

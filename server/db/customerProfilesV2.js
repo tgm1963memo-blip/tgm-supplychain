@@ -125,4 +125,55 @@ function applySalesGroups20261012(db) {
   console.log(`[migrations] sales groups 2026-10-12: ${n}/${items.length} customers`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012 };
+// แก้ข้อมูลตั้งต้น v1 (2026-10-14, ตรวจซ้ำกับไฟล์ Group) — 1) 7 ลูกค้ารหัสท้าย 2 ตัว (TNA-01-KK ฯลฯ) ตกหล่น → ใส่ Category
+// 2) ชีต "corporate ไมเนอร์ กรุ๊ป" (Gike) มี 2 บล็อกที่เริ่มเลขกลุ่มใหม่ สคริปต์เดิมรวมกลุ่มเลขเดียวกันข้ามบล็อก → กลุ่ม (Sales) ผิด 10 ราย
+// แก้เฉพาะแถวที่ยังเป็นค่าเดิมจาก v1 (ว่าง / ค่าผิดเดิม) ไม่ทับที่คนแก้ไว้ภายหลัง · รันครั้งเดียว
+const SALES_GROUP_FIXES_20261014 = [
+  // [code, กลุ่มผิดจาก v1, กลุ่มที่ถูก]
+  ['MI-LA-0001', 'Select Service Partner', 'The Pizza Company'],
+  ['MI-LA-0002', 'Select Service Partner', 'The Pizza Company'],
+  ['MI-LA-0005', 'The Pizza Company', 'The Coffee Club'],
+  ['MI-LA-0006', 'Bonchon', 'Sizzler'],
+  ['MI-LA-0007', 'Bonchon', 'Sizzler'],
+  ['MI-LA-0008', 'Bonchon', 'Sizzler'],
+  ['MI-LA-0009', 'Bonchon', 'Sizzler'],
+  ['MI-LA-0015', 'Bonchon', 'Sizzler'],
+  ['MI-LA-0011', 'The Coffee Club', 'Burgerking'],
+  ['MI-LA-0014', 'The Coffee Club', 'Burgerking'],
+];
+const SALES_CATEGORY_ADDS_20261014 = [
+  ['TNA-01-KK', 'ธีระพล'], ['ALS-01-KG', 'ธีระพล'], ['NGT-01-KF', 'ธีระพล'],
+  ['OIS-01-KF', 'วีรวุฒิ'], ['ZKC-01-KF', 'วีรวุฒิ'], ['FAD-01-KK', 'วีรวุฒิ'], ['SPS-02-KF', 'วีรวุฒิ'],
+];
+function applySalesGroupsFix20261014(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const id = '20261014_sales_groups_fix_v1';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const fixGroup = db.prepare(`UPDATE customer_profiles SET sales_group = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE code = ? AND (sales_group IS NULL OR TRIM(sales_group) IN ('', ?))`);
+  const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
+  const addCat = db.prepare(`INSERT INTO customer_profiles (code, name, sales_category, sales_group_by, edited_by, updated_at)
+    VALUES (?, ?, 'ร้านค้าทั่วไป', ?, 'sales-groups-2026-10-14', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET
+      sales_category = COALESCE(NULLIF(TRIM(customer_profiles.sales_category), ''), excluded.sales_category),
+      sales_group_by = COALESCE(NULLIF(TRIM(customer_profiles.sales_group_by), ''), excluded.sales_group_by),
+      name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name),
+      updated_at = excluded.updated_at`);
+  let g = 0, c = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [code, from, to] of SALES_GROUP_FIXES_20261014) g += fixGroup.run(to, code, from).changes;
+    for (const [code, by] of SALES_CATEGORY_ADDS_20261014) {
+      const nm = nameOf.get(code, code);
+      c += addCat.run(code, nm.c ? null : (nm.b || null), by).changes;
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] sales groups fix 2026-10-14: ${g} groups, ${c} categories`);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014 };

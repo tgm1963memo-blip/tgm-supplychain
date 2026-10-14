@@ -1176,6 +1176,24 @@
 "by": "ธีระพล"
 },
 {
+"code": "TNA-01-KK",
+"sales_category": "ร้านค้าทั่วไป",
+"sales_group": null,
+"by": "ธีระพล"
+},
+{
+"code": "ALS-01-KG",
+"sales_category": "ร้านค้าทั่วไป",
+"sales_group": null,
+"by": "ธีระพล"
+},
+{
+"code": "NGT-01-KF",
+"sales_category": "ร้านค้าทั่วไป",
+"sales_group": null,
+"by": "ธีระพล"
+},
+{
 "code": "07-LE-0015",
 "sales_category": "ร้านค้าทั่วไป",
 "sales_group": null,
@@ -15006,6 +15024,30 @@
 "by": "วีรวุฒิ"
 },
 {
+"code": "OIS-01-KF",
+"sales_category": "ร้านค้าทั่วไป",
+"sales_group": null,
+"by": "วีรวุฒิ"
+},
+{
+"code": "ZKC-01-KF",
+"sales_category": "ร้านค้าทั่วไป",
+"sales_group": null,
+"by": "วีรวุฒิ"
+},
+{
+"code": "FAD-01-KK",
+"sales_category": "ร้านค้าทั่วไป",
+"sales_group": null,
+"by": "วีรวุฒิ"
+},
+{
+"code": "SPS-02-KF",
+"sales_category": "ร้านค้าทั่วไป",
+"sales_group": null,
+"by": "วีรวุฒิ"
+},
+{
 "code": "SA-LE-0001",
 "sales_category": "เดอะมอลล์ กรุ๊ป",
 "sales_group": "เดอะมอลล์ กรุ๊ป",
@@ -18962,13 +19004,13 @@
 {
 "code": "MI-LA-0001",
 "sales_category": null,
-"sales_group": "Select Service Partner",
+"sales_group": "The Pizza Company",
 "by": "Gike"
 },
 {
 "code": "MI-LA-0002",
 "sales_category": null,
-"sales_group": "Select Service Partner",
+"sales_group": "The Pizza Company",
 "by": "Gike"
 },
 {
@@ -19004,31 +19046,31 @@
 {
 "code": "MI-LA-0005",
 "sales_category": null,
-"sales_group": "The Pizza Company",
+"sales_group": "The Coffee Club",
 "by": "Gike"
 },
 {
 "code": "MI-LA-0006",
 "sales_category": null,
-"sales_group": "Bonchon",
+"sales_group": "Sizzler",
 "by": "Gike"
 },
 {
 "code": "MI-LA-0008",
 "sales_category": null,
-"sales_group": "Bonchon",
+"sales_group": "Sizzler",
 "by": "Gike"
 },
 {
 "code": "MI-LA-0009",
 "sales_category": null,
-"sales_group": "Bonchon",
+"sales_group": "Sizzler",
 "by": "Gike"
 },
 {
 "code": "MI-LA-0015",
 "sales_category": null,
-"sales_group": "Bonchon",
+"sales_group": "Sizzler",
 "by": "Gike"
 },
 {
@@ -19040,19 +19082,19 @@
 {
 "code": "MI-LA-0011",
 "sales_category": null,
-"sales_group": "The Coffee Club",
+"sales_group": "Burgerking",
 "by": "Gike"
 },
 {
 "code": "MI-LA-0014",
 "sales_category": null,
-"sales_group": "The Coffee Club",
+"sales_group": "Burgerking",
 "by": "Gike"
 },
 {
 "code": "MI-LA-0007",
 "sales_category": null,
-"sales_group": "Bonchon",
+"sales_group": "Sizzler",
 "by": "Gike"
 }
 ]

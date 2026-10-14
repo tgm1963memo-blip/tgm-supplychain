@@ -25,7 +25,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'Template', 'ฝ่ายขายร้านค้า', 'New folder')
 OUT = os.path.join(ROOT, 'server', 'db', 'data', 'sales-groups-20261012.json')
 
-CODE_RE = re.compile(r'^[A-Z0-9]{1,4}-[A-Z0-9]{2}-[A-Z0-9]{3,4}$', re.I)
+# ท้ายรหัส 2 ตัวด้วย (TNA-01-KK, OIS-01-KF ฯลฯ — เดิม {3,4} ทำ 7 ลูกค้าตกหล่น, แก้ 2026-10-14)
+CODE_RE = re.compile(r'^[A-Z0-9]{1,4}-[A-Z0-9]{2}-[A-Z0-9]{2,4}$', re.I)
 # ชีตที่ซ้ำกับชีตหลัก / ชีตสรุป — ไม่ใช้
 SKIP_SHEETS = {('Group คุณปู', 'Sheet1'), ('Group คุณแมน', 'GRoups'), ('Group คุณฐา', 'Sheet3'), ('Group คุณฐา', 'Sheet1 (2)')}
 
@@ -103,13 +104,17 @@ def main():
             numbered = any(isinstance(r[0], (int, float)) for r in data)
             groups = OrderedDict()  # key -> {'codes': [], 'note': '', 'first': ''}
             cur = None
+            block, last_no = 0, 0   # ชีตที่เริ่มเลขกลุ่มใหม่ (1,2,…,6 แล้ว 1,2,…) = บล็อกใหม่ — ไม่รวมกลุ่มเลขเดียวกันข้ามบล็อก (2026-10-14)
             for r in data:
                 code = clean(r[ci]).upper()
                 name = clean(r[ni]) if ni is not None else ''
                 note = clean(r[noi]) if noi is not None else ''
                 if numbered:
                     if isinstance(r[0], (int, float)):
-                        cur = f'{ws.title}#{int(r[0])}'
+                        if int(r[0]) <= last_no:
+                            block += 1
+                        last_no = int(r[0])
+                        cur = f'{ws.title}#{block}.{int(r[0])}'
                     key = cur or f'{ws.title}#0'
                 else:
                     key = company_name(name) or code
