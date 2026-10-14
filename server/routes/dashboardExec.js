@@ -82,12 +82,19 @@ module.exports = function dashboardExecRoutes(db) {
   // ตั้งค่าที่ต้น handler /exec — handler ทำงานแบบ synchronous ทั้งหมด (ไม่มี await) จึงไม่มีคำขออื่นแทรกระหว่างใช้ค่านี้
   const CO_GROUPS = { tss: new Set(['TSS', 'TSSNV', 'CONSI']), tgm: new Set(['TGM']) };
   let reqCo = 'all';
+  // ไม่รวม Non-VAT (2026-10-14, ผู้ใช้ขอ — เทียบ Excel รายเซลล์ที่ไม่นับแฟ้ม TSS-NV): ตัดแฟ้ม TSS-NV / TSSN-xx ทุกส่วนของหน้า
+  let reqNoNv = false;
   function companyFilter(year) {
     const all = yearSources(year);
     const keep = CO_GROUPS[reqCo];
-    const src = keep ? Object.fromEntries(Object.entries(all).filter(([, canon]) => keep.has(canon))) : all;
+    const src = Object.fromEntries(Object.entries(all)
+      .filter(([, canon]) => (!keep || keep.has(canon)) && !(reqNoNv && canon === 'TSSNV')));
     return { src, raw: Object.keys(src) };
   }
+  // ไม่รวมเบเกอรี่ (2026-10-14, ผู้ใช้ขอ): ลูกค้าที่กลุ่มลูกค้า (category) เป็น "เบเกอรี่" หรือ "…/เบเกอรี่"
+  // (เช่น Tops/เบเกอรี่ 30-TA/TF, เบเกอรี่ในบิ๊กซี BD-LF-*) — ต่อท้าย WHERE ของทุก query ผ่าน slmCodes.sql
+  const BAKERY_SQL = `cust_code NOT IN (SELECT code FROM customer_profiles WHERE category = 'เบเกอรี่' OR category LIKE '%/เบเกอรี่')`;
+  let reqBakery = null; // Set ของรหัสเบเกอรี่ เมื่อเปิด "ไม่รวมเบเกอรี่" (ใช้กรองแถวห้อง SKU ที่ไม่ผ่าน SQL) | null
 
   // ยอดรายเดือนทั้งปี แยกบริษัท และแยกหมวดลูกค้า (net/consi) — หมวดคิดจากยอดจริงรายลูกค้า ไม่ได้ประมาณตามสัดส่วน
   function monthly(year, slmCodes, meta, consiCodes) {
@@ -134,7 +141,8 @@ module.exports = function dashboardExecRoutes(db) {
     if (!reqChain) return [];
     const keep = CO_GROUPS[reqCo];
     return chainSales.chainFacts(db, reqChain.map, from, to)
-      .filter((r) => reqChain.slms.has(r.slm_code) && (!keep || keep.has(r.company)));
+      .filter((r) => reqChain.slms.has(r.slm_code) && (!keep || keep.has(r.company))
+        && !(reqNoNv && r.company === 'TSSNV') && !(reqBakery && reqBakery.has(r.cust_code)));
   }
   function parts(from, to, companies) {
     const t = tablesFor(from);
@@ -475,6 +483,13 @@ module.exports = function dashboardExecRoutes(db) {
       const co = String(req.query.co || 'all');
       if (!['all', 'tss', 'tgm'].includes(co)) return res.status(400).json({ error: 'co ต้องเป็น all, tss หรือ tgm' });
       reqCo = co;
+      const noNv = req.query.no_nv === '1';
+      const noBakery = req.query.no_bakery === '1';
+      reqNoNv = noNv;
+      reqBakery = noBakery
+        ? new Set(db.prepare(`SELECT code FROM customer_profiles WHERE category = 'เบเกอรี่' OR category LIKE '%/เบเกอรี่'`).all().map((r) => r.code))
+        : null;
+      if (noBakery) slmCodes.sql += ` AND ${BAKERY_SQL}`;
       {
         const salesView = !!String(req.query.slm || '').trim() || !scope.all;
         const cmap = salesView ? chainSales.loadChainMap(db) : null;
@@ -574,7 +589,7 @@ module.exports = function dashboardExecRoutes(db) {
       const linesSync = db.prepare(`SELECT MAX(synced_at) AS at FROM sync_file_state WHERE source LIKE '%/STCRD.DBF'`).get();
 
       res.json({
-        from, to, ly_from: lyFrom, ly_to: lyTo, with_consi: withConsi, makro_in_mall: makroInMall, co,
+        from, to, ly_from: lyFrom, ly_to: lyTo, with_consi: withConsi, makro_in_mall: makroInMall, co, no_nv: noNv, no_bakery: noBakery,
         monthly: { ty: monthly(year, slmCodes, meta, consiCodes), ly: monthly(year - 1, slmCodes, meta, consiCodes) },
         kpi,
         channels: EXEC_CHANNELS.map((c) => ({ key: c.key, label: c.label, ...channelAgg[c.key] })),

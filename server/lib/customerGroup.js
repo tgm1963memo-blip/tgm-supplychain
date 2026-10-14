@@ -14,6 +14,9 @@ const STRIP_SUFFIXES = [
 // เรียงลำดับสำคัญ — ข้อแรกที่ตรงชนะ · "เซ็นทรัล ฟุ้ด กรุ๊ป" กับ Tops รวมเป็นเครือเดียว (ผู้ใช้ยืนยัน 2026-10-05)
 const ALIASES = [
   [/^makro$/i, 'Makro'],
+  // (2026-10-14, ผู้ใช้ขอ) Central Food Wholesale แยกแถวจาก Tops ตาม Excel ฝ่ายขาย — ต้องอยู่ก่อนกฎ Tops
+  // corporate จริง: "Tops Central Food Wholsale" (สะกดผิดใน Express), "เซ็นทรัล ฟู้ด โฮลเซลล์ สาขาระยอง"
+  [/^(tops\s*)?central\s*food\s*whole?sale|^เซ็นทรัล\s*ฟู้ด\s*โฮลเซล/i, 'Central Food Wholesale'],
   [/^tops|^เซ็นทรัล\s*ฟุ้ด\s*กรุ๊ป|central\s*food/i, 'Central Food Retail (Tops)'],
   [/^โลตัส/, "Lotus's"],
   [/^วิลล่า/, 'Villa'],
