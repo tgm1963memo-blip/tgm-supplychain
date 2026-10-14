@@ -9467,14 +9467,16 @@ async function sdInvToggleLines(doc,i){
 }
 // ── จัดกลุ่มลูกค้าตามฝั่ง Sales + Top 10 สินค้า (2026-10-12, ผู้ใช้ขอ ตาม mockup) ─────────────────────
 // groupBy: 'corp' = กลุ่มเดิม (Corporate) · 'scat' = Category (Sales) · 'sgrp' = กลุ่ม (Sales) จาก customer_profiles
-const SD_GROUP_BY=[['corp','กลุ่มเดิม (ผู้บริหาร)'],['scat','Category (Sales)'],['sgrp','กลุ่ม (Sales)']];
+// (2026-10-14, ผู้ใช้ขอ) ป้าย sales_group ในหน้า Sales Overview = "Corporate" ตามชื่อชีต "corporate <เซลล์>" ในไฟล์ Group ของเซลล์
+// (หน้าข้อมูลลูกค้า/ไฟล์นำเข้ายังใช้ "กลุ่ม (Sales)" — มีคอลัมน์ "Corporate group" ของผู้บริหารอยู่แล้ว ห้ามชื่อชนกัน)
+const SD_GROUP_BY=[['corp','กลุ่มเดิม (ผู้บริหาร)'],['scat','Category (Sales)'],['sgrp','Corporate']];
 function sdSetGroupBy(v){_sd.groupBy=v;_sd.op={};sdRender();}
 // ล็อกตาม role (2026-10-12, ผู้ใช้ขอ — ไม่มีปุ่มสลับ): ฝ่ายขาย = Category (Sales) → กลุ่ม (Sales) · ผู้บริหาร/admin/ฝ่ายอื่น = กลุ่มเดิม
 function _sdGroupByForRole(){return isSales()&&!['admin','superadmin'].includes(ROLE)?'cat2':'corp';}
 function _sdRegroup(custs,mode){
   if(mode==='cat2')return _sdRegroupCat2(custs);
   if(mode!=='scat'&&mode!=='sgrp')return custs;
-  const profs=customerProfiles(),field=mode==='scat'?'sales_category':'sales_group',none=mode==='scat'?'ยังไม่ระบุ Category':'ไม่มีกลุ่ม';
+  const profs=customerProfiles(),field=mode==='scat'?'sales_category':'sales_group',none=mode==='scat'?'ยังไม่ระบุ Category':'ไม่มี Corporate';
   const m=new Map();
   custs.forEach(c=>(c.branches||[]).forEach(b=>{
     const key=String(profs[b.c]?.[field]||'').trim()||none;
@@ -9519,7 +9521,7 @@ function _sdCustDisplayName(code,fallback,remote,p){
 // เพิ่มมิติใหม่: เพิ่ม 1 รายการใน SD_DIMS (l = ชื่อที่แสดง · key(row) = ค่าที่ใช้จัดกลุ่ม/แสดง)
 const SD_DIMS={
   cat:{l:'Category (Sales)',key:r=>String(customerProfiles()[r.c]?.sales_category||'').trim()||'ยังไม่ระบุ Category'},
-  sgrp:{l:'กลุ่ม (Sales)',key:r=>String(customerProfiles()[r.c]?.sales_group||'').trim()||'ไม่มีกลุ่ม'},
+  sgrp:{l:'Corporate',key:r=>String(customerProfiles()[r.c]?.sales_group||'').trim()||'ไม่มี Corporate'},
   corp:{l:'บริษัท / กลุ่มลูกค้า',key:r=>r._corp||customerGroupForCode(r.c,UNASSIGNED_CORP_LABEL)},
   exec:{l:'หมวดผู้บริหาร',key:r=>{const k=customerProfiles()[r.c]?.exec_channel;return (DX_CHANNELS.find(c=>c[0]===k)||[k,'ยังไม่ระบุหมวด'])[1];}},
   branch:{l:'สาขา / ลูกค้า',key:r=>r._bname||r.c},
