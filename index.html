@@ -9479,7 +9479,8 @@ function _sdRegroup(custs,mode){
   const profs=customerProfiles(),field=mode==='scat'?'sales_category':'sales_group',none=mode==='scat'?'ยังไม่ระบุ Category':'ไม่มี Corporate';
   const m=new Map();
   custs.forEach(c=>(c.branches||[]).forEach(b=>{
-    const key=String(profs[b.c]?.[field]||'').trim()||none;
+    // ไม่มี Corporate (sales_group ว่าง) → ใช้ชื่อบริษัท/กลุ่มลูกค้าของลูกค้ารายนั้นแทน (2026-10-14, ผู้ใช้ขอ) · Category ว่างยังรวมเป็น "ยังไม่ระบุ Category"
+    const key=String(profs[b.c]?.[field]||'').trim()||(mode==='sgrp'&&String((c.n&&c.n!==UNASSIGNED_CORP_LABEL?c.n:b.n)||'').trim())||none;
     if(!m.has(key))m.set(key,{n:key,grp:'s:'+mode+':'+key,corp:key,ty:'',_tot:0,_x:{sb:0,sg:0,cb:0,cg:0},branches:[],_slms:new Set(),_regrouped:true,_none:key===none});
     const g=m.get(key);g._tot+=b._tot||0;
     if(b._x)for(const k of ['sb','sg','cb','cg'])g._x[k]+=b._x[k]||0;
@@ -9521,7 +9522,8 @@ function _sdCustDisplayName(code,fallback,remote,p){
 // เพิ่มมิติใหม่: เพิ่ม 1 รายการใน SD_DIMS (l = ชื่อที่แสดง · key(row) = ค่าที่ใช้จัดกลุ่ม/แสดง)
 const SD_DIMS={
   cat:{l:'Category (Sales)',key:r=>String(customerProfiles()[r.c]?.sales_category||'').trim()||'ยังไม่ระบุ Category'},
-  sgrp:{l:'Corporate',key:r=>String(customerProfiles()[r.c]?.sales_group||'').trim()||'ไม่มี Corporate'},
+  // ไม่มี Corporate → ชื่อบริษัท/กลุ่มลูกค้า (มิติ corp) แทน (2026-10-14, ผู้ใช้ขอ)
+  sgrp:{l:'Corporate',key:r=>String(customerProfiles()[r.c]?.sales_group||'').trim()||(c=>c&&c!==UNASSIGNED_CORP_LABEL?c:String(r._bname||'').trim())(String(SD_DIMS.corp.key(r)||'').trim())||'ไม่มี Corporate'},
   corp:{l:'บริษัท / กลุ่มลูกค้า',key:r=>r._corp||customerGroupForCode(r.c,UNASSIGNED_CORP_LABEL)},
   exec:{l:'หมวดผู้บริหาร',key:r=>{const k=customerProfiles()[r.c]?.exec_channel;return (DX_CHANNELS.find(c=>c[0]===k)||[k,'ยังไม่ระบุหมวด'])[1];}},
   branch:{l:'สาขา / ลูกค้า',key:r=>r._bname||r.c},
