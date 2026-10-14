@@ -134,9 +134,12 @@ async function runBplusImport(db, { force = false } = {}) {
 
     // รวมซ้ำฝั่ง JS อีกชั้น เผื่อรหัสลูกค้า '0' หลายตัว/ชื่อซ้ำทำให้ key ชนกันหลังแปลงรหัส
     // (2026-10-06) SQL คืนรายวัน (d = YYYY-MM-DD) → รวมเป็นรายเดือน (ym = 7 ตัวแรก) และรายวันพร้อมกัน
+    // ใบลงวันที่ล่วงหน้าไม่นับจนกว่าจะถึงวันนั้น (2026-10-14, ผู้ใช้ขอ "ตัดถึงวันนี้" — ดู syncInvoiceSales ใน importFromExpress.js)
+    const today = new Date().toLocaleDateString('sv-SE');
     const inv = new Map();
     const invDaily = new Map();
     for (const r of data.monthly) {
+      if (String(r.d).slice(0, 10) > today) continue;
       const base = [companyOf(r.ic), custCodeOf(r.cust_code), slmOf(r.slmn)];
       for (const [map, period] of [[inv, String(r.d).slice(0, 7)], [invDaily, String(r.d).slice(0, 10)]]) {
         const key = [base[0], period, base[1], base[2]].join('\u0001');
@@ -148,6 +151,7 @@ async function runBplusImport(db, { force = false } = {}) {
     const lines = new Map();
     const linesDaily = new Map();
     for (const r of data.lines) {
+      if (String(r.d).slice(0, 10) > today) continue;
       for (const [map, period] of [[lines, String(r.d).slice(0, 7)], [linesDaily, String(r.d).slice(0, 10)]]) {
         const key = [companyOf(r.ic), period, custCodeOf(r.cust_code), slmOf(r.slmn), r.sku, r.unit].join('\u0001');
         const cur = map.get(key) || { qty: 0, qty_base: 0, amount: 0 };

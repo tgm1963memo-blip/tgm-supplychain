@@ -1054,6 +1054,9 @@ async function syncInvoiceSales(db) {
   // 2026-09-18: Express's 2026 year-to-date sales total includes these February AI69...
   // records, and excluding them leaves the dashboard short by ~300,949 THB.
   const INVOICE_RECTYP = new Set(['0', '1', '3', '4', '5']);
+  // ใบกำกับลงวันที่ล่วงหน้า (2026-10-14, ผู้ใช้ขอ "ตัดถึงวันนี้"): วันที่ 14 ต.ค. มีใบลง 15–16 ต.ค. อยู่แล้ว ~7.6 ล้าน ทำให้ Sales Overview
+  // (รายเดือน = ทั้งเดือน) ไม่ตรง Dashboard (ช่วงวันที่ถึงวันนี้) — ไม่นับใบที่วันที่เกินวันนี้ (เวลาเครื่อง) รอบ sync หลังถึงวันนั้นจะนับเอง
+  const today = new Date().toLocaleDateString('sv-SE');
   let rowsImported = 0;
 
   for (const company of SALES_COMPANIES) {
@@ -1067,6 +1070,7 @@ async function syncInvoiceSales(db) {
       if (!passesCompanyDateCutoff(company, r.DOCDAT)) continue;
       const period = ym(r.DOCDAT);
       if (!period) continue;
+      if (toIsoDate(r.DOCDAT) > today) continue;
       const custCode = (r.CUSCOD || '').trim() || '(none)';
       // ARTRN carries its own SLMCOD per transaction — the salesperson recorded at invoice time,
       // not necessarily the customer's current owner in the customers table.
