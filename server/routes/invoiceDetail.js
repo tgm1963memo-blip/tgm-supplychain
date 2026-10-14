@@ -206,21 +206,10 @@ function invoiceDetailRoutes(db) {
   // ชื่อสาขาจากที่อยู่จัดส่งของใบกำกับ (ARSHIP) เช่น "บมจ.ซีพี แอ็กซ์ตร้า (สาขา ราไวย์ 2) ..." → "ราไวย์ 2"
   // ใช้แสดงแทนชื่อบริษัทซ้ำๆ ในแถวสาขาของ Sales Overview (ชื่อที่ตั้งใน customer_profiles.branch มาก่อนเสมอ — ทำที่ client)
   router.get('/branch_names', (req, res) => {
-    const rows = db.prepare(`
-      SELECT cust_code, ship_to_address FROM invoices
-      WHERE ship_to_address IS NOT NULL AND ship_to_address LIKE '%สาขา%'
-      ORDER BY doc_date DESC
-    `).all();
-    const re = /\(\s*สาขา\s*([^)]+?)\s*\)|สาขา\s*([^\s,()]+(?:\s+\d+)?)/;
-    const out = {};
+    // ชื่อสาขาจากที่อยู่จัดส่ง — "สาขา X" / ชื่อในวงเล็บ / แขวงที่ส่ง (lib/shipBranch.js, 2026-10-12) · กรองตามสิทธิ์
+    const all = require('../lib/shipBranch').shipBranchMap(db);
     const scope = scopeOf(req.user);
-    for (const r of rows) {
-      if (out[r.cust_code]) continue; // ใบล่าสุดก่อน
-      if (!scope.all && !cs.canSeeCust(scope, r.cust_code)) continue;
-      const m = String(r.ship_to_address).match(re);
-      const name = m && String(m[1] || m[2] || '').trim().replace(/[.,:;\s-]+$/, '');
-      if (name && !/^\d+$/.test(name) && !/^(ที่|เลขที่)$/.test(name)) out[r.cust_code] = name;
-    }
+    const out = scope.all ? all : Object.fromEntries(Object.entries(all).filter(([c]) => cs.canSeeCust(scope, c)));
     res.json(out);
   });
 
