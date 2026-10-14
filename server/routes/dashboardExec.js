@@ -9,6 +9,7 @@ const { autofillBusinessTypes } = require('../lib/businessType');
 const { cacheJson } = require('../lib/responseCache');
 const { resolveScope, factSql } = require('../lib/customerScope');
 const chainSales = require('../lib/chainSales');
+const { buildProductGroupMatcher } = require('../lib/productGroupMatch');
 const CHAIN_CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
 
 // Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
@@ -533,19 +534,21 @@ module.exports = function dashboardExecRoutes(db) {
   // บรรทัดสินค้าจริงของโรงงาน (Bplus) สำหรับ Sales Overview แท็บรายสินค้า + ชื่อลูกค้า/พนักงานขายโรงงาน (2026-10-05)
   // กลุ่มสินค้าใช้ products.group_name (STKGRP) ชุดเดียวกับ TSS — รหัสโรงงานที่ไม่มีใน Express (เช่น 20394-177 "ตราทีจีเอ็ม (HK)")
   // ใช้กลุ่มของสินค้า Express ที่ขึ้นต้นรหัสเดียวกัน (20394-xx) · รหัส 0000 = ยอดสรุปสินค้ารหัส TG ที่ Bplus ไม่แยกรายตัว
-  let prefixCache = { at: 0, map: null };
+  // ไม่มีทั้งรหัสตรงและขึ้นต้นรหัส (บาร์โค้ด 8850826…, 20368-177 HK) → เทียบชื่อกับสินค้า Express (lib/productGroupMatch.js, 2026-10-14)
+  let prefixCache = { at: 0, map: null, byName: null };
   function productGroupByPrefix() {
-    if (prefixCache.map && Date.now() - prefixCache.at < 10 * 60 * 1000) return prefixCache.map;
+    if (prefixCache.map && Date.now() - prefixCache.at < 10 * 60 * 1000) return prefixCache;
     const counts = new Map();
-    for (const p of db.prepare("SELECT code, group_name FROM products WHERE group_name IS NOT NULL AND group_name <> ''").all()) {
+    const all = db.prepare("SELECT code, name, group_name FROM products WHERE group_name IS NOT NULL AND group_name <> ''").all();
+    for (const p of all) {
       const pre = String(p.code).split('-')[0];
       const m = counts.get(pre) || new Map();
       m.set(p.group_name, (m.get(p.group_name) || 0) + 1);
       counts.set(pre, m);
     }
     const map = new Map([...counts].map(([pre, m]) => [pre, [...m].sort((a, b) => b[1] - a[1])[0][0]]));
-    prefixCache = { at: Date.now(), map };
-    return map;
+    prefixCache = { at: Date.now(), map, byName: buildProductGroupMatcher(all) };
+    return prefixCache;
   }
   router.get('/bplus/sales_lines', (req, res) => {
     try {
@@ -560,9 +563,10 @@ module.exports = function dashboardExecRoutes(db) {
         FROM sales_lines_monthly l LEFT JOIN products p ON p.code = l.sku LEFT JOIN bplus_skus s ON s.code = l.sku
         WHERE l.company = 'BP-TGM' AND l.ym >= ? AND l.ym <= ?${sc ? ` AND ${sc.sql}` : ''}
         GROUP BY l.ym, l.cust_code, l.slm_code, l.sku`).all(from, to, ...(sc ? sc.params : []));
-      const pre = productGroupByPrefix();
+      const { map: pre, byName } = productGroupByPrefix();
       const out = rows.map((r) => {
-        const group = r.sku === '0000' ? 'ไม่ระบุสินค้า (TG)' : (r.p_group || pre.get(String(r.sku).split('-')[0]) || '');
+        const group = r.sku === '0000' ? 'ไม่ระบุสินค้า (TG)'
+          : (r.p_group || pre.get(String(r.sku).split('-')[0]) || byName(r.s_name || r.p_name) || '');
         return { ym: r.ym, cust_code: r.cust_code, slm_code: r.slm_code, prod_code: r.sku, prod_name: r.s_name || r.p_name || r.sku,
           prod_group: group, qty: Number(r.qty) || 0, amount: Number(r.amount) || 0 };
       });
