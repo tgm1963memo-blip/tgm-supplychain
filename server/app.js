@@ -194,6 +194,42 @@ function buildApp(db, opts = {}) {
     readOnly: true,
   }));
 
+  // ยอดขายจริง + ยอดเคลื่อนไหวอื่นต่อ SKU × เดือน สำหรับหน้า ABC Analysis ของ tgm-wms (2026-10-16 ผู้ใช้แจ้ง SKU
+  // 10090-661 ขายจริง ก.ค.–ต.ค. 69 รวม 210 กก. แต่หน้า ABC บอกไม่มียอดขาย) — sales_history สร้างจากใบสั่งขาย (OESO)
+  // ซึ่งตั้งแต่ ก.ค. 69 รายการขายของ TSS ส่วนใหญ่ไม่ผ่าน SO แล้ว (SO lines หาย ~80%) จึงใช้ sales_lines_monthly
+  // (STCRD ใบกำกับจริง, qty = หน่วยสต็อก) แทน — ไม่รวม CONSI (ยอดฝากขายนับผ่าน consi_out แทน) และ BP-* (B-Plus
+  // คนละบริษัท) · TSS-67 (แฟ้มปี 2567) มีข้อมูลล้น ม.ค.–เม.ย. 68 ซ้ำกับ TSS-68 จึงตัด TSS-67 เฉพาะก่อน 2025
+  // ยอดเคลื่อนไหวอื่นจาก stock_movements_daily (มีตั้งแต่แฟ้ม TSS ปีปัจจุบัน): conv_out = ถูกใช้เป็นวัตถุดิบแปลง (FF
+  // ฝั่งออก), other_out = ตัดจ่าย/ปรับลดอื่นๆ, consi_out = โอนเข้าคลังฝากขาย 03/04/05 — การโอนระหว่างคลังภายในไม่นับ
+  // GET ?from=YYYY-MM&to=YYYY-MM → [{ sku, ym, sales_qty, sales_amount, conv_out, other_out, consi_out }]
+  app.get('/api/abc_sku_monthly', authed, (req, res) => {
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (!/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM และ from ≤ to' });
+    const sales = db.prepare(`SELECT sku, ym, SUM(qty) AS q, SUM(amount) AS a FROM sales_lines_monthly
+      WHERE ym >= ? AND ym <= ? AND company <> 'CONSI' AND company NOT LIKE 'BP-%'
+        AND NOT (company = 'TSS-67' AND ym >= '2025-01')
+      GROUP BY sku, ym`).all(from, to);
+    const moves = db.prepare(`SELECT sku, substr(day, 1, 7) AS ym,
+        SUM(CASE WHEN converted_qty < 0 THEN -converted_qty ELSE 0 END) AS conv_out,
+        SUM(CASE WHEN other_qty < 0 THEN -other_qty ELSE 0 END) AS other_out,
+        SUM(CASE WHEN warehouse IN ('03','04','05') AND transferred_qty > 0 THEN transferred_qty ELSE 0 END) AS consi_out
+      FROM stock_movements_daily WHERE day >= ? AND day < ?
+      GROUP BY sku, substr(day, 1, 7)`).all(`${from}-01`, `${to}-32`);
+    const out = new Map();
+    const row = (sku, ym) => {
+      const k = `${sku}|${ym}`;
+      if (!out.has(k)) out.set(k, { sku, ym, sales_qty: 0, sales_amount: 0, conv_out: 0, other_out: 0, consi_out: 0 });
+      return out.get(k);
+    };
+    for (const r of sales) { const o = row(r.sku, r.ym); o.sales_qty += Number(r.q) || 0; o.sales_amount += Number(r.a) || 0; }
+    for (const r of moves) {
+      if (!r.conv_out && !r.other_out && !r.consi_out) continue;
+      const o = row(r.sku, r.ym);
+      o.conv_out += Number(r.conv_out) || 0; o.other_out += Number(r.other_out) || 0; o.consi_out += Number(r.consi_out) || 0;
+    }
+    res.json([...out.values()]);
+  });
+
   app.use('/api/outbound_orders', authed, makeCrudRouter(db, 'outbound_orders', {
     pk: 'id',
     fields: ['id', 'company', 'order_no', 'order_date', 'dlv_date', 'cust_code', 'slm_id', 'doc_status', 'total'],
