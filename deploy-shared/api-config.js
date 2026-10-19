@@ -1,6 +1,6 @@
 'use strict';
 
-const DEFAULT_API_BASE = 'https://murphy-mounting-commonwealth-integral.trycloudflare.com';
+const DEFAULT_API_BASE = 'https://hypothesis-believes-broadcasting-asset.trycloudflare.com';
 function getApiBase(env = process.env) {
   const value = env.TGM_API_BASE_URL === undefined ? DEFAULT_API_BASE : env.TGM_API_BASE_URL;
   let url;
