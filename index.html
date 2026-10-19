@@ -15,12 +15,12 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --N:#1E3A5F;--N2:#D4AF37;--T:#0D5068;--G:#0A5940;--O:#C44B0A;--R:#A32D2D;
-  --A:#7A4500;--P:#412B8A;--GR:#3D4A5C;
-  --bg:#F4F6F9;--bg2:#ECEEF2;--W:#fff;--BD:#CDD5E0;
-  --BL:#1553A0;--LBL:#E7EFFC;--LG:#E5F3EE;--LR:#FBEBEB;
+  --N:#1B2064;--N2:#C3161B;--T:#2A3080;--G:#1F7A4D;--O:#9A5200;--R:#C3161B;
+  --A:#9A5200;--P:#2A3080;--GR:#4B4F6E;
+  --bg:#F4F6F9;--bg2:#ECEEF2;--W:#fff;--BD:#D9DCE8;
+  --BL:#2A3080;--LBL:#E7EFFC;--LG:#E5F3EE;--LR:#FBEBEB;
   --LY:#FDF2E2;--LP:#EDEAFB;--LN:#E7EDF7;
-  --TX:#0D1117;--TX2:#4A5568;--TX3:#8896A5;
+  --TX:#14163A;--TX2:#4B4F6E;--TX3:#646887;
   --font:'Noto Sans Thai','IBM Plex Sans Thai',sans-serif;--mono:'IBM Plex Mono',monospace;
 }
 body{font-family:var(--font);background:var(--bg);color:var(--TX);font-size:13.5px;line-height:1.5}
@@ -37,7 +37,7 @@ body:has(#app:not(.hidden)){overflow:hidden}
 .sb-sec{padding:12px 14px 3px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.3}
 .ni{display:flex;align-items:center;gap:9px;padding:8px 12px;cursor:pointer;border-radius:7px;margin:1px 6px;font-size:13px;color:rgba(255,255,255,.6);transition:.12s}
 .ni:hover{background:rgba(255,255,255,.09);color:rgba(255,255,255,.9)}
-.ni.act{background:rgba(212,175,55,.18);color:#D4AF37;font-weight:600;border-left:3px solid #D4AF37;padding-left:9px}
+.ni.act{background:rgba(212,175,55,.18);color:#C3161B;font-weight:600;border-left:3px solid #C3161B;padding-left:9px}
 .ni-ico{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 .sb-foot{margin-top:auto;padding:10px 12px;border-top:1px solid rgba(255,255,255,.07)}
 .sb-u{display:flex;align-items:center;gap:9px}
@@ -54,7 +54,7 @@ td.r{text-align:right;font-variant-numeric:tabular-nums}
 .btn:hover{background:var(--bg2)} .btn:active{transform:scale(.98)}
 .btn-sm{padding:5px 11px;font-size:12px;border-radius:6px}
 .btn-xs{padding:3px 8px;font-size:11.5px;border-radius:5px}
-.btn-p{background:#D4AF37;color:#000;border-color:#D4AF37;font-weight:700}.btn-p:hover{opacity:.88}
+.btn-p{background:#C3161B;color:#000;border-color:#C3161B;font-weight:700}.btn-p:hover{opacity:.88}
 .btn-g{background:var(--G);color:#fff;border-color:var(--G)}.btn-g:hover{opacity:.88}
 .btn-r{background:var(--R);color:#fff;border-color:var(--R)}
 .btn-o{background:var(--O);color:#fff;border-color:var(--O)}
@@ -251,7 +251,7 @@ table.draft-trail td.l{text-align:left}
 .cr-step-item.act .cr-step-num,.cr-step-item.done .cr-step-num{opacity:1;background:currentColor}
 .cr-step-item.act .cr-step-num span,.cr-step-item.done .cr-step-num span{color:#fff}
 .cr-fullpage-prog{height:4px;background:rgba(255,255,255,.2);border-radius:99px;overflow:hidden;margin-top:12px;max-width:220px}
-.cr-fullpage-prog-fill{height:100%;background:#D4AF37;border-radius:99px;transition:width .4s}
+.cr-fullpage-prog-fill{height:100%;background:#C3161B;border-radius:99px;transition:width .4s}
 #btn-sync:hover{background:rgba(255,255,255,.22)}
 #btn-sync.syncing{opacity:.7;pointer-events:none}
 #btn-sync.syncing::before{content:'⏳ ';animation:none}
@@ -380,15 +380,15 @@ table.draft-trail td.l{text-align:left}
 .ocr-spin{width:22px;height:22px;border:2.5px solid var(--BD);border-top-color:var(--BL);border-radius:50%;animation:ocrSpin .7s linear infinite;margin:0 auto 7px}
 /* ── AI Assistant ─────────────────────────────────── */
 .ai-card{background:linear-gradient(135deg,#eef5ff 0%,#f8faff 100%);border:1.5px solid #c0d4f0;border-radius:10px;padding:16px 18px;margin-bottom:14px}
-.ai-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-weight:700;color:#1a56a0;font-size:14px}
+.ai-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-weight:700;color:#1B2064;font-size:14px}
 .ai-hd .ai-sub{font-size:11px;color:#5b7fa8;font-weight:400;margin-left:4px}
 .ai-box{min-height:56px;background:#fff;border:1px solid #d0e0f5;border-radius:8px;padding:12px 14px;font-size:13px;color:var(--TX);line-height:1.65}
 .ai-box.empty{color:var(--TX3);font-size:12px;font-style:italic}
-.ai-loading{color:#1a56a0;font-style:italic;display:flex;align-items:center;gap:8px}
-.ai-loading::before{content:'';display:inline-block;width:14px;height:14px;border:2px solid #c0d4f0;border-top-color:#1a56a0;border-radius:50%;animation:ocrSpin .7s linear infinite;flex-shrink:0}
+.ai-loading{color:#1B2064;font-style:italic;display:flex;align-items:center;gap:8px}
+.ai-loading::before{content:'';display:inline-block;width:14px;height:14px;border:2px solid #c0d4f0;border-top-color:#1B2064;border-radius:50%;animation:ocrSpin .7s linear infinite;flex-shrink:0}
 .ai-result{white-space:pre-wrap;color:var(--TX)}
 .ai-error{color:var(--R);font-weight:500}
-.btn-ai{background:#1a56a0;color:#fff;border-color:#1a56a0;font-weight:600}
+.btn-ai{background:#1B2064;color:#fff;border-color:#1B2064;font-weight:600}
 .btn-ai:hover{background:#154888}
 
 /* ════════ Redesign 2026-10 (DESIGN.md · "Lot Label") — สีจากโลโก้ TSS: น้ำเงิน #1B2064 / แดง #C3161B / ขาว
@@ -484,6 +484,35 @@ tr:hover td{background:#FAFAFD}
 .ai-card{background:#EEF0F8;border:1px solid var(--BD)}
 .ai-hd{color:var(--N)}.ai-hd .ai-sub{color:var(--TX3)}
 .ai-box{border-color:var(--BD)}
+/* Lot label บนหน้าภาพรวม/วิเคราะห์ (DESIGN.md "One Label Row Rule": Dashboard, Sales Overview, เปรียบเทียบผลิต)
+   แปลงการ์ด .kpi เดิมเป็นฉลากด้วย CSS ล้วน — หัวการ์ด (.kl) = แถบฉลาก, การ์ดแรก = แถบแดง (ตัวเลขหลักของหน้า),
+   มุมไดคัท + เส้นปรุ · เนื้อหาเดิม (หมายเหตุ/ปีที่แล้ว/ตัวกรอง Sales) อยู่ครบ */
+#sd-krow,#psv-krow{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+#sd-krow>.kpi,#psv-krow>.kpi{position:relative;padding:0 0 12px;border:0;border-radius:0;overflow:hidden;box-shadow:inset 0 0 0 1px var(--BD);
+  -webkit-mask:radial-gradient(circle at 0 0,#0000 7px,#000 7.5px) top left,radial-gradient(circle at 100% 0,#0000 7px,#000 7.5px) top right,radial-gradient(circle at 0 100%,#0000 7px,#000 7.5px) bottom left,radial-gradient(circle at 100% 100%,#0000 7px,#000 7.5px) bottom right;-webkit-mask-size:51% 51%;-webkit-mask-repeat:no-repeat;
+  mask:radial-gradient(circle at 0 0,#0000 7px,#000 7.5px) top left,radial-gradient(circle at 100% 0,#0000 7px,#000 7.5px) top right,radial-gradient(circle at 0 100%,#0000 7px,#000 7.5px) bottom left,radial-gradient(circle at 100% 100%,#0000 7px,#000 7.5px) bottom right;mask-size:51% 51%;mask-repeat:no-repeat}
+#sd-krow>.kpi>.kl,#psv-krow>.kpi>.kl{display:flex;align-items:center;height:28px;margin:0 0 10px;padding:0 16px;background:var(--N);color:#fff;font-size:11.5px;font-weight:600;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sd-krow>.kpi:first-child>.kl,#psv-krow>.kpi:first-child>.kl{background:var(--R)}
+#sd-krow>.kpi>:not(.kl),#psv-krow>.kpi>:not(.kl){margin-left:16px;margin-right:16px}
+#sd-krow>.kpi>.kv,#psv-krow>.kpi>.kv{font-size:28px;line-height:36px;color:var(--N)}
+#sd-krow>.kpi.r>.kv,#psv-krow>.kpi.r>.kv{color:var(--N)}
+#sd-krow>.kpi::after,#psv-krow>.kpi::after{content:"";position:absolute;left:0;right:0;bottom:6px;border-top:1.5px dashed var(--BD)}
+/* ตารางแถวซ้อนบนมือถือ (_MOBILE_STACK) */
+@media (max-width:640px){
+  table.stk,.tw table.stk,.tw.tw-scroll table.stk{min-width:0!important;width:100%}
+  table.stk thead{display:none}
+  table.stk,table.stk tbody,table.stk tfoot{display:block}
+  table.stk tr{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border-bottom:1px solid #ECEEF4}
+  table.stk td{display:flex;flex-direction:column;align-items:flex-start;padding:0!important;border:0!important;text-align:left!important;min-width:0!important;white-space:normal!important;background:transparent}
+  table.stk td::before{content:attr(data-l);font-size:11px;color:var(--TX3);font-weight:400;line-height:1.4}
+  table.stk td.stk-pri{grid-column:1/-1;font-weight:600;font-size:14px}
+  table.stk td.stk-pri::before,table.stk td[data-l=""]::before{display:none}
+  table.stk td.stk-rank{display:none}
+  table.stk td.r{align-items:flex-end;text-align:right!important}
+  table.stk td input,table.stk td select{max-width:100%}
+  table.stk tfoot tr{background:#FAFAFD}
+  #sd-ta .tw,.tw{max-height:none}
+}
 /* emoji → ไอคอนเส้น (_EMOJI_ICON) */
 .emj-t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .emj{width:1.05em;height:1.05em;vertical-align:-.16em;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none;display:inline-block}
@@ -4670,7 +4699,7 @@ function ppRenderGantt(orders, cols, pt) {
     const poTotal  = poAll.filter(p => p.sku===sku && p.status!=='completed' && p.status!=='replaced').reduce((s,p) => s+(p.qty||0), 0);
     const salesAvg = ALL_HIST[sku]?.avg3 || 0;
 
-    const stockColor = stock === 0 ? 'var(--R)' : stock < minStk ? '#C44B0A' : '#0A5940';
+    const stockColor = stock === 0 ? 'var(--R)' : stock < minStk ? '#9A5200' : '#1F7A4D';
     const fmtV = v => !v ? '—' : v >= 10000 ? (v/1000).toFixed(0)+'k' : v >= 1000 ? (v/1000).toFixed(1)+'k' : Math.round(v);
     const compLine=(label,val,color)=>`<div style="display:flex;justify-content:space-between;gap:4px;line-height:1.25"><span style="color:${color};font-size:8px">${label}</span><b style="color:${val?color:'var(--TX3)'};font-size:9px">${fmtV(val)}</b></div>`;
 
@@ -4695,10 +4724,10 @@ function ppRenderGantt(orders, cols, pt) {
         <div style="min-height:54px">
           ${compLine('Stock',stockCol,stockColor)}
           ${prodTotal>0?`<div onclick="ppEditModal('${os[0].id}')" style="background:${color};color:#fff;border-radius:2px;font-size:9px;font-weight:600;padding:1px 3px;text-align:center;cursor:pointer;line-height:1.35;margin:1px 0">ผลิต ${fmtT(prodTotal)}</div>`:compLine('ผลิต',0,'#6366f1')}
-          ${actQty>0?compLine('รับจริง',actQty,'#0A5940'):''}
+          ${actQty>0?compLine('รับจริง',actQty,'#1F7A4D'):''}
           ${compLine('FC',fcQty,'#7C3AED')}
-          ${compLine('PO',poQty,'#0A5940')}
-          ${compLine('ยอดออก',outQty,'#C44B0A')}
+          ${compLine('PO',poQty,'#1F7A4D')}
+          ${compLine('ยอดออก',outQty,'#9A5200')}
         </div>
       </td>`;
     }).join('');
@@ -4725,11 +4754,11 @@ function ppRenderGantt(orders, cols, pt) {
     <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px"></span>ผลิตแล้ว</span>
     <span style="margin-left:8px;color:var(--TX3)">|</span>
     <b style="color:var(--TX2)">ในแต่ละช่องเวลา:</b>
-    <span style="color:#0A5940">Stock</span> ·
+    <span style="color:#1F7A4D">Stock</span> ·
     <span style="color:#6366f1">ผลิต</span> ·
     <span style="color:#7C3AED">FC</span> ·
-    <span style="color:#0A5940">PO</span> ·
-    <span style="color:#C44B0A">ยอดออก</span>
+    <span style="color:#1F7A4D">PO</span> ·
+    <span style="color:#9A5200">ยอดออก</span>
   </div>`;
 }
 
@@ -5731,6 +5760,36 @@ const _EMOJI_ICON = (() => {
   if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
   return { conv };
 })();
+// Redesign 2026-10 (DESIGN.md "Phone Stack Rule"): บนมือถือ (≤640px) ตารางกลายเป็นแถวซ้อน "ชื่อคอลัมน์ : ค่า"
+// ทำเฉพาะตารางที่หัวตารางมีแถวเดียว (หัว 2 แถวขึ้นไปยังเลื่อนข้างเหมือนเดิม) · เซลล์ที่ colspan>1 (แถวกลุ่ม) = เต็มแถว
+// ทำงานเฉพาะเมื่อจอแคบ — เดสก์ท็อปไม่เสียเวลาไล่เซลล์ของตารางใหญ่
+const _MOBILE_STACK = (() => {
+  const mq = matchMedia('(max-width:640px)');
+  function stackTable(t) {
+    const heads = t.tHead ? t.tHead.rows : [];
+    if (heads.length !== 1 || t.closest('[data-no-stack]')) return;
+    // ตารางแบบ matrix (หัวคอลัมน์มี select/checkbox หรือข้อความหัวยาวมาก) คงเลื่อนข้าง — แถวซ้อนอ่านไม่ได้
+    if (heads[0].querySelector('select,input,textarea') || [...heads[0].cells].some(th => (th.textContent || '').trim().length > 48)) return;
+    const labels = [...heads[0].cells].flatMap(th => Array(th.colSpan || 1).fill((th.textContent || '').replace(/[▲▼↑↓⇅]/g, '').trim()));
+    const pri = Math.max(0, labels.findIndex(l => l && l !== '#'));
+    [...t.tBodies, ...(t.tFoot ? [t.tFoot] : [])].forEach(sec => [...sec.rows].forEach(tr => {
+      if (tr.dataset.stk) return; tr.dataset.stk = '1';
+      let col = 0;
+      [...tr.cells].forEach(td => { const sp = td.colSpan || 1;
+        if (sp > 1 || (sec === t.tFoot && col === 0)) td.classList.add('stk-pri');
+        else { td.dataset.l = labels[col] || ''; if (col === pri) td.classList.add('stk-pri'); if (labels[col] === '#') td.classList.add('stk-rank'); }
+        col += sp; });
+    }));
+    t.classList.add('stk');
+  }
+  const run = root => { if (mq.matches && root && root.querySelectorAll) (root.tagName === 'TABLE' ? [root] : root.querySelectorAll('table')).forEach(stackTable); };
+  let q = new Set(), raf = 0;
+  new MutationObserver(ms => { if (!mq.matches) return; ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) q.add(n.closest?.('table') || n); }));
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; const x = [...q]; q = new Set(); x.forEach(run); }); })
+    .observe(document.body, { childList: true, subtree: true });
+  mq.addEventListener?.('change', () => run(document.getElementById('ct')));
+  return { run };
+})();
 function buildSB(){
   const customPerms=DB.get('nav_perms')||{};
   const deptPerms=DB.get('nav_perms_deptpos')||{};
@@ -6430,7 +6489,7 @@ function showAISettings(){
     <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">AI Provider</label>
     <div style="display:flex;gap:8px;margin-bottom:16px">
       ${Object.entries(_AI_PROVIDERS).map(([k,v])=>`
-        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px solid ${prov===k?'#1a56a0':'var(--BD)'};border-radius:8px;cursor:pointer;background:${prov===k?'#eef5ff':'var(--W)'}">
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px solid ${prov===k?'#1B2064':'var(--BD)'};border-radius:8px;cursor:pointer;background:${prov===k?'#eef5ff':'var(--W)'}">
           <input type="radio" name="ai-prov" value="${k}" ${prov===k?'checked':''} onchange="
             DB.set('ai_provider',this.value);
             DB.set('ai_model','');
@@ -6444,7 +6503,7 @@ function showAISettings(){
       ${cfg.models.map(m=>`<option value="${m}" ${model===m?'selected':''}>${m}</option>`).join('')}
     </select>
     <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">API Key
-      <a href="${cfg.keyHintUrl}" target="_blank" style="font-size:11px;font-weight:400;color:#1a56a0;margin-left:6px">รับ Key ที่ ${cfg.keyHint}</a>
+      <a href="${cfg.keyHintUrl}" target="_blank" style="font-size:11px;font-weight:400;color:#1B2064;margin-left:6px">รับ Key ที่ ${cfg.keyHint}</a>
     </label>
     <input id="ai-key-inp" type="password" value="${esc(key)}" placeholder="${cfg.keyPlaceholder}"
       style="width:100%;padding:9px 12px;border:1.5px solid var(--BD);border-radius:8px;font-size:13px;box-sizing:border-box;font-family:monospace">
@@ -7107,7 +7166,7 @@ function _dxEnsureCss(){
   .dx-share{display:flex;align-items:center;gap:6px;justify-content:flex-end}
   .dx-share .bar{width:46px;height:5px;border-radius:3px;background:var(--dx-soft);position:relative;overflow:hidden}
   .dx-share .bar span{position:absolute;left:0;top:0;bottom:0;background:var(--N);border-radius:3px}
-  .dx-warn{color:#B7791F;font-size:11px;margin-left:3px;cursor:help}
+  .dx-warn{color:#9A5200;font-size:11px;margin-left:3px;cursor:help}
   .dx-foot{font-size:11.5px;color:var(--dx-mut);margin-top:10px;line-height:1.6}
   .dx-btn{height:32px;padding:0 12px;border:1px solid var(--dx-line);border-radius:8px;background:#fff;font:inherit;font-size:12.5px;color:var(--dx-ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .dx-btn:hover{background:var(--dx-soft)}
@@ -7205,7 +7264,7 @@ function _dxKpis(d){
     ${lbl({band:'ACTIVE CUSTOMERS',th:'ลูกค้าที่มียอด',value:fmt(k.ty_active),unit:'ราย',sub:`<span class="dx-pill ${dAct>=0?'dx-pill-up':'dx-pill-dn'}">${dAct>=0?'▲':'▼'} ${fmt(Math.abs(dAct))} ราย</span> จาก ${fmt(k.ly_active)} ราย`,lot:lot('CUS')})}
     ${k4}
     <div class="dx-rkey" aria-hidden="true"><span><i class="hit"></i>สูงกว่าเดือนเดียวกันปีก่อน</span><span><i class="miss"></i>ต่ำกว่าปีก่อน</span><span><i class="now"></i>เดือนปัจจุบัน (ยังไม่จบ)</span><span><i class="e"></i>เดือนถัดไป</span></div>
-  </div>${k.ty_ic||k.ly_ic?`<div style="font-size:12px;color:var(--dx-mut);margin:-4px 2px 12px">ขายให้บริษัทในเครือ (โรงงาน→ไทยซอสเซสมาร์เก็ตติ้ง, TSS→ไทย-เยอรมัน) ${_dxMil(k.ty_ic)} ล้าน · ${_dxLabel(r,-1)} ${_dxMil(k.ly_ic)} ล้าน — <b>ไม่รวม</b>ในยอดขายด้านบน</div>`:''}${d.tgm_daily_missing&&(s.co||'all')!=='tss'?`<div style="font-size:11.5px;color:#B45309;margin:-6px 2px 12px">⚠ ยอดโรงงาน TGM ยังไม่มีข้อมูลรายวัน — ช่วงนี้ใช้ยอดทั้งเดือนของ TGM ชั่วคราว (ระบบสลับเป็นรายวันเองเมื่อดึงข้อมูลจากโรงงานได้)</div>`:''}`;
+  </div>${k.ty_ic||k.ly_ic?`<div style="font-size:12px;color:var(--dx-mut);margin:-4px 2px 12px">ขายให้บริษัทในเครือ (โรงงาน→ไทยซอสเซสมาร์เก็ตติ้ง, TSS→ไทย-เยอรมัน) ${_dxMil(k.ty_ic)} ล้าน · ${_dxLabel(r,-1)} ${_dxMil(k.ly_ic)} ล้าน — <b>ไม่รวม</b>ในยอดขายด้านบน</div>`:''}${d.tgm_daily_missing&&(s.co||'all')!=='tss'?`<div style="font-size:11.5px;color:#9A5200;margin:-6px 2px 12px">⚠ ยอดโรงงาน TGM ยังไม่มีข้อมูลรายวัน — ช่วงนี้ใช้ยอดทั้งเดือนของ TGM ชั่วคราว (ระบบสลับเป็นรายวันเองเมื่อดึงข้อมูลจากโรงงานได้)</div>`:''}`;
 }
 // เส้นเป้าบนกราฟรายเดือน — ย้ายมาจากกราฟเดิม (commit f653a64 "Dashboard เส้นเป้าบนกราฟรายเดือน", 2026-10-03) เมื่อ
 // Dashboard ถูกออกแบบใหม่ (กราฟเดิม dashValueChartHtml ไม่ถูกวาดแล้ว) · เป้าตั้งต่อรหัส Sales รวมทุกบริษัท จึงแสดงเฉพาะ "ทุกบริษัท"
@@ -7268,9 +7327,9 @@ function _dxMonthly(d){
     svg+=g;
   });
   if(tg){let p='',pen=false;tg.forEach((v,i)=>{const cx=L+bw*i+bw/2;if(v==null){pen=false;return;}p+=`${pen?'L':'M'}${cx.toFixed(1)},${sy(v).toFixed(1)}`;pen=true;});
-    svg+=`<path d="${p}" fill="none" stroke="#B7791F" stroke-width="2" stroke-dasharray="6 4" pointer-events="none"/>`+tg.map((v,i)=>v==null?'':`<circle cx="${(L+bw*i+bw/2).toFixed(1)}" cy="${sy(v).toFixed(1)}" r="3.5" fill="#fff" stroke="#B7791F" stroke-width="2" pointer-events="none"/>`).join('');}
+    svg+=`<path d="${p}" fill="none" stroke="#9A5200" stroke-width="2" stroke-dasharray="6 4" pointer-events="none"/>`+tg.map((v,i)=>v==null?'':`<circle cx="${(L+bw*i+bw/2).toFixed(1)}" cy="${sy(v).toFixed(1)}" r="3.5" fill="#fff" stroke="#9A5200" stroke-width="2" pointer-events="none"/>`).join('');}
   svg+='</svg>';
-  const legend=series.map(sr=>`<span><i style="background:${sr.c}"></i>${esc(sr.k)} <b>${_dxAxis(sr.v.reduce((a,b)=>a+b,0))}</b></span>`).join('')+`<span><i style="background:#14233A;height:3px;width:16px;border-radius:2px"></i>ปี ${lyy}</span>`+(tg?`<span><i style="background:none;border-top:2px dashed #B7791F;border-radius:0;height:0;width:16px"></i>เป้า <b>${_dxAxis(tgv.reduce((a,b)=>a+b,0))}</b></span>`:'');
+  const legend=series.map(sr=>`<span><i style="background:${sr.c}"></i>${esc(sr.k)} <b>${_dxAxis(sr.v.reduce((a,b)=>a+b,0))}</b></span>`).join('')+`<span><i style="background:#14233A;height:3px;width:16px;border-radius:2px"></i>ปี ${lyy}</span>`+(tg?`<span><i style="background:none;border-top:2px dashed #9A5200;border-radius:0;height:0;width:16px"></i>เป้า <b>${_dxAxis(tgv.reduce((a,b)=>a+b,0))}</b></span>`:'');
   const rows=yms.map((ym,i)=>has[i]?`<tr${i+1>=r.a&&i+1<=r.b?'':' class="mut"'}><td>${DX_MONTHS[i]} ${yy}${ym===curYm?' *':''}</td>${series.map(sr=>`<td class="dx-n">${_dxB(sr.v[i])}</td>`).join('')}<td class="dx-n"><b>${_dxB(tot[i])}</b></td><td class="dx-n mut">${_dxB(ly[i])}</td><td class="dx-n">${ym===curYm?'—':_dxPill(_dxPct(tot[i],ly[i]))}</td></tr>`:'').join('');
   const segBy=[['co','บริษัท'],['ch','หมวดลูกค้า']].map(([k,l])=>`<button type="button" class="${s.by===k?'on':''}" aria-pressed="${s.by===k}" onclick="dxSet('by','${k}')">${l}</button>`).join('');
   return `<div class="dx-card">
@@ -7645,14 +7704,14 @@ function dashCharts(){
   const stkE=Object.entries(stk).filter(([k])=>skuAllowed(k)&&!String(k||'').trim().startsWith('9')).map(([k,s])=>({k,qty:s.qty,min:(ss[k]?.min_stock||50),name:(skuI(k).name||k).substring(0,16)})).sort((a,b)=>a.qty/a.min-b.qty/b.min).slice(0,8);
   mkChart('c-stk','bar',stkE.map(s=>s.name),[
     {label:'Stock ปัจจุบัน',data:stkE.map(s=>s.qty),backgroundColor:stkE.map(s=>s.qty<s.min?'rgba(163,45,45,.75)':'rgba(10,89,64,.72)'),borderRadius:3},
-    {label:'ขั้นต่ำ',data:stkE.map(s=>s.min),type:'line',borderColor:'#C44B0A',borderWidth:2,borderDash:[5,3],pointRadius:3,fill:false,backgroundColor:'transparent'},
+    {label:'ขั้นต่ำ',data:stkE.map(s=>s.min),type:'line',borderColor:'#9A5200',borderWidth:2,borderDash:[5,3],pointRadius:3,fill:false,backgroundColor:'transparent'},
   ],{indexAxis:'y',scales:{x:{beginAtZero:true}}});
   const cnt={
     pending:po.filter(p=>skuAllowed(p.sku)&&p.status==='pending').length,
     overdue:po.filter(p=>skuAllowed(p.sku)&&p.status==='overdue').length,
     matched:po.filter(p=>skuAllowed(p.sku)&&p.status==='matched').length,
   };
-  mkChart('c-po','doughnut',['Pending','Overdue','Matched'],[{data:[cnt.pending,cnt.overdue,cnt.matched],backgroundColor:['#1553A0','#A32D2D','#0A5940'],borderWidth:0}],{plugins:{legend:{position:'right'}}});
+  mkChart('c-po','doughnut',['Pending','Overdue','Matched'],[{data:[cnt.pending,cnt.overdue,cnt.matched],backgroundColor:['#2A3080','#C3161B','#1F7A4D'],borderWidth:0}],{plugins:{legend:{position:'right'}}});
   dashSummaryTables(mths,actual,fcData,poData);
 }
 function dashValueVisibleColumns(){
@@ -19865,18 +19924,18 @@ function qtPrint() {
   <style>
     @page{size:A4 portrait;margin:10mm}
     *{box-sizing:border-box} body{font-family:'Sarabun',sans-serif;margin:0;color:#111;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    .top{display:flex;align-items:center;gap:16px;border-bottom:2px solid #1E3A5F;padding-bottom:8px}
+    .top{display:flex;align-items:center;gap:16px;border-bottom:2px solid #1B2064;padding-bottom:8px}
     .top img{height:62px} .addr{font-size:11px;line-height:1.55;color:#222}
     .title{display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 8px}
-    .title h1{font-size:19px;margin:0;color:#1E3A5F;letter-spacing:.02em} .title .no{font-size:13px} .title .no b{font-size:15px;color:#1E3A5F}
+    .title h1{font-size:19px;margin:0;color:#1B2064;letter-spacing:.02em} .title .no{font-size:13px} .title .no b{font-size:15px;color:#1B2064}
     .boxes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
-    .box{border:1px solid #9AA8BC;border-radius:4px} .box .h{background:#1E3A5F;color:#fff;font-weight:600;padding:4px 8px;font-size:11.5px}
+    .box{border:1px solid #9AA8BC;border-radius:4px} .box .h{background:#1B2064;color:#fff;font-weight:600;padding:4px 8px;font-size:11.5px}
     .box table{width:100%;border-collapse:collapse} .box td{padding:3px 8px;vertical-align:top} .box td.k{width:120px;color:#475569;white-space:nowrap}
-    table.items{width:100%;border-collapse:collapse} .items th{background:#1E3A5F;color:#fff;font-weight:600;padding:5px 6px;font-size:11px;line-height:1.25;border:1px solid #1E3A5F}
+    table.items{width:100%;border-collapse:collapse} .items th{background:#1B2064;color:#fff;font-weight:600;padding:5px 6px;font-size:11px;line-height:1.25;border:1px solid #1B2064}
     .items td{border:1px solid #9AA8BC;padding:4px 6px;vertical-align:top} .items td.c{text-align:center} .items td.r{text-align:right;white-space:nowrap}
     .items tr{break-inside:avoid}
     .rm{margin-top:10px;border:1px solid #9AA8BC;border-radius:4px;padding:6px 10px;break-inside:avoid}
-    .rm .h{font-weight:700;color:#1E3A5F;margin-bottom:3px} .rm .rw{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:11px;line-height:1.5;text-align:left}
+    .rm .h{font-weight:700;color:#1B2064;margin-bottom:3px} .rm .rw{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:11px;line-height:1.5;text-align:left}
     .sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:22px;break-inside:avoid;text-align:center}
     .sign .sp{height:46px} .sign .ln{border-top:1px dotted #475569;margin:0 30px;padding-top:4px}
     .wm{position:fixed;top:42%;left:0;right:0;text-align:center;font-size:58px;font-weight:700;color:rgba(200,30,30,.13);transform:rotate(-24deg);pointer-events:none}
@@ -20781,39 +20840,39 @@ async function draftPreviewPDF(orient = 'landscape') {
     body{font-family:'Sarabun',sans-serif;margin:0;color:#111;background:#EEF1F5;font-size:11px}
     table.items td{font-variant-numeric:tabular-nums}
     .sheet{max-width:none;margin:0 auto;background:#fff}
-    .letterhead{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:2px solid #D4AF37;background:linear-gradient(135deg,#1E3A5F,#28466e)}
+    .letterhead{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:2px solid #C3161B;background:linear-gradient(135deg,#1B2064,#1B2064)}
     .letterhead img{width:42px;height:42px;border-radius:50%;background:#fff;padding:3px}
     .letterhead .co{color:#fff}
     .letterhead .co .name{font-size:16px;font-weight:700}
     .letterhead .co .sub{font-size:10.5px;color:#cfe0f5;margin-top:2px}
     .letterhead .docno{margin-left:auto;text-align:right;color:#fff}
     .letterhead .docno .lbl{font-size:9.5px;color:#cfe0f5;text-transform:uppercase;letter-spacing:.05em}
-    .letterhead .docno .no{font-size:17px;font-weight:700;color:#D4AF37;font-family:monospace}
+    .letterhead .docno .no{font-size:17px;font-weight:700;color:#C3161B;font-family:monospace}
     .body{padding:14px 18px}
-    .doctitle{font-size:17px;font-weight:700;color:#1E3A5F;margin:0 0 2px}
-    .doctitle .stamp{font-size:10.5px;font-weight:700;background:#E5F3EE;color:#0A5940;border:1px solid #bfe3d3;padding:2px 9px;border-radius:20px;margin-left:8px}
-    .docsub{font-size:11px;color:#4A5568;margin-bottom:8px}
-    .meta{font-size:10.8px;color:#444;background:#F7F9FC;border:1px solid #CDD5E0;border-radius:7px;padding:7px 10px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:2px 18px;line-height:1.35}
+    .doctitle{font-size:17px;font-weight:700;color:#1B2064;margin:0 0 2px}
+    .doctitle .stamp{font-size:10.5px;font-weight:700;background:#E5F3EE;color:#1F7A4D;border:1px solid #bfe3d3;padding:2px 9px;border-radius:20px;margin-left:8px}
+    .docsub{font-size:11px;color:#4B4F6E;margin-bottom:8px}
+    .meta{font-size:10.8px;color:#444;background:#F7F9FC;border:1px solid #D9DCE8;border-radius:7px;padding:7px 10px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:2px 18px;line-height:1.35}
     /* ส่วนหัวแบบฟอร์มใบเคาะ (buildFormHeader) — ทุกหัวข้อ/ตัวเลือกพร้อมช่องติ๊ก, ค่าว่างเป็นเส้นประให้เขียนมือ */
     .titlerow{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:7px}
     .titlerow .doctitle{margin:0}
-    .written{font-size:10.5px;color:#4A5568;display:flex;align-items:baseline;gap:6px}
-    .fv{display:inline-block;min-width:90px;border-bottom:1px dotted #8896A5;padding:0 4px;color:#1E3A5F;font-weight:600}
+    .written{font-size:10.5px;color:#4B4F6E;display:flex;align-items:baseline;gap:6px}
+    .fv{display:inline-block;min-width:90px;border-bottom:1px dotted #646887;padding:0 4px;color:#1B2064;font-weight:600}
     .fv.empty{color:transparent}
-    .form{border:1px solid #CDD5E0;border-radius:7px;padding:7px 12px;background:#FBFCFE;margin-bottom:8px;font-size:10.3px;break-inside:avoid}
+    .form{border:1px solid #D9DCE8;border-radius:7px;padding:7px 12px;background:#FBFCFE;margin-bottom:8px;font-size:10.3px;break-inside:avoid}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:3px 26px;margin-bottom:5px}
     .fl{display:flex;align-items:baseline;gap:7px;min-width:0}
     .fl > b{white-space:nowrap;min-width:84px}
     .fl > b.k{min-width:auto}
     .fl > .fv{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .opts{display:grid;grid-template-columns:104px 1fr;row-gap:3px;border-top:1px dashed #CDD5E0;padding-top:5px}
+    .opts{display:grid;grid-template-columns:104px 1fr;row-gap:3px;border-top:1px dashed #D9DCE8;padding-top:5px}
     .opts > b{text-decoration:underline;text-underline-offset:2px}
     .row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px 12px}
     .ck{display:flex;align-items:center;gap:5px;white-space:nowrap;color:#374151}
     .ck .fv{min-width:60px}
-    .box{width:10px;height:10px;border:1.2px solid #4A5568;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:8px;line-height:1;flex:none;font-style:normal}
-    .box.on{background:#1E3A5F;border-color:#1E3A5F;color:#fff}
-    .ck.on{font-weight:700;color:#1E3A5F}
+    .box{width:10px;height:10px;border:1.2px solid #4B4F6E;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:8px;line-height:1;flex:none;font-style:normal}
+    .box.on{background:#1B2064;border-color:#1B2064;color:#fff}
+    .ck.on{font-weight:700;color:#1B2064}
     .disc{display:flex;gap:0 18px;flex-wrap:wrap;align-items:baseline}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact} /* พิมพ์พื้นหัวตาราง/แรเงาออกมาด้วย */
     table{width:100%;border-collapse:collapse;margin-top:7px;font-size:11.2px;table-layout:fixed} /* +2pt (2026-09-24) */
@@ -20822,11 +20881,11 @@ async function draftPreviewPDF(orient = 'landscape') {
     thead tr.grp th.blank{background:transparent;border:none}
     thead tr.grp th .per,thead tr.grp th small{font-weight:400;font-size:9.5px;opacity:.9}
     thead tr.grp th small{display:block}
-    thead tr.cols th{background:#1E3A5F;color:#fff;font-size:10.8px;font-weight:600;padding:7px 2px;text-align:center;vertical-align:middle;line-height:1.15;border-left:1px solid rgba(255,255,255,.18)}
+    thead tr.cols th{background:#1B2064;color:#fff;font-size:10.8px;font-weight:600;padding:7px 2px;text-align:center;vertical-align:middle;line-height:1.15;border-left:1px solid rgba(255,255,255,.18)}
     thead tr.cols th.gs{border-left:1.5px solid rgba(255,255,255,.55)}
     .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
     /* ตารางสินค้า: ทุกคอลัมน์กึ่งกลาง ยกเว้นชื่อสินค้า, เส้นแบ่งคอลัมน์สีอ่อน, เส้นหนาขึ้นที่ต้นกลุ่ม, แรเงาแยกกลุ่ม */
-    table.items{border:1px solid #CDD5E0}
+    table.items{border:1px solid #D9DCE8}
     table.items td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:4px 3px;height:26px;text-align:center;vertical-align:middle;line-height:1.2;word-break:normal;overflow-wrap:break-word}
     /* ตัวเลข/รหัสพิมพ์บรรทัดเดียวเสมอ (2026-09-24) — ข้อความ (ชื่อสินค้า) ขึ้นบรรทัดใหม่ได้ */
     table.items td.n,table.items .n,.kv b{white-space:nowrap}
@@ -20837,68 +20896,68 @@ async function draftPreviewPDF(orient = 'landscape') {
     table.items td.g-prev{background:#F4F6F8}
     table.items td.g-norm{background:#EFF5F7}
     table.items td.g-promo{background:#FBF6E6}
-    table.items td.strong{font-weight:700;color:#1E3A5F}
+    table.items td.strong{font-weight:700;color:#1B2064}
     table.items td.period{white-space:nowrap;font-size:9.6px;letter-spacing:-.1px}
-    table.items tr.subrow td.num,table.items tr.subrow td.sku-name{color:#4A5568}
-    td .sub{font-size:9.8px;color:#8896A5;white-space:nowrap}
+    table.items tr.subrow td.num,table.items tr.subrow td.sku-name{color:#4B4F6E}
+    td .sub{font-size:9.8px;color:#646887;white-space:nowrap}
     table.costs td{border-bottom:1px solid #E3E8EF;padding:4px 6px}
     /* แนวตั้ง (draftPreviewPDF('portrait')) */
     table.items.portrait thead th small{display:block;font-weight:400;font-size:9px;color:#cfe0f5}
     table.items.portrait td{height:auto;padding:5px 4px;line-height:1.3}
     .kv{display:grid;grid-template-columns:auto 1fr;gap:0 5px;font-size:10.4px;text-align:right}
     .kv span{color:#6B7280;text-align:left}.kv b{font-weight:600}
-    .kv .tot{border-top:1px solid #CDD5E0;margin-top:1px;padding-top:1px;color:#1E3A5F;font-weight:800}
+    .kv .tot{border-top:1px solid #D9DCE8;margin-top:1px;padding-top:1px;color:#1B2064;font-weight:800}
     ${portrait ? '.body{padding:9px 14px} .form{font-size:9.4px;padding:6px 10px} .opts{grid-template-columns:96px 1fr} .fl > b{min-width:68px} .ck .fv{min-width:40px} .letterhead{padding:10px 14px} .doctitle{font-size:15px}' : '.letterhead{padding:6px 18px} .body{padding:6px 18px} .form{padding:4px 12px;margin-bottom:4px;line-height:1.25} .opts{row-gap:0} .grid2{gap:1px 26px;margin-bottom:2px} table.items{margin-top:4px} table.items td{padding:3px 3px;height:22px;line-height:1.15} table.items td .sub{font-size:8.8px;line-height:1.05} table.items thead tr.cols th{padding:4px 2px} thead tr.grp th{padding:4px 3px}'}
     /* ความกว้างกระดาษจริงลบขอบ 8mm — ใช้ตอนแสดงบนจอด้วย ให้ _fitPages วัดความสูงได้ตรงกับตอนพิมพ์ */
     .sheet{width:${portrait ? '194mm' : '281mm'};margin:0 auto}
     .branches{font-size:10px;margin:6px 0 8px;line-height:1.25;background:#FBFCFE;border:1px solid #E3E8EF;border-radius:6px;padding:6px 8px}
-    .branch-codes{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9.6px;color:#1E3A5F}
+    .branch-codes{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9.6px;color:#1B2064}
     /* ตารางลงนามติดล่างสุดของกระดาษเสมอ (2026-09-24 v3): .sheet เป็น flex column สูงเท่าจำนวนหน้าเต็ม
        (_fitPages ในสคริปต์ท้ายเอกสารวัดความสูงจริงแล้วปัดขึ้นเป็นหน้าเต็ม) + .signblock margin-top:auto */
     .sheet{display:flex;flex-direction:column}
     .sheet > .body{flex:1;display:flex;flex-direction:column}
     .signblock{margin-top:auto;padding-top:6px;break-inside:avoid}
-    .signhead{padding-top:5px;border-top:1px dashed #CDD5E0;font-size:10.5px;font-weight:700;color:#1E3A5F;display:flex;justify-content:space-between;align-items:baseline}
-    .signhead span{font-weight:400;color:#4A5568}
-    table.signs{border:1px solid #CDD5E0;font-size:9.6px;margin-top:3px;break-inside:avoid}
+    .signhead{padding-top:5px;border-top:1px dashed #D9DCE8;font-size:10.5px;font-weight:700;color:#1B2064;display:flex;justify-content:space-between;align-items:baseline}
+    .signhead span{font-weight:400;color:#4B4F6E}
+    table.signs{border:1px solid #D9DCE8;font-size:9.6px;margin-top:3px;break-inside:avoid}
     table.signs thead tr.cols th{padding:3px 3px;font-size:9.2px}
     table.signs td{border-bottom:1px solid #E3E8EF;border-left:1px solid #E3E8EF;padding:2px 4px;text-align:center;vertical-align:middle;height:24px;line-height:1.2}
     table.signs td.l,table.signs td.cmt{text-align:left}
     table.signs td.cmt{font-size:9.8px;color:#1f2937;white-space:pre-wrap}
     table.signs td.stc{font-size:8.6px;line-height:1.2;color:#374151;white-space:nowrap}
-    table.signs .vd{font-size:9.6px;margin-right:4px}.vd.profit{color:#0A5940}.vd.loss{color:#A32D2D}
+    table.signs .vd{font-size:9.6px;margin-right:4px}.vd.profit{color:#1F7A4D}.vd.loss{color:#C3161B}
     table.signs .vbox{display:inline-flex;align-items:center;gap:3px;margin-right:12px;font-size:9.4px;color:#374151}
     /* คอลัมน์ผลตรวจสอบรายสินค้า (ตารางสินค้า) + สรุปผลในช่องความเห็น */
     table.items td.vcell{font-size:9.2px;white-space:nowrap;text-align:left;padding-left:4px;padding-right:2px}
     table.items td.vcell .vbox{display:flex;align-items:center;gap:3px;margin:1px 0;color:#374151}
     table.items td.vcell .vd{font-size:9.6px}
     table.items td.vcell .vnote{font-size:8.6px;color:#374151;white-space:normal;line-height:1.25;margin-top:1px}
-    .vd .profit{color:#0A5940}.vd .loss{color:#A32D2D}
-    table.signs td .sub{font-size:8.5px;color:#8896A5;white-space:normal}
-    table.signs tr.pending td{color:#8896A5}
+    .vd .profit{color:#1F7A4D}.vd .loss{color:#C3161B}
+    table.signs td .sub{font-size:8.5px;color:#646887;white-space:normal}
+    table.signs tr.pending td{color:#646887}
     table.signs td.sig img{max-height:22px;max-width:100%;object-fit:contain;mix-blend-mode:multiply;display:block;margin:0 auto}
     table.signs .sigtext{font-family:'Charmonman',cursive;font-weight:700;font-size:12px;color:#1a2b4c;line-height:1}
-    .offbox{margin-top:7px;border:1px solid #CDD5E0;border-radius:7px;padding:8px 12px;font-size:11.2px;line-height:1.55;background:#fff;break-inside:avoid}
-    .offbox h4{margin:0 0 4px;font-size:11.2px;color:#1E3A5F}
+    .offbox{margin-top:7px;border:1px solid #D9DCE8;border-radius:7px;padding:8px 12px;font-size:11.2px;line-height:1.55;background:#fff;break-inside:avoid}
+    .offbox h4{margin:0 0 4px;font-size:11.2px;color:#1B2064}
     .offbox .txt{white-space:pre-wrap}
     .offbox .atts{margin-top:8px;font-size:10.6px}
     .row.r5{display:flex;flex-wrap:wrap;gap:2px 18px}
-    .row .none,.notefull .none{color:#8896A5}
+    .row .none,.notefull .none{color:#646887}
     table.items td.pq .sub{font-size:8.4px;letter-spacing:-.2px;line-height:1.1}
     table.items tr.cx td{text-decoration:line-through;color:#9AA5B1}
-    table.items td .ovl{font-size:7.6px;line-height:1.1;color:#B45309;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:1px}
-    table.items tr.cx td .cxtag,.cxtag{text-decoration:none;display:inline-block;font-size:8.6px;color:#A32D2D;border:1px solid #EFC4C4;background:#FBEAEA;border-radius:8px;padding:0 5px;margin-left:3px}
-    .doctitle .stamp.cxs{background:#FBEAEA;color:#A32D2D;border-color:#EFC4C4}
-    .cxnote{font-size:10.4px;color:#A32D2D;background:#FBEAEA;border:1px solid #EFC4C4;border-radius:6px;padding:4px 10px;margin-bottom:6px}
+    table.items td .ovl{font-size:7.6px;line-height:1.1;color:#9A5200;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-top:1px}
+    table.items tr.cx td .cxtag,.cxtag{text-decoration:none;display:inline-block;font-size:8.6px;color:#C3161B;border:1px solid #EFC4C4;background:#FBEAEA;border-radius:8px;padding:0 5px;margin-left:3px}
+    .doctitle .stamp.cxs{background:#FBEAEA;color:#C3161B;border-color:#EFC4C4}
+    .cxnote{font-size:10.4px;color:#C3161B;background:#FBEAEA;border:1px solid #EFC4C4;border-radius:6px;padding:4px 10px;margin-bottom:6px}
     .ck.wide{white-space:normal;flex:1;min-width:0}
     .ck.wide .fv{min-width:120px;white-space:normal}
-    .notefull{border-bottom:1px dotted #8896A5;min-height:14px;color:#1E3A5F;font-weight:600;white-space:pre-wrap;padding:0 4px}
-    table.items td.x-na{color:#8896A5}
+    .notefull{border-bottom:1px dotted #646887;min-height:14px;color:#1B2064;font-weight:600;white-space:pre-wrap;padding:0 4px}
+    table.items td.x-na{color:#646887}
     table.items td.g-last{background:#EEF0FA}
     .st{display:inline-block;padding:0 6px;border-radius:9px;font-weight:700;font-size:8.4px;border:1px solid}
-    .st.signed{color:#0A5940;background:#E5F3EE;border-color:#bfe3d3}
-    .st.rejected{color:#A32D2D;background:#FBEAEA;border-color:#EFC4C4}
-    .st.pending{color:#8896A5;background:#F4F6F8;border-color:#E3E8EF}
+    .st.signed{color:#1F7A4D;background:#E5F3EE;border-color:#bfe3d3}
+    .st.rejected{color:#C3161B;background:#FBEAEA;border-color:#EFC4C4}
+    .st.pending{color:#646887;background:#F4F6F8;border-color:#E3E8EF}
     @media print{ body{padding:0;background:#fff} .sheet{box-shadow:none} .letterhead{break-inside:avoid} table{break-inside:auto} tr{break-inside:avoid} }
   </style></head><body>
   <div class="sheet">
@@ -21110,8 +21169,8 @@ function psvRender() {
   const cv = document.getElementById('psv-chart');
   if (cv) {
     mkChart('psv-chart','bar',cols.map(c=>c.lbl),[
-      { label: 'แผนผลิต (กก.)', data: planData, backgroundColor: 'rgba(21,83,160,0.6)', borderColor: 'rgba(21,83,160,1)', borderWidth: 1 },
-      { label: 'ผลิตจริง (กก.)', data: doneData, backgroundColor: 'rgba(10,89,64,0.7)', borderColor: 'rgba(10,89,64,1)', borderWidth: 1 }
+      { label: 'แผนผลิต (กก.)', data: planData, backgroundColor: 'rgba(185,189,224,0.9)', borderColor: 'rgba(106,112,184,1)', borderWidth: 1 },
+      { label: 'ผลิตจริง (กก.)', data: doneData, backgroundColor: 'rgba(27,32,100,0.9)', borderColor: 'rgba(27,32,100,1)', borderWidth: 1 }
     ]);
   }
   const tbl = document.getElementById('psv-tbl');
@@ -22431,28 +22490,28 @@ function _srWritePrint(w, { title, docNo, orient = 'portrait', body, extraCss = 
     @page{size:A4 ${orient};margin:9mm}
     body{font-family:'Sarabun',sans-serif;margin:0;color:#111;background:#EEF1F5;font-size:11.5px}
     .sheet{margin:0 auto;background:#fff}
-    .letterhead{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:2px solid #D4AF37;background:linear-gradient(135deg,#1E3A5F,#28466e);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .letterhead{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:2px solid #C3161B;background:linear-gradient(135deg,#1B2064,#1B2064);-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .letterhead img{width:42px;height:42px;border-radius:50%;background:#fff;padding:3px}
     .letterhead .co{color:#fff}
     .letterhead .co .name{font-size:16px;font-weight:700}
     .letterhead .co .sub{font-size:10.5px;color:#cfe0f5;margin-top:2px}
     .letterhead .docno{margin-left:auto;text-align:right;color:#fff}
     .letterhead .docno .lbl{font-size:9.5px;color:#cfe0f5;letter-spacing:.05em}
-    .letterhead .docno .no{font-size:17px;font-weight:700;color:#D4AF37;font-family:monospace}
+    .letterhead .docno .no{font-size:17px;font-weight:700;color:#C3161B;font-family:monospace}
     .body{padding:10px 16px}
-    h1{font-size:17px;margin:4px 0 8px;color:#1E3A5F}
-    .meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 22px;border:1px solid #CDD5E0;border-radius:6px;padding:7px 10px;margin-bottom:8px}
+    h1{font-size:17px;margin:4px 0 8px;color:#1B2064}
+    .meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 22px;border:1px solid #D9DCE8;border-radius:6px;padding:7px 10px;margin-bottom:8px}
     .meta div{display:flex;gap:6px}.meta b{min-width:92px;color:#475569;font-weight:600}.meta .full{grid-column:1/-1}
     table{width:100%;border-collapse:collapse;margin:6px 0}
-    th{background:#1E3A5F;color:#fff;font-weight:600;padding:4px 5px;font-size:10.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    td{border:1px solid #CDD5E0;padding:4px 5px;vertical-align:top}
+    th{background:#1B2064;color:#fff;font-weight:600;padding:4px 5px;font-size:10.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    td{border:1px solid #D9DCE8;padding:4px 5px;vertical-align:top}
     td.r,th.r{text-align:right}td.c,th.c{text-align:center}
-    .sec{font-weight:700;color:#1E3A5F;margin:10px 0 3px;font-size:12.5px;border-bottom:1.5px solid #D4AF37;padding-bottom:2px}
+    .sec{font-weight:700;color:#1B2064;margin:10px 0 3px;font-size:12.5px;border-bottom:1.5px solid #C3161B;padding-bottom:2px}
     .spec{font-size:10.5px;color:#334155}.spec span{display:inline-block;margin-right:10px}
     .muted{color:#64748b}
     .signs{display:grid;gap:10px;margin-top:16px;break-inside:avoid}
-    .sign{border:1px solid #CDD5E0;border-radius:6px;padding:6px;text-align:center;min-height:92px;display:flex;flex-direction:column;justify-content:flex-end}
-    .sign .role{font-weight:700;color:#1E3A5F;font-size:11px;margin-bottom:auto}
+    .sign{border:1px solid #D9DCE8;border-radius:6px;padding:6px;text-align:center;min-height:92px;display:flex;flex-direction:column;justify-content:flex-end}
+    .sign .role{font-weight:700;color:#1B2064;font-size:11px;margin-bottom:auto}
     .sign img{max-height:38px;max-width:100%;object-fit:contain;mix-blend-mode:multiply;margin:4px auto}
     .sign .sigtext{font-family:'Charmonman',cursive;font-weight:700;font-size:15px;color:#1a2b4c;margin:6px 0}
     .sign .line{border-top:1px dotted #64748b;margin-top:4px;padding-top:3px;font-size:10.5px}
@@ -22653,7 +22712,7 @@ async function srPrintDoc(id) {
     : `<table><thead><tr><th class="c" style="width:22px">#</th><th style="width:80px">รหัสสินค้า</th><th>ชื่อสินค้า</th><th class="r" style="width:60px">จำนวน</th><th style="width:46px">หน่วย</th><th>หมายเหตุ</th></tr></thead>
       <tbody>${itemsHtml}</tbody></table>`}
     ${atts.length ? `<div class="muted" style="margin-top:6px">ไฟล์แนบ (${atts.length}): ${atts.map(a => esc(a.filename)).join(', ')}</div>` : ''}
-    ${r.status === 'rejected' ? `<div style="margin-top:8px;color:#A32D2D"><b>ปฏิเสธ</b>${r.reject_reason ? ' — ' + esc(r.reject_reason) : ''}</div>` : ''}
+    ${r.status === 'rejected' ? `<div style="margin-top:8px;color:#C3161B"><b>ปฏิเสธ</b>${r.reject_reason ? ' — ' + esc(r.reject_reason) : ''}</div>` : ''}
     ${tr ? `<div class="sec">ผลการทดสอบ</div>
       <div>วันที่ ${esc(_srPD(tr.date))} · ผล <b>${esc(trLbl)}</b>${failLbl ? ` (${esc(failLbl)})` : ''}${tr.satisfaction ? ` · ความพึงพอใจ ${tr.satisfaction}/5` : ''}</div>
       ${tr.feedback ? `<div>ความคิดเห็นลูกค้า: ${esc(tr.feedback)}</div>` : ''}` : ''}
