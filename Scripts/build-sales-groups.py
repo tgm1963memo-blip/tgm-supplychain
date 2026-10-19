@@ -23,7 +23,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'Template', 'ฝ่ายขายร้านค้า', 'New folder')
-OUT = os.path.join(ROOT, 'server', 'db', 'data', 'sales-groups-20261012.json')
+OUT = os.environ.get('SALES_GROUPS_OUT') or os.path.join(ROOT, 'server', 'db', 'data', 'sales-groups-20261012.json')
 
 # ท้ายรหัส 2 ตัวด้วย (TNA-01-KK, OIS-01-KF ฯลฯ — เดิม {3,4} ทำ 7 ลูกค้าตกหล่น, แก้ 2026-10-14)
 CODE_RE = re.compile(r'^[A-Z0-9]{1,4}-[A-Z0-9]{2}-[A-Z0-9]{2,4}$', re.I)
@@ -52,7 +52,11 @@ def header_index(rows):
         if any(c.startswith('รหัสลูกค้า') for c in cells):
             code = next(j for j, c in enumerate(cells) if c.startswith('รหัสลูกค้า'))
             name = next((j for j, c in enumerate(cells) if c.startswith('ชื่อร้านค้า') or c.startswith('ชื่อลูกค้า')), code + 1)  # ไม่มีหัว = คอลัมน์ถัดจากรหัส
-            note = next((j for j, c in enumerate(cells) if c.lower().startswith('หมายเหตุ corp')), None)
+            # หัวคอลัมน์หมายเหตุสะกดต่างกันทุกไฟล์: "หมายเหตุ Corporate" / "หมายเหตุcorporate" (ไม่มีวรรค — ไฟล์คุณเชล)
+            # / "หมายเหตุ corperate" / "หมายเหตุ Cororate" — เดิมเช็ค startswith('หมายเหตุ corp') ทำให้ 3 ชีตไม่เจอคอลัมน์นี้ (2026-10-19)
+            # เลือกคอลัมน์ "หมายเหตุ …cor…" ก่อน (กันชีตที่มีคอลัมน์หมายเหตุทั่วไปอีกคอลัมน์ — code review) ไม่มีจึงใช้ "หมายเหตุ" เฉยๆ
+            notes = [j for j, c in enumerate(cells) if c.replace(' ', '').startswith('หมายเหตุ')]
+            note = next((j for j in notes if 'co' in cells[j].lower()), notes[0] if notes else None)
             return i, code, name, note
     return None
 
@@ -102,6 +106,9 @@ def main():
                 continue
             # ชีต Corporate
             numbered = any(isinstance(r[0], (int, float)) for r in data)
+            # ชีตไม่มีเลขกลุ่มแต่มีคอลัมน์หมายเหตุ (ไฟล์คุณเชล ฯลฯ): แถวที่มีหมายเหตุ = เริ่มบล็อกใหม่ แถวถัดไปที่หมายเหตุว่าง
+            # อยู่บล็อกเดียวกันจนเจอหมายเหตุถัดไป (เช่น Kenshin Izakaya = 30-LG-0034…0047 รวมเคนโซ) — 2026-10-19
+            noted = not numbered and noi is not None and any(clean(r[noi]) for r in data)
             groups = OrderedDict()  # key -> {'codes': [], 'note': '', 'first': ''}
             cur = None
             block, last_no = 0, 0   # ชีตที่เริ่มเลขกลุ่มใหม่ (1,2,…,6 แล้ว 1,2,…) = บล็อกใหม่ — ไม่รวมกลุ่มเลขเดียวกันข้ามบล็อก (2026-10-14)
@@ -116,12 +123,17 @@ def main():
                         last_no = int(r[0])
                         cur = f'{ws.title}#{block}.{int(r[0])}'
                     key = cur or f'{ws.title}#0'
+                elif noted:
+                    if note:
+                        block += 1
+                        cur = f'{ws.title}#n{block}'
+                    key = cur or (company_name(name) or code)  # แถวก่อนหมายเหตุแรก = จับตามชื่อบริษัทเหมือนเดิม
                 else:
                     key = company_name(name) or code
                 g = groups.setdefault(key, {'codes': [], 'note': '', 'names': []})
                 g['codes'].append(code)
                 if note and not g['note']:
-                    g['note'] = note
+                    g['note'] = note.strip(' /')   # "TAHONA/" → "TAHONA"
                 if name:
                     g['names'].append(name)
             pending.extend((g, by) for g in groups.values())  # ตั้งชื่อหลังอ่าน category ครบทุกชีต
