@@ -7071,14 +7071,14 @@ function _dxTop(d){
   let sub,head,body,foot;
   if(t==='mall'){
     sub=`ลูกค้าหมวดห้าง${s.makro?' รวม Makro':' (ไม่รวม Makro)'} · บาท / กก. แยกฝากขาย (Consi) และขายจริง (Net)`;
-    head=`<tr><th rowspan="3" style="width:36px"></th><th rowspan="3">ลูกค้า</th><th class="c cn dx-sep" colspan="4">Consi</th><th class="c nt dx-sep" colspan="4">Net</th><th class="dx-n dx-sep" rowspan="3">รวม ${yy} vs ${lyy}</th></tr>
+    head=`<tr><th rowspan="3" style="width:36px"></th><th rowspan="3">ลูกค้า</th><th class="c cn dx-sep" colspan="4">Consi</th><th class="c nt dx-sep" colspan="4">Net</th><th class="dx-n dx-sep" rowspan="3" title="เทียบเฉพาะยอดขายจริง (Net) ไม่รวมฝากขาย">Net ${yy} vs ${lyy}</th></tr>
       <tr><th class="c dx-sep" colspan="2">25${lyy}</th><th class="c" colspan="2">25${yy}</th><th class="c dx-sep" colspan="2">25${lyy}</th><th class="c" colspan="2">25${yy}</th></tr>
       <tr><th class="dx-n dx-sep">บาท</th><th class="dx-n">KG</th><th class="dx-n">บาท</th><th class="dx-n">KG</th><th class="dx-n dx-sep">บาท</th><th class="dx-n">KG</th><th class="dx-n">บาท</th><th class="dx-n">KG</th></tr>`;
     body=rows.map((x,i)=>`<tr>${_dxCust(x,i,false)}
       <td class="dx-n dx-sep mut">${x.ly_consi?_dxB(x.ly_consi):'—'}</td><td class="dx-n mut">${_dxKg(x.kg_ly_consi,x.kg_coverage)}</td><td class="dx-n">${x.ty_consi?_dxB(x.ty_consi):'—'}</td><td class="dx-n mut">${_dxKg(x.kg_ty_consi,x.kg_coverage)}</td>
       <td class="dx-n dx-sep mut">${x.ly_net?_dxB(x.ly_net):'—'}</td><td class="dx-n mut">${_dxKg(x.kg_ly_net,x.kg_coverage)}</td><td class="dx-n"><b>${x.ty_net?_dxB(x.ty_net):'—'}</b></td><td class="dx-n mut">${_dxKg(x.kg_ty_net,x.kg_coverage)}</td>
-      <td class="dx-n dx-sep">${_dxPillDiff(x.ty_net+x.ty_consi,x.ly_net+x.ly_consi)}</td></tr>`).join('');
-    foot=`<tr class="tot"><td></td><td>รวม ${rows.length} ราย</td><td class="dx-n dx-sep">${_dxB(sum('ly_consi'))}</td><td class="dx-n">${_dxB(sum('kg_ly_consi'))}</td><td class="dx-n">${_dxB(sum('ty_consi'))}</td><td class="dx-n">${_dxB(sum('kg_ty_consi'))}</td><td class="dx-n dx-sep">${_dxB(sum('ly_net'))}</td><td class="dx-n">${_dxB(sum('kg_ly_net'))}</td><td class="dx-n">${_dxB(sum('ty_net'))}</td><td class="dx-n">${_dxB(sum('kg_ty_net'))}</td><td class="dx-n dx-sep">${_dxPillDiff(sum('ty_net')+sum('ty_consi'),sum('ly_net')+sum('ly_consi'))}</td></tr>`;
+      <td class="dx-n dx-sep">${_dxPillDiff(x.ty_net,x.ly_net)}</td></tr>`).join('');
+    foot=`<tr class="tot"><td></td><td>รวม ${rows.length} ราย</td><td class="dx-n dx-sep">${_dxB(sum('ly_consi'))}</td><td class="dx-n">${_dxB(sum('kg_ly_consi'))}</td><td class="dx-n">${_dxB(sum('ty_consi'))}</td><td class="dx-n">${_dxB(sum('kg_ty_consi'))}</td><td class="dx-n dx-sep">${_dxB(sum('ly_net'))}</td><td class="dx-n">${_dxB(sum('kg_ly_net'))}</td><td class="dx-n">${_dxB(sum('ty_net'))}</td><td class="dx-n">${_dxB(sum('kg_ty_net'))}</td><td class="dx-n dx-sep">${_dxPillDiff(sum('ty_net'),sum('ly_net'))}</td></tr>`;
   }else if(t==='shop'){
     sub=`ทุกหมวดที่ไม่ใช่ห้างและ Makro · ยอดขายจริง (Net) ไม่รวมฝากขาย`;
     head=`<tr><th rowspan="3" style="width:36px"></th><th rowspan="3">ลูกค้า</th><th class="c nt dx-sep" colspan="4">Net</th><th class="dx-n dx-sep" rowspan="3">${yy} vs ${lyy}</th></tr>
