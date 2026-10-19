@@ -19,14 +19,17 @@ function dataVersion(db) {
   }
 }
 
-function cacheJson(db, { ttlMs = 15 * 60 * 1000, max = 200, versioned = true } = {}) {
+// perUser: false = ผลลัพธ์ไม่ขึ้นกับสิทธิ์ผู้ใช้ (เช่น v_sc_data_confidence ที่นับทั้งระบบ) → ใช้แคชก้อนเดียวร่วมกันทุกคน
+function cacheJson(db, { ttlMs = 15 * 60 * 1000, max = 200, versioned = true, perUser = true } = {}) {
   const store = new Map();
   return (req, res, next) => {
     if (req.method !== 'GET') return next();
     const version = versioned ? dataVersion(db) : '';
     if (version === null) return next();
     const u = req.user || {};
-    const key = JSON.stringify([req.originalUrl, u.uid, u.role, u.slm_codes || '', u.bplus_codes || '', u.department || '']);
+    const key = perUser
+      ? JSON.stringify([req.originalUrl, u.uid, u.role, u.slm_codes || '', u.bplus_codes || '', u.department || ''])
+      : req.originalUrl;
     const hit = store.get(key);
     if (hit && hit.version === version && Date.now() - hit.at < ttlMs) {
       res.set('X-Cache', 'HIT');

@@ -989,7 +989,10 @@ function buildApp(db, opts = {}) {
   }));
 
   // นับแถวตารางใหญ่ 0.5 วิ/ครั้ง และ Dashboard เรียกทุกครั้งที่เปิด — แคช 60 วิ (จำนวนการจองเปลี่ยนนอกรอบ sync จึงไม่ใช้ version)
-  app.use('/api/v_sc_data_confidence', authed, cacheJson(db, { ttlMs: 60 * 1000, versioned: false }), makeCrudRouter(db, 'v_sc_data_confidence', {
+  // (2026-10-19) วัดจริงบน DB จริงตอนนี้ 3.6 วิ (สแกน sales_transactions หา SKU กำพร้า) และ node:sqlite เป็น synchronous
+  // → ระหว่างนั้น request อื่นของ Dashboard รอคิวจนหมดเวลา ("Dashboard summary/invoice sales/confidence timeout")
+  // ผลลัพธ์ไม่ขึ้นกับผู้ใช้ จึงแคชก้อนเดียวร่วมกันทุกคน 5 นาที (เดิมแคชแยกรายคน 60 วิ = แทบทุกครั้งที่เปิดหน้าต้องคำนวณใหม่)
+  app.use('/api/v_sc_data_confidence', authed, cacheJson(db, { ttlMs: 5 * 60 * 1000, versioned: false, perUser: false }), makeCrudRouter(db, 'v_sc_data_confidence', {
     pk: 'so_count',
     fields: ['so_count', 'line_count', 'active_booking_count', 'orders_without_line',
       'active_product_count', 'orphan_sku_sales_count', 'orphan_sku_consi_count', 'orphan_sku_stock_count', 'synced_at',

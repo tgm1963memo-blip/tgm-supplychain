@@ -7616,9 +7616,11 @@ async function pgDash(){
   };
   const safeLight=(name,p)=>p.then(()=>renderLight()).catch(e=>console.warn(name, e.message||e));
 
-  const summaryP=dashPromiseTimeout(loadDashboardSummary(),8000,'Dashboard summary');
-  const invoiceP=dashPromiseTimeout(loadDashboardInvoiceSummary(),10000,'Dashboard invoice sales');
-  const confP=dashPromiseTimeout(CACHE.get('data_confidence',()=>SB.getDataConfidence(),{force:true}),6000,'Dashboard confidence');
+  // (2026-10-19) เพิ่มเวลารอ — ทั้ง 3 ส่วนโหลดเบื้องหลัง (ไม่บล็อกหน้า) แต่ต่อคิวกับ /api/dashboard/exec บน server เดียวกัน
+  // ผ่าน tunnel · เดิม 6–10 วิ หมดเวลาบ่อยตอนแคช server หมดอายุ
+  const summaryP=dashPromiseTimeout(loadDashboardSummary(),20000,'Dashboard summary');
+  const invoiceP=dashPromiseTimeout(loadDashboardInvoiceSummary(),20000,'Dashboard invoice sales');
+  const confP=dashPromiseTimeout(CACHE.get('data_confidence',()=>SB.getDataConfidence(),{force:true}),15000,'Dashboard confidence');
   // ส่วนยอดขายผู้บริหาร — วาดเฉพาะ #dx-root เมื่อข้อมูลมา ไม่ต้องรอ/ไม่ต้องวาดทั้งหน้าใหม่
   loadDashExec().catch(e=>console.warn('Dashboard exec failed', e.message||e)).finally(()=>{if(_isActivePage('dash'))dashExecRender();});
   safeLight('Dashboard summary failed', summaryP);
