@@ -90,15 +90,16 @@ function resolveScope(db, user) {
     const mtCodes = [...new Set(mine.flatMap(m => byRule.get(m.i) || []))];
     const slmCodes = sc.codes || [];
     const own = new Set(mtCodes);
+    const masterCodes = [];
     if (slmCodes.length) {
-      db.prepare(`SELECT code FROM customers WHERE slm_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(slmCodes)).forEach(r => own.add(r.code));
+      db.prepare(`SELECT code FROM customers WHERE slm_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(slmCodes)).forEach(r => { own.add(r.code); masterCodes.push(r.code); });
       // ลูกค้าที่ขายจริงตามใบกำกับ (2026-10-12): ลูกค้าบางรายผูกกับรหัส Sales อื่นใน master แต่ใบกำกับออกในชื่อเรา
       // (เช่น ท็อปส์ 01-MT-0006 ผูก 206 แต่ขายโดย 207) — ต้องเห็นชื่อ/กลุ่มของลูกค้าที่ตัวเองมียอด ไม่งั้นขึ้นเป็นรหัสใน "ยังไม่ถูกระบุ"
       db.prepare(`SELECT DISTINCT cust_code FROM invoice_sales_monthly WHERE ym >= '2024-01' AND slm_code IN (SELECT value FROM json_each(?))`)
         .all(JSON.stringify(slmCodes)).forEach(r => r.cust_code && own.add(r.cust_code));
     }
     scope = {
-      all: false, restricted: true, version: ver, uids: sc.uids || [user.uid], slmCodes, mtCodes, ownCustCodes: [...own],
+      all: false, restricted: true, version: ver, uids: sc.uids || [user.uid], slmCodes, mtCodes, masterCodes, ownCustCodes: [...own],
       chains: mine.map(m => { const r = cm.rules[m.i]; return { name: r.name, cls: r.cls, src: r.src, via: m.via, codes: (byRule.get(m.i) || []).length }; }),
     };
   }
@@ -108,10 +109,17 @@ function resolveScope(db, user) {
 
 // ── ตัวช่วย SQL (คืน null = ไม่ต้องกรอง) ───────────────────────────────────────────────────────
 // ตารางยอดขาย: แถวของรหัส Sales ที่ดูได้ (เหมือนเดิม) หรือของลูกค้าเจ้า MT ที่ดูได้
-function factSql(scope, { cust = 'cust_code', slm = 'slm_code' } = {}) {
+// หรือใบกำกับที่ไม่มีรหัส Sales ("(none)" / ว่าง) ของลูกค้าที่ master ผูกกับรหัส Sales ที่ดูได้ (2026-10-19, ผู้ใช้แจ้ง
+// "ลูกค้าของแด้มาไม่ครบ" — 19 ลูกค้าในไฟล์ Group มีใบกำกับที่ Express ไม่ได้ใส่ SLMCOD ไม่ขึ้นในมุมมองของเซลล์เจ้าของ)
+// blankToOwner ต้องขอเอง (code review): ใช้กับตารางใบกำกับ Express เท่านั้น — แหล่งที่ไม่มีรหัส Sales เลยโดยธรรมชาติ
+// (Bplus โรงงาน / ฝากขาย / ห้อง SKU ที่เก็บ '(none)' ทุกแถว) ต้องไม่ถูกนับให้เซลล์ตาม master
+function factSql(scope, { cust = 'cust_code', slm = 'slm_code', blankToOwner = false } = {}) {
   if (!scope || scope.all) return null;
-  return { sql: `(${slm} IN (SELECT value FROM json_each(?)) OR ${cust} IN (SELECT value FROM json_each(?)))`,
-    params: [JSON.stringify(scope.slmCodes), JSON.stringify(scope.mtCodes)] };
+  const base = `${slm} IN (SELECT value FROM json_each(?)) OR ${cust} IN (SELECT value FROM json_each(?))`;
+  const params = [JSON.stringify(scope.slmCodes), JSON.stringify(scope.mtCodes)];
+  if (!blankToOwner) return { sql: `(${base})`, params };
+  return { sql: `(${base} OR (COALESCE(TRIM(${slm}), '') IN ('', '(none)') AND ${cust} IN (SELECT value FROM json_each(?))))`,
+    params: [...params, JSON.stringify(scope.masterCodes || [])] };
 }
 // ตารางที่มีแต่รหัสลูกค้า
 function custSql(scope, col = 'cust_code') {

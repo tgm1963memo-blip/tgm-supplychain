@@ -1127,10 +1127,24 @@ async function syncInvoiceSales(db) {
 // pre-aggregated). Scoped to a rolling recent window: dispatch work only cares about invoices that
 // might still need fulfilling, not multi-year history.
 const INVOICE_SYNC_WINDOW_DAYS = 90;
+// หัวใบย้อนหลัง (2026-10-19, ผู้ใช้แจ้ง "ร้านโจโจ้บางรายการหายไป") — invoice_lines มีย้อนถึง 2024-01 แต่หัวใบ (cust/slm)
+// มีแค่ 90 วัน → Sales Overview รายสินค้า/pivot ที่ JOIN หัวใบ ทิ้งบรรทัดก่อนหน้านั้นทั้งหมด · ไม่ขยาย `invoices` เพราะ tgm-wms
+// หน้า "จ่ายสินค้าตามใบกำกับ" ดึง /api/invoices ทั้งตาราง (ไม่ส่งช่วงวันที่) → เก็บหัวใบย้อนหลังแยกใน invoice_heads
+// (คอลัมน์ที่ JOIN ใช้เท่านั้น) ครั้งแรก backfill ตั้งแต่ HEAD_HISTORY_FROM · รอบต่อไปอัปเดตเฉพาะช่วง 90 วันล่าสุด
+const HEAD_HISTORY_FROM = '2024-01-01';
 
 async function syncInvoices(db) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - INVOICE_SYNC_WINDOW_DAYS);
+  const cutoffIso = toIsoDate(cutoff);
+  // backfill ครั้งแรกจนสำเร็จ (บันทึกใน app_migrations) — เดิมเดาจาก MIN(doc_date) ซึ่ง backfill ซ้ำทุกรอบได้ถ้าไม่มีใบ ม.ค. 2024 (code review)
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const HEADS_BACKFILL_ID = 'invoice_heads_backfill_v1';
+  const fullHeads = !db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(HEADS_BACKFILL_ID);
+  const heads = [];
+  const seenHeads = new Set();   // ใบที่จะ upsert รอบนี้
+  const existHeads = new Set();  // ใบที่ยังมีอยู่ใน Express (ทุกวันที่ตั้งแต่ HEAD_HISTORY_FROM) — ใช้ตัดสินว่าลบได้
+  let unreadable = false;        // บริษัทไหนอ่าน ARTRN ไม่ได้ (ไดรฟ์หลุด/ไม่พบไฟล์) = ไม่ลบหัวใบรอบนี้
   const routeNames = await loadRouteNameMap();
   const shipToAddresses = await loadShipToAddressMap();
 
@@ -1149,15 +1163,26 @@ async function syncInvoices(db) {
 
   for (const company of SALES_COMPANIES) {
     const rows = await readTable(company, 'ARTRN.DBF');
+    if (!rows.length) unreadable = true;
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
       if (!r.DOCNUM) continue;
       if (isExcludedSalesDocNum(r.DOCNUM)) continue;
-      if (!(r.DOCDAT instanceof Date) || isNaN(r.DOCDAT) || r.DOCDAT < cutoff) continue;
+      if (!(r.DOCDAT instanceof Date) || isNaN(r.DOCDAT)) continue;
       const docNum = r.DOCNUM.trim();
+      const docDate = toIsoDate(r.DOCDAT);
+      const signedTotal = r.RECTYP === '5' ? -(Number(r.TOTAL) || 0) : (Number(r.TOTAL) || 0);
+      // เทียบเป็นวันที่ (ไม่ใช่เวลา) ให้ตรงกับเงื่อนไขลบด้านล่าง — เดิมใช้ r.DOCDAT >= cutoff (มีเวลาปัจจุบัน) ทำให้ใบของวันขอบ
+      // ช่วงที่ลงก่อนเวลานี้ไม่ถูกอ่าน แต่ถูกลบเพราะ doc_date >= cutoffIso (พบตอนทดสอบ: ลบผิด 643 ใบ)
+      if (docDate >= HEAD_HISTORY_FROM) existHeads.add(docNum);
+      if (docDate >= HEAD_HISTORY_FROM && (fullHeads || docDate >= cutoffIso) && !seenHeads.has(docNum)) {
+        seenHeads.add(docNum);
+        heads.push([docNum, docDate, (r.CUSCOD || '').trim() || null, normalizeSlmCode(r.SLMCOD) || null,
+          (r.SONUM || '').trim() || null, signedTotal, r.RECTYP]);
+      }
+      if (r.DOCDAT < cutoff) continue;
       if (seen.has(docNum)) continue; // dedupe across companies (first company in SALES_COMPANIES wins, mirrors syncProducts)
       seen.add(docNum);
-      const signedTotal = r.RECTYP === '5' ? -(Number(r.TOTAL) || 0) : (Number(r.TOTAL) || 0);
       // ADDED 2026-09-16 (สายรถ feature — see ROUTE_TABTYP comment above): ARTRN.AREACOD is Express's own
       // per-invoice delivery-route code; route_name resolved via ISTAB TABTYP=41, falls back to the raw
       // code itself if a code exists with no matching ISTAB row (better than showing nothing at all).
@@ -1181,6 +1206,31 @@ async function syncInvoices(db) {
   const deleted = db.prepare('DELETE FROM invoices WHERE doc_num NOT IN (SELECT doc_num FROM _seen_invoices)').run();
 
   console.log(`[importFromExpress] invoices: upserted ${seen.size} (recent ${INVOICE_SYNC_WINDOW_DAYS}d window), removed ${deleted.changes} fallen out of window`);
+
+  // หัวใบย้อนหลัง — เขียนใน transaction เดียว (ไม่มี await ข้างใน) · ลบเฉพาะใบในช่วงที่อ่านมารอบนี้แต่ไม่พบแล้ว
+  // (ใบถูกลบ/ยกเลิกใน Express) และข้ามการลบถ้าอ่านไม่ได้เลย (กันไดรฟ์หลุดแล้วล้างข้อมูล — แบบเดียวกับ runImport)
+  if (heads.length) {
+    const upHead = db.prepare(`INSERT INTO invoice_heads (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(doc_num) DO UPDATE SET doc_date = excluded.doc_date, cust_code = excluded.cust_code,
+        slm_code = excluded.slm_code, so_num = excluded.so_num, total = excluded.total, rectyp = excluded.rectyp`);
+    db.exec('BEGIN');
+    try {
+      for (const h of heads) upHead.run(...h);
+      db.exec('CREATE TEMP TABLE IF NOT EXISTS _seen_heads (doc_num TEXT PRIMARY KEY)');
+      db.exec('DELETE FROM _seen_heads');
+      const ins = db.prepare('INSERT OR IGNORE INTO _seen_heads (doc_num) VALUES (?)');
+      for (const d of existHeads) ins.run(d);
+      // ลบเฉพาะใบที่ไม่มีใน Express แล้วจริง (ไม่ใช่แค่วันที่ถูกแก้ย้อนออกนอกช่วง) และเฉพาะเมื่ออ่านครบทุกบริษัท (code review)
+      const gone = unreadable ? { changes: 0 } : db.prepare(`DELETE FROM invoice_heads WHERE doc_date >= ? AND doc_num NOT IN (SELECT doc_num FROM _seen_heads)`)
+        .run(fullHeads ? HEAD_HISTORY_FROM : cutoffIso);
+      if (fullHeads && !unreadable) db.prepare('INSERT OR IGNORE INTO app_migrations(id) VALUES (?)').run(HEADS_BACKFILL_ID);
+      db.exec('COMMIT');
+      console.log(`[importFromExpress] invoice_heads: upserted ${heads.length} (${fullHeads ? 'backfill since ' + HEAD_HISTORY_FROM : 'recent window'}), removed ${gone.changes}`);
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
   return seen.size;
 }
 

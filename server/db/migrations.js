@@ -588,6 +588,19 @@ function runMigrations(db) {
   require('./customerProfilesV2').applySalesCategoryGroup20261014(db);
   require('./customerProfilesV2').applySalesCategoryManual20261014(db);
   require('./customerProfilesV2').applySalesCategoryFill2_20261014(db);
+  require('./customerProfilesV2').applySalesGroupsFix20261019(db);
+  // หัวใบกำกับย้อนหลัง (2026-10-19) — jobs/importFromExpress.js syncInvoices เติมตั้งแต่ 2024-01 (invoices เก็บแค่ 90 วันให้ tgm-wms)
+  // v_invoice_heads = invoices (ล่าสุด, มาก่อน) + invoice_heads ที่ไม่ซ้ำ → routes/invoiceDetail.js ใช้ JOIN กับ invoice_lines
+  db.exec(`CREATE TABLE IF NOT EXISTS invoice_heads (
+    doc_num TEXT PRIMARY KEY, doc_date TEXT NOT NULL, cust_code TEXT, slm_code TEXT, so_num TEXT, total REAL, rectyp TEXT)`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_heads_date ON invoice_heads(doc_date)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_heads_cust ON invoice_heads(cust_code, doc_date)');
+  db.exec('DROP VIEW IF EXISTS v_invoice_heads'); // สร้างใหม่ทุกครั้ง ให้นิยามล่าสุดถึงฐานข้อมูลที่ deploy แล้ว (code review)
+  db.exec(`CREATE VIEW v_invoice_heads AS
+    SELECT doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp FROM invoices
+    UNION ALL
+    SELECT h.doc_num, h.doc_date, h.cust_code, h.slm_code, h.so_num, h.total, h.rectyp FROM invoice_heads h
+    WHERE NOT EXISTS (SELECT 1 FROM invoices i WHERE i.doc_num = h.doc_num)`);
 
   // รายการสินค้าจริงของใบสรุปยอด Bplus รหัส 0000 (2026-10-14) — Bplus บันทึกใบ Makro (A M) / EA เป็นบรรทัดเดียว
   // "ยอดขายสินค้ารหัส TG" ไม่มีสินค้า แต่ Express โฟลเดอร์ TGM (STCRD เอกสาร AM/EA) มีรายการสินค้าของบิลชุดเดียวกัน

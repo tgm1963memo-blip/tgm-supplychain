@@ -8123,6 +8123,13 @@ function _sdUseSwapAll(swapRows,rows,bpRows){
   const c=_sdBuildCustsFromInvoice(swapRows);_sdApi.custs=c;_sdApi._buildCache.custs=c;
   const p=_sdProdsInv(rows,swapRows,bpRows,tot);_sdApi.prods=p;_sdApi._buildCache.prods=p;
 }
+// แถวใบกำกับของรหัส Sales ที่เลือก + ใบกำกับที่ไม่มีรหัส Sales ("(none)"/ว่าง) ของลูกค้าที่ master ผูกกับรหัสนั้น
+// (2026-10-19, ผู้ใช้แจ้ง "ลูกค้าของแด้มาไม่ครบ" — กติกาเดียวกับ factSql ฝั่ง server ใน lib/customerScope.js)
+function _sdInvSlmMatcher(key){
+  const set=slmKeySet(key);
+  const owner=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),String(x.slm_id||'').trim()]));
+  return r=>{const c=String(r.slm_code||'').trim();return set.has(c)||((!c||c==='(none)')&&set.has(owner[String(r.cust_code||'')]||''));};
+}
 function _sdFiltered(){
   const s=_sdEffSlm();
   if(!s||!_sdApi.loaded||s===String(_sdApi._slmId||'')||!Array.isArray(_sdApi._rows)) return null;
@@ -8132,7 +8139,7 @@ function _sdFiltered(){
   const sum=(a,k)=>a.reduce((t,r)=>t+(Number(r[k])||0),0);
   let total=sum(rows,'amount'),invoices=rows.length,custs,slms,prods=_sdBuildProds(rows),extras=null,x=null;
   const invSrc=_sdApi._invRowsSlm||_sdApi._invRows;
-  const inv=_sdApi.invoiceBased&&Array.isArray(invSrc)?invSrc.filter(r=>slmKeySet(s).has(String(r.slm_code||'').trim())):null;
+  const inv=_sdApi.invoiceBased&&Array.isArray(invSrc)?invSrc.filter(_sdInvSlmMatcher(s)):null;
   if(inv){
     total=sum(inv,'amount');const ic=sum(inv,'invoice_count');if(ic) invoices=ic;
     custs=_sdBuildCustsFromInvoice(inv);slms=_sdBuildSlmsFromInvoice(inv);
@@ -8152,7 +8159,7 @@ function _sdFiltered(){
     const Y=_sdApi.yoy,yr=Y._rows.filter(r=>_sdRowSlmMatch(r,s));
     const ySrc=Y._invRowsSlm||Y._invRows;
     // ปีที่แล้วกรองแบบเดียวกับงวดปัจจุบัน (ใบกำกับตามรหัส Sales) — เดิมกรองจากแถวออเดอร์ ซึ่งไม่ตรงแหล่งกับยอดปัจจุบัน
-    const yInv=Y.invoiceBased&&Array.isArray(ySrc)?ySrc.filter(r=>slmKeySet(s).has(String(r.slm_code||'').trim())):null;
+    const yInv=Y.invoiceBased&&Array.isArray(ySrc)?ySrc.filter(_sdInvSlmMatcher(s)):null;
     if(yInv){
       const yt=sum(yInv,'amount'),yic=sum(yInv,'invoice_count');
       yoy={total:yt,qty:sum(yr,'qty'),invoices:yic||yr.length,custs:_sdBuildCustsFromInvoice(yInv),slms:_sdBuildSlmsFromInvoice(yInv),
@@ -9857,18 +9864,37 @@ function _sdRegroupCat2(custs){
   custs.forEach(c=>(c.branches||[]).forEach(b=>{
     const p=profs[b.c]||{},cat=String(p.sales_category||'').trim()||'ยังไม่ระบุ Category',grp=String(p.sales_group||'').trim();
     const nm=_sdCustDisplayName(b.c,b.n,remote,p);
-    const key=cat+'||'+(grp||('c:'+b.c));
-    if(!m.has(key))m.set(key,{n:grp||nm,grp:'s2:'+key,corp:grp||nm,ty:'',_cat:cat,_tot:0,_x:{sb:0,sg:0,cb:0,cg:0},branches:[],_slms:new Set(),_regrouped:true,_single:!grp});
+    // ไม่มีกลุ่ม (Sales) → รวมลูกค้าชื่อเดียวกัน (2026-10-19, ผู้ใช้แจ้ง "บีเอ็นเอ็นไม่รวมกัน" — 7 สาขาชื่อเดียวกันขึ้น 7 แถว
+    // เพราะเดิมใช้รหัสลูกค้าเป็น key) · key = ชื่อบริษัทที่ตัดวรรค/จำกัด/เลขสาขา/วงเล็บสาขาออก (_sdCorpNameKey) · ไม่มีชื่อ = รหัส
+    const nk=grp?'':_sdCorpNameKey(p.name||remote[b.c]?.name||b.n);
+    const key=cat+'||'+(grp||(nk?'n:'+nk:'c:'+b.c));
+    if(!m.has(key))m.set(key,{n:grp||nm,grp:'s2:'+key,corp:grp||nm,ty:'',_cat:cat,_tot:0,_x:{sb:0,sg:0,cb:0,cg:0},branches:[],_slms:new Set(),_regrouped:true,_single:!grp,_nk:nk});
     const g=m.get(key);g._tot+=b._tot||0;if(b._x)for(const k of ['sb','sg','cb','cg'])g._x[k]+=b._x[k]||0;
     g.branches.push(b);(c._slms||[]).forEach(x=>g._slms.add(x));
   }));
-  const groups=[...m.values()];groups.forEach(g=>{g.branches.sort((a,b)=>(b._tot||0)-(a._tot||0));g.c=g.branches.length>1?`${g.branches.length} ราย`:(g.branches[0]?.c||'');});
+  const groups=[...m.values()];groups.forEach(g=>{g.branches.sort((a,b)=>(b._tot||0)-(a._tot||0));g.c=g.branches.length>1?`${g.branches.length} ราย`:(g.branches[0]?.c||'');
+    // ชื่อเดียวกันหลายรหัส = เป็นกลุ่มจริง (เปิดดูรายสาขาได้) ชื่อกลุ่มใช้ชื่อบริษัทที่ไม่มีวงเล็บสาขา
+    if(g._single&&g.branches.length>1){g._single=false;g.n=g.corp=_sdCorpNameLabel(remote,profs,g.branches);}});
   const catTot={};groups.forEach(g=>catTot[g._cat]=(catTot[g._cat]||0)+g._tot);
   return groups.sort((a,b)=>((a._cat==='ยังไม่ระบุ Category')-(b._cat==='ยังไม่ระบุ Category'))||(catTot[b._cat]-catTot[a._cat])||a._cat.localeCompare(b._cat,'th')||(b._tot-a._tot));
 }
 // ชื่อร้าน + สาขา (2026-10-12, ผู้ใช้ขอ — เดิมลูกค้าที่ไม่มีกลุ่มขึ้นเป็นรหัส)
 // (2026-10-14, ผู้ใช้ขอ "ชื่อเดียวกันให้รวมกัน") ชื่อเป็นตัวจัดกลุ่มมิติ สาขา / ลูกค้า — ยุบช่องว่างทุกแบบเป็นวรรคเดียว
 // ชื่อจาก Express บางรหัสใช้ nbsp (U+00A0) แทนวรรค เช่น MI-LA-0016 "เอ็มเอฟ คาเฟ่ …" หน้าตาเหมือนกันแต่แยกเป็นคนละแถว
+// key รวมลูกค้าชื่อเดียวกัน (2026-10-19) — กติกาเดียวกับ company_name() ใน scripts/build-sales-groups.py:
+// ยุบช่องว่าง (รวม nbsp) · ตัดเลขลำดับนำหน้า "1." · ตัดวงเล็บ (สาขา/ชื่อผู้ติดต่อ) · ตัด บริษัท/บจ./จำกัด/มหาชน · ตัดเลขสาขาท้ายชื่อ
+function _sdCorpNameKey(name){
+  const tidy=v=>String(v||'').replace(/[\s ]+/g,' ').trim();
+  let s=tidy(name).replace(/^\d+\s*\.\s*/,'').replace(/\([^)]*\)/g,' ').replace(/บริษัท|บจ\.|จำกัด|มหาชน/g,' ');
+  s=tidy(s).replace(/(\s+\d+)+$/,'');
+  return tidy(s).toLowerCase();
+}
+// ชื่อกลุ่มของลูกค้าชื่อเดียวกัน: ชื่อเต็มของรายที่ยอดสูงสุด (ไม่มีวงเล็บสาขา/เลขสาขาท้ายชื่อ)
+function _sdCorpNameLabel(remote,profs,branches){
+  const b=branches[0]||{},p=profs[b.c]||{};
+  const raw=String(p.name||remote[b.c]?.name||b.n||b.c||'').replace(/[\s ]+/g,' ').replace(/\([^)]*\)/g,' ').trim();
+  return raw.replace(/(\s+\d+)+$/,'').replace(/\s+/g,' ').trim()||String(b.c||'');
+}
 function _sdCustDisplayName(code,fallback,remote,p){
   const tidy=v=>String(v||'').replace(/\s+/g,' ').trim();
   const r=remote[code]||{},name=tidy(p.name||r.name);

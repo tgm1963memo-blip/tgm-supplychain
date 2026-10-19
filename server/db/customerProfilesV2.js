@@ -369,4 +369,40 @@ function applySalesCategoryList(db, id, fileName, editedBy) {
   console.log(`[migrations] ${id}: ${n}/${items.length} customers`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014 };
+// กลุ่ม (Sales) ตามบล็อก "หมายเหตุ Corporate" (2026-10-19, ผู้ใช้แจ้ง "เคนชินของเซลล์เชลไม่รวมกัน") — สคริปต์รอบแรกหา
+// คอลัมน์หมายเหตุด้วย startswith('หมายเหตุ corp') ทำให้ 3 ชีตที่สะกด "หมายเหตุcorporate" (เชล, เน) / "หมายเหตุ Cororate" (สุนทรี)
+// ไม่เจอคอลัมน์ → จับกลุ่มตามชื่อบริษัทแทนบล็อกในไฟล์ (Kenshin Izakaya แตกเป็น 4 กลุ่ม, เคนโซตกไป) · แก้สคริปต์แล้วสร้าง
+// data/sales-groups-fix-20261019.json = [รหัส, ค่าเดิมจากรอบแรก, ค่าที่ถูก] · เปลี่ยนเฉพาะแถวที่ยังเป็นค่าเดิมหรือว่าง
+// (ไม่ทับที่คนแก้ในหน้า จัดการกลุ่ม) · รันครั้งเดียว
+function applySalesGroupsFix20261019(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const id = '20261019_sales_groups_corp_note_v1';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const file = path.join(__dirname, 'data', 'sales-groups-fix-20261019.json');
+  if (!fs.existsSync(file)) return;
+  const items = JSON.parse(fs.readFileSync(file, 'utf8'));
+  // upsert (code review): รหัสที่ยังไม่มีแถวใน customer_profiles ต้องได้กลุ่มด้วย ไม่งั้นถูกข้ามแล้ว migration ถือว่าเสร็จ
+  const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
+  const upd = db.prepare(`INSERT INTO customer_profiles (code, name, sales_group, edited_by, updated_at)
+    VALUES (?, ?, ?, 'sales-groups-fix-2026-10-19', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET sales_group = excluded.sales_group, updated_at = excluded.updated_at,
+      name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name)
+    WHERE COALESCE(TRIM(customer_profiles.sales_group), '') = '' OR TRIM(customer_profiles.sales_group) = ?`);
+  let n = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [code, from, to] of items) {
+      if (!to) continue;
+      const nm = nameOf.get(code, code);
+      n += upd.run(code, nm.c ? null : (nm.b || null), to, String(from || '').trim()).changes;
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] sales groups corp-note fix 2026-10-19: ${n}/${items.length} customers`);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014, applySalesGroupsFix20261019 };

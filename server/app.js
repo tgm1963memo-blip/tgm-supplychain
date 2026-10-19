@@ -707,7 +707,7 @@ function buildApp(db, opts = {}) {
     pk: 'cust_code',
     fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count', 'cn_count', 'cn_amount', 'vat_amount', 'gross_amount', 'cn_vat'],
     readOnly: true,
-    scope: salesScope({ cust: 'cust_code', slm: 'slm_code' }),
+    scope: salesScope({ cust: 'cust_code', slm: 'slm_code', blankToOwner: true }),
   }));
 
   // ยอดรวมตามช่วงวันที่ (2026-10-14, ผู้ใช้ขอเทียบจำนวนวันเท่ากัน เช่น 1–14 ต.ค. กับ 1–14 ก.ย.) — จาก invoice_sales_daily
@@ -720,7 +720,7 @@ function buildApp(db, opts = {}) {
     const where = ['d >= ?', 'd <= ?'], params = [from, to];
     if (cos.length) { where.push(`company IN (${cos.map(() => '?').join(',')})`); params.push(...cos); }
     if (slms.length) { where.push(`slm_code IN (${slms.map(() => '?').join(',')})`); params.push(...slms); }
-    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code' }));
+    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code', blankToOwner: true }));
     where.push(sc.sql); params.push(...sc.params);
     const r = db.prepare(`SELECT SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily WHERE ${where.join(' AND ')}`).get(...params);
     res.json({ from, to, amount: Number(r?.amount) || 0, invoice_count: Number(r?.invoice_count) || 0 });
@@ -734,7 +734,7 @@ function buildApp(db, opts = {}) {
     const from = String(req.query.from || ''), to = String(req.query.to || ''), company = String(req.query.company || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM-DD และ from ≤ to' });
     if (!company) return res.status(400).json({ error: 'company is required' });
-    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code' }));
+    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code', blankToOwner: true }));
     const rows = db.prepare(`SELECT cust_code, slm_code, SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily
       WHERE company = ? AND d >= ? AND d <= ? AND ${sc.sql} GROUP BY cust_code, slm_code`).all(company, from, to, ...sc.params);
     res.json(rows.map(r => ({ cust_code: r.cust_code, slm_code: r.slm_code, amount: Number(r.amount) || 0, invoice_count: Number(r.invoice_count) || 0 })));

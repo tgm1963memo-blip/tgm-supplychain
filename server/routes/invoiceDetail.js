@@ -2,7 +2,8 @@ const express = require('express');
 const { productGroupResolver, unitLabel } = require('../lib/productGroupMatch');
 
 // รายละเอียดใบกำกับของลูกค้า (2026-09-28) — Sales Overview แบบยอดใบกำกับ (invoice_sales_monthly) ไม่มีมิติสินค้า
-// จึงดึงรายการสินค้าจาก invoice_lines (STCRD) ผูกกับหัวใบกำกับ invoices (ARTRN: cust_code/slm_code) ด้วย doc_num
+// จึงดึงรายการสินค้าจาก invoice_lines (STCRD) ผูกกับหัวใบกำกับ v_invoice_heads (ARTRN: cust_code/slm_code) ด้วย doc_num
+// (2026-10-19: invoices มีแค่ 90 วัน — v_invoice_heads รวม invoice_heads ย้อนหลังถึง 2024-01 ให้ตรงกับ invoice_lines)
 // หมายเหตุ: invoices (หัวใบ) sync ย้อนหลังได้ไม่ครบเท่า invoice_lines — ช่วงก่อน coverage_from จะไม่มีรายละเอียด
 //   ใบลดหนี้ (RECTYP 5) ไม่มีบรรทัดสินค้า — client แสดงเป็นแถวส่วนต่างกับยอดรวมของสาขา
 // cust = รหัสสาขาเดียว หรือหลายสาขา (สรุปทั้งกลุ่มลูกค้า) — GET ?cust=a,b หรือ POST {cust:[...]} เมื่อรายการยาว
@@ -54,7 +55,7 @@ function invoiceDetailRoutes(db) {
       SELECT l.sku, MAX(l.sku_name) AS sku_name, MAX(p.group_name) AS group_name, MAX(l.unit_code) AS unit,
              SUM(l.qty) AS qty, SUM(l.line_value) AS amount, COUNT(DISTINCT l.doc_num) AS invoices,
              COUNT(DISTINCT i.cust_code) AS custs
-      FROM invoices i
+      FROM v_invoice_heads i
       JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
       LEFT JOIN products p ON p.code = l.sku
       WHERE ${whereSql}
@@ -68,7 +69,7 @@ function invoiceDetailRoutes(db) {
     //   (ไม่มีในช่วง = 90 วันก่อนสิ้นช่วง) → estimated = true
     const lineRows = db.prepare(`
       SELECT l.doc_num, l.seq_num, l.sku, l.sku_name, l.unit_code, l.qty, l.line_value, c.child_code, c.child_name, c.child_qty
-      FROM invoices i
+      FROM v_invoice_heads i
       JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
       LEFT JOIN invoice_line_components c ON c.doc_num = l.doc_num AND c.seq_num = l.seq_num AND c.company = l.company
       WHERE ${whereSql}
@@ -111,7 +112,7 @@ function invoiceDetailRoutes(db) {
       SELECT i.doc_num, i.doc_date, i.cust_code, i.rectyp, i.slm_code, i.so_num, i.total,
              (SELECT SUM(l.line_value) FROM invoice_lines l WHERE l.doc_num = i.doc_num AND l.company = ?) AS line_value,
              (SELECT COUNT(*) FROM invoice_lines l WHERE l.doc_num = i.doc_num AND l.company = ?) AS line_count
-      FROM invoices i
+      FROM v_invoice_heads i
       WHERE ${whereSql}
       ORDER BY i.doc_date DESC, i.doc_num DESC
       LIMIT 3000
@@ -150,11 +151,11 @@ function invoiceDetailRoutes(db) {
     // สินค้าที่ไม่มีกลุ่มใน products (รหัสโรงงาน เช่น 10396-18 ไส้กรอกไก่สโมคกี้) → หากลุ่มจากรหัสขึ้นต้น/ชื่อ
     // แบบเดียวกับ /pivot (2026-10-14, ผู้ใช้แจ้งยังมี "ไม่ระบุกลุ่ม" ในรายการสินค้าจากใบกำกับจริงของสาขา)
     fillGroups(products); fillGroups(productsChildren);
-    const out = { cust: custs, from, to, coverage_from: db.prepare('SELECT MIN(doc_date) AS d FROM invoices').get()?.d || null, products, products_children: productsChildren, invoices };
+    const out = { cust: custs, from, to, coverage_from: db.prepare('SELECT MIN(d) AS d FROM (SELECT MIN(doc_date) AS d FROM invoices UNION ALL SELECT MIN(doc_date) FROM invoice_heads)').get()?.d || null, products, products_children: productsChildren, invoices };
     if (String(q.lines || '') === '1' || q.lines === true) {
       out.lines = db.prepare(`
         SELECT l.doc_num, i.doc_date, i.cust_code, l.sku, l.sku_name, l.qty, l.unit_code, l.line_value
-        FROM invoices i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
+        FROM v_invoice_heads i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
         WHERE ${whereSql}
         ORDER BY i.doc_date DESC, l.doc_num DESC
         LIMIT 50000
@@ -184,7 +185,7 @@ function invoiceDetailRoutes(db) {
       const slms = list(q.slm);
       const cs = require('../lib/customerScope');
       // + ตัดลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ / Shop, 2026-10-14 — lib/nonSales.js)
-      const sc = require('../lib/nonSales').withExclude(db, cs.factSql(cs.resolveScope(db, req.user), { cust: 'x.cust_code', slm: 'x.slm_code' }), 'x.cust_code');
+      const sc = require('../lib/nonSales').withExclude(db, cs.factSql(cs.resolveScope(db, req.user), { cust: 'x.cust_code', slm: 'x.slm_code', blankToOwner: true }), 'x.cust_code');
       const filt = (x) => {
         const w = [], p = [];
         if (slms.length) { w.push(`${x}.slm_code IN (${slms.map(() => '?').join(',')})`); p.push(...slms); }
@@ -195,7 +196,7 @@ function invoiceDetailRoutes(db) {
       // u = หน่วยขาย (2026-10-14, ผู้ใช้ขอ) — แยกแถวตามหน่วย ไม่บวกจำนวนต่างหน่วยรวมกัน (กก. + แพ็ค)
       const rows = db.prepare(`SELECT i.cust_code AS c, COALESCE(NULLIF(TRIM(i.slm_code), ''), '(ไม่ระบุ)') AS s, l.sku AS k, MAX(l.sku_name) AS n,
           MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.line_value) AS a
-        FROM invoices i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
+        FROM v_invoice_heads i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
         LEFT JOIN products p ON p.code = l.sku
         WHERE i.doc_date >= ? AND i.doc_date <= ? AND COALESCE(i.rectyp, '') <> '5'${fi.sql}
         GROUP BY i.cust_code, i.slm_code, l.sku, u`).all(COMPANY, from, to, ...fi.params);
@@ -243,7 +244,10 @@ function invoiceDetailRoutes(db) {
       WHERE l.doc_num = ? AND l.company = ?
       ORDER BY CAST(l.seq_num AS INTEGER)
     `).all(doc, COMPANY);
-    const head = db.prepare('SELECT doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_name, ship_to_address FROM invoices WHERE doc_num = ?').get(doc) || null;
+    const head = db.prepare('SELECT doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_name, ship_to_address FROM invoices WHERE doc_num = ?').get(doc)
+      // เกิน 90 วัน: หัวใบอยู่ใน invoice_heads (ไม่มีสายรถ/ที่อยู่จัดส่ง) — 2026-10-19
+      || db.prepare('SELECT doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, NULL AS route_name, NULL AS ship_to_address FROM invoice_heads WHERE doc_num = ?').get(doc)
+      || null;
     const scope = scopeOf(req.user);
     const deny = () => res.status(404).json({ error: 'ไม่พบใบกำกับ หรือไม่มีสิทธิ์เห็นลูกค้ารายนี้' });
     // ผู้ถูกจำกัด: ต้องรู้ลูกค้าของใบ (มีหัวใบ) และลูกค้าอยู่ในสิทธิ์ · ใบที่ไม่มีหัวใบตรวจลูกค้าไม่ได้ = ไม่แสดง
