@@ -1,0 +1,731 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-17T14:18:59+07:00",
+  "title": "Design System: TSS Supply Chain",
+  "extensions": {
+    "colorMeta": {
+      "seal-navy": {
+        "role": "primary",
+        "displayName": "Seal Navy",
+        "canonical": "#1B2064",
+        "tonalRamp": [
+          "#11144A",
+          "#1B2064",
+          "#2A3080",
+          "#6A70B8",
+          "#B9BDE0",
+          "#DDE0F0",
+          "#EEF0F8",
+          "#F7F8FC"
+        ]
+      },
+      "seal-navy-900": {
+        "role": "primary",
+        "displayName": "Seal Navy Deep",
+        "canonical": "#11144A",
+        "tonalRamp": [
+          "#11144A",
+          "#1B2064",
+          "#2A3080",
+          "#6A70B8",
+          "#B9BDE0",
+          "#DDE0F0",
+          "#EEF0F8",
+          "#F7F8FC"
+        ]
+      },
+      "seal-navy-700": {
+        "role": "primary",
+        "displayName": "Seal Navy Raised",
+        "canonical": "#2A3080",
+        "tonalRamp": [
+          "#11144A",
+          "#1B2064",
+          "#2A3080",
+          "#6A70B8",
+          "#B9BDE0",
+          "#DDE0F0",
+          "#EEF0F8",
+          "#F7F8FC"
+        ]
+      },
+      "seal-navy-500": {
+        "role": "primary",
+        "displayName": "Seal Navy Mid",
+        "canonical": "#6A70B8",
+        "tonalRamp": [
+          "#11144A",
+          "#1B2064",
+          "#2A3080",
+          "#6A70B8",
+          "#B9BDE0",
+          "#DDE0F0",
+          "#EEF0F8",
+          "#F7F8FC"
+        ]
+      },
+      "seal-navy-300": {
+        "role": "primary",
+        "displayName": "Seal Navy Haze",
+        "canonical": "#B9BDE0",
+        "tonalRamp": [
+          "#11144A",
+          "#1B2064",
+          "#2A3080",
+          "#6A70B8",
+          "#B9BDE0",
+          "#DDE0F0",
+          "#EEF0F8",
+          "#F7F8FC"
+        ]
+      },
+      "seal-navy-100": {
+        "role": "primary",
+        "displayName": "Seal Navy Mist",
+        "canonical": "#DDE0F0",
+        "tonalRamp": [
+          "#11144A",
+          "#1B2064",
+          "#2A3080",
+          "#6A70B8",
+          "#B9BDE0",
+          "#DDE0F0",
+          "#EEF0F8",
+          "#F7F8FC"
+        ]
+      },
+      "seal-navy-50": {
+        "role": "primary",
+        "displayName": "Seal Navy Wash",
+        "canonical": "#EEF0F8",
+        "tonalRamp": [
+          "#11144A",
+          "#1B2064",
+          "#2A3080",
+          "#6A70B8",
+          "#B9BDE0",
+          "#DDE0F0",
+          "#EEF0F8",
+          "#F7F8FC"
+        ]
+      },
+      "seal-red": {
+        "role": "secondary",
+        "displayName": "Seal Red",
+        "canonical": "#C3161B",
+        "tonalRamp": [
+          "#4A0709",
+          "#7A0E11",
+          "#A01216",
+          "#C3161B",
+          "#E0484C",
+          "#F08A8D",
+          "#F8C5C6",
+          "#FCECEC"
+        ]
+      },
+      "seal-red-700": {
+        "role": "secondary",
+        "displayName": "Seal Red Pressed",
+        "canonical": "#A01216",
+        "tonalRamp": [
+          "#4A0709",
+          "#7A0E11",
+          "#A01216",
+          "#C3161B",
+          "#E0484C",
+          "#F08A8D",
+          "#F8C5C6",
+          "#FCECEC"
+        ]
+      },
+      "seal-red-50": {
+        "role": "secondary",
+        "displayName": "Seal Red Tint",
+        "canonical": "#FCECEC",
+        "tonalRamp": [
+          "#4A0709",
+          "#7A0E11",
+          "#A01216",
+          "#C3161B",
+          "#E0484C",
+          "#F08A8D",
+          "#F8C5C6",
+          "#FCECEC"
+        ]
+      },
+      "on-red": {
+        "role": "neutral",
+        "displayName": "On Red",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "cold-ground": {
+        "role": "neutral",
+        "displayName": "Cold Ground",
+        "canonical": "#F3F4F8",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "label-stock": {
+        "role": "neutral",
+        "displayName": "Label Stock",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "label-stock-2": {
+        "role": "neutral",
+        "displayName": "Label Stock Shade",
+        "canonical": "#FAFAFD",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "rule-line": {
+        "role": "neutral",
+        "displayName": "Rule Line",
+        "canonical": "#D9DCE8",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "rule-line-2": {
+        "role": "neutral",
+        "displayName": "Rule Line Light",
+        "canonical": "#ECEEF4",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#14163A",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink Secondary",
+        "canonical": "#4B4F6E",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink Caption",
+        "canonical": "#646887",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "chart-mute": {
+        "role": "neutral",
+        "displayName": "Chart Mute",
+        "canonical": "#A3A7C2",
+        "tonalRamp": [
+          "#14163A",
+          "#4B4F6E",
+          "#646887",
+          "#A3A7C2",
+          "#D9DCE8",
+          "#ECEEF4",
+          "#F3F4F8",
+          "#FFFFFF"
+        ]
+      },
+      "ok-green": {
+        "role": "tertiary",
+        "displayName": "Outcome Green",
+        "canonical": "#1F7A4D",
+        "tonalRamp": [
+          "#0B2E1D",
+          "#134D31",
+          "#1F7A4D",
+          "#3C9A6B",
+          "#6FBE95",
+          "#A8DABF",
+          "#D2EEDF",
+          "#E6F4EC"
+        ]
+      },
+      "ok-green-50": {
+        "role": "tertiary",
+        "displayName": "Outcome Green Tint",
+        "canonical": "#E6F4EC",
+        "tonalRamp": [
+          "#0B2E1D",
+          "#134D31",
+          "#1F7A4D",
+          "#3C9A6B",
+          "#6FBE95",
+          "#A8DABF",
+          "#D2EEDF",
+          "#E6F4EC"
+        ]
+      },
+      "warn-amber": {
+        "role": "tertiary",
+        "displayName": "Warning Amber",
+        "canonical": "#9A5200",
+        "tonalRamp": [
+          "#3A1F00",
+          "#663600",
+          "#9A5200",
+          "#C27417",
+          "#E09A4A",
+          "#F0C38E",
+          "#F8E0C2",
+          "#FDF1E1"
+        ]
+      },
+      "warn-amber-50": {
+        "role": "tertiary",
+        "displayName": "Warning Amber Tint",
+        "canonical": "#FDF1E1",
+        "tonalRamp": [
+          "#3A1F00",
+          "#663600",
+          "#9A5200",
+          "#C27417",
+          "#E09A4A",
+          "#F0C38E",
+          "#F8E0C2",
+          "#FDF1E1"
+        ]
+      },
+      "sample-pill-bg": {
+        "role": "tertiary",
+        "displayName": "Sample Pill Ground",
+        "canonical": "#FFF4DB",
+        "tonalRamp": [
+          "#3A1F00",
+          "#663600",
+          "#9A5200",
+          "#C27417",
+          "#E09A4A",
+          "#F0C38E",
+          "#F8E0C2",
+          "#FDF1E1"
+        ]
+      },
+      "sample-pill-fg": {
+        "role": "tertiary",
+        "displayName": "Sample Pill Ink",
+        "canonical": "#7A5300",
+        "tonalRamp": [
+          "#3A1F00",
+          "#663600",
+          "#9A5200",
+          "#C27417",
+          "#E09A4A",
+          "#F0C38E",
+          "#F8E0C2",
+          "#FDF1E1"
+        ]
+      }
+    },
+    "darkTheme": {
+      "trigger": "prefers-color-scheme: dark (unless data-theme=light), or :root[data-theme=dark]",
+      "tokens": {
+        "seal-navy": "#AEB3F0",
+        "seal-navy-900": "#080A24",
+        "seal-navy-700": "#C5C9F6",
+        "seal-navy-500": "#8F95DE",
+        "seal-navy-300": "#4A4F95",
+        "seal-navy-100": "#2A2E66",
+        "seal-navy-50": "#1E2250",
+        "seal-red": "#F0545A",
+        "seal-red-700": "#FF7378",
+        "seal-red-50": "#3A1520",
+        "on-red": "#1A0507",
+        "cold-ground": "#0E1030",
+        "label-stock": "#171A44",
+        "label-stock-2": "#1B1F4C",
+        "rule-line": "#2E3263",
+        "rule-line-2": "#252957",
+        "ink": "#ECEDF7",
+        "ink-2": "#B4B7D2",
+        "ink-3": "#9195B8",
+        "ok-green": "#5CC994",
+        "ok-green-50": "#123A2A",
+        "warn-amber": "#F0A04B",
+        "warn-amber-50": "#3A2810",
+        "sample-pill-bg": "#3A2C0C",
+        "sample-pill-fg": "#F3CE7A",
+        "chart-mute": "#5B5F94",
+        "sidebar": "#1D2262",
+        "band-navy": "#2A3080",
+        "figure": "#DCDEFA"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Login art panel headline only."
+      },
+      "figure": {
+        "displayName": "Lot Label Figure",
+        "purpose": "The headline figure on a lot label; 28px at <=520px."
+      },
+      "stat-figure": {
+        "displayName": "Stat Figure",
+        "purpose": "Values in the compact stat strip."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page title in the 60px top bar, navy."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card and section headings, navy."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base UI text; 14px floor for Thai."
+      },
+      "table": {
+        "displayName": "Table",
+        "purpose": "Table cells; headers 12px/500 in ink-3."
+      },
+      "band-label": {
+        "displayName": "Band Label",
+        "purpose": "Lot-label band naming its figure: English capitals then the Thai name."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Customer/SKU codes and document numbers only."
+      },
+      "lot-line": {
+        "displayName": "Lot Line",
+        "purpose": "The LOT line on a label and the ruler month digits."
+      }
+    },
+    "fonts": {
+      "embedding": "base64 woff2 in .scratch/redesign-mockup/src/fonts.css",
+      "families": {
+        "IBM Plex Sans Thai": [
+          400,
+          500,
+          600,
+          700
+        ],
+        "IBM Plex Mono": [
+          400,
+          500,
+          600
+        ]
+      }
+    },
+    "shadows": [
+      {
+        "name": "sheet",
+        "value": "0 1px 2px rgba(17,20,74,.06),0 4px 12px rgba(17,20,74,.05)",
+        "purpose": "A4 document preview only."
+      },
+      {
+        "name": "float",
+        "value": "0 12px 32px rgba(17,20,74,.18),0 2px 6px rgba(17,20,74,.08)",
+        "purpose": "Modals, side panels, off-canvas sidebar, toasts."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 3px #EEF0F8",
+        "purpose": "Input focus halo with a navy border."
+      },
+      {
+        "name": "step-now-halo",
+        "value": "inset 0 0 0 2px #C3161B, 0 0 0 4px #FCECEC",
+        "purpose": "Current approval-chain step."
+      },
+      {
+        "name": "label-edge",
+        "value": "inset 0 0 0 1px #D9DCE8",
+        "purpose": "Lot label edge that survives the die-cut mask."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-print",
+        "value": "cubic-bezier(.2,.8,.2,1)",
+        "purpose": "Reprint, modal pop, panel slide."
+      },
+      {
+        "name": "reprint-band-wipe",
+        "value": "clip-path inset(0 100% 0 0) to inset(0), 420ms",
+        "purpose": "Label band on a period switch."
+      },
+      {
+        "name": "reprint-ink",
+        "value": "opacity .25, blur 2px, translateY 3px to rest, 500ms",
+        "purpose": "Figure and lot line on a period switch."
+      },
+      {
+        "name": "reprint-tick",
+        "value": "scaleY .2 to 1, 400ms",
+        "purpose": "Ruler ticks on a period switch."
+      },
+      {
+        "name": "control-transition",
+        "value": "150ms",
+        "purpose": "Button and toggle background/border."
+      },
+      {
+        "name": "drawer",
+        "value": "transform 220ms ease",
+        "purpose": "Mobile sidebar."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "all animation and transition off",
+        "purpose": "prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide",
+        "value": "1180px",
+        "note": "labels 2x2, split grids stack"
+      },
+      {
+        "name": "nav",
+        "value": "860px",
+        "note": "off-canvas sidebar, breadcrumb hidden, forms single-column"
+      },
+      {
+        "name": "phone",
+        "value": "640px",
+        "note": "tables stack to label/value rows via ui.table and autoStack(); two-row headers keep pinned scroll"
+      },
+      {
+        "name": "narrow",
+        "value": "520px",
+        "note": "labels one-up, figure 28px"
+      }
+    ],
+    "layout": {
+      "sidebar": "232px (68px rail)",
+      "topBar": "60px",
+      "contentPadding": "20px 24px 48px",
+      "gap": "16px"
+    },
+    "migration": "Recorded from .scratch/redesign-mockup; target for a later migration into production index.html, which is unchanged."
+  },
+  "components": [
+    {
+      "name": "Primary Button (commit)",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Red fill; one per page, only for the decisive commit (approve, submit, create, log in).",
+      "html": "<button class=\"ds-btn ds-btn-primary\"><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"M3.5 8.5l3 3 6-7\"/></svg><span>อนุมัติ</span></button>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-family:inherit;font-size:13.5px;font-weight:500;color:var(--navy);cursor:pointer;transition:background .15s,border-color .15s} .ds-btn:focus-visible{outline:2px solid var(--navy);outline-offset:2px} .ds-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round} .ds-btn-primary{background:var(--red);border-color:var(--red);color:#fff} .ds-btn-primary:hover{background:var(--red-700);border-color:var(--red-700)}"
+    },
+    {
+      "name": "Navy Button (progression)",
+      "kind": "button",
+      "refersTo": "button-navy",
+      "description": "Navy fill for progression or an emphasised non-committing action.",
+      "html": "<button class=\"ds-btn ds-btn-navy\"><span>ถัดไป</span><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"M6 3.5L10.5 8 6 12.5\"/></svg></button>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-family:inherit;font-size:13.5px;font-weight:500;color:var(--navy);cursor:pointer;transition:background .15s,border-color .15s} .ds-btn:focus-visible{outline:2px solid var(--navy);outline-offset:2px} .ds-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round} .ds-btn-navy{background:var(--navy);border-color:var(--navy);color:#fff} .ds-btn-navy:hover{background:#2A3080;border-color:#2A3080}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default outlined button: Export, save draft, preview.",
+      "html": "<button class=\"ds-btn\"><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"M8 2v8M5 7l3 3 3-3M3 13h10\"/></svg><span>Export</span></button>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-family:inherit;font-size:13.5px;font-weight:500;color:var(--navy);cursor:pointer;transition:background .15s,border-color .15s} .ds-btn:focus-visible{outline:2px solid var(--navy);outline-offset:2px} .ds-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round} .ds-btn:hover{border-color:var(--navy-300);background:var(--navy-50)}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost-hover",
+      "description": "Borderless; cancel, recall, reset.",
+      "html": "<button class=\"ds-btn ds-btn-ghost\"><span>ยกเลิก</span></button>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-family:inherit;font-size:13.5px;font-weight:500;color:var(--navy);cursor:pointer;transition:background .15s,border-color .15s} .ds-btn:focus-visible{outline:2px solid var(--navy);outline-offset:2px} .ds-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round} .ds-btn-ghost{border-color:transparent;background:transparent} .ds-btn-ghost:hover{background:var(--navy-50)}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "38px field with label; navy focus ring.",
+      "html": "<label class=\"ds-fld\"><span>ชื่อลูกค้า <em>*</em></span><input class=\"ds-inp\" placeholder=\"เช่น บจก. ซูเปอร์มาร์ท\"></label>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-fld{display:flex;flex-direction:column;gap:6px;width:280px} .ds-fld span{font-size:12.5px;font-weight:500;color:var(--text-2)} .ds-fld em{color:var(--red);font-style:normal} .ds-inp{min-height:38px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:0 12px;font:inherit;font-size:14px;color:var(--text)} .ds-inp:hover{border-color:var(--navy-300)} .ds-inp:focus{outline:0;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-50)}"
+    },
+    {
+      "name": "Period Segment",
+      "kind": "chip",
+      "refersTo": "segment-active",
+      "description": "Company and period switch; active thumb filled navy.",
+      "html": "<div class=\"ds-seg\" role=\"group\"><button aria-pressed=\"true\">YTD</button><button aria-pressed=\"false\">เดือน</button><button aria-pressed=\"false\">ไตรมาส</button><button aria-pressed=\"false\">ทั้งปี</button></div>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-seg{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:3px} .ds-seg button{border:0;background:transparent;font:inherit;font-size:13px;line-height:28px;padding:0 12px;border-radius:6px;color:var(--text-2);cursor:pointer} .ds-seg button:hover{color:var(--navy)} .ds-seg button:focus-visible{outline:2px solid var(--navy);outline-offset:2px} .ds-seg button[aria-pressed=true]{background:var(--navy);color:#fff;font-weight:500}"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-sidebar",
+      "description": "Navy sidebar group with the current item and a red notification count.",
+      "html": "<nav class=\"ds-nav\"><div class=\"ds-gh\">การขาย</div><a class=\"ds-it\" aria-current=\"page\" href=\"#\"><svg viewBox=\"0 0 16 16\"><path d=\"M2 14h12M4 11V7M8 11V3M12 11V8\"/></svg><span>Sales Overview</span></a><a class=\"ds-it\" href=\"#\"><svg viewBox=\"0 0 16 16\"><path d=\"M3 14h7M7.5 4.5l4 4-2 2-4-4zM8 9l-5 5M9.5 2.5l4 4\"/></svg><span>ใบเคาะราคา</span><b>3</b></a></nav>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-nav{width:232px;background:var(--navy);padding:4px 0 8px;color:#C9CCE6} .ds-gh{font-size:11.5px;font-weight:600;color:#9399CC;padding:14px 24px 4px} .ds-it{display:flex;align-items:center;gap:12px;margin:1px 8px;min-height:34px;padding:0 10px 0 14px;border-radius:8px;color:#C9CCE6;font-size:13.5px;text-decoration:none} .ds-it svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round} .ds-it:hover{background:rgba(255,255,255,.07);color:#fff} .ds-it:focus-visible{outline:2px solid #fff;outline-offset:2px} .ds-it[aria-current=page]{background:rgba(255,255,255,.13);color:#fff;font-weight:500} .ds-it b{margin-left:auto;background:var(--red);color:#fff;font-size:11px;line-height:18px;min-width:20px;text-align:center;border-radius:9px;padding:0 6px}"
+    },
+    {
+      "name": "Lot Label",
+      "kind": "custom",
+      "refersTo": "lot-label-band-red",
+      "description": "Signature KPI card: die-cut corners, band, figure, delta, mono lot line, perforation, 12-tick month ruler. Overview/analysis pages only, one row max.",
+      "html": "<article class=\"ds-lbl\"><div class=\"ds-band\">NET SALES<span>· ยอดขายสุทธิ</span></div><div class=\"ds-lb\"><div class=\"ds-fig\">฿742.6<small>ล้าน</small></div><div class=\"ds-dl\"><span class=\"ds-up\">▲ 6.8%</span> vs ปี 2568</div><div class=\"ds-lot\"><b></b>LOT NS-YTD-2569 · ALL · 17/10</div><div class=\"ds-perf\"></div><div class=\"ds-ruler\"><i class=\"m\"></i><i class=\"m\"></i><i class=\"h\"></i><i class=\"m\"></i><i class=\"h\"></i><i class=\"h\"></i><i class=\"h\"></i><i class=\"m\"></i><i class=\"h\"></i><i class=\"n\"></i><i></i><i></i></div></div></article>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-lbl{width:270px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);-webkit-mask:radial-gradient(circle at 0 0,#0000 7px,#000 7.5px) top left,radial-gradient(circle at 100% 0,#0000 7px,#000 7.5px) top right,radial-gradient(circle at 0 100%,#0000 7px,#000 7.5px) bottom left,radial-gradient(circle at 100% 100%,#0000 7px,#000 7.5px) bottom right;-webkit-mask-size:51% 51%;-webkit-mask-repeat:no-repeat;mask:radial-gradient(circle at 0 0,#0000 7px,#000 7.5px) top left,radial-gradient(circle at 100% 0,#0000 7px,#000 7.5px) top right,radial-gradient(circle at 0 100%,#0000 7px,#000 7.5px) bottom left,radial-gradient(circle at 100% 100%,#0000 7px,#000 7.5px) bottom right;mask-size:51% 51%;mask-repeat:no-repeat} .ds-band{height:28px;background:var(--red);color:#fff;display:flex;align-items:center;gap:8px;padding:0 16px;font-size:11px;font-weight:600;letter-spacing:.08em;white-space:nowrap} .ds-band span{font-weight:500;letter-spacing:0;opacity:.9} .ds-lbl:hover .ds-band{animation:ds-wipe .42s cubic-bezier(.2,.8,.2,1)} @keyframes ds-wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0)}} .ds-lb{padding:12px 16px 14px} .ds-fig{font-size:30px;line-height:38px;font-weight:700;color:var(--navy);letter-spacing:-.01em} .ds-fig small{font-size:15px;font-weight:600;margin-left:4px} .ds-dl{font-size:12.5px;line-height:20px;color:var(--text-3)} .ds-up{color:var(--ok);font-weight:600} .ds-lot{margin-top:8px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;line-height:16px;color:var(--text-2);letter-spacing:.02em;display:flex;align-items:center;gap:6px} .ds-lot b{width:6px;height:6px;border-radius:50%;background:#6A70B8} .ds-perf{border-top:1.5px dashed var(--line);margin:12px -16px 10px} .ds-ruler{display:grid;grid-template-columns:repeat(12,1fr);gap:4px} .ds-ruler i{height:8px;border-radius:1px;background:var(--line-2)} .ds-ruler i.h{background:var(--navy)} .ds-ruler i.m{background:transparent;box-shadow:inset 0 0 0 1.5px var(--navy)} .ds-ruler i.n{background:var(--red)}"
+    },
+    {
+      "name": "State Marks",
+      "kind": "custom",
+      "refersTo": "tag",
+      "description": "The one status vocabulary: pending hollow navy, waiting-on-you hollow red, done filled navy, draft hatched, cancelled struck grey, late amber.",
+      "html": "<div class=\"ds-mks\"><span class=\"ds-mk pending\"><i></i>รออนุมัติ</span><span class=\"ds-mk you\"><i></i>รอคุณอนุมัติ</span><span class=\"ds-mk done\"><i></i>อนุมัติแล้ว</span><span class=\"ds-mk draft\"><i></i>ร่าง</span><span class=\"ds-mk cancel\"><i></i>ยกเลิก</span><span class=\"ds-mk warn\"><i></i>ล่าช้า</span></div>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-mks{display:flex;flex-wrap:wrap;gap:12px 20px} .ds-mk{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2)} .ds-mk i{width:12px;height:12px;border-radius:50%;position:relative} .ds-mk.pending i{box-shadow:inset 0 0 0 2px var(--navy)} .ds-mk.you{color:var(--red);font-weight:600} .ds-mk.you i{box-shadow:inset 0 0 0 2px var(--red)} .ds-mk.done{color:var(--navy);font-weight:500} .ds-mk.done i{background:var(--navy)} .ds-mk.draft i{box-shadow:inset 0 0 0 2px var(--chart-mute);background:repeating-linear-gradient(45deg,transparent 0 2px,var(--chart-mute) 2px 3px)} .ds-mk.cancel{color:var(--text-3);text-decoration:line-through} .ds-mk.cancel i{box-shadow:inset 0 0 0 2px var(--text-3)} .ds-mk.cancel i::after{content:'';position:absolute;left:-2px;right:-2px;top:5px;height:2px;background:var(--text-3);transform:rotate(-45deg)} .ds-mk.warn{color:var(--warn);font-weight:500} .ds-mk.warn i{background:var(--warn)}"
+    },
+    {
+      "name": "Compact Stat Strip",
+      "kind": "card",
+      "refersTo": "stat-strip",
+      "description": "Summary figures on work and document pages instead of lot labels.",
+      "html": "<div class=\"ds-stats\"><div><div class=\"k\">รออนุมัติ</div><div class=\"v\">12<small>ใบ</small></div><div class=\"s\">รอคุณ 3 ใบ</div></div><div><div class=\"k\">อนุมัติเดือนนี้</div><div class=\"v\">48<small>ใบ</small></div></div><div><div class=\"k\">มูลค่าโปร</div><div class=\"v\">฿4.2<small>ล้าน</small></div></div></div>",
+      "css": ":host{--navy:#1B2064;--navy-300:#B9BDE0;--navy-50:#EEF0F8;--red:#C3161B;--red-700:#A01216;--red-50:#FCECEC;--line:#D9DCE8;--line-2:#ECEEF4;--surface:#FFFFFF;--surface-2:#FAFAFD;--text:#14163A;--text-2:#4B4F6E;--text-3:#646887;--ok:#1F7A4D;--warn:#9A5200;--chart-mute:#A3A7C2;font-family:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif;font-variant-numeric:tabular-nums} .ds-stats{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:10px;max-width:560px} .ds-stats>div{flex:1;padding:14px 20px;border-right:1px solid var(--line-2)} .ds-stats>div:last-child{border-right:0} .ds-stats>div:hover{background:var(--surface-2)} .k{font-size:12.5px;color:var(--text-3)} .v{font-size:22px;line-height:30px;font-weight:700;color:var(--navy)} .v small{font-size:13px;font-weight:600;margin-left:4px;color:var(--text-2)} .s{font-size:12px;color:var(--text-3)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Lot Label",
+    "overview": "Every key figure is printed like the cold-chain carton label that leaves the TSS plant: a fact with a code, a lot and a date. White label stock sits on a cool navy-tinted ground. The navy of the TSS seal owns the sidebar, headings and figures. The seal's red is an ink used sparingly, so when it appears it means \"this is the headline\" or \"this is the decision\". The world turns down the generic SaaS card grid with coloured side borders and emoji.\n\nThe system is dense and numeric, built for people who read sales, stock and approval state all day. Columns stay fixed and values change in place. On a period switch the label figures and month ticks reprint where they stand instead of re-laying out. Status is printed in one mark vocabulary (hollow, filled, hatched, struck) shared by every table, chain and Gantt, so it never depends on colour alone. Retired items print grey rather than disappearing.\n\nTwo themes ship from the same tokens: light (the label on cold ground) and dark (a deep navy room with lightened seal inks). Desktop is the working surface. Every page still works at 390px, where tables turn into stacked label/value rows.",
+    "keyCharacteristics": [
+      "Palette sampled from the TSS seal: indigo-navy, red, white. The old gold accent is retired.",
+      "Lot-label KPI cards with die-cut notched corners, a header band, a dashed perforation and a 12-tick month ruler.",
+      "IBM Plex Sans Thai for the UI, IBM Plex Mono for codes, document numbers and lot lines only, tabular numerals everywhere.",
+      "One printed state-mark vocabulary across tables, approval chains and the Gantt.",
+      "Flat label stock: 1px rules, no resting shadows on content."
+    ],
+    "rules": [
+      {
+        "name": "The Seal Ink Rule",
+        "body": "Every hue comes from the TSS seal (red, indigo-navy, white) or is a functional outcome colour (green, amber). Gold `#D4AF37` is retired and must not come back.",
+        "section": "colors"
+      },
+      {
+        "name": "The Rare Red Rule",
+        "body": "Red appears in exactly six roles: the single headline label band per page, the current-month ruler tick, target lines on charts, the one decisive commit action per page (approve, submit, create, log in), notification badges and dots, and negative deltas (▼). Outside those six, red only reports state: errors and validation (error borders, error alerts, reject buttons, the required asterisk) and \"waiting on you\" (the hollow red mark and the current approval step). Anything else that needs emphasis uses navy. A filled navy button is for progression (\"ถัดไป\") or an emphasised action that doesn't commit anything.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "`font-variant-numeric: tabular-nums` is set on the body and applies everywhere. Digits line up in columns, and figures that reprint don't jitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mono Means Code Rule",
+        "body": "IBM Plex Mono is only for codes, document numbers and lot lines (and the ruler's month digits). Amounts, percentages and labels stay in Plex Sans Thai.",
+        "section": "typography"
+      },
+      {
+        "name": "The Phone Stack Rule",
+        "body": "At ≤640px every table becomes stacked label/value rows: the primary cell spans the row and the others pair two-up with their header as a caption. This covers `ui.table` and hand-built tables (through `autoStack()`), footers included. Tables with a two-row header keep horizontal scroll with the first column (and optionally the second) pinned. Scrollable charts open scrolled to the current month.",
+        "section": "layout"
+      },
+      {
+        "name": "The One Label Row Rule",
+        "body": "Lot-label KPIs appear only on overview and analysis pages (Dashboard, Sales Overview, Stock & Planning, เปรียบเทียบผลิต, Login), with at most one row per page. Work and document pages use the compact stat strip.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Stock Rule",
+        "body": "Cards, labels, tables and stat strips have no resting shadow. The lot label draws its edge as a 1px inset rule so the die-cut notches stay crisp.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** take every hue from the seal tokens (`seal-navy`, `seal-red`, white) or the functional green and amber, and reference tokens so both themes follow.",
+      "**Do** keep red to its six roles (one headline band, the current-month tick, target lines, the one commit action, notification badges, negative deltas), plus error and waiting-on-you states.",
+      "**Do** put lot labels only on overview and analysis pages, at most one row per page, and use the compact stat strip everywhere else.",
+      "**Do** show status with the shared mark vocabulary (hollow, filled, hatched, struck, amber) in tables, chains and the Gantt alike, and print cancelled rows grey.",
+      "**Do** make every table stack into label/value rows at ≤640px (through `ui.table` or `autoStack()`, footers included), and open scrolled charts at the current month.",
+      "**Do** keep tabular numerals on and use IBM Plex Mono only for codes, document numbers and lot lines.",
+      "**Do** reprint figures in place on a period switch rather than re-laying out the page."
+    ],
+    "donts": [
+      "**Don't** bring back the retired gold `#D4AF37` or add any hue that isn't from the seal.",
+      "**Don't** use a red filled button for a non-committing action, or put more than one red band or red commit button on a page.",
+      "**Don't** build card grids with coloured side borders or emoji icons; icons are 16px stroke SVGs.",
+      "**Don't** put resting shadows on cards, labels or tables.",
+      "**Don't** signal status with colour alone; every state has a distinct mark shape.",
+      "**Don't** set amounts or percentages in mono."
+    ]
+  }
+}
