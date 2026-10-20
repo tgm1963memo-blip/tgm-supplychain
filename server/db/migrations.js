@@ -598,10 +598,18 @@ function runMigrations(db) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_heads_date ON invoice_heads(doc_date)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_heads_cust ON invoice_heads(cust_code, doc_date)');
   db.exec('DROP VIEW IF EXISTS v_invoice_heads'); // สร้างใหม่ทุกครั้ง ให้นิยามล่าสุดถึงฐานข้อมูลที่ deploy แล้ว (code review)
+  // slm_code = เจ้าของยอดที่กำหนดรายลูกค้า (sales_slm_override, 2026-10-20 — lib/slmOverride.js) ไม่มี = รหัสในใบ
+  // ตาราง invoices เองไม่แตะ (tgm-wms ใช้รหัสในใบจริง) — view นี้ใช้เฉพาะหน้ายอดขาย (routes/invoiceDetail.js)
+  db.exec(`CREATE TABLE IF NOT EXISTS sales_slm_override (
+    cust_code TEXT PRIMARY KEY, slm_code TEXT NOT NULL, note TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))`);
+  // (subquery ต่อแถวแทนการห่อ UNION ALL ด้วย JOIN — ให้เงื่อนไขวันที่ยังกดลงไปใช้ index ของแต่ละตารางได้)
   db.exec(`CREATE VIEW v_invoice_heads AS
-    SELECT doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp FROM invoices
+    SELECT v.doc_num, v.doc_date, v.cust_code, COALESCE((SELECT o.slm_code FROM sales_slm_override o WHERE o.cust_code = v.cust_code), v.slm_code) AS slm_code,
+      v.so_num, v.total, v.rectyp FROM invoices v
     UNION ALL
-    SELECT h.doc_num, h.doc_date, h.cust_code, h.slm_code, h.so_num, h.total, h.rectyp FROM invoice_heads h
+    SELECT h.doc_num, h.doc_date, h.cust_code, COALESCE((SELECT o.slm_code FROM sales_slm_override o WHERE o.cust_code = h.cust_code), h.slm_code) AS slm_code,
+      h.so_num, h.total, h.rectyp FROM invoice_heads h
     WHERE NOT EXISTS (SELECT 1 FROM invoices i WHERE i.doc_num = h.doc_num)`);
 
   // รายการสินค้าจริงของใบสรุปยอด Bplus รหัส 0000 (2026-10-14) — Bplus บันทึกใบ Makro (A M) / EA เป็นบรรทัดเดียว
@@ -695,6 +703,15 @@ function runMigrations(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_conversion_doc_lines_doc ON conversion_doc_lines(doc_num);
   `);
+
+  // กำหนด Sales เจ้าของยอดรายลูกค้า (2026-10-20, lib/slmOverride.js) — ตั้งต้น: Tops เซ็นทรัล ฟู้ด รีเทล 30-LC-0013/0014
+  // ใบออกในชื่อคุณปู (106) แต่ผู้ใช้สั่งย้ายไปเป็นของ 207 (ห้าง-เมย์) · INSERT OR IGNORE = ไม่ทับค่าที่แก้ภายหลัง
+  // (ตารางสร้างไว้แล้วก่อน v_invoice_heads ด้านบน)
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261020_slm_override_tops_lc'").get()) {
+    const ins = db.prepare('INSERT OR IGNORE INTO sales_slm_override (cust_code, slm_code, note) VALUES (?, ?, ?)');
+    for (const c of ['30-LC-0013', '30-LC-0014']) ins.run(c, '207', 'Tops เซ็นทรัล ฟู้ด รีเทล — ย้ายจากคุณปู (106) ไป 207 ตามที่ผู้ใช้สั่ง 2026-10-20');
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261020_slm_override_tops_lc')").run();
+  }
 
   // ตัวเลขของ v_sc_data_confidence ยังไม่เคยนับ (ฐานข้อมูลเดิมก่อน 2026-10-20 / ฐานใหม่) → นับครั้งแรกตอนเปิด server
   // ไม่งั้น Dashboard ขึ้นค่าว่างจนจบรอบ sync ถัดไป · หลังจากนี้นับตอนจบทุกรอบ sync (lib/dataCounts.js)

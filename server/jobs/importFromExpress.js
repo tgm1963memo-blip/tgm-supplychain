@@ -93,6 +93,7 @@ const ORDER_DOCSTAT_INCLUDE = ['M'];
 // (2026-10-20) ย้ายรายการเล่มไป lib/salesDocs.js + เพิ่ม IT (ค่าขนส่ง) / IV (ขายวัสดุ) — ใช้กับยอดขาย/รายสินค้าเท่านั้น
 // syncInvoices() (ตาราง invoices ของหน้าจ่ายสินค้าตามใบกำกับ) ยังตัดเฉพาะ LF/LE/LG แบบเดิม — ใบ IT/IV ยังต้องจ่ายของ/วางบิล
 const { isNonSalesDocNum } = require('../lib/salesDocs');
+const { loadSlmOverrides, effectiveSlm } = require('../lib/slmOverride');
 const SALES_DOCNUM_EXCLUDE_PREFIXES = new Set(['LF', 'LE', 'LG']);
 function isExcludedSalesDocNum(docNum) {
   const prefix = String(docNum || '').trim().toUpperCase().slice(0, 2);
@@ -1045,6 +1046,7 @@ async function syncSales(db) {
 // (Deliberately NOT changing syncInvoices() below, which shares this same RECTYP/company loop
 // shape but serves WMS dispatch matching against the real billed amount — TOTAL is correct there.)
 async function syncInvoiceSales(db) {
+  const slmOv = loadSlmOverrides(db);
   // Plain INSERT, not upsert: each company's rows are deleted immediately below before these run,
   // so there's never a pre-existing row to conflict with within one sync cycle.
   const insert = db.prepare(`
@@ -1077,7 +1079,7 @@ async function syncInvoiceSales(db) {
       const custCode = (r.CUSCOD || '').trim() || '(none)';
       // ARTRN carries its own SLMCOD per transaction — the salesperson recorded at invoice time,
       // not necessarily the customer's current owner in the customers table.
-      const slmCode = normalizeSlmCode(r.SLMCOD) || '(none)';
+      const slmCode = effectiveSlm(slmOv, custCode, normalizeSlmCode(r.SLMCOD) || '(none)'); // lib/slmOverride.js (2026-10-20)
       const signedNetVal = r.RECTYP === '5' ? -(Number(r.NETVAL) || 0) : (Number(r.NETVAL) || 0);
       const key = `${period}|${custCode}|${slmCode}`;
       const cur = monthly.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, gross_amount: 0, cn_vat: 0 };
@@ -1525,6 +1527,7 @@ async function syncTgmDetailLines(db) {
 // invoice_sales_monthly ทุกรอบตามเดิม มีแค่ KG ที่อาจช้ากว่าได้ไม่เกินช่วงนี้
 const SALES_LINES_MIN_INTERVAL_MS = (Number(process.env.SALES_LINES_MIN_INTERVAL_MIN) || 60) * 60 * 1000;
 async function syncSalesLinesMonthly(db) {
+  const slmOv = loadSlmOverrides(db);
   const getState = db.prepare('SELECT mtime_ms, synced_at FROM sync_file_state WHERE source = ?');
   const setState = db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
     ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`);
@@ -1558,7 +1561,7 @@ async function syncSalesLinesMonthly(db) {
       const sku = cleanText(r.STKCOD);
       if (!period || !sku) continue;
       const cust = cleanText(r.PEOPLE) || '(none)';
-      const slm = normalizeSlmCode(r.SLMCOD) || '(none)';
+      const slm = effectiveSlm(slmOv, cust, normalizeSlmCode(r.SLMCOD) || '(none)'); // ลูกค้าที่กำหนดเจ้าของยอดไว้ (lib/slmOverride.js)
       const unit = cleanText(r.TQUCOD);
       const qty = Math.abs(Number(r.XTRNQTY) || Number(r.TRNQTY) || 0);
       const factor = Number(r.TFACTOR) || 1;
