@@ -1464,7 +1464,14 @@ const SB = {
       if (!data || data.length < PAGE) break;
       from += PAGE;
     }
-    DB.set('remote_customers_cache', rows);
+    // FIXED (2026-10-20, ผู้ใช้แจ้ง "บางชื่อลูกค้าขึ้นเป็นรหัส"): โหลดเฉพาะลูกค้าที่ใช้งาน → ห้ามทับ cache ทั้งก้อน
+    // cache เต็ม (refreshSharedMasterData โหลดรวมที่ปิดใช้งาน) มีลูกค้าที่ Express ปิดใช้งานแต่ยังมียอด เช่น AK-LF-3803
+    // เดิมถูกทับด้วยรายการเฉพาะที่ใช้งานตอน Sales Overview เจอรหัสที่ไม่มีใน cache → ชื่อหาย ขึ้นเป็นรหัส · ค่าที่คืนยังเป็นเฉพาะที่ใช้งานเหมือนเดิม
+    if (!opts.includeInactive) {
+      const have = new Set(rows.map(x => String(x.code || '')));
+      const off = (DB.get('remote_customers_cache') || []).filter(x => !have.has(String(x.code || '')) && !(x.is_active === true || Number(x.is_active) === 1));
+      DB.set('remote_customers_cache', rows.concat(off));
+    } else DB.set('remote_customers_cache', rows);
     DB.set('remote_customers_cache_ts', Date.now());
     return rows;
   },
@@ -8340,7 +8347,8 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     const cached=DB.get('remote_customers_cache')||[];
     const cachedCodes=new Set(cached.map(x=>String(x.code||'')));
     if(codes.some(code=>!cachedCodes.has(code))){
-      try{await CACHE.get('remote_customers_cache_live',()=>SB.getCustomers(),10*60*1000);}catch(e){console.warn('customers cache:',e.message||e);}
+      // รวมลูกค้าที่ปิดใช้งาน — รหัสที่ขาดส่วนใหญ่คือลูกค้าที่ Express ปิดใช้งานแต่ยังมียอดในงวด (2026-10-20)
+      try{await CACHE.get('remote_customers_cache_live',()=>SB.getCustomers({includeInactive:true}),10*60*1000);}catch(e){console.warn('customers cache:',e.message||e);}
     }
   }
   const names=_salesNameMap();
@@ -9907,7 +9915,8 @@ function _sdCustDisplayName(code,fallback,remote,p){
   const r=remote[code]||{},name=tidy(p.name||r.name);
   const br=tidy(p.branch)||(r.addr_branch?'สาขา'+tidy(r.addr_branch):'');
   fallback=tidy(fallback);
-  const base=name&&name!==code?name:(fallback&&fallback!==code?fallback:code);
+  // ไม่มีชื่อทั้งในโปรไฟล์และรายชื่อลูกค้า → ใช้ชื่อบริษัท (corporate) ของโปรไฟล์ก่อนตกไปเป็นรหัส (2026-10-20)
+  const base=name&&name!==code?name:(fallback&&fallback!==code?fallback:(tidy(p.corporate)||code));
   return br&&!base.includes(br.replace(/^สาขา/,''))?`${base} (${br})`:base;
 }
 // ── Pivot ติ๊กเลือกมิติ (2026-10-12, ผู้ใช้ขอ) — แท็บรายลูกค้า / รายสินค้า เลือกได้ว่าจะแสดงชั้นไหน ลำดับไหน
@@ -13558,6 +13567,13 @@ async function chmLoad(){
 }
 function _chmVal(k,f){return k in _chmEd&&f in _chmEd[k]?_chmEd[k][f]:_chm.chains[k][f];}
 function chmSet(k,f,v){(_chmEd[k]=_chmEd[k]||{})[f]=v;}
+// ห้อง SKU ที่ไม่แทน (2026-10-20) — keep=true เพิ่มทุกห้องของกลุ่มลง keep_skus · server: lib/chainSales.js replacedGroups
+function chmKeep(k,i,keep){
+  const g=_chm.chains[k].groups[i];if(!g)return;
+  const cur=new Set(_chmVal(k,'keep_skus')||[]);
+  g.skus.forEach(s=>keep?cur.add(String(s).toUpperCase()):cur.delete(String(s).toUpperCase()));
+  chmSet(k,'keep_skus',[...cur]);
+}
 function _chmHtml(){
   const head='<div class="ch"><div class="ct2">🛒 ยอดห้อง SKU ห้าง → ยอดราย Sales</div>';
   if(!_chm) return head+'</div><div class="al ali">⏳ กำลังโหลด…</div>';
@@ -13578,7 +13594,9 @@ function _chmHtml(){
         ${_stmCanEdit()?`<button class="btn btn-sm btn-g" onclick="chmSave('${k}',this)">💾 บันทึก</button>`:''}</div>
       ${labels.length?`<div style="margin-top:8px;font-size:12px"><b>ค่า "เขต Sale" ที่ไม่ใช่รหัส Sales</b> — ระบุรหัสให้ (ว่าง = ใช้รหัสออฟฟิศ):
         ${labels.map(([lb,n])=>`<span style="display:inline-flex;gap:4px;align-items:center;margin:3px 10px 3px 0">${esc(lb)} (${n} สาขา) → <input type="text" ${dis} value="${esc(al[lb]||'')}" onchange="(_chmEd['${k}']=_chmEd['${k}']||{}).aliases={...(_chm.chains['${k}'].aliases||{}),...((_chmEd['${k}']||{}).aliases||{}),['${esc(lb)}']:this.value.trim()}" style="width:70px;padding:2px 6px"></span>`).join('')}</div>`:''}
-      ${(c.groups||[]).length?`<div style="margin-top:6px;font-size:12px;color:var(--TX2)">ห้อง SKU ↔ รหัส DC ห้อง VAT ที่ถูกแทน: ${c.groups.map(g=>`<b>${esc(g.skus.join('/'))}</b> ↔ ${esc(g.src)}${g.company==='TGM'?' (TGM)':''}`).join(' · ')}</div>`:''}
+      ${(c.groups||[]).length?`<div style="margin-top:6px;font-size:12px;color:var(--TX2)">ห้อง SKU ↔ รหัส DC ห้อง VAT (ติ๊ก = แทน · ไม่ติ๊ก = ใช้ยอดใบกำกับ DC ตามรหัส Sales ในใบ เช่น Tops เบเกอรี่ของฝ่ายขายร้านค้า): ${c.groups.map((g,i)=>{
+        const keep=_chmVal(k,'keep_skus')||[],on=!g.skus.every(s=>keep.includes(String(s).toUpperCase()));
+        return `<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" ${dis} ${on?'checked':''} onchange="chmKeep('${k}',${i},!this.checked)"> <b>${esc(g.skus.join('/'))}</b> ↔ ${esc(g.src)}${g.company==='TGM'?' (TGM)':''}</label>`;}).join('')}</div>`:''}
       ${bySlm.length?`<div style="margin-top:6px;font-size:12px">ยอดปีนี้ตาม Sales (ห้อง SKU): ${bySlm.map(([code,a])=>`<span style="margin-right:10px"><b>${esc(code)}</b> ${esc(salesNameFor(code)||'')} ${_sdF(a)}</span>`).join('')}</div>`:''}
     </div>`;
   };
@@ -13606,7 +13624,7 @@ function chmImport(k,input){
   rd.readAsBinaryString(file);
 }
 async function chmSave(k,btn){
-  const body={replace:!!_chmVal(k,'replace'),office_slm:_chmVal(k,'office_slm')||'',aliases:{...(_chm.chains[k].aliases||{}),...((_chmEd[k]||{}).aliases||{})}};
+  const body={replace:!!_chmVal(k,'replace'),office_slm:_chmVal(k,'office_slm')||'',keep_skus:_chmVal(k,'keep_skus')||[],aliases:{...(_chm.chains[k].aliases||{}),...((_chmEd[k]||{}).aliases||{})}};
   btn.disabled=true;const r=await apiFetch('/api/chain_sales/map/'+k,{method:'PUT',body:JSON.stringify(body)});btn.disabled=false;
   if(r.error){toast('บันทึกไม่สำเร็จ: '+r.error.message,'warn');return;}
   Object.keys(_chainSwapCache).forEach(x=>delete _chainSwapCache[x]);window._dxCache={};

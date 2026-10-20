@@ -9,6 +9,9 @@
 //   · ไม่รวมยอดบริษัท · ใช้เฉพาะมุมมองราย Sales: ตัดยอดรหัส DC (ช่วงห้อง VAT ของห้างที่เปิด "แทน") แล้วใช้ยอดสาขาจากห้อง SKU
 //   · สาขาที่ไฟล์ระบุ "ออฟฟิศ" หรือไม่มีในไฟล์ → รหัส Sales ที่ตั้งเองใน Master (office_slm) · ไม่ได้ตั้ง = ไม่ระบุ Sales
 //   · GO Wholesale ค่าเริ่มต้น "ไม่แทน" (ห้อง VAT แยกสาขาใต้ 207 อยู่แล้ว ห้อง GOWHOLES ยอดไม่ครบ) — เปิดได้ในหน้า Master
+//   · keep_skus (2026-10-20, ผู้ใช้แจ้ง "คุณปูยังขาดข้อมูลการขายของ TOP"): ห้อง SKU ที่ "ไม่แทน" รายกลุ่ม — รหัส DC ของกลุ่มนี้
+//     คงยอดใบกำกับเดิม (ตามรหัส Sales ในใบ) และไม่เพิ่มยอดสาขาของกลุ่มนี้ (กันนับซ้ำ) · Tops เบเกอรี่ KK (30-TA/TB/TF)
+//     + Saladbar AA (30-TD) เป็นลูกค้าของคุณปู (106) ตามไฟล์ Group แต่ถูกแทนด้วยสาขาของ 207/ออฟฟิศ ยอดหาย ~33 ล้าน (ม.ค.–ก.ย. 69)
 const ENTITY = 'chain_sales_map';
 const CHAIN_KEYS = ['TOPS', 'MAKRO', 'GO'];
 const DEFAULT_REPLACE = { TOPS: true, MAKRO: true, GO: false };
@@ -22,6 +25,7 @@ function loadChainMap(db) {
   for (const k of CHAIN_KEYS) {
     const c = v.chains?.[k] || {};
     chains[k] = { replace: c.replace ?? DEFAULT_REPLACE[k], office_slm: txt(c.office_slm), groups: Array.isArray(c.groups) ? c.groups : [],
+      keep_skus: Array.isArray(c.keep_skus) ? c.keep_skus.map(x => txt(x).toUpperCase()).filter(Boolean) : [],
       cust: c.cust && typeof c.cust === 'object' ? c.cust : {}, aliases: c.aliases && typeof c.aliases === 'object' ? c.aliases : {}, file: c.file || '', imported_at: c.imported_at || '', imported_by: c.imported_by || '' };
   }
   return { chains, updated_at: row?.updated_at || '' };
@@ -87,9 +91,14 @@ function slmFor(map, chain, code) {
   if (!isOffice(v) && txt(c?.aliases?.[v])) return txt(c.aliases[v]);
   return c?.office_slm || '';
 }
+// กลุ่มห้อง SKU ที่ถูกแทนของห้างนั้น — กลุ่มที่ทุกห้อง SKU อยู่ใน keep_skus = ไม่แทน
+function replacedGroups(map, k) {
+  const keep = new Set(map.chains[k].keep_skus || []);
+  return map.chains[k].groups.filter(g => !(g.skus || []).length || !(g.skus || []).every(s => keep.has(String(s).toUpperCase())));
+}
 // ช่วงรหัส DC ห้อง VAT ที่ถูกแทน (เฉพาะห้างที่เปิด "แทน")
 function replacedRanges(map) {
-  return CHAIN_KEYS.filter(k => map.chains[k].replace).flatMap(k => map.chains[k].groups.flatMap(g => g.vat || []));
+  return CHAIN_KEYS.filter(k => map.chains[k].replace).flatMap(k => replacedGroups(map, k).flatMap(g => g.vat || []));
 }
 // SQL: แถวที่ "ไม่ใช่" รหัส DC ที่ถูกแทน · ช่วงละเงื่อนไข (ไม่กี่สิบช่วง) — ใช้ต่อท้าย WHERE เฉพาะมุมมองราย Sales
 function notReplacedSql(map, col = 'cust_code') {
@@ -109,8 +118,9 @@ function chainFacts(db, map, from, to) {
     GROUP BY chain, period, cust_code`).all(...keys, from, to);
   const coOf = {};
   for (const k of keys) for (const g of map.chains[k].groups) for (const s of g.skus) coOf[`${k}|${s}`] = g.company || 'TSS';
-  return rows.map(r => ({ chain: r.chain, company: coOf[`${r.chain}|${skuGroupOf(r.cust_code)}`] || 'TSS', period: r.period, cust_code: r.cust_code,
+  const kept = new Set(keys.flatMap(k => (map.chains[k].keep_skus || []).map(s => `${k}|${s}`)));
+  return rows.filter(r => !kept.has(`${r.chain}|${skuGroupOf(r.cust_code)}`)).map(r => ({ chain: r.chain, company: coOf[`${r.chain}|${skuGroupOf(r.cust_code)}`] || 'TSS', period: r.period, cust_code: r.cust_code,
     slm_code: slmFor(map, r.chain, r.cust_code), amount: Number(r.amount) || 0, invoice_count: Number(r.invoice_count) || 0 }));
 }
 
-module.exports = { isOffice, isSlmCode, ENTITY, CHAIN_KEYS, loadChainMap, parseChainFile, parseVatRanges, slmFor, skuGroupOf, replacedRanges, notReplacedSql, chainFacts };
+module.exports = { isOffice, isSlmCode, ENTITY, CHAIN_KEYS, loadChainMap, parseChainFile, parseVatRanges, slmFor, skuGroupOf, replacedGroups, replacedRanges, notReplacedSql, chainFacts };

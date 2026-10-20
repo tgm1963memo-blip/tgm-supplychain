@@ -51,3 +51,55 @@ test('chain sales: parse mapping file, company total unchanged, salesperson view
   db.prepare("UPDATE approval_workflow_templates SET levels_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now', '+1 second') WHERE entity_type = 'chain_sales_map'").run(JSON.stringify({ chains: { TOPS: { replace: false, cust: p.cust, groups: p.groups } } }));
   assert.equal((await dx('&slm=207')).kpi.ty_net, 50);
 });
+
+// ห้อง SKU ที่ไม่แทนรายกลุ่ม (2026-10-20, ผู้ใช้แจ้ง "คุณปูยังขาดข้อมูลการขายของ TOP") — Tops เบเกอรี่ KK เป็นของฝ่ายขายร้านค้า
+test('chain sales: keep_skus keeps the DC invoice for that SKU room and drops its branch rows', async t => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  db.prepare('INSERT INTO sc_users(uid,name,role,department,slm_codes,pwd_hash) VALUES(?,?,?,?,?,?)').run('A', 'A', 'superadmin', 'x', null, 'x');
+  db.prepare('INSERT INTO sc_users(uid,name,role,department,slm_codes,pwd_hash) VALUES(?,?,?,?,?,?)').run('P', 'P', 'sales_officer', 'ฝ่ายขายร้านค้า', '106', 'x');
+  const tok = { A: createSession(db, 'A').token, P: createSession(db, 'P').token };
+  // DC เบเกอรี่ 30-TA-0001 ใต้ 106 = 1,000 · DC ห้อง MJ ใต้ 201 = 400
+  db.prepare("INSERT INTO invoice_sales_monthly(company,ym,cust_code,slm_code,amount,invoice_count) VALUES('TSS','2026-08','30-TA-0001','106',1000,1),('TSS','2026-08','30-MJ-0001','201',400,1)").run();
+  // สาขา KK ของ 207 = 1,000 · สาขา EU ของ 207 = 400
+  db.prepare("INSERT INTO chain_sales_monthly(chain,ym,cust_code,raw_slm,amount,invoice_count) VALUES('TOPS','2026-08','30-KK-0004','x',1000,1),('TOPS','2026-08','30-EU-0004','x',400,1)").run();
+  const groups = [{ skus: ['KK'], vat: [{ prefix: '30-TA-', from: 1, to: 999999 }], src: '30-TA-0001-สุดท้าย', company: 'TSS' },
+    { skus: ['EU'], vat: [{ prefix: '30-MJ-', from: 1, to: 999999 }], src: '30-MJ-0001-สุดท้าย', company: 'TSS' }];
+  const cfg = keep => JSON.stringify({ chains: { TOPS: { replace: true, cust: { '30-KK-0004': '207', '30-EU-0004': '207' }, groups, keep_skus: keep } } });
+  db.prepare("INSERT INTO approval_workflow_templates(entity_type,levels_json) VALUES('chain_sales_map',?)").run(cfg(['KK']));
+
+  const server = buildApp(db).listen(0, '127.0.0.1');
+  await new Promise(r => server.once('listening', r));
+  t.after(async () => { await new Promise(r => server.close(r)); db.close(); });
+  const base = `http://127.0.0.1:${server.address().port}/api`;
+  const req = async (route, uid = 'A', opt = {}) => (await (await fetch(base + route, { ...opt, headers: { Authorization: `Bearer ${tok[uid]}`, 'Content-Type': 'application/json' } })).json());
+  const dx = q => req(`/dashboard/exec?from=2026-08&to=2026-08&co=all${q}`);
+
+  assert.equal((await dx('&slm=106')).kpi.ty_net, 1000, '106 เห็นยอด DC เบเกอรี่ (KK ไม่แทน)');
+  assert.equal((await dx('&slm=207')).kpi.ty_net, 400, '207 ได้เฉพาะสาขา EU — สาขา KK ไม่ถูกเพิ่ม (กันนับซ้ำ)');
+  assert.equal((await dx('&slm=201')).kpi.ty_net, 0, 'DC ห้อง MJ ยังถูกแทน');
+  const sw = await req('/chain_sales/swap?from=2026-08&to=2026-08');
+  assert.deepEqual(sw.ranges.map(r => r.prefix), ['30-MJ-'], 'ช่วง DC ของ KK ไม่อยู่ในรายการที่แทน');
+  assert.deepEqual(sw.rows.map(r => r.cust_code), ['30-EU-0004']);
+
+  // บันทึกจากหน้า Master: เลิกติ๊ก "ไม่แทน" → KK กลับมาถูกแทน · นำเข้าไฟล์ใหม่ไม่ล้างค่า keep_skus
+  const put = await req('/chain_sales/map/TOPS', 'A', { method: 'PUT', body: JSON.stringify({ keep_skus: [] }) });
+  assert.deepEqual(put.chains.TOPS.keep_skus, []);
+  assert.equal((await req('/chain_sales/swap?from=2026-08&to=2026-08')).ranges.length, 2);
+  assert.ok((await req('/chain_sales/map/TOPS', 'A', { method: 'PUT', body: JSON.stringify({ keep_skus: 'KK' }) })).error, 'keep_skus ต้องเป็นรายการ');
+});
+
+test('chain sales migration: TOPS keep_skus defaults to KK/AA once, never overwrites an explicit value', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  db.prepare("INSERT INTO approval_workflow_templates(entity_type,levels_json) VALUES('chain_sales_map',?)").run(JSON.stringify({ chains: { TOPS: { replace: true }, MAKRO: { replace: true } } }));
+  runMigrations(db);
+  const get = () => JSON.parse(db.prepare("SELECT levels_json FROM approval_workflow_templates WHERE entity_type='chain_sales_map'").get().levels_json).chains;
+  assert.deepEqual(get().TOPS.keep_skus, ['KK', 'AA']);
+  assert.equal(get().MAKRO.keep_skus, undefined);
+  db.prepare("UPDATE approval_workflow_templates SET levels_json = ? WHERE entity_type='chain_sales_map'").run(JSON.stringify({ chains: { TOPS: { replace: true, keep_skus: [] } } }));
+  runMigrations(db);
+  assert.deepEqual(get().TOPS.keep_skus, []);
+});

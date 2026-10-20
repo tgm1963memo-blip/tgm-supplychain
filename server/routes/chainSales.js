@@ -8,7 +8,7 @@ const cs = require('../lib/customerScope');
 // ยอดขายรายสาขาห้าง (ห้อง SKU) — ดู lib/chainSales.js / jobs/importChainRooms.js (2026-10-07)
 //   GET  /api/chain_sales/map             Master + สถิติข้อมูลที่ดึงแล้ว
 //   POST /api/chain_sales/map/preview     {chain, sheets} → ผลอ่านไฟล์ (ไม่บันทึก)
-//   PUT  /api/chain_sales/map/:chain      นำเข้าไฟล์ {sheets, file} และ/หรือ ตั้งค่า {replace, office_slm, aliases} (admin)
+//   PUT  /api/chain_sales/map/:chain      นำเข้าไฟล์ {sheets, file} และ/หรือ ตั้งค่า {replace, office_slm, aliases, keep_skus} (admin)
 //   GET  /api/chain_sales/swap?from&to    มุมมองราย Sales: ช่วงรหัส DC ที่ถูกแทน + ยอดสาขาห้อง (กรองตามสิทธิ์ผู้ใช้)
 module.exports = function chainSalesRoutes(db) {
   const router = express.Router();
@@ -67,6 +67,10 @@ module.exports = function chainSalesRoutes(db) {
     }
     if (body.replace !== undefined) cur.replace = !!body.replace;
     if (body.office_slm !== undefined) cur.office_slm = String(body.office_slm || '').trim().slice(0, 20);
+    if (body.keep_skus !== undefined) {
+      if (!Array.isArray(body.keep_skus)) return res.status(400).json({ error: 'keep_skus ต้องเป็นรายการ' });
+      cur.keep_skus = [...new Set(body.keep_skus.map(s => String(s || '').trim().toUpperCase().slice(0, 10)).filter(Boolean))];
+    }
     if (body.aliases !== undefined) {
       if (!body.aliases || typeof body.aliases !== 'object') return res.status(400).json({ error: 'ตารางแปลงไม่ถูกต้อง' });
       cur.aliases = Object.fromEntries(Object.entries(body.aliases).map(([a, b]) => [String(a).slice(0, 60), String(b || '').trim().slice(0, 20)]).filter(([, b]) => b));

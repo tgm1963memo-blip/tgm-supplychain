@@ -693,6 +693,19 @@ function runMigrations(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_conversion_doc_lines_doc ON conversion_doc_lines(doc_num);
   `);
+
+  // Tops เบเกอรี่ (KK = 30-TA/TB/TF) + Saladbar (AA = 30-TD) ไม่แทนด้วยยอดสาขา (2026-10-20, ผู้ใช้แจ้ง "คุณปูยังขาดข้อมูลการขายของ TOP")
+  // — ตั้งครั้งเดียวเมื่อยังไม่เคยตั้ง keep_skus · หลังจากนี้แก้ได้ในหน้า Master (lib/chainSales.js)
+  const chainRow = db.prepare("SELECT levels_json FROM approval_workflow_templates WHERE entity_type = 'chain_sales_map'").get();
+  if (chainRow) {
+    let v = null;
+    try { v = JSON.parse(chainRow.levels_json); } catch { v = null; }
+    if (v?.chains?.TOPS && !Array.isArray(v.chains.TOPS.keep_skus)) {
+      v.chains.TOPS.keep_skus = ['KK', 'AA'];
+      db.prepare("UPDATE approval_workflow_templates SET levels_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE entity_type = 'chain_sales_map'")
+        .run(JSON.stringify(v));
+    }
+  }
 }
 
 module.exports = { runMigrations, columnExists, addColumnIfMissing };
