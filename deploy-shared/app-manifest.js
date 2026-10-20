@@ -46,6 +46,8 @@ const SALES_ONLY = [
   'pgMySales', 'sdRender', 'sdUpdateLabel', 'sdKPI', '_xa', '_custsByItemGrouped',
   'sdCust', 'sdProd', 'sdSlm', 'sdSetPT', 'sdNav', 'sdGoNow', 'sdTab', 'sdTogView', 'sdSort',
   'sdSetYear', 'sdSetQ', 'sdClear', 'sdExport',
+  // Export Business Review .pptx (2026-10-20)
+  'CDN_PPTX', 'ensurePptx', '_BR_MTH', 'sdBrOpen', '_sdBrRows', '_sdBrByCust', '_sdBrSum', 'sdBrExport', '_sdBrBuild',
 
   // ฝากขาย CONSI
   '_consiRows', '_consiCustF', '_consiProdF', '_consiBranchF', '_consiStartF', '_consiEndF',

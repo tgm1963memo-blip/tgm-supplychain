@@ -9445,7 +9445,7 @@ async function sdLoadCustom(){
 
 function pgMySales(){
   const isAll=isManager();
-  document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-ai" onclick="aiSalesInsight()" style="margin-right:6px">🤖 AI วิเคราะห์</button><button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
+  document.getElementById('tb-r').innerHTML=`<button class="btn btn-sm btn-ai" onclick="aiSalesInsight()" style="margin-right:6px">🤖 AI วิเคราะห์</button><button class="btn btn-sm" onclick="sdBrOpen()" style="margin-right:6px" title="สร้างไฟล์ PowerPoint แบบ Business Review จากยอดขาย">📊 Business Review</button><button class="btn btn-sm btn-g" onclick="sdExport()">⬇ Export Excel</button>`;
   const now=new Date();
   const _pad=n=>String(n).padStart(2,'0');
   const _today=`${now.getFullYear()}-${_pad(now.getMonth()+1)}-${_pad(now.getDate())}`;
@@ -10705,6 +10705,214 @@ function sdExport(){
     sheet='รายเซลส์';
   }
   toXLSX([[sheet, cols, rows]], `Sales_${period}_${sheet}.xlsx`);
+}
+
+// ── Export Business Review (.pptx) (2026-10-20, ผู้ใช้ขอ — ตามไฟล์ "Business Review Wholesales Team 7.9.2026.pdf") ──
+// สไลด์ตัวเลขเติมอัตโนมัติ: Sales Summary / Customer Groups / Top 10 / Potential / Forecast · สไลด์อื่น (ทีม, Portfolio,
+// NPD, กลยุทธ์) เป็นหน้าว่างตามแบบให้ทีมกรอก · ยอด = ใบกำกับก่อน VAT หักลดหนี้แล้ว (NET เดียวกับ Sales Overview, ผู้ใช้ยืนยัน)
+// ข้อมูลชุดเดียวกับ Sales Overview: บริษัทที่เลือก (_sdCosFor), ตัวกรอง Sales/สิทธิ์ (_sdInvSlmMatcher), แทนยอด DC ห้างในมุมมอง
+// ราย Sales (_chainSwapInvRows), ตัดลูกค้าไม่นับยอด/ใบค่าขนส่ง-วัสดุ (server) · ช่องทาง: Category (Sales) "Agent Domestic" /
+// "Agent Export" / "Export" แยก ที่เหลือ = Wholesales · กลุ่ม Top 10 = Corporate (sales_group) → ไม่มี = ชื่อบริษัท
+const CDN_PPTX='https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js'; // cdnjs ไม่มีรุ่นนี้
+const ensurePptx=()=>loadAsset('PptxGenJS',CDN_PPTX,()=>!!window.PptxGenJS);
+const _BR_MTH=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function sdBrOpen(){
+  const now=new Date(),y=now.getFullYear(),last=Math.max(1,now.getMonth()); // เดือนที่ปิดแล้วล่าสุด
+  const s=_sdEffSlm(),who=s?(slmKeySet(s).size>1?slmKeyName(s):(salesNameFor(s)||s)):(_scopeNow()?.restricted?'ยอดในความดูแลของฉัน':'ทุก Sales');
+  const opt=(sel)=>_BR_MTH.map((m,i)=>`<option value="${i+1}" ${i+1===sel?'selected':''}>${m}</option>`).join('');
+  openMod(`<div class="mh"><div class="mt2">📊 Export Business Review (.pptx)</div><span class="mx" onclick="closeM()">✕</span></div>
+    <div style="display:grid;gap:10px;font-size:13px">
+      <label>ปี <input id="br-y" type="number" value="${y}" min="2025" max="${y}" style="width:90px;padding:4px 6px"> <span style="color:var(--TX3)">(เทียบกับปีก่อนหน้าช่วงเดือนเดียวกัน)</span></label>
+      <label>ช่วงเดือน <select id="br-m1">${opt(1)}</select> – <select id="br-m2">${opt(last)}</select></label>
+      <label>ชื่อทีมบนปก <input id="br-team" type="text" value="Wholesales Team" style="width:220px;padding:4px 6px"></label>
+      <div class="al ali" style="font-size:12px">ใช้ตัวกรองของหน้านี้: <b>${esc(who)}</b> · บริษัท <b>${esc({all:'ทุกบริษัท',tss:'TSS',tgm:'TGM'}[_sdCo()])}</b><br>
+        ยอดขาย = ใบกำกับก่อน VAT หักลดหนี้แล้ว · ไม่รวมบริษัทในเครือ / ใบค่าขนส่ง-วัสดุ · สไลด์ทีม / Portfolio / NPD / กลยุทธ์ เป็นหน้าว่างให้กรอกเอง</div>
+      <div style="text-align:right"><button class="btn btn-g" id="br-go" onclick="sdBrExport(this)">⬇ สร้างไฟล์</button></div>
+    </div>`);
+}
+async function _sdBrRows(a,b){
+  const inv=await _sdInvRange(a,b);
+  const s=_sdEffSlm(),restricted=!!_scopeNow()?.restricted;
+  if(!s&&!restricted) return inv; // ภาพรวม = ใบกำกับเดิม (ไม่แทนยอด DC) เหมือน Sales Overview
+  const sw=_chainSwapInvRows(inv,await _chainSwap(a,b).catch(()=>null),_sdCosFor(a));
+  return s?sw.filter(_sdInvSlmMatcher(s)):sw;
+}
+// แถวใบกำกับ → ต่อลูกค้า {code, amt, cat, ch, grp}
+function _sdBrByCust(rows){
+  const profs=customerProfiles(),remote=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),x]));
+  const m=new Map();
+  for(const r of rows){
+    const c=String(r.cust_code||'');if(!c)continue;
+    if(!m.has(c)){
+      const p=profs[c]||{},cat=String(p.sales_category||'').trim()||'ยังไม่ระบุ Category';
+      const name=p.name||remote[c]?.name||r._name||c;
+      const grp=String(p.sales_group||'').trim()||r._corp||_sdCorpNameLabel(remote,profs,[{c,n:name}]);
+      // หมวด "Export" = ลูกค้าต่างประเทศ (ตัวแทน) — นับเป็นช่องทาง Agent Export เหมือนไฟล์ตัวอย่าง (3 ราย)
+      m.set(c,{code:c,amt:0,cat,ch:cat==='Agent Domestic'?cat:(cat==='Agent Export'||cat==='Export')?'Agent Export':'Wholesales',grp});
+    }
+    m.get(c).amt+=Number(r.amount)||0;
+  }
+  return m;
+}
+// รวมตามคีย์ → {key:{amt,acc}} · acc = ลูกค้าที่มียอด > 0
+function _sdBrSum(byCust,keyOf){
+  const o={};
+  for(const c of byCust.values()){const k=keyOf(c);const e=o[k]=o[k]||{amt:0,acc:0};e.amt+=c.amt;if(c.amt>0)e.acc++;}
+  return o;
+}
+async function sdBrExport(btn){
+  const y=Number(document.getElementById('br-y').value),m1=Number(document.getElementById('br-m1').value),m2=Number(document.getElementById('br-m2').value);
+  const team=(document.getElementById('br-team').value||'Wholesales Team').trim();
+  if(!y||m1>m2){toast('ช่วงเดือนไม่ถูกต้อง','warn');return;}
+  const pad=n=>String(n).padStart(2,'0'),a=`${y}-${pad(m1)}`,b=`${y}-${pad(m2)}`,la=`${y-1}-${pad(m1)}`,lb=`${y-1}-${pad(m2)}`;
+  btn.disabled=true;btn.textContent='⏳ กำลังดึงข้อมูล…';
+  try{
+    const [ty,ly,lyFull]=await Promise.all([_sdBrRows(a,b),_sdBrRows(la,lb),_sdBrRows(`${y-1}-01`,`${y-1}-12`),ensurePptx()]);
+    btn.textContent='⏳ กำลังสร้างสไลด์…';
+    const data={y,m1,m2,team,T:_sdBrByCust(ty),L:_sdBrByCust(ly),F:_sdBrByCust(lyFull),
+      who:_sdEffSlm()?(slmKeySet(_sdEffSlm()).size>1?slmKeyName(_sdEffSlm()):(salesNameFor(_sdEffSlm())||_sdEffSlm())):''};
+    const pptx=_sdBrBuild(data);
+    await pptx.writeFile({fileName:`Business Review ${team} ${_BR_MTH[m1-1]}-${_BR_MTH[m2-1]} ${y}.pptx`});
+    closeM();toast('สร้างไฟล์ Business Review แล้ว');
+  }catch(e){console.error('business review',e);toast('สร้างไฟล์ไม่สำเร็จ: '+(e.message||e),'warn');btn.disabled=false;btn.textContent='⬇ สร้างไฟล์';}
+}
+function _sdBrBuild(D){
+  const C={navy:'1E2A5A',blue:'3B5BDB',lblue:'E7ECFB',orange:'E8590C',green:'2B8A3E',red:'C92A2A',grey:'6B7280',line:'D0D7E2',bg:'F7F9FC'};
+  const F='Tahoma',PIE=['4C8DF6','52C46B','9B6BF2','F5A524','EF5DA8','2EC4B6'];
+  const pptx=new PptxGenJS();pptx.layout='LAYOUT_16x9';pptx.title=`Business Review ${D.team} ${D.y}`;
+  const logo=document.querySelector('#tb img')?.src||'';
+  const per=`${_BR_MTH[D.m1-1]} – ${_BR_MTH[D.m2-1]} ${D.y-1} VS ${D.y}`,nM=D.m2-D.m1+1;
+  const M=v=>(v/1e6).toFixed(1)+'M',B=v=>Math.round(v).toLocaleString('en-US');
+  const pct=(t,l)=>l?((t/l-1)*100):(t?null:0),P=v=>v==null?'NEW':(v>=0?'+':'')+v.toFixed(1)+'%';
+  const cut=(t,n=30)=>{t=String(t||'');return t.length>n?t.slice(0,n-1)+'…':t;};
+  const gcol=v=>v==null||v>=0?C.green:C.red;
+  const fc=(t,l,f)=>t+(f-l)*(l?t/l:1); // ทั้งปีตามแนวโน้ม = YTD ปีนี้ + เดือนที่เหลือของปีก่อน × (ปีนี้/ปีก่อน)
+  const head=(s,title,sub)=>{
+    s.background={color:'FFFFFF'};
+    s.addText(title,{x:0.4,y:0.25,w:7.6,h:0.5,fontFace:F,fontSize:24,bold:true,color:C.navy});
+    if(sub) s.addText(sub,{x:0.4,y:0.72,w:7.6,h:0.3,fontFace:F,fontSize:11,color:C.grey});
+    if(logo) s.addImage({data:logo,x:9.0,y:0.18,w:0.6,h:0.6});
+    s.addText('WHOLESALES',{x:8.5,y:0.8,w:1.4,h:0.2,fontFace:F,fontSize:7,color:C.grey,align:'center'});
+  };
+  const placeholder=(title,note)=>{const s=pptx.addSlide();head(s,title,'');
+    s.addText(note||'(กรอกเนื้อหา)',{x:0.4,y:1.4,w:9.2,h:3.6,fontFace:F,fontSize:14,color:C.grey,align:'center',valign:'middle',fill:{color:C.bg},line:{color:C.line,dashType:'dash'}});};
+  const kpi=(s,x,label,val,sub,subColor,bar)=>{
+    s.addShape(pptx.ShapeType.rect,{x,y:1.1,w:2.15,h:0.06,fill:{color:bar}});
+    s.addText(val,{x,y:1.2,w:2.15,h:0.45,fontFace:F,fontSize:20,bold:true,color:C.navy});
+    s.addText(label,{x,y:1.62,w:2.15,h:0.3,fontFace:F,fontSize:8,color:C.grey});
+    if(sub) s.addText(sub,{x,y:1.9,w:2.15,h:0.25,fontFace:F,fontSize:10,bold:true,color:subColor});
+  };
+  const th=t=>({text:t,options:{bold:true,color:'FFFFFF',fill:{color:C.blue},align:'center'}});
+  const tableOpts=(y,rowH)=>({x:0.4,y,w:9.2,rowH,fontFace:F,fontSize:9,border:{type:'solid',pt:0.5,color:C.line},valign:'middle',autoPage:false,margin:0.04});
+
+  // 1 ปก
+  {const s=pptx.addSlide();s.background={color:C.navy};
+    if(logo) s.addImage({data:logo,x:4.45,y:0.6,w:1.1,h:1.1});
+    s.addText('Business Review',{x:0.5,y:1.9,w:9,h:0.8,fontFace:F,fontSize:40,bold:true,color:'FFFFFF',align:'center'});
+    s.addText(`${D.team} ${D.y}`,{x:0.5,y:2.7,w:9,h:0.5,fontFace:F,fontSize:20,color:'DDE3F5',align:'center'});
+    s.addText(new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).toUpperCase(),{x:0.5,y:3.4,w:9,h:0.4,fontFace:F,fontSize:12,color:'AAB4D4',align:'center'});
+    if(D.who) s.addText(D.who,{x:0.5,y:3.8,w:9,h:0.4,fontFace:F,fontSize:12,color:'AAB4D4',align:'center'});}
+  // 2 Agenda
+  {const s=pptx.addSlide();head(s,'Agenda',`Business Review ${D.y}`);
+    s.addText([`SALES PERFORMANCE ${per}`,'PORTFOLIO CUSTOMER / SALES CUSTOMER GROUP','TOP LIST / TOP CUSTOMER','POTENTIAL CUSTOMERS',`NPD OVERVIEW ${D.y}`,`KEY ACCOUNT CUSTOMER ${D.y}`,`BUSINESS PLAN ${D.y}/${D.y+1}`,`SALES FORECAST ${D.y} / SALES TARGET ${D.y+1}`]
+      .map((t,i)=>({text:`${i+1}. ${t}`,options:{breakLine:true}})),{x:0.8,y:1.2,w:8.4,h:3.8,fontFace:F,fontSize:15,color:C.navy,paraSpaceAfter:8});}
+  // 3 ทีม
+  placeholder(`${D.team} ${D.y}`,'Leadership, Top Performers & Sales Team\n(กรอกรายชื่อ/รูปทีม)');
+
+  // 4 Sales Summary
+  const CH=['Wholesales','Agent Domestic','Agent Export'];
+  const chT=_sdBrSum(D.T,c=>c.ch),chL=_sdBrSum(D.L,c=>c.ch),chF=_sdBrSum(D.F,c=>c.ch);
+  const tT=[...D.T.values()].reduce((a,c)=>a+c.amt,0),tL=[...D.L.values()].reduce((a,c)=>a+c.amt,0),tF=[...D.F.values()].reduce((a,c)=>a+c.amt,0);
+  const accT=[...D.T.values()].filter(c=>c.amt>0).length,accL=[...D.L.values()].filter(c=>c.amt>0).length;
+  {const s=pptx.addSlide();head(s,'Sales Summary',`Total sales, ${nM}-month actuals ${per}`);
+    kpi(s,0.4,`SALES ${D.y-1} (${_BR_MTH[D.m1-1]}–${_BR_MTH[D.m2-1]}), BAHT`,M(tL),'',C.grey,'2EC4B6');
+    kpi(s,2.65,`SALES ${D.y} (${_BR_MTH[D.m1-1]}–${_BR_MTH[D.m2-1]}), BAHT`,M(tT),(tT>=tL?'▲ ':'▼ ')+P(pct(tT,tL)),gcol(pct(tT,tL)),C.blue);
+    kpi(s,4.9,'YTD DIFF, BAHT',M(tT-tL),'',C.grey,'F5A524');
+    kpi(s,7.15,`ACTIVE ACCOUNTS ${D.y}`,B(accT),(accT>=accL?'▲ +':'▼ ')+(accT-accL),accT>=accL?C.green:C.red,'F2D500');
+    const rows=[[th('Channel'),th(`Acc. '${String(D.y-1).slice(2)}`),th(`Sale '${String(D.y-1).slice(2)}`),th(`Acc. '${String(D.y).slice(2)}`),th(`Sale '${String(D.y).slice(2)}`),th('Diff (Baht)'),th('Growth')]];
+    CH.forEach(k=>{const t=chT[k]||{amt:0,acc:0},l=chL[k]||{amt:0,acc:0},g=pct(t.amt,l.amt);
+      rows.push([k,B(l.acc),B(l.amt),B(t.acc),B(t.amt),{text:B(t.amt-l.amt),options:{color:t.amt>=l.amt?C.orange:C.red}},{text:P(g),options:{color:gcol(g)}}]);});
+    rows.push([{text:'TOTAL',options:{bold:true}},B(accL),B(tL),B(accT),B(tT),{text:B(tT-tL),options:{bold:true}},{text:P(pct(tT,tL)),options:{bold:true,color:gcol(pct(tT,tL))}}].map(c=>typeof c==='string'?{text:c,options:{bold:true,fill:{color:C.lblue}}}:{...c,options:{...c.options,fill:{color:C.lblue}}}));
+    s.addTable(rows,{...tableOpts(2.3,0.27),w:6.2,colW:[1.25,0.55,1.05,0.55,1.05,0.95,0.8],fontSize:8.5,align:'right'});
+    s.addChart(pptx.ChartType.doughnut,[{name:'Mix',labels:CH,values:CH.map(k=>(chT[k]?.amt)||0)}],
+      {x:6.75,y:2.2,w:3.0,h:2.9,holeSize:55,showPercent:true,showLegend:true,legendPos:'b',legendFontFace:F,legendFontSize:8,dataLabelFontSize:8,dataLabelColor:'FFFFFF',chartColors:PIE,
+       showTitle:true,title:`${D.y} SALES MIX BY CHANNEL`,titleFontFace:F,titleFontSize:10,titleColor:C.green});
+    s.addChart(pptx.ChartType.bar,[{name:String(D.y-1),labels:CH,values:CH.map(k=>(chL[k]?.amt)||0)},{name:String(D.y),labels:CH,values:CH.map(k=>(chT[k]?.amt)||0)}],
+      {x:0.4,y:3.85,w:6.2,h:1.7,barDir:'col',chartColors:['B8C2D6',C.blue],showLegend:true,legendPos:'r',legendFontSize:8,catAxisLabelFontFace:F,catAxisLabelFontSize:8,valAxisHidden:true,valGridLine:{style:'none'},
+       showValue:true,dataLabelFormatCode:'#,##0.0,,"M"',dataLabelFontSize:7});}
+
+  // 5 Portfolio
+  placeholder(`Portfolio Customer ${D.y}`,'(ใส่โลโก้ลูกค้าตามกลุ่ม)');
+  // 6 Sales by Customer Groups
+  {const s=pptx.addSlide();head(s,'Sales by Customer Groups',per);
+    const gT=_sdBrSum(D.T,c=>c.cat),gL=_sdBrSum(D.L,c=>c.cat);
+    const keys=[...new Set([...Object.keys(gT),...Object.keys(gL)])].sort((a,b)=>((gT[b]?.amt)||0)-((gT[a]?.amt)||0));
+    const yy=v=>`'${String(v).slice(2)}`;
+    const rows=[[th('Customer Group'),th(`Sale ${yy(D.y-1)}`),th(`Acc ${yy(D.y-1)}`),th(`Sale ${yy(D.y)}`),th(`Acc ${yy(D.y)}`),th('Diff (Baht)'),th('Growth')]];
+    keys.forEach(k=>{const t=gT[k]||{amt:0,acc:0},l=gL[k]||{amt:0,acc:0},g=pct(t.amt,l.amt);
+      rows.push([{text:k,options:{align:'left'}},B(l.amt),B(l.acc),B(t.amt),B(t.acc),{text:B(t.amt-l.amt),options:{color:t.amt>=l.amt?C.orange:C.red}},{text:P(g),options:{color:gcol(g)}}]);});
+    rows.push([{text:'TOTAL',options:{bold:true,align:'left',fill:{color:C.lblue}}},...[B(tL),B(accL),B(tT),B(accT),B(tT-tL),P(pct(tT,tL))].map(t=>({text:t,options:{bold:true,fill:{color:C.lblue}}}))]);
+    s.addTable(rows,{...tableOpts(1.15,Math.min(0.27,4.3/rows.length)),fontSize:rows.length>14?7.5:9,colW:[2.2,1.3,0.7,1.3,0.7,1.5,1.5],align:'right'});}
+
+  // 7 Top 10
+  {const gT=_sdBrSum(D.T,c=>c.grp),gL=_sdBrSum(D.L,c=>c.grp),gF=_sdBrSum(D.F,c=>c.grp);
+    const top=Object.entries(gT).sort((a,b)=>b[1].amt-a[1].amt).slice(0,10).map(([k,v],i)=>{const l=(gL[k]?.amt)||0,f=(gF[k]?.amt)||0;return {i:i+1,k,t:v.amt,l,f,fc:fc(v.amt,l,f)};});
+    const sT=top.reduce((a,x)=>a+x.t,0),sL=top.reduce((a,x)=>a+x.l,0),sF=top.reduce((a,x)=>a+x.f,0),sFc=top.reduce((a,x)=>a+x.fc,0);
+    const s=pptx.addSlide();head(s,'Top 10 Customer Portfolio',`${per} Actual, with FY${D.y} Forecast by trend`);
+    kpi(s,0.4,`${nM}M '${String(D.y-1).slice(2)} ACTUAL (TOP 10)`,M(sL),'',C.grey,'4C8DF6');
+    kpi(s,2.65,`${nM}M '${String(D.y).slice(2)} ACTUAL (TOP 10)`,M(sT),P(pct(sT,sL)),gcol(pct(sT,sL)),'52C46B');
+    kpi(s,4.9,`YTD DIFF (${nM}M ACT.)`,(sT>=sL?'+':'')+M(sT-sL),'',C.grey,'9B6BF2');
+    kpi(s,7.15,`FY${D.y} FORECAST (TOP 10)`,M(sFc),`${D.y-1}: ${M(sF)} · ${P(pct(sFc,sF))}`,gcol(pct(sFc,sF)),'F5A524');
+    const rows=[[th('#'),th('Customer Group'),th(`${nM}M '${String(D.y-1).slice(2)}`),th(`${nM}M '${String(D.y).slice(2)}`),th('Diff'),th('Growth'),th(`FY${D.y} Fcst`)]];
+    top.forEach(x=>{const g=pct(x.t,x.l);rows.push([String(x.i),{text:cut(x.k,28),options:{align:'left'}},M(x.l),M(x.t),{text:(x.t>=x.l?'+':'')+M(x.t-x.l),options:{color:gcol(g)}},{text:P(g),options:{color:gcol(g)}},M(x.fc)]);});
+    s.addTable(rows,{...tableOpts(2.3,0.27),w:5.2,colW:[0.3,1.85,0.6,0.6,0.6,0.6,0.65],fontSize:8,align:'right'});
+    s.addChart(pptx.ChartType.bar,[{name:String(D.y-1),labels:top.map(x=>cut(x.k,22)),values:top.map(x=>x.l)},{name:String(D.y),labels:top.map(x=>cut(x.k,22)),values:top.map(x=>x.t)}],
+      {x:5.7,y:2.25,w:4.0,h:3.2,barDir:'bar',catAxisOrientation:'maxMin',chartColors:['B8C2D6','4C8DF6'],showLegend:true,legendPos:'b',legendFontSize:8,catAxisLabelFontFace:F,catAxisLabelFontSize:7,valAxisHidden:true,valGridLine:{style:'none'},
+       showValue:true,dataLabelFormatCode:'#,##0.0,,"M"',dataLabelFontSize:6});}
+
+  // 8 Potential Customers — กลุ่มที่โตเร็วสุด (ยอดปีนี้ ≥ 500,000) + ลดลงมากสุด
+  {const gT=_sdBrSum(D.T,c=>c.grp),gL=_sdBrSum(D.L,c=>c.grp);
+    const all=[...new Set([...Object.keys(gT),...Object.keys(gL)])].map(k=>({k,t:(gT[k]?.amt)||0,l:(gL[k]?.amt)||0}));
+    const up=all.filter(x=>x.t>=500000&&x.t>x.l).sort((a,b)=>((pct(b.t,b.l)??1e9)-(pct(a.t,a.l)??1e9))||(b.t-a.t)).slice(0,8);
+    const down=all.filter(x=>x.l>=500000&&x.t<x.l).sort((a,b)=>(a.t-a.l)-(b.t-b.l)).slice(0,6);
+    const s=pptx.addSlide();head(s,'Potential Customers',`Where we're investing next — fastest growing / biggest decline · ${per}`);
+    const tbl=(title,list,x,color)=>{
+      s.addText(title,{x,y:1.1,w:4.45,h:0.3,fontFace:F,fontSize:11,bold:true,color});
+      const rows=[[th('Customer Group'),th(String(D.y-1)),th(String(D.y)),th('Growth')]];
+      list.forEach(v=>{const g=pct(v.t,v.l);rows.push([{text:cut(v.k,26),options:{align:'left'}},M(v.l),M(v.t),{text:P(g),options:{color:gcol(g),bold:true}}]);});
+      if(!list.length) rows.push([{text:'—',options:{colspan:4,align:'center',color:C.grey}}]);
+      s.addTable(rows,{...tableOpts(1.45,0.3),x,w:4.45,colW:[2.05,0.8,0.8,0.8],fontSize:8.5,align:'right'});};
+    tbl(`TARGET ${D.y} — FASTEST GROWING (≥ ฿0.5M)`,up,0.4,C.green);
+    tbl('BIGGEST DECLINE — NEED ATTENTION',down,5.15,C.red);
+    s.addText('(เพิ่มรายชื่อลูกค้าเป้าหมาย / Prospect shortlist ได้ในสไลด์นี้)',{x:0.4,y:5.1,w:9.2,h:0.3,fontFace:F,fontSize:9,color:C.grey,italic:true});}
+
+  // 9–15 เนื้อหาที่ทีมกรอกเอง
+  placeholder(`NPD Overview ${D.y}`,'NPD pipeline value by stage — Passed / Prospect / Develop / Fail\n(กรอกเอง)');
+  placeholder(`Key Account Customer ${D.y}`,'(กรอกเอง)');
+  placeholder(`Changing Sales Trends ${D.y}/${D.y+1}`,'Customer needs / Sales approach\n(กรอกเอง)');
+  placeholder(`Business Plan ${D.y}/${D.y+1}`,'Key Strategic Focus\n(กรอกเอง)');
+
+  // 16 Forecast by Channel — FY ปีก่อนจริง vs FY ปีนี้ (YTD จริง + เดือนที่เหลือตามแนวโน้ม)
+  {const s=pptx.addSlide();head(s,`Full-Year ${D.y} Forecast by Channel`,`FY ${D.y-1} actual vs FY ${D.y} forecast (${_BR_MTH[D.m1-1]}–${_BR_MTH[D.m2-1]} actual + rest of year by trend)`);
+    const v=CH.map(k=>{const t=(chT[k]?.amt)||0,l=(chL[k]?.amt)||0,f=(chF[k]?.amt)||0;return {k,f,fc:fc(t,l,f)};});
+    const sF=v.reduce((a,x)=>a+x.f,0),sFc=v.reduce((a,x)=>a+x.fc,0);
+    kpi(s,0.4,`FY${D.y} TOTAL FORECAST, BAHT`,M(sFc),`${P(pct(sFc,sF))} vs FY${D.y-1}`,gcol(pct(sFc,sF)),C.blue);
+    kpi(s,2.65,`FY${D.y-1} ACTUAL, BAHT`,M(sF),'',C.grey,'B8C2D6');
+    const rows=[[th('Channel'),th(`FY ${D.y-1}`),th(`FY ${D.y} (Fcst)`),th('Diff'),th('Growth'),th('Mix')]];
+    v.forEach(x=>{const g=pct(x.fc,x.f);rows.push([{text:x.k,options:{align:'left'}},B(x.f),B(x.fc),B(x.fc-x.f),{text:P(g),options:{color:gcol(g)}},sFc?Math.round(x.fc/sFc*100)+'%':'—']);});
+    rows.push([{text:'TOTAL',options:{bold:true,align:'left',fill:{color:C.lblue}}},...[B(sF),B(sFc),B(sFc-sF),P(pct(sFc,sF)),'100%'].map(t=>({text:t,options:{bold:true,fill:{color:C.lblue}}}))]);
+    s.addTable(rows,{...tableOpts(2.35,0.3),w:5.6,colW:[1.3,1.1,1.1,0.9,0.7,0.5],fontSize:8.5,align:'right'});
+    s.addChart(pptx.ChartType.bar,[{name:`FY ${D.y-1}`,labels:CH,values:v.map(x=>x.f)},{name:`FY ${D.y} Fcst`,labels:CH,values:v.map(x=>x.fc)}],
+      {x:6.2,y:1.1,w:3.5,h:4.2,barDir:'col',chartColors:['B8C2D6',C.blue],showLegend:true,legendPos:'b',legendFontSize:8,catAxisLabelFontFace:F,catAxisLabelFontSize:8,valAxisHidden:true,valGridLine:{style:'none'},
+       showValue:true,dataLabelFormatCode:'#,##0,,"M"',dataLabelFontSize:7});
+    s.addText(`วิธีประมาณการ: ยอดจริง ${_BR_MTH[D.m1-1]}–${_BR_MTH[D.m2-1]} ${D.y} + ยอดเดือนที่เหลือของปี ${D.y-1} × (ยอดปีนี้ ÷ ยอดปีก่อนช่วงเดียวกัน)`,
+      {x:0.4,y:4.0,w:5.6,h:0.5,fontFace:F,fontSize:8,color:C.grey,italic:true});}
+
+  // 17 ปิด
+  {const s=pptx.addSlide();s.background={color:C.navy};
+    if(logo) s.addImage({data:logo,x:4.4,y:1.8,w:1.2,h:1.2});
+    s.addText('WHOLESALES',{x:0.5,y:3.2,w:9,h:0.5,fontFace:F,fontSize:18,bold:true,color:'FFFFFF',align:'center'});}
+  return pptx;
 }
 
 let _consiRows=[], _consiCustF='', _consiProdF='', _consiBranchF='', _consiStartF='', _consiEndF='', _consiLoaded=false, _consiErr='', _consiOp={};
