@@ -8250,12 +8250,14 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
   let from=0;
   const useDaily=!!(opts.dateFrom&&opts.dateTo&&!opts.forceMonthly);
   const salesSource=useDaily ? 'sales_transactions' : (opts.forceBaseSales ? 'sales_history' : 'v_sales_history_company');
+  // FIXED (2026-10-20, ผู้ใช้แจ้ง "เทียบปีที่แล้ว ยอดปี 2568 ไม่แสดง"): sales_transactions ใช้คอลัมน์ tx_date (ไม่มี doc_date/ym)
+  // เดิมกรอง doc_date ซึ่ง server ข้ามตัวกรองคอลัมน์ที่ไม่รู้จักเงียบๆ → ดึงทั้งตาราง ~1.3 ล้านแถว (65 หน้า) จนโหลดไม่จบ
   const salesSelect=useDaily
-    ? 'slm_id,sku,doc_date,ym,qty,amount,company,cust_code'
+    ? 'slm_id,sku,tx_date,qty,amount,company,cust_code'
     : (salesSource==='v_sales_history_company'
       ? 'slm_id,sku,ym,qty,amount,company,product_name,group_name,plant'
       : 'slm_id,sku,ym,qty,amount');
-  const rangeCol=useDaily?'doc_date':'ym';
+  const rangeCol=useDaily?'tx_date':'ym';
   const rangeStart=useDaily?opts.dateFrom:startYm;
   const rangeEnd=useDaily?opts.dateTo:endYm;
   while(true){
@@ -8280,7 +8282,7 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     if(error && /amount/i.test(error.message||'')){
       let q2=getSupabaseClient()
         .from(salesSource)
-        .select(useDaily ? 'slm_id,sku,doc_date,ym,qty,company' : (salesSource==='v_sales_history_company' ? 'slm_id,sku,ym,qty,company,product_name,group_name,plant' : 'slm_id,sku,ym,qty'))
+        .select(useDaily ? 'slm_id,sku,tx_date,qty,company' : (salesSource==='v_sales_history_company' ? 'slm_id,sku,ym,qty,company,product_name,group_name,plant' : 'slm_id,sku,ym,qty'))
         .gte(rangeCol,rangeStart).lte(rangeCol,rangeEnd)
         .order(rangeCol)
         .range(from,from+PAGE-1);
@@ -8376,8 +8378,8 @@ async function _sbSalesRows(startYm,endYm,slmId='',opts={}){
     amount,
     company:(['TSS','TSSNV','TGM','CONSI'].includes(rowCompany)) ? rowCompany : (sp.prefixed ? _companyFromExpressBranch(sp.branch) : _skuCompanyFromProduct(prod,r.sku)),
     source_company:r.company||sp.branch||'',
-    ym:r.ym||String(r.doc_date||'').slice(0,7),
-    doc_date:r.doc_date||null,
+    ym:r.ym||String(r.tx_date||r.doc_date||'').slice(0,7),
+    doc_date:r.tx_date||r.doc_date||null,
       };
       // ถ้ามี cust_code จาก sales_transactions (daily mode) → ใช้ข้อมูลลูกค้าจริงจาก Express + customer_profiles
       if(!isAll && r.cust_code){
@@ -9273,18 +9275,21 @@ async function _sdLoadYoY(seq){
   const slmId=_sdLoadSlm();
   const rg=_sdYoYRange();if(!rg)return;
   const {start,end}=rg;
-  const wantInv=!!_sdApi.invoiceBased&&_sd.pt!=='custom';
+  // (2026-10-20) โหมดกำหนดเองก็ใช้ใบกำกับรายวันของปีก่อน (_sdInvDays) ให้ตรงแหล่งกับยอดปัจจุบัน — เดิมตกไปใช้แถวออเดอร์
+  const wantInv=!!_sdApi.invoiceBased;
+  const isCustom=_sd.pt==='custom',pFrom=_dateAddYear(_sd.dateFrom,-1),pTo=_dateAddYear(_sd.dateTo,-1);
   const [rows,inv,bpRows,swap]=await Promise.all([
     _sbSalesRows(start,end,slmId,{
       includeConsi:false,
       fastProducts:true,
       includeTgm:!slmId,
-      dateFrom:_sd.pt==='custom'?_dateAddYear(_sd.dateFrom,-1):null,
-      dateTo:_sd.pt==='custom'?_dateAddYear(_sd.dateTo,-1):null
+      noCustWeights:isCustom,
+      dateFrom:isCustom?pFrom:null,
+      dateTo:isCustom?pTo:null
     }),
-    wantInv?_sdInvRange(start,end).catch(()=>null):null,
+    wantInv?(isCustom?_sdInvDays(pFrom,pTo):_sdInvRange(start,end)).catch(()=>null):null,
     wantInv?_sdBpLines(start,end):[],
-    wantInv?_chainSwap(start,end).catch(()=>null):null,
+    wantInv?_chainSwap(isCustom?pFrom:start,isCustom?pTo:end).catch(()=>null):null,
   ]);
   // ผลของรอบที่ไม่ใช่ล่าสุด หรือผู้ใช้เปลี่ยนงวด/บริษัทไปแล้ว → ทิ้ง
   if(seq!==_sdYoYSeq||_sdYoYRange()?.key!==rg.key) return;
@@ -10293,7 +10298,12 @@ function sdProd(){
         });
         const fmt=o=>Object.entries(o||{}).filter(([,v])=>Math.round(v)).sort((x,y)=>y[1]-x[1]).map(([u,v])=>`${Math.round(v).toLocaleString('en-US')}${u?' '+esc(u):''}`).join(' · ');
         const sumOf=keys=>{const o={};keys.forEach(k=>Object.entries(M.get(k)||{}).forEach(([u,v])=>{o[u]=(o[u]||0)+v;}));return o;};
-        QC=(key,keys,fs)=>`<td class="r" style="${fs?'font-size:12px;':''}white-space:nowrap">${fmt(keys?sumOf(keys):M.get(key))||'<span style="color:var(--TX3)">—</span>'}</td>`;
+        // แถวรวมกลุ่มสินค้า (2026-10-20, ผู้ใช้ขอ): มีหลายหน่วย → ไม่แสดง (ดูจำนวนที่รายการสินค้าย่อยแทน) · หน่วยเดียวยังแสดง
+        QC=(key,keys,fs,grp)=>{
+          const o=keys?sumOf(keys):M.get(key);
+          if(grp&&Object.values(o||{}).filter(v=>Math.round(v)).length>1) return '<td class="r"></td>';
+          return `<td class="r" style="${fs?'font-size:12px;':''}white-space:nowrap">${fmt(o)||'<span style="color:var(--TX3)">—</span>'}</td>`;
+        };
       }
     }
     let h=prodBasisNote+hHdr;
@@ -10301,7 +10311,7 @@ function sdProd(){
       const ok='p'+p.n;const oo=_sd.op[ok];
       h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
         <td>${_xa(oo)}<strong>${p.n}</strong></td>
-        ${_sdVT(p._tot,_sdProdX(p._tot),null,{b:1})}${QC('g|'+p.n)}<td class="r">${_sdBar(p._tot,T)}</td>${_sdYoYCell(yoyM.grp[p.n]||0)}<td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
+        ${_sdVT(p._tot,_sdProdX(p._tot),null,{b:1})}${QC('g|'+p.n,null,0,1)}<td class="r">${_sdBar(p._tot,T)}</td>${_sdYoYCell(yoyM.grp[p.n]||0)}<td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
       if(oo) p.it.forEach(it=>{
         const ik='pi'+it.c;const oi=_sd.op[ik];
         h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">

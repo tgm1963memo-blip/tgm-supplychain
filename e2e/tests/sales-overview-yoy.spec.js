@@ -61,4 +61,22 @@ test.describe('Sales Overview YoY', () => {
     expect(res.cur).toBe(0);
     expect(res.prev).toBe(300);
   });
+
+  // (2026-10-20) โหมดกำหนดเอง: ปีที่แล้วต้องมาจากใบกำกับรายวันช่วงเดียวกันของปีก่อน (เดิมใช้แถวออเดอร์จาก sales_transactions
+  // ที่กรองคอลัมน์ผิด → ดึงทั้งตาราง ยอด 2568 โหลดไม่จบ)
+  test('custom range: last year comes from daily invoices of the same dates a year earlier', async ({ page }) => {
+    await openPage(page);
+    const res = await page.evaluate(async () => {
+      let asked = null;
+      window._sbSalesRows = async () => [];
+      window._sdBpLines = async () => [];
+      window._chainSwap = async () => null;
+      window._sdInvDays = async (from, to) => { asked = [from, to]; return [{ company: 'TSS-68', cust_code: 'C1', slm_code: 'A', amount: 700, invoice_count: 4 }]; };
+      _sd.pt = 'custom'; _sd.dateFrom = '2026-10-01'; _sd.dateTo = '2026-10-20'; _sdApi.invoiceBased = true; _sdApi.yoy = null;
+      _sdStartYoY();
+      await new Promise(r => setTimeout(r, 50));
+      return { asked, total: _sdApi.yoy && _sdApi.yoy.total, inv: _sdApi.yoy && _sdApi.yoy.invoiceBased };
+    });
+    expect(res).toEqual({ asked: ['2025-10-01', '2025-10-20'], total: 700, inv: true });
+  });
 });
