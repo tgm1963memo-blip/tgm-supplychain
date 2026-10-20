@@ -90,6 +90,9 @@ const PRODUCT_STKTYP_INCLUDE = ['0'];
 const ORDER_DOCSTAT_INCLUDE = ['M'];
 // Accounting confirmed these ARTRN document series must not be counted as sales revenue.
 // Keep the rule close to the Express importer so every invoice-derived total uses the same exclusion.
+// (2026-10-20) ย้ายรายการเล่มไป lib/salesDocs.js + เพิ่ม IT (ค่าขนส่ง) / IV (ขายวัสดุ) — ใช้กับยอดขาย/รายสินค้าเท่านั้น
+// syncInvoices() (ตาราง invoices ของหน้าจ่ายสินค้าตามใบกำกับ) ยังตัดเฉพาะ LF/LE/LG แบบเดิม — ใบ IT/IV ยังต้องจ่ายของ/วางบิล
+const { isNonSalesDocNum } = require('../lib/salesDocs');
 const SALES_DOCNUM_EXCLUDE_PREFIXES = new Set(['LF', 'LE', 'LG']);
 function isExcludedSalesDocNum(docNum) {
   const prefix = String(docNum || '').trim().toUpperCase().slice(0, 2);
@@ -1066,7 +1069,7 @@ async function syncInvoiceSales(db) {
 
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
-      if (isExcludedSalesDocNum(r.DOCNUM)) continue;
+      if (isNonSalesDocNum(r.DOCNUM)) continue;
       if (!passesCompanyDateCutoff(company, r.DOCDAT)) continue;
       const period = ym(r.DOCDAT);
       if (!period) continue;
@@ -1549,7 +1552,7 @@ async function syncSalesLinesMonthly(db) {
     for (const r of rows) {
       const docNum = cleanText(r.DOCNUM);
       if (!WMS_GENERAL_SALE_PREFIXES.has(docNum.slice(0, 2))) continue;
-      if (isExcludedSalesDocNum(docNum)) continue;
+      if (isNonSalesDocNum(docNum)) continue;
       if (!passesCompanyDateCutoff(company, r.DOCDAT)) continue;
       const period = ym(r.DOCDAT);
       const sku = cleanText(r.STKCOD);

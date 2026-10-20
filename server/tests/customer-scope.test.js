@@ -87,8 +87,8 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   assert.deepEqual((await dxp('ADM')).data.top_products.by_amount.map(x => x.sku), ['SKU-OTHER', 'SKU-MINE']);
 
   // Pivot ลูกค้า×สินค้า (2026-10-12): กรองตามสิทธิ์ลูกค้า
-  db.prepare("INSERT INTO invoices(doc_num,doc_date,cust_code,slm_code,rectyp) VALUES('IV1','2026-01-05','10-AA-0001','207','0'),('IV2','2026-01-06','10-BB-0001','211','0')").run();
-  db.prepare("INSERT INTO invoice_lines(company,doc_num,seq_num,doc_date,sku,sku_name,qty,line_value) VALUES('TSS','IV1','1','2026-01-05','P-MINE','x',1,100),('TSS','IV2','1','2026-01-06','P-OTHER','y',1,200)").run();
+  db.prepare("INSERT INTO invoices(doc_num,doc_date,cust_code,slm_code,rectyp) VALUES('AB1','2026-01-05','10-AA-0001','207','0'),('AB2','2026-01-06','10-BB-0001','211','0')").run();
+  db.prepare("INSERT INTO invoice_lines(company,doc_num,seq_num,doc_date,sku,sku_name,qty,line_value) VALUES('TSS','AB1','1','2026-01-05','P-MINE','x',1,100),('TSS','AB2','1','2026-01-06','P-OTHER','y',1,200)").run();
   const pv = uid => call('/invoice_detail/pivot', 'POST', { from: '2026-01-01', to: '2026-01-31' }, uid);
   assert.deepEqual((await pv('S1')).data.rows.map(r => r.k), ['P-MINE']);
   assert.deepEqual((await pv('ADM')).data.rows.map(r => r.k).sort(), ['P-MINE', 'P-OTHER']);
@@ -97,8 +97,8 @@ test('customer scope: sales see own codes + own MT chains, manager sees team + m
   assert.equal((await det('10-BB-0001', 'S1')).data.invoices.length, 0);
   assert.equal((await det('10-AA-0001', 'S1')).data.invoices.length, 1);
   assert.equal((await det('10-BB-0001', 'ADM')).data.invoices.length, 1);
-  assert.equal((await call('/invoice_detail/lines?doc=IV2', 'GET', undefined, 'S1')).status, 404);
-  assert.equal((await call('/invoice_detail/lines?doc=IV1', 'GET', undefined, 'S1')).status, 200);
+  assert.equal((await call('/invoice_detail/lines?doc=AB2', 'GET', undefined, 'S1')).status, 404);
+  assert.equal((await call('/invoice_detail/lines?doc=AB1', 'GET', undefined, 'S1')).status, 200);
   // แผนที่ยอดเชน: ผู้ถูกจำกัดเห็นเฉพาะยอดของรหัสตัวเอง
   const cm = (await call('/chain_sales/map', 'GET', undefined, 'S1')).data;
   for (const st of Object.values(cm.stats || {})) assert.ok(Object.keys(st.ytd_by_slm || {}).every(k => k === '207'));

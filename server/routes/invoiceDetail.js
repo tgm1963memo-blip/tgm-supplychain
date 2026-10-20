@@ -1,5 +1,6 @@
 const express = require('express');
 const { productGroupResolver, unitLabel } = require('../lib/productGroupMatch');
+const { salesDocSql } = require('../lib/salesDocs');
 
 // รายละเอียดใบกำกับของลูกค้า (2026-09-28) — Sales Overview แบบยอดใบกำกับ (invoice_sales_monthly) ไม่มีมิติสินค้า
 // จึงดึงรายการสินค้าจาก invoice_lines (STCRD) ผูกกับหัวใบกำกับ v_invoice_heads (ARTRN: cust_code/slm_code) ด้วย doc_num
@@ -39,7 +40,8 @@ function invoiceDetailRoutes(db) {
     }
     if (custs.length > MAX_CUSTS) return res.status(400).json({ error: `too many customers (max ${MAX_CUSTS})` });
     const slms = list(q.slm);
-    const where = [`i.cust_code IN (${custs.map(() => '?').join(',')})`, 'i.doc_date >= ?', 'i.doc_date <= ?'];
+    // ไม่รวมเล่มที่ไม่นับยอดขาย (ค่าขนส่ง IT / ขายวัสดุ IV / LF LE LG — lib/salesDocs.js, 2026-10-20) ให้ตรงกับยอดรวมของ Sales Overview
+    const where = [`i.cust_code IN (${custs.map(() => '?').join(',')})`, 'i.doc_date >= ?', 'i.doc_date <= ?', salesDocSql('i.doc_num')];
     const params = [...custs, from, to];
     if (slms.length) {
       // ตามเจ้าของยอด (2026-10-20, lib/customerScope.js slmListSql): รหัส Sales ที่เลือก รวมใบไม่มี SLMCOD ของลูกค้าที่ master ผูกกับรหัสนั้น
@@ -200,7 +202,7 @@ function invoiceDetailRoutes(db) {
           MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.line_value) AS a
         FROM v_invoice_heads i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
         LEFT JOIN products p ON p.code = l.sku
-        WHERE i.doc_date >= ? AND i.doc_date <= ? AND COALESCE(i.rectyp, '') <> '5'${fi.sql}
+        WHERE i.doc_date >= ? AND i.doc_date <= ? AND COALESCE(i.rectyp, '') <> '5' AND ${salesDocSql('i.doc_num')}${fi.sql}
         GROUP BY i.cust_code, s, l.sku, u`).all(COMPANY, from, to, ...fi.params);
       try {
         const fb = filt('b', false);
