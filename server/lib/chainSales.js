@@ -118,7 +118,13 @@ function chainFacts(db, map, from, to) {
     GROUP BY chain, period, cust_code`).all(...keys, from, to);
   const coOf = {};
   for (const k of keys) for (const g of map.chains[k].groups) for (const s of g.skus) coOf[`${k}|${s}`] = g.company || 'TSS';
-  const kept = new Set(keys.flatMap(k => (map.chains[k].keep_skus || []).map(s => `${k}|${s}`)));
+  // ไม่แทนเป็นรายกลุ่ม (code review 2026-10-20): ตัดสาขาเฉพาะห้องของกลุ่มที่ไม่แทนทั้งกลุ่ม — ตรงกับ replacedGroups
+  // (กลุ่ม KK/KF ที่ตั้งไม่แทนแค่ KK ยังถูกแทนทั้งกลุ่ม ห้องเดียวกันต้องคงยอดสาขาไว้ ไม่งั้นยอด KK หายทั้ง 2 ฝั่ง)
+  const kept = new Set();
+  for (const k of keys) {
+    const rep = new Set(replacedGroups(map, k));
+    for (const g of map.chains[k].groups) if (!rep.has(g)) for (const s of g.skus || []) kept.add(`${k}|${String(s).toUpperCase()}`);
+  }
   return rows.filter(r => !kept.has(`${r.chain}|${skuGroupOf(r.cust_code)}`)).map(r => ({ chain: r.chain, company: coOf[`${r.chain}|${skuGroupOf(r.cust_code)}`] || 'TSS', period: r.period, cust_code: r.cust_code,
     slm_code: slmFor(map, r.chain, r.cust_code), amount: Number(r.amount) || 0, invoice_count: Number(r.invoice_count) || 0 }));
 }

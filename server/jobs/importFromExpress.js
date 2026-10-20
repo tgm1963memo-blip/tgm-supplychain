@@ -1144,7 +1144,11 @@ async function syncInvoices(db) {
   const heads = [];
   const seenHeads = new Set();   // ใบที่จะ upsert รอบนี้
   const existHeads = new Set();  // ใบที่ยังมีอยู่ใน Express (ทุกวันที่ตั้งแต่ HEAD_HISTORY_FROM) — ใช้ตัดสินว่าลบได้
-  let unreadable = false;        // บริษัทไหนอ่าน ARTRN ไม่ได้ (ไดรฟ์หลุด/ไม่พบไฟล์) = ไม่ลบหัวใบรอบนี้
+  // (2026-10-20, code review) เดิมบริษัทใดคืน 0 แถว = อ่านไม่ได้ทั้งรอบ → แฟ้มที่ไม่มีบนเครื่องนี้ (เช่น TSSN-67) ทำให้ backfill
+  // ไม่เคยจบ (ดึงย้อน 2024 ทุก 5 นาที) และไม่ลบใบที่ยกเลิกเลย → แยก "ไม่มีแฟ้ม" (ข้าม) กับ "มีแฟ้มแต่อ่านไม่ได้/ว่าง" (ไม่ลบของบริษัทนั้น)
+  // ลบหัวใบเฉพาะของบริษัทที่อ่านสำเร็จ · หัวใบเก่าที่ยังไม่มีคอลัมน์บริษัท ลบได้เมื่ออ่านครบทุกบริษัทที่มีแฟ้มเท่านั้น
+  const readOk = [];             // บริษัทที่อ่าน ARTRN ได้รอบนี้
+  let unreadable = false;        // มีแฟ้มแต่อ่านไม่ได้/ว่าง หรือไม่มีแฟ้มเลยสักบริษัท (ไดรฟ์หลุด) = ไม่ลบหัวใบที่ไม่รู้บริษัท / ไม่ปิด backfill
   const routeNames = await loadRouteNameMap();
   const shipToAddresses = await loadShipToAddressMap();
 
@@ -1161,9 +1165,13 @@ async function syncInvoices(db) {
   const INVOICE_RECTYP = new Set(['0', '1', '3', '5']);
   const seen = new Set();
 
+  let present = 0;
   for (const company of SALES_COMPANIES) {
-    const rows = await readTable(company, 'ARTRN.DBF');
-    if (!rows.length) unreadable = true;
+    if (!findFile(path.join(EXPRESS_ROOT, company), 'ARTRN.DBF')) continue; // ไม่มีแฟ้มบริษัทนี้บนเครื่อง — ไม่ถือว่าอ่านพลาด
+    present++;
+    let rows = [];
+    try { rows = await readTable(company, 'ARTRN.DBF'); } catch (e) { console.warn(`[importFromExpress] invoice heads: read ${company} failed:`, e.message); }
+    if (rows.length) readOk.push(company); else unreadable = true;
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
       if (!r.DOCNUM) continue;
@@ -1178,7 +1186,7 @@ async function syncInvoices(db) {
       if (docDate >= HEAD_HISTORY_FROM && (fullHeads || docDate >= cutoffIso) && !seenHeads.has(docNum)) {
         seenHeads.add(docNum);
         heads.push([docNum, docDate, (r.CUSCOD || '').trim() || null, normalizeSlmCode(r.SLMCOD) || null,
-          (r.SONUM || '').trim() || null, signedTotal, r.RECTYP]);
+          (r.SONUM || '').trim() || null, signedTotal, r.RECTYP, company]);
       }
       if (r.DOCDAT < cutoff) continue;
       if (seen.has(docNum)) continue; // dedupe across companies (first company in SALES_COMPANIES wins, mirrors syncProducts)
@@ -1203,16 +1211,17 @@ async function syncInvoices(db) {
   db.exec('DELETE FROM _seen_invoices');
   const insertSeen = db.prepare('INSERT OR IGNORE INTO _seen_invoices (doc_num) VALUES (?)');
   for (const docNum of seen) insertSeen.run(docNum);
-  const deleted = db.prepare('DELETE FROM invoices WHERE doc_num NOT IN (SELECT doc_num FROM _seen_invoices)').run();
+  // อ่านบางบริษัทไม่ได้ (error ถูกจับไว้ด้านบน) = ไม่ลบ ไม่งั้นใบของบริษัทนั้นหายจากหน้าจ่ายสินค้าตามใบกำกับทั้งก้อน
+  const deleted = unreadable || !present ? { changes: 0 } : db.prepare('DELETE FROM invoices WHERE doc_num NOT IN (SELECT doc_num FROM _seen_invoices)').run();
 
   console.log(`[importFromExpress] invoices: upserted ${seen.size} (recent ${INVOICE_SYNC_WINDOW_DAYS}d window), removed ${deleted.changes} fallen out of window`);
 
   // หัวใบย้อนหลัง — เขียนใน transaction เดียว (ไม่มี await ข้างใน) · ลบเฉพาะใบในช่วงที่อ่านมารอบนี้แต่ไม่พบแล้ว
   // (ใบถูกลบ/ยกเลิกใน Express) และข้ามการลบถ้าอ่านไม่ได้เลย (กันไดรฟ์หลุดแล้วล้างข้อมูล — แบบเดียวกับ runImport)
   if (heads.length) {
-    const upHead = db.prepare(`INSERT INTO invoice_heads (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp)
-      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(doc_num) DO UPDATE SET doc_date = excluded.doc_date, cust_code = excluded.cust_code,
-        slm_code = excluded.slm_code, so_num = excluded.so_num, total = excluded.total, rectyp = excluded.rectyp`);
+    const upHead = db.prepare(`INSERT INTO invoice_heads (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, company)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(doc_num) DO UPDATE SET doc_date = excluded.doc_date, cust_code = excluded.cust_code,
+        slm_code = excluded.slm_code, so_num = excluded.so_num, total = excluded.total, rectyp = excluded.rectyp, company = excluded.company`);
     db.exec('BEGIN');
     try {
       for (const h of heads) upHead.run(...h);
@@ -1221,9 +1230,11 @@ async function syncInvoices(db) {
       const ins = db.prepare('INSERT OR IGNORE INTO _seen_heads (doc_num) VALUES (?)');
       for (const d of existHeads) ins.run(d);
       // ลบเฉพาะใบที่ไม่มีใน Express แล้วจริง (ไม่ใช่แค่วันที่ถูกแก้ย้อนออกนอกช่วง) และเฉพาะเมื่ออ่านครบทุกบริษัท (code review)
-      const gone = unreadable ? { changes: 0 } : db.prepare(`DELETE FROM invoice_heads WHERE doc_date >= ? AND doc_num NOT IN (SELECT doc_num FROM _seen_heads)`)
-        .run(fullHeads ? HEAD_HISTORY_FROM : cutoffIso);
-      if (fullHeads && !unreadable) db.prepare('INSERT OR IGNORE INTO app_migrations(id) VALUES (?)').run(HEADS_BACKFILL_ID);
+      const allRead = !unreadable && present > 0;
+      const gone = db.prepare(`DELETE FROM invoice_heads WHERE doc_date >= ? AND doc_num NOT IN (SELECT doc_num FROM _seen_heads)
+          AND (company IN (SELECT value FROM json_each(?)) OR (company IS NULL AND ?))`)
+        .run(fullHeads ? HEAD_HISTORY_FROM : cutoffIso, JSON.stringify(readOk), allRead ? 1 : 0);
+      if (fullHeads && allRead) db.prepare('INSERT OR IGNORE INTO app_migrations(id) VALUES (?)').run(HEADS_BACKFILL_ID);
       db.exec('COMMIT');
       console.log(`[importFromExpress] invoice_heads: upserted ${heads.length} (${fullHeads ? 'backfill since ' + HEAD_HISTORY_FROM : 'recent window'}), removed ${gone.changes}`);
     } catch (e) {
@@ -1623,6 +1634,8 @@ async function runImport(db) {
     // standing tripwire: surface data-quality regressions automatically instead of needing a manual
     // DBF-reading investigation every time someone wonders "is the import still correct" — see
     // v_sc_data_confidence / v_sc_import_health_by_company in db/schema.sql for what these mean.
+    // นับตัวเลขหนักของ v_sc_data_confidence เก็บไว้รอบละครั้ง (lib/dataCounts.js, 2026-10-20) แล้วอ่านผลจาก view
+    try { require('../lib/dataCounts').refreshDataCounts(db); } catch (e) { console.warn('[importFromExpress] data counts failed:', e.message); }
     const confidence = db.prepare('SELECT orphan_sku_consi_count, orphan_sku_sales_count, orphan_sku_stock_count FROM v_sc_data_confidence').get();
     if (confidence.orphan_sku_consi_count > 0 || confidence.orphan_sku_sales_count > 0 || confidence.orphan_sku_stock_count > 0) {
       console.warn(`[importFromExpress] orphan SKU check: consi=${confidence.orphan_sku_consi_count} sales=${confidence.orphan_sku_sales_count} stock=${confidence.orphan_sku_stock_count} (SKUs referenced but missing from products)`);

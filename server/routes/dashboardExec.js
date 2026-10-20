@@ -7,7 +7,7 @@ const { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, guessExecChannel } = require('../lib/e
 const { groupNameOf } = require('../lib/customerGroup');
 const { autofillBusinessTypes } = require('../lib/businessType');
 const { cacheJson } = require('../lib/responseCache');
-const { resolveScope, factSql } = require('../lib/customerScope');
+const { resolveScope, factSql, slmListSql } = require('../lib/customerScope');
 const chainSales = require('../lib/chainSales');
 const { productGroupResolver } = require('../lib/productGroupMatch');
 const { weightFromName } = require('../lib/weightFromName');
@@ -480,8 +480,9 @@ module.exports = function dashboardExecRoutes(db) {
       let wantSlm = [...new Set(String(req.query.slm || '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 50);
       if (!scope.all && wantSlm.length) wantSlm = wantSlm.filter((c) => scope.slmCodes.includes(c));
       const slmCodes = req.query.slm && (scope.all || wantSlm.length || String(req.query.slm).trim())
-        ? (wantSlm.length ? { sql: `AND slm_code IN (${inList(wantSlm.length)})`, params: wantSlm } : { sql: 'AND 0', params: [] })
-        : scope.all ? { sql: '', params: [] } : (() => { const x = factSql(scope, { cust: 'cust_code', slm: 'slm_code' }); return { sql: `AND ${x.sql}`, params: x.params }; })();
+        ? (wantSlm.length ? (() => { const x = slmListSql(wantSlm, { company: 'company' }); return { sql: `AND ${x.sql}`, params: x.params }; })() : { sql: 'AND 0', params: [] })
+        // ใบไม่มีรหัส Sales ของแฟ้ม TSS = ของเซลล์เจ้าของลูกค้า (2026-10-20, code review — เดิม Dashboard ไม่นับ แต่ Sales Overview นับ ยอดไม่ตรงกัน)
+        : scope.all ? { sql: '', params: [] } : (() => { const x = factSql(scope, { cust: 'cust_code', slm: 'slm_code', blankToOwner: true, company: 'company' }); return { sql: `AND ${x.sql}`, params: x.params }; })();
       const withConsi = req.query.consi !== '0';
       const makroInMall = req.query.makro_in_mall === '1';
       const co = String(req.query.co || 'all');

@@ -103,3 +103,19 @@ test('chain sales migration: TOPS keep_skus defaults to KK/AA once, never overwr
   runMigrations(db);
   assert.deepEqual(get().TOPS.keep_skus, []);
 });
+
+// code review 2026-10-20: กลุ่ม KK/KF ที่ตั้งไม่แทนแค่ KK ยังถูกแทนทั้งกลุ่ม → ยอดสาขา KK ต้องยังอยู่ (เดิมหายทั้ง DC และสาขา)
+test('chain sales: a partly kept SKU group is still replaced as a whole and keeps all its branch rows', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  db.prepare("INSERT INTO chain_sales_monthly(chain,ym,cust_code,raw_slm,amount,invoice_count) VALUES('TOPS','2026-08','30-KK-0004','x',600,1),('TOPS','2026-08','30-KF-0004','x',400,1)").run();
+  const map = { chains: { TOPS: { replace: true, keep_skus: ['KK'], office_slm: '', aliases: {}, cust: { '30-KK-0004': '207', '30-KF-0004': '207' },
+    groups: [{ skus: ['KK', 'KF'], vat: [{ prefix: '30-TA-', from: 1, to: 999999 }], src: '30-TA-0001-สุดท้าย', company: 'TSS' }] },
+    MAKRO: { replace: false, groups: [], keep_skus: [] }, GO: { replace: false, groups: [], keep_skus: [] } } };
+  assert.equal(ch.replacedRanges(map).length, 1, 'DC ยังถูกแทน');
+  assert.equal(ch.chainFacts(db, map, '2026-08', '2026-08').reduce((a, r) => a + r.amount, 0), 1000, 'สาขา KK + KF อยู่ครบ');
+  map.chains.TOPS.keep_skus = ['KK', 'KF'];
+  assert.equal(ch.replacedRanges(map).length, 0);
+  assert.equal(ch.chainFacts(db, map, '2026-08', '2026-08').length, 0);
+});

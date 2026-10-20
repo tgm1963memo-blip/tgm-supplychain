@@ -113,13 +113,40 @@ function resolveScope(db, user) {
 // "ลูกค้าของแด้มาไม่ครบ" — 19 ลูกค้าในไฟล์ Group มีใบกำกับที่ Express ไม่ได้ใส่ SLMCOD ไม่ขึ้นในมุมมองของเซลล์เจ้าของ)
 // blankToOwner ต้องขอเอง (code review): ใช้กับตารางใบกำกับ Express เท่านั้น — แหล่งที่ไม่มีรหัส Sales เลยโดยธรรมชาติ
 // (Bplus โรงงาน / ฝากขาย / ห้อง SKU ที่เก็บ '(none)' ทุกแถว) ต้องไม่ถูกนับให้เซลล์ตาม master
-function factSql(scope, { cust = 'cust_code', slm = 'slm_code', blankToOwner = false } = {}) {
+// company (2026-10-20, code review): ตารางที่ปนหลายแหล่ง (invoice_sales_* มี CONSI / TGM / BP-* ด้วย) ต้องส่งคอลัมน์บริษัทมา
+// — นับให้เจ้าของเฉพาะแฟ้ม Express ฝั่ง TSS (TSS / TSS-NV / TSS-68 / TSSN-68 …) · ไม่ส่ง = ตารางนั้นเป็นของ TSS ล้วน (v_invoice_heads)
+function factSql(scope, { cust = 'cust_code', slm = 'slm_code', blankToOwner = false, company = null } = {}) {
   if (!scope || scope.all) return null;
   const base = `${slm} IN (SELECT value FROM json_each(?)) OR ${cust} IN (SELECT value FROM json_each(?))`;
   const params = [JSON.stringify(scope.slmCodes), JSON.stringify(scope.mtCodes)];
   if (!blankToOwner) return { sql: `(${base})`, params };
-  return { sql: `(${base} OR (COALESCE(TRIM(${slm}), '') IN ('', '(none)') AND ${cust} IN (SELECT value FROM json_each(?))))`,
+  return { sql: `(${base} OR (${blankOwnerCond({ slm, company })} AND ${cust} IN (SELECT value FROM json_each(?))))`,
     params: [...params, JSON.stringify(scope.masterCodes || [])] };
+}
+// ── เจ้าของยอดของใบที่ไม่มีรหัส Sales (2026-10-20, code review) — กติกาเดียวทุกหน้า (Dashboard / Sales Overview / pivot /
+// รายละเอียดใบกำกับ) และฝั่งหน้าเว็บ (_sdOwnerSlm ใน index.html): ใบของแฟ้ม Express ฝั่ง TSS ที่ SLMCOD ว่าง / "(none)"
+// = เป็นของรหัส Sales ที่ master ผูกกับลูกค้า · ไม่มีทั้งคู่ = "(ไม่ระบุ)" · แหล่งอื่น (ฝากขาย / TGM / Bplus) ไม่โอนให้ใคร
+const blankSlm = slm => `COALESCE(TRIM(${slm}), '') IN ('', '(none)')`;
+function blankOwnerCond({ slm = 'slm_code', company = null } = {}) { return blankSlm(slm) + (company ? ` AND ${company} LIKE 'TSS%'` : ''); }
+// นิพจน์รหัส Sales ที่เป็นเจ้าของยอด (ใช้ตั้งป้าย/จัดกลุ่ม)
+function ownerSlmExpr({ cust = 'cust_code', slm = 'slm_code', company = null } = {}) {
+  return `CASE WHEN NOT ${blankSlm(slm)} THEN TRIM(${slm})`
+    + (company ? ` WHEN ${company} NOT LIKE 'TSS%' THEN '(ไม่ระบุ)'` : '')
+    + ` ELSE COALESCE((SELECT NULLIF(TRIM(oc.slm_id), '') FROM customers oc WHERE oc.code = ${cust}), '(ไม่ระบุ)') END`;
+}
+// กรองตามรหัส Sales ที่เลือก (รวม "(ไม่ระบุ)") ตามเจ้าของยอด — เขียนแบบ OR ให้ยังใช้ index ของ slm_code ได้
+function slmListSql(codes, { cust = 'cust_code', slm = 'slm_code', company = null } = {}) {
+  const named = codes.filter(c => c !== '(ไม่ระบุ)'), ors = [], params = [];
+  if (named.length) {
+    const j = JSON.stringify(named);
+    ors.push(`${slm} IN (SELECT value FROM json_each(?))`,
+      `(${blankOwnerCond({ slm, company })} AND ${cust} IN (SELECT code FROM customers WHERE TRIM(slm_id) IN (SELECT value FROM json_each(?))))`);
+    params.push(j, j);
+  }
+  if (named.length !== codes.length) {
+    ors.push(`(${blankSlm(slm)} AND (${company ? `${company} NOT LIKE 'TSS%' OR ` : ''}${cust} NOT IN (SELECT code FROM customers WHERE COALESCE(TRIM(slm_id), '') <> '')))`);
+  }
+  return { sql: ors.length ? `(${ors.join(' OR ')})` : '0', params };
 }
 // ตารางที่มีแต่รหัสลูกค้า
 function custSql(scope, col = 'cust_code') {
@@ -165,5 +192,5 @@ function visibleDraftNos(db, scope, uid, user) {
 
 function clearScopeCache() { scopeCache = new Map(); ownerCache = { key: '', at: 0, byRule: null }; }
 
-module.exports = { PEOPLE_ENTITY, SALES_ROLES, loadPeople, resolveScope, factSql, custSql, canSeeCust, draftParticipant, visibleDraftNos,
+module.exports = { PEOPLE_ENTITY, SALES_ROLES, loadPeople, resolveScope, factSql, blankOwnerCond, ownerSlmExpr, slmListSql, custSql, canSeeCust, draftParticipant, visibleDraftNos,
   mtRulesFor, codesByRule, configVersion, clearScopeCache };

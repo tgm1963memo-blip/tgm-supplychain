@@ -593,6 +593,8 @@ function runMigrations(db) {
   // v_invoice_heads = invoices (ล่าสุด, มาก่อน) + invoice_heads ที่ไม่ซ้ำ → routes/invoiceDetail.js ใช้ JOIN กับ invoice_lines
   db.exec(`CREATE TABLE IF NOT EXISTS invoice_heads (
     doc_num TEXT PRIMARY KEY, doc_date TEXT NOT NULL, cust_code TEXT, slm_code TEXT, so_num TEXT, total REAL, rectyp TEXT)`);
+  // company (2026-10-20, code review): ลบหัวใบที่ยกเลิกใน Express ได้เฉพาะบริษัทที่อ่าน ARTRN สำเร็จรอบนั้น (jobs/importFromExpress.js)
+  if (!db.prepare('PRAGMA table_info(invoice_heads)').all().some(c => c.name === 'company')) db.exec('ALTER TABLE invoice_heads ADD COLUMN company TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_heads_date ON invoice_heads(doc_date)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_heads_cust ON invoice_heads(cust_code, doc_date)');
   db.exec('DROP VIEW IF EXISTS v_invoice_heads'); // สร้างใหม่ทุกครั้ง ให้นิยามล่าสุดถึงฐานข้อมูลที่ deploy แล้ว (code review)
@@ -693,6 +695,10 @@ function runMigrations(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_conversion_doc_lines_doc ON conversion_doc_lines(doc_num);
   `);
+
+  // ตัวเลขของ v_sc_data_confidence ยังไม่เคยนับ (ฐานข้อมูลเดิมก่อน 2026-10-20 / ฐานใหม่) → นับครั้งแรกตอนเปิด server
+  // ไม่งั้น Dashboard ขึ้นค่าว่างจนจบรอบ sync ถัดไป · หลังจากนี้นับตอนจบทุกรอบ sync (lib/dataCounts.js)
+  if (!db.prepare('SELECT 1 FROM sc_data_counts WHERE id = 1').get()) require('../lib/dataCounts').refreshDataCounts(db);
 
   // Tops เบเกอรี่ (KK = 30-TA/TB/TF) + Saladbar (AA = 30-TD) ไม่แทนด้วยยอดสาขา (2026-10-20, ผู้ใช้แจ้ง "คุณปูยังขาดข้อมูลการขายของ TOP")
   // — ตั้งครั้งเดียวเมื่อยังไม่เคยตั้ง keep_skus · หลังจากนี้แก้ได้ในหน้า Master (lib/chainSales.js)

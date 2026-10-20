@@ -707,7 +707,7 @@ function buildApp(db, opts = {}) {
     pk: 'cust_code',
     fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count', 'cn_count', 'cn_amount', 'vat_amount', 'gross_amount', 'cn_vat'],
     readOnly: true,
-    scope: salesScope({ cust: 'cust_code', slm: 'slm_code', blankToOwner: true }),
+    scope: salesScope({ cust: 'cust_code', slm: 'slm_code', blankToOwner: true, company: 'company' }),
   }));
 
   // ยอดรวมตามช่วงวันที่ (2026-10-14, ผู้ใช้ขอเทียบจำนวนวันเท่ากัน เช่น 1–14 ต.ค. กับ 1–14 ก.ย.) — จาก invoice_sales_daily
@@ -719,8 +719,9 @@ function buildApp(db, opts = {}) {
     const cos = csv(req.query.companies), slms = csv(req.query.slm);
     const where = ['d >= ?', 'd <= ?'], params = [from, to];
     if (cos.length) { where.push(`company IN (${cos.map(() => '?').join(',')})`); params.push(...cos); }
-    if (slms.length) { where.push(`slm_code IN (${slms.map(() => '?').join(',')})`); params.push(...slms); }
-    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code', blankToOwner: true }));
+    // รหัส Sales ที่เลือก = เจ้าของยอด รวมใบไม่มีรหัส Sales ของลูกค้าที่ผูกกับรหัสนั้น (กติกาเดียวกับ Sales Overview, 2026-10-20)
+    if (slms.length) { const x = cs.slmListSql(slms, { company: 'company' }); where.push(x.sql); params.push(...x.params); }
+    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code', blankToOwner: true, company: 'company' }));
     where.push(sc.sql); params.push(...sc.params);
     const r = db.prepare(`SELECT SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily WHERE ${where.join(' AND ')}`).get(...params);
     res.json({ from, to, amount: Number(r?.amount) || 0, invoice_count: Number(r?.invoice_count) || 0 });
@@ -734,7 +735,7 @@ function buildApp(db, opts = {}) {
     const from = String(req.query.from || ''), to = String(req.query.to || ''), company = String(req.query.company || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM-DD และ from ≤ to' });
     if (!company) return res.status(400).json({ error: 'company is required' });
-    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code', blankToOwner: true }));
+    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code', blankToOwner: true, company: 'company' }));
     const rows = db.prepare(`SELECT cust_code, slm_code, SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily
       WHERE company = ? AND d >= ? AND d <= ? AND ${sc.sql} GROUP BY cust_code, slm_code`).all(company, from, to, ...sc.params);
     res.json(rows.map(r => ({ cust_code: r.cust_code, slm_code: r.slm_code, amount: Number(r.amount) || 0, invoice_count: Number(r.invoice_count) || 0 })));
@@ -992,7 +993,9 @@ function buildApp(db, opts = {}) {
   // (2026-10-19) วัดจริงบน DB จริงตอนนี้ 3.6 วิ (สแกน sales_transactions หา SKU กำพร้า) และ node:sqlite เป็น synchronous
   // → ระหว่างนั้น request อื่นของ Dashboard รอคิวจนหมดเวลา ("Dashboard summary/invoice sales/confidence timeout")
   // ผลลัพธ์ไม่ขึ้นกับผู้ใช้ จึงแคชก้อนเดียวร่วมกันทุกคน 5 นาที (เดิมแคชแยกรายคน 60 วิ = แทบทุกครั้งที่เปิดหน้าต้องคำนวณใหม่)
-  app.use('/api/v_sc_data_confidence', authed, cacheJson(db, { ttlMs: 5 * 60 * 1000, versioned: false, perUser: false }), makeCrudRouter(db, 'v_sc_data_confidence', {
+  // (2026-10-20, code review) แก้ที่ต้นเหตุ: ตัวเลขหนักนับตอน sync เก็บใน sc_data_counts (lib/dataCounts.js) view เหลือ ~70 ms
+  // → เลิกแคช 5 นาที (ทำให้เวลา sync ล่าสุด / สถานะ Bplus ค้าง) · แคชสั้น 15 วิ ร่วมกันทุกคน กันเปิดหน้าพร้อมกันหลายคน
+  app.use('/api/v_sc_data_confidence', authed, cacheJson(db, { ttlMs: 15 * 1000, versioned: false, perUser: false }), makeCrudRouter(db, 'v_sc_data_confidence', {
     pk: 'so_count',
     fields: ['so_count', 'line_count', 'active_booking_count', 'orders_without_line',
       'active_product_count', 'orphan_sku_sales_count', 'orphan_sku_consi_count', 'orphan_sku_stock_count', 'synced_at',

@@ -89,7 +89,7 @@ function prevCommentsHtml(header) {
     ${rows.map(r => `<div style="border-left:3px solid ${r.ok ? '#0A5940' : '#A32D2D'};background:#F7F9FC;padding:6px 10px;margin-bottom:4px;font-size:12.5px">
       <b>${e(r.name)}</b> <span style="color:#6B7280">· ${e(r.step)} · ${r.ok ? 'อนุมัติ' : 'ไม่อนุมัติ'} · ${new Date(r.ts).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })} น.</span>
       ${vSum(r.lv) ? `<div style="margin-top:2px;font-weight:700">ผลตรวจสอบ: <span style="color:#0A5940">✅ ขายได้ ${vSum(r.lv).p}</span> · <span style="color:#A32D2D">⚠️ ขาดทุน ${vSum(r.lv).l}</span> รายการ</div>` : ''}
-      ${r.comment ? `<div style="margin-top:2px">💬 ${e(r.comment)}</div>` : ''}</div>`).join('')}</div>`;
+      ${r.comment ? `<div style="margin-top:2px">ความเห็น: ${e(r.comment)}</div>` : ''}</div>`).join('')}</div>`;
 }
 
 function renderApprovalRequestEmail({ header, sum, approverName, stepLabel, approveUrl, rejectUrl, openUrl }) {
@@ -105,7 +105,7 @@ function renderApprovalRequestEmail({ header, sum, approverName, stepLabel, appr
     <div style="text-align:center;margin:22px 0 8px">
       ${btn(approveUrl, '#0A5940', '#fff', '✅ อนุมัติ')}
       ${btn(rejectUrl, '#A32D2D', '#fff', '❌ ไม่อนุมัติ')}
-      ${btn(openUrl, '#D4AF37', '#111', '🔎 เปิดดูในระบบ')}
+      ${btn(openUrl, '#D4AF37', '#111', 'เปิดดูในระบบ')}
     </div>
     <p style="margin:6px 0 0;font-size:11.5px;color:#6B7280;line-height:1.7;text-align:center">
       กด "อนุมัติ" หรือ "ไม่อนุมัติ" จะเปิดหน้ายืนยันให้ใส่ความเห็นก่อนบันทึก · หรือกด "เปิดดูในระบบ" เพื่อดูรายละเอียดทั้งหมดและอนุมัติในระบบ
@@ -124,7 +124,7 @@ function renderResultEmail({ header, sum, outcome, byName, comment, openUrl }) {
     ${summaryBlockHtml(header, sum, '')}
     ${ok && header.promo_no ? `<p style="font-size:13px;margin:4px 0">เลขที่ใบโปรโมชั่น: <b style="font-family:monospace">${e(header.promo_no)}</b> — คีย์เข้า Express แล้วกดปิดสถานะในระบบ</p>` : ''}
     <div style="text-align:center;margin:18px 0 4px">
-      <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">🔎 เปิดดูในระบบ</a>
+      <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">เปิดดูในระบบ</a>
     </div>`);
   const text = `${subject}\n${comment ? 'ความเห็น: ' + comment + '\n' : ''}เปิดในระบบ: ${openUrl}`;
   return { subject, html, text };
@@ -194,7 +194,7 @@ async function notifyCcKeyed(db, header) {
     ${itemsTableHtml(sum.items)}
     ${levels.length ? `<div style="font-size:13px;margin:8px 0"><b>ลำดับการอนุมัติ:</b> ${levels.map((lv, i) => `${i + 1}. ${e(lv.label || 'ขั้นที่ ' + (i + 1))} (${(lv.approvers || []).map(a => e(a.name || a.uid)).join(', ')})`).join(' → ')}</div>` : ''}
     <div style="text-align:center;margin:18px 0 4px">
-      <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">🔎 เปิดดูในระบบ</a>
+      <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">เปิดดูในระบบ</a>
     </div>
     <p style="margin:6px 0 0;font-size:11.5px;color:#6B7280;text-align:center">ท่านได้รับอีเมลนี้ในฐานะผู้รับสำเนา (CC) ของเส้นทางอนุมัติ</p>`);
   return sendMail({ to: cc.join(', '), subject, html, text: `${subject}
@@ -225,7 +225,7 @@ function simpleMail(header, title, rows, openUrl) {
   const subject = `${title} — ${docNo} ${header.promo_name || ''}`.trim();
   const html = shell(`<h2 style="margin:0 0 10px;font-size:17px;color:#1E3A5F">${e(title)}</h2>
     <table style="border-collapse:collapse;font-size:13px;margin-bottom:14px">${rows.map(([k, v]) => `<tr><td style="padding:3px 12px 3px 0;color:#6B7280;white-space:nowrap">${e(k)}</td><td style="padding:3px 0;font-weight:600">${e(v)}</td></tr>`).join('')}</table>
-    <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">🔎 เปิดดูในระบบ</a>`);
+    <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">เปิดดูในระบบ</a>`);
   return { subject, html, text: `${subject}\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\nเปิดในระบบ: ${openUrl}` };
 }
 const emailOf = (db, uid) => { const u = db.prepare('SELECT email, is_active FROM sc_users WHERE uid = ?').get(uid); return u?.email && u.is_active ? u.email : ''; };
@@ -242,7 +242,7 @@ async function notifyCancelRequest(db, header, rq) {
   const to = emailOf(db, rq.approver_uid);
   if (!to) return { sent: false, reason: 'NO_EMAIL' };
   const isDates = rq.scope === 'dates';
-  return sendMail({ to, ...simpleMail(header, isDates ? '📅 ขออนุมัติเปลี่ยนแปลงวันที่' : '🚫 ขออนุมัติยกเลิกเอกสาร', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
+  return sendMail({ to, ...simpleMail(header, isDates ? 'ขออนุมัติเปลี่ยนแปลงวันที่' : 'ขออนุมัติยกเลิกเอกสาร', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
     ['รายการ', scopeText(rq)], ...(isDates ? dateRows(rq) : []), ['ผู้ขอ', rq.requested_by_name || rq.requested_by], ['หมายเหตุ', rq.reason]], openUrlOf(header)) });
 }
 async function notifyCancelDecision(db, header, d) {

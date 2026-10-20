@@ -42,12 +42,10 @@ function invoiceDetailRoutes(db) {
     const where = [`i.cust_code IN (${custs.map(() => '?').join(',')})`, 'i.doc_date >= ?', 'i.doc_date <= ?'];
     const params = [...custs, from, to];
     if (slms.length) {
-      // "(ไม่ระบุ)" = ใบที่ไม่มี SLMCOD (แถวเดียวกับกลุ่ม "ไม่ระบุพนักงานขาย" ในแท็บรายเซลส์)
-      const named = slms.filter(s => s !== '(ไม่ระบุ)');
-      const ors = [];
-      if (named.length) { ors.push(`i.slm_code IN (${named.map(() => '?').join(',')})`); params.push(...named); }
-      if (named.length !== slms.length) ors.push("(i.slm_code IS NULL OR TRIM(i.slm_code) = '' OR i.slm_code = '(none)')");
-      where.push(`(${ors.join(' OR ')})`);
+      // ตามเจ้าของยอด (2026-10-20, lib/customerScope.js slmListSql): รหัส Sales ที่เลือก รวมใบไม่มี SLMCOD ของลูกค้าที่ master ผูกกับรหัสนั้น
+      // "(ไม่ระบุ)" = ใบไม่มี SLMCOD และลูกค้าไม่ได้ผูกกับใคร (แถวเดียวกับกลุ่ม "ไม่ระบุพนักงานขาย" ในแท็บรายเซลส์)
+      const x = cs.slmListSql(slms, { cust: 'i.cust_code', slm: 'i.slm_code' });
+      where.push(x.sql); params.push(...x.params);
     }
     const whereSql = where.join(' AND ');
 
@@ -123,7 +121,7 @@ function invoiceDetailRoutes(db) {
     try {
       const bw = [`b.cust_code IN (${custs.map(() => '?').join(',')})`, 'b.doc_date >= ?', 'b.doc_date <= ?', "b.company = 'BP-TGM'"];
       const bp = [...custs, from, to];
-      if (slms.length) { bw.push(`b.slm_code IN (${slms.map(() => '?').join(',')})`); bp.push(...slms); }
+      if (slms.length) { const x = cs.slmListSql(slms, { cust: 'b.cust_code', slm: 'b.slm_code', company: "'BP-TGM'" }); bw.push(x.sql); bp.push(...x.params); }
       const bWhere = bw.join(' AND ');
       const bInv = db.prepare(`SELECT 'BP:' || b.doc_key AS doc_num, b.doc_num AS doc_ref, b.doc_date, b.cust_code, CASE WHEN b.is_cn = 1 THEN '5' ELSE '0' END AS rectyp, b.slm_code,
           NULL AS so_num, b.amount + b.vat_amount AS total,
@@ -164,7 +162,7 @@ function invoiceDetailRoutes(db) {
       try {
         const bw = [`b.cust_code IN (${custs.map(() => '?').join(',')})`, 'b.doc_date >= ?', 'b.doc_date <= ?', "b.company = 'BP-TGM'"];
         const bp = [...custs, from, to];
-        if (slms.length) { bw.push(`b.slm_code IN (${slms.map(() => '?').join(',')})`); bp.push(...slms); }
+        if (slms.length) { const x = cs.slmListSql(slms, { cust: 'b.cust_code', slm: 'b.slm_code', company: "'BP-TGM'" }); bw.push(x.sql); bp.push(...x.params); }
         out.lines.push(...db.prepare(`SELECT 'BP:' || b.doc_key AS doc_num, b.doc_num AS doc_ref, b.doc_date, b.cust_code, l.sku, COALESCE(s.name, l.sku) AS sku_name,
           l.qty, l.unit_code, l.amount AS line_value FROM bplus_invoices b JOIN bplus_invoice_lines l ON l.doc_key = b.doc_key
           LEFT JOIN bplus_skus s ON s.code = l.sku WHERE ${bw.join(' AND ')} ORDER BY b.doc_date DESC LIMIT 50000`).all(...bp));
@@ -185,29 +183,33 @@ function invoiceDetailRoutes(db) {
       const slms = list(q.slm);
       const cs = require('../lib/customerScope');
       // + ตัดลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ / Shop, 2026-10-14 — lib/nonSales.js)
-      const sc = require('../lib/nonSales').withExclude(db, cs.factSql(cs.resolveScope(db, req.user), { cust: 'x.cust_code', slm: 'x.slm_code', blankToOwner: true }), 'x.cust_code');
-      const filt = (x) => {
+      // ใบไม่มีรหัส Sales นับให้เจ้าของลูกค้าเฉพาะหัวใบ Express (TSS ล้วน) — ใบโรงงาน Bplus ไม่โอนให้ใคร (2026-10-20, code review)
+      const scope = cs.resolveScope(db, req.user), nsx = require('../lib/nonSales');
+      const filt = (x, blankToOwner) => {
         const w = [], p = [];
-        if (slms.length) { w.push(`${x}.slm_code IN (${slms.map(() => '?').join(',')})`); p.push(...slms); }
-        w.push(sc.sql.replace(/x\./g, `${x}.`)); p.push(...sc.params);
+        if (slms.length) { const s = cs.slmListSql(slms, { cust: `${x}.cust_code`, slm: `${x}.slm_code`, company: blankToOwner ? null : "'BP-TGM'" }); w.push(s.sql); p.push(...s.params); }
+        const sc = nsx.withExclude(db, cs.factSql(scope, { cust: `${x}.cust_code`, slm: `${x}.slm_code`, blankToOwner }), `${x}.cust_code`);
+        w.push(sc.sql); p.push(...sc.params);
         return { sql: w.length ? ' AND ' + w.join(' AND ') : '', params: p };
       };
-      const fi = filt('i');
+      const fi = filt('i', true);
       // u = หน่วยขาย (2026-10-14, ผู้ใช้ขอ) — แยกแถวตามหน่วย ไม่บวกจำนวนต่างหน่วยรวมกัน (กก. + แพ็ค)
-      const rows = db.prepare(`SELECT i.cust_code AS c, COALESCE(NULLIF(TRIM(i.slm_code), ''), '(ไม่ระบุ)') AS s, l.sku AS k, MAX(l.sku_name) AS n,
+      // s = เจ้าของยอด (ใบไม่มีรหัส Sales → รหัสที่ master ผูกกับลูกค้า · ไม่มี = "(ไม่ระบุ)" รวม "(none)" ด้วย) — ตรงกับแท็บรายเซลส์ / ตัวกรอง Sales
+      const sExpr = cs.ownerSlmExpr({ cust: 'i.cust_code', slm: 'i.slm_code' });
+      const rows = db.prepare(`SELECT i.cust_code AS c, ${sExpr} AS s, l.sku AS k, MAX(l.sku_name) AS n,
           MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.line_value) AS a
         FROM v_invoice_heads i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
         LEFT JOIN products p ON p.code = l.sku
         WHERE i.doc_date >= ? AND i.doc_date <= ? AND COALESCE(i.rectyp, '') <> '5'${fi.sql}
-        GROUP BY i.cust_code, i.slm_code, l.sku, u`).all(COMPANY, from, to, ...fi.params);
+        GROUP BY i.cust_code, s, l.sku, u`).all(COMPANY, from, to, ...fi.params);
       try {
-        const fb = filt('b');
-        rows.push(...db.prepare(`SELECT b.cust_code AS c, b.slm_code AS s, l.sku AS k, MAX(COALESCE(sk.name, p.name, l.sku)) AS n,
+        const fb = filt('b', false);
+        rows.push(...db.prepare(`SELECT b.cust_code AS c, COALESCE(NULLIF(NULLIF(TRIM(b.slm_code), ''), '(none)'), '(ไม่ระบุ)') AS s, l.sku AS k, MAX(COALESCE(sk.name, p.name, l.sku)) AS n,
             MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.amount) AS a
           FROM bplus_invoices b JOIN bplus_invoice_lines l ON l.doc_key = b.doc_key
           LEFT JOIN bplus_skus sk ON sk.code = l.sku LEFT JOIN products p ON p.code = l.sku
           WHERE b.company = 'BP-TGM' AND b.is_cn = 0 AND b.doc_date >= ? AND b.doc_date <= ?${fb.sql}
-          GROUP BY b.cust_code, b.slm_code, l.sku, u`).all(from, to, ...fb.params));
+          GROUP BY b.cust_code, s, l.sku, u`).all(from, to, ...fb.params));
       } catch (e) { /* ยังไม่มีตาราง Bplus */ }
       // สินค้าที่ไม่มีกลุ่มใน products (รหัสโรงงาน/บาร์โค้ด) → หากลุ่มจากรหัสขึ้นต้น/ชื่อ แบบเดียวกับแท็บรายสินค้า
       // (2026-10-14, ผู้ใช้แจ้ง "สินค้าบางรายการไม่ถูกจัดกลุ่ม" เช่น 20018-227 โทสต์แฮม) · หน่วยแปลงเป็นชื่อเดียวกัน

@@ -1467,9 +1467,11 @@ const SB = {
     // FIXED (2026-10-20, ผู้ใช้แจ้ง "บางชื่อลูกค้าขึ้นเป็นรหัส"): โหลดเฉพาะลูกค้าที่ใช้งาน → ห้ามทับ cache ทั้งก้อน
     // cache เต็ม (refreshSharedMasterData โหลดรวมที่ปิดใช้งาน) มีลูกค้าที่ Express ปิดใช้งานแต่ยังมียอด เช่น AK-LF-3803
     // เดิมถูกทับด้วยรายการเฉพาะที่ใช้งานตอน Sales Overview เจอรหัสที่ไม่มีใน cache → ชื่อหาย ขึ้นเป็นรหัส · ค่าที่คืนยังเป็นเฉพาะที่ใช้งานเหมือนเดิม
+    // (code review 2026-10-20) รายที่อยู่ใน cache แต่ไม่อยู่ในรายการที่ใช้งาน = ปิดใช้งานแล้ว (รวมรายที่เพิ่งถูกปิดหลังโหลดเต็มครั้งล่าสุด)
+    // → เก็บไว้เป็น is_active 0 (ไม่ทิ้ง ไม่งั้นชื่อหาย) แทนการเก็บเฉพาะรายที่ cache บอกว่าปิดอยู่แล้ว
     if (!opts.includeInactive) {
       const have = new Set(rows.map(x => String(x.code || '')));
-      const off = (DB.get('remote_customers_cache') || []).filter(x => !have.has(String(x.code || '')) && !(x.is_active === true || Number(x.is_active) === 1));
+      const off = (DB.get('remote_customers_cache') || []).filter(x => !have.has(String(x.code || ''))).map(x => ({ ...x, is_active: 0 }));
       DB.set('remote_customers_cache', rows.concat(off));
     } else DB.set('remote_customers_cache', rows);
     DB.set('remote_customers_cache_ts', Date.now());
@@ -8134,10 +8136,18 @@ function _sdUseSwapAll(swapRows,rows,bpRows){
 }
 // แถวใบกำกับของรหัส Sales ที่เลือก + ใบกำกับที่ไม่มีรหัส Sales ("(none)"/ว่าง) ของลูกค้าที่ master ผูกกับรหัสนั้น
 // (2026-10-19, ผู้ใช้แจ้ง "ลูกค้าของแด้มาไม่ครบ" — กติกาเดียวกับ factSql ฝั่ง server ใน lib/customerScope.js)
+// (2026-10-20, code review) เจ้าของยอดใช้กติกาเดียวกับ server (ownerSlmExpr ใน lib/customerScope.js) ทั้งตัวกรองและแท็บรายเซลส์:
+// ใบไม่มีรหัส Sales ของแฟ้ม Express ฝั่ง TSS (TSS / TSS-NV / TSS-68 …) = รหัสที่ master ผูกกับลูกค้า · ฝากขาย/TGM/โรงงาน/ห้อง SKU ไม่โอน
+function _sdOwnerMap(){return Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),String(x.slm_id||'').trim()]));}
+function _sdOwnerSlm(r,owner){
+  const c=String(r.slm_code||'').trim();
+  if(c&&c!=='(none)') return c;
+  if(r._chain||!/^TSS/.test(String(r.company||''))) return '';
+  return owner[String(r.cust_code||'')]||'';
+}
 function _sdInvSlmMatcher(key){
-  const set=slmKeySet(key);
-  const owner=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),String(x.slm_id||'').trim()]));
-  return r=>{const c=String(r.slm_code||'').trim();return set.has(c)||((!c||c==='(none)')&&set.has(owner[String(r.cust_code||'')]||''));};
+  const set=slmKeySet(key),owner=_sdOwnerMap();
+  return r=>set.has(_sdOwnerSlm(r,owner));
 }
 function _sdFiltered(){
   const s=_sdEffSlm();
@@ -9020,13 +9030,17 @@ async function _sbInvoiceSalesMonthlyRowsRange(startYm,endYm,company='TSS',slmKe
       .from('invoice_sales_monthly')
       .select('ym,amount,invoice_count,slm_code,cust_code')
       .eq('company',company).gte('ym',startYm).lte('ym',endYm);
-    if(codes.length) q=codes.length>1?q.in('slm_code',codes):q.eq('slm_code',codes[0]);
     const{data,error}=await q.range(from,from+PAGE-1);
     if(error) throw error;
     rows=rows.concat(data||[]);
     if(!data||data.length<PAGE)break;
     from+=PAGE;
   }
+  // (2026-10-20, code review) เจ้าของยอด = _sdOwnerSlm — ใบไม่มีรหัส Sales ของแฟ้ม TSS นับให้เซลล์ที่ลูกค้าผูกไว้ เหมือน Sales Overview
+  // กรอง Sales ฝั่งหน้าเว็บแทน slm_code IN (…) ไม่งั้นใบไม่มีรหัสของลูกค้าเซลล์คนนั้นหลุด
+  const owner=_sdOwnerMap();
+  rows.forEach(r=>{r.company=company;r._owner=_sdOwnerSlm(r,owner);});
+  if(codes.length){const set=new Set(codes);rows=rows.filter(r=>set.has(r._owner));}
   const monthly={};
   for(const r of rows){
     const ym=String(r.ym||'');
@@ -9036,12 +9050,12 @@ async function _sbInvoiceSalesMonthlyRowsRange(startYm,endYm,company='TSS',slmKe
     monthly[ym].invoice_count+=Number(r.invoice_count)||0;
   }
   const out=Object.values(monthly).sort((a,b)=>a.ym.localeCompare(b.ym));
-  out.slmCodes=[...new Set(rows.map(r=>String(r.slm_code||'').trim()).filter(Boolean))];
+  out.slmCodes=[...new Set(rows.map(r=>r._owner).filter(Boolean))];
   // bySlm: { [slm_code]: { [ym]: amount } } — Dashboard "ยอดขาย vs เป้า"
   out.bySlm={};
-  for(const r of rows){const c=String(r.slm_code||'').trim(),ym=String(r.ym||'');if(!c||!ym)continue;(out.bySlm[c]=out.bySlm[c]||{})[ym]=(out.bySlm[c][ym]||0)+(Number(r.amount)||0);}
+  for(const r of rows){const c=r._owner,ym=String(r.ym||'');if(!c||!ym)continue;(out.bySlm[c]=out.bySlm[c]||{})[ym]=(out.bySlm[c][ym]||0)+(Number(r.amount)||0);}
   // bySlmSwap (2026-10-07): ยอดราย Sales ที่ตัดรหัส DC ซึ่งแทนด้วยยอดสาขาห้อง (ห้อง SKU) — เป้า vs ยอดจริง
-  out.bySlmSwap=(ranges)=>{const m={};for(const r of rows){if(_chainIsReplaced(r.cust_code,ranges))continue;const c=String(r.slm_code||'').trim(),ym=String(r.ym||'');if(!c||!ym)continue;(m[c]=m[c]||{})[ym]=(m[c][ym]||0)+(Number(r.amount)||0);}return m;};
+  out.bySlmSwap=(ranges)=>{const m={};for(const r of rows){if(_chainIsReplaced(r.cust_code,ranges))continue;const c=r._owner,ym=String(r.ym||'');if(!c||!ym)continue;(m[c]=m[c]||{})[ym]=(m[c][ym]||0)+(Number(r.amount)||0);}return m;};
   return out;
 }
 // Year view: sum across all 12 months instead of one — same table, just a wider ym range. Collapses
@@ -9168,13 +9182,14 @@ function _sdBuildCustsFromInvoice(invRows){
 }
 function _sdBuildSlmsFromInvoice(invRows){
   const custCache=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),x]));
-  const m={},own=_sdSlmOwners();
+  const m={},own=_sdSlmOwners(),custOwner=_sdOwnerMap();
   for(const r of invRows){
     // Some invoices carry no SLMCOD in Express at all — keep these under an explicit "unattributed"
     // bucket rather than dropping them, or this breakdown stops footing to the invoice-based total
     // above it (confirmed live: ~฿415K/month of real invoices have a blank SLMCOD).
-    const rawSid=String(r.slm_code||'').trim();
-    const sid=(!rawSid||rawSid==='(none)')?'(ไม่ระบุ)':rawSid;
+    // (2026-10-20) ใบไม่มีรหัส Sales ของแฟ้ม TSS ที่ลูกค้าผูกกับเซลล์ = ของเซลล์คนนั้น (ตรงกับตัวกรอง Sales / Dashboard)
+    const rawSid=_sdOwnerSlm(r,custOwner);
+    const sid=rawSid||'(ไม่ระบุ)';
     const o=own.get(sid),pk=o?o.key:sid;
     if(!m[pk])m[pk]={code:pk,name:o?o.name:(sid==='(ไม่ระบุ)'?'ไม่ระบุพนักงานขาย':(salesNameFor(sid)||sid)),_tot:0,_cos:{}};
     m[pk]._tot+=Number(r.amount)||0;_sdXAdd(m[pk],r);

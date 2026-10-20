@@ -54,9 +54,10 @@ def header_index(rows):
             name = next((j for j, c in enumerate(cells) if c.startswith('ชื่อร้านค้า') or c.startswith('ชื่อลูกค้า')), code + 1)  # ไม่มีหัว = คอลัมน์ถัดจากรหัส
             # หัวคอลัมน์หมายเหตุสะกดต่างกันทุกไฟล์: "หมายเหตุ Corporate" / "หมายเหตุcorporate" (ไม่มีวรรค — ไฟล์คุณเชล)
             # / "หมายเหตุ corperate" / "หมายเหตุ Cororate" — เดิมเช็ค startswith('หมายเหตุ corp') ทำให้ 3 ชีตไม่เจอคอลัมน์นี้ (2026-10-19)
-            # เลือกคอลัมน์ "หมายเหตุ …cor…" ก่อน (กันชีตที่มีคอลัมน์หมายเหตุทั่วไปอีกคอลัมน์ — code review) ไม่มีจึงใช้ "หมายเหตุ" เฉยๆ
+            # ใช้เฉพาะคอลัมน์ "หมายเหตุ …co…" (2026-10-20, code review): เดิมไม่มีจึงใช้ "หมายเหตุ" ทั่วไป — หมายเหตุอื่น เช่น "ส่งเช้า"
+            # จะเริ่มบล็อกแล้วดูดลูกค้าทุกแถวถัดไปเข้ากลุ่มเดียว · ตรวจแล้วชีต Corporate ทุกไฟล์ (9.10.69) มีหัว "หมายเหตุ co…" ครบ
             notes = [j for j, c in enumerate(cells) if c.replace(' ', '').startswith('หมายเหตุ')]
-            note = next((j for j in notes if 'co' in cells[j].lower()), notes[0] if notes else None)
+            note = next((j for j in notes if 'co' in cells[j].lower()), None)
             return i, code, name, note
     return None
 

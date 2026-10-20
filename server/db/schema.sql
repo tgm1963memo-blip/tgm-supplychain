@@ -1121,20 +1121,24 @@ SELECT * FROM v_sales_overview_sales_monthly WHERE company = 'CONSI';
 -- single-row health check — index.html's getStockPlanning()/dashboard "data confidence" card.
 -- Rebuilt 2026-07-13 to add orphan-SKU counters (DROP-first, see v_stock_by_warehouse comment above) —
 -- these are what should show ~715 -> ~0 for orphan_sku_consi_count once syncProducts() pulls CONSI too.
+-- 2026-10-20 (code review): ตัวเลขหนัก (ออเดอร์/บรรทัด/SKU กำพร้าใน sales_transactions — ~3.3 วิ) นับตอนจบรอบ sync
+-- เก็บใน sc_data_counts (lib/dataCounts.js) — view นี้อ่านจากตาราง ส่วนเวลา sync / สถานะ Bplus / การจอง / stock อ่านสด
+CREATE TABLE IF NOT EXISTS sc_data_counts (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  so_count INTEGER, line_count INTEGER, orders_without_line INTEGER,
+  orphan_sku_sales_count INTEGER, orphan_sku_consi_count INTEGER,
+  computed_at TEXT
+);
 DROP VIEW IF EXISTS v_sc_data_confidence;
 CREATE VIEW v_sc_data_confidence AS
 SELECT
-  (SELECT COUNT(*) FROM outbound_orders) AS so_count,
-  (SELECT COUNT(*) FROM outbound_lines) AS line_count,
+  (SELECT so_count FROM sc_data_counts WHERE id = 1) AS so_count,
+  (SELECT line_count FROM sc_data_counts WHERE id = 1) AS line_count,
   (SELECT COUNT(*) FROM bookings WHERE status != 'cancelled') AS active_booking_count,
-  (SELECT COUNT(*) FROM outbound_orders o
-     WHERE NOT EXISTS (SELECT 1 FROM outbound_lines l WHERE l.order_id = o.id)) AS orders_without_line,
+  (SELECT orders_without_line FROM sc_data_counts WHERE id = 1) AS orders_without_line,
   (SELECT COUNT(*) FROM products WHERE is_active = 1) AS active_product_count,
-  (SELECT COUNT(DISTINCT t.sku) FROM sales_transactions t
-     WHERE t.sku IS NOT NULL AND NOT EXISTS (SELECT 1 FROM products p WHERE p.code = t.sku)) AS orphan_sku_sales_count,
-  (SELECT COUNT(DISTINCT t.sku) FROM sales_transactions t
-     WHERE t.company = 'CONSI' AND t.sku IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM products p WHERE p.code = t.sku)) AS orphan_sku_consi_count,
+  (SELECT orphan_sku_sales_count FROM sc_data_counts WHERE id = 1) AS orphan_sku_sales_count,
+  (SELECT orphan_sku_consi_count FROM sc_data_counts WHERE id = 1) AS orphan_sku_consi_count,
   (SELECT COUNT(DISTINCT s.sku) FROM stock s
      WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.code = s.sku)) AS orphan_sku_stock_count,
   -- Fixed 2026-07-17: this used to be MAX(bookings.created_at, stock.last_updated) — but

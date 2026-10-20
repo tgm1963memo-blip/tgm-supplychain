@@ -100,7 +100,14 @@ async function sendResetPasswordEmail({ to, name, resetLink }) {
 
 // ส่งอีเมลทั่วไป (ใช้กับแจ้งอนุมัติใบเคาะราคา — lib/promoApprovalMail.js) — SMTP ยังไม่ตั้งค่าก็ไม่ error
 // แค่ log หัวเรื่อง/ผู้รับไว้ เหมือน sendResetPasswordEmail
+// emoji นอก BMP (🔎 💬 ฯลฯ — คู่ surrogate) โปรแกรมอีเมลของบริษัทแสดงเป็น "🔎" (2026-10-14, ผู้ใช้แจ้ง)
+// ตัดทิ้งก่อนส่งเสมอ รวมที่ผู้ใช้พิมพ์มาในชื่อโปร/ความเห็น · ✅ ❌ ⚠️ ↩️ อยู่ใน BMP แสดงได้ปกติ
+// (code review 2026-10-20) รวมตัวเชื่อม ZWJ (U+200D) / ตัวเลือกรูปแบบ (FE0E/FE0F) ที่ติดกับ emoji นอก BMP ด้วย — เดิมตัดแค่ตัว emoji
+// emoji ผสมเช่น 👨‍💻 (👨 ZWJ 💻) เหลือ ZWJ ค้างในหัวเรื่อง ขึ้นตัวอักษรเพี้ยน · ⚠️ ❤️ (BMP + FE0F) ไม่โดนตัด
+// ที่เดียวที่ตัด emoji ก่อนส่ง — เทมเพลตใน promoApprovalMail.js ใช้ข้อความแทน emoji นอก BMP (เช่น "ความเห็น:") ไม่ได้พึ่งตัวนี้
+const stripAstral = v => (typeof v === 'string' ? v.replace(/(?:‍?[\u{10000}-\u{10FFFF}][︎️]?)+‍?\s?/gu, '') : v);
 async function sendMail({ to, cc, subject, html, text }) {
+  [subject, html, text] = [subject, html, text].map(stripAstral);
   const t = getTransporter();
   if (!t) {
     console.warn(`[mailer] SMTP ยังไม่ได้ตั้งค่า — ไม่ได้ส่ง "${subject}" ถึง ${to}`);
