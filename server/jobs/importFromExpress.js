@@ -1537,19 +1537,29 @@ async function syncSalesLinesMonthly(db) {
   const insertDaily = db.prepare(`INSERT INTO sales_lines_daily (company, d, cust_code, slm_code, sku, unit_code, qty, qty_base, amount)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   let rowsImported = 0;
+  // กติกาเปลี่ยน (เล่มที่ไม่นับยอด / เจ้าของยอดรายลูกค้า) = สร้างใหม่ทุกแฟ้ม แม้ไฟล์ไม่เปลี่ยน (2026-10-20) — เดิมข้ามแฟ้มที่ mtime เดิม
+  // แฟ้มปีเก่า (TSS-67/68) ไม่เคยเปลี่ยน จึงค้างกติกาเก่าตลอด (30-LC-0013 ปี 2567–68 ยังเป็นของ 106, ใบ IT/IV ปีเก่ายังอยู่)
+  const rulesKey = '#sales_lines_rules';
+  const rulesSig = (() => {
+    const s = JSON.stringify([require('../lib/salesDocs').NON_SALES_DOC_PREFIXES, [...slmOv].sort()]);
+    let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h;
+  })();
+  const rulesChanged = getState.get(rulesKey)?.mtime_ms !== rulesSig;
+  let allOk = true;
   for (const company of SALES_COMPANIES) {
     const file = findFile(path.join(EXPRESS_ROOT, company), 'STCRD.DBF');
     if (!file) continue;
     const source = `${company}/STCRD.DBF`;
     let mtimeMs;
-    try { mtimeMs = fs.statSync(file).mtimeMs; } catch (e) { console.warn(`[importFromExpress] sales lines: stat ${source} failed: ${e.message}`); continue; }
+    try { mtimeMs = fs.statSync(file).mtimeMs; } catch (e) { allOk = false; console.warn(`[importFromExpress] sales lines: stat ${source} failed: ${e.message}`); continue; }
     const prev = getState.get(source);
-    if (prev && prev.mtime_ms === mtimeMs) continue;
-    if (prev && prev.synced_at && Date.now() - Date.parse(prev.synced_at) < SALES_LINES_MIN_INTERVAL_MS) continue;
+    if (!rulesChanged && prev && prev.mtime_ms === mtimeMs) continue;
+    if (!rulesChanged && prev && prev.synced_at && Date.now() - Date.parse(prev.synced_at) < SALES_LINES_MIN_INTERVAL_MS) continue;
 
     const rows = await readTable(company, 'STCRD.DBF');
     // อ่านได้ 0 แถวทั้งที่ไฟล์มีอยู่ = share หลุดกลางรอบ (ดูคอมเมนต์ใน runImport) — ข้ามไว้ อย่าลบของเดิม
-    if (!rows.length) continue;
+    if (!rows.length) { allOk = false; continue; }
     const monthly = new Map();
     const daily = new Map();
     for (const r of rows) {
@@ -1598,6 +1608,8 @@ async function syncSalesLinesMonthly(db) {
       throw e;
     }
   }
+  // จำกติกาที่ใช้สร้างแล้ว เฉพาะเมื่อสร้างใหม่ครบทุกแฟ้ม (อ่านบางแฟ้มไม่ได้ = รอบหน้าสร้างใหม่ทั้งหมดอีกครั้ง)
+  if (rulesChanged && allOk) setState.run(rulesKey, rulesSig, new Date().toISOString());
   console.log(`[importFromExpress] sales lines monthly: ${rowsImported} rows written`);
   return rowsImported;
 }
