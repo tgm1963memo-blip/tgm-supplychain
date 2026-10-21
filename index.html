@@ -9749,9 +9749,36 @@ function _sdInvDetGet(cust,slm,lines){
   return e;
 }
 // แถวสินค้า: กลุ่มสินค้า → สินค้า (+ แถวส่วนต่างลดหนี้/ไม่มีบรรทัด) · b={c:รหัส|รายการรหัส,n,_tot} · cells(v,parent) = คอลัมน์ตัวเลขของตารางนั้น
+// ── ปริมาณขายตามหน่วย (2026-10-21, ผู้ใช้ขอ "เพิ่มปริมาณ จำนวนการขาย พร้อมหน่วย") ─────────────────────────
+// จากบรรทัดใบกำกับชุดเดียวกับโหมด Pivot (/api/invoice_detail/pivot: TSS + โรงงาน TGM ไม่รวมใบลดหนี้ · หน่วยแปลงเป็นชื่อเดียวกันแล้ว)
+// ไม่บวกต่างหน่วยรวมกัน — แสดง "1,234 กก. · 50 แพ็ค" · null = ยังโหลดไม่เสร็จ (โหลดเสร็จ _sdPvLoad วาดหน้าใหม่เอง)
+function _sdQtyIdx(slm){
+  const d=_sdPvLoad(slm);
+  if(d.loading||d.error||!d.rows) return null;
+  if(d._qi) return d._qi;
+  const byC=new Map(),byCK=new Map(),byK=new Map();
+  const add=(m,k,u,q)=>{let o=m.get(k);if(!o)m.set(k,o={});o[u]=(o[u]||0)+q;};
+  for(const r of d.rows){const q=Number(r.q)||0;if(!q||!r.k||r.k==='(none)')continue;const u=String(r.u||'').trim();add(byC,r.c,u,q);add(byCK,r.c+'|'+r.k,u,q);add(byK,r.k,u,q);}
+  return d._qi={byC,byCK,byK};
+}
+function _sdQtySum(list){const o={};(list||[]).forEach(m=>{if(m)for(const u in m)o[u]=(o[u]||0)+m[u];});return o;}
+function _sdQtyFmt(qu){
+  return Object.entries(qu||{}).filter(([,v])=>Math.round(v)).sort((a,b)=>b[1]-a[1])
+    .map(([u,v])=>`${Math.round(v).toLocaleString('en-US')}${u?' '+u:''}`).join(' · ');
+}
+// ช่องปริมาณ: qu = {หน่วย: จำนวน} · undefined = แถวที่ไม่มีปริมาณ (ลดหนี้ / ไม่มีบรรทัดสินค้า) · null = กำลังโหลด
+function _sdQtyCell(qu,o){
+  o=o||{};
+  if(qu===null) return '<td class="r" style="color:var(--TX3);font-size:11px">⏳</td>';
+  const t=qu?_sdQtyFmt(qu):'';
+  return `<td class="r" style="font-size:12px;color:var(--TX2);${o.b?'font-weight:600;':''}">${t?esc(t):'<span style="color:var(--TX3)">—</span>'}</td>`;
+}
 function _sdInvBranchHtml(b,slm,bk,pad,cols,cells){
   const note=(t,c='var(--TX3)')=>`<tr style="background:var(--bg)"><td style="padding-left:${pad}px;font-size:11px;color:${c}" colspan="${cols}">${t}</td></tr>`;
   const custs=_sdInvCusts(b.c),multi=custs.length>1;
+  // ปริมาณต่อสินค้า (เฉพาะตารางที่มีคอลัมน์ปริมาณ — cells รับ 4 ค่า) จากบรรทัดใบกำกับของสาขาในกลุ่มนี้
+  const qi=cells.length>3?_sdQtyIdx(slm):undefined;
+  const qOf=sku=>qi===undefined?undefined:qi===null?null:_sdQtySum(custs.map(c=>qi.byCK.get(c+'|'+sku)));
   const d=_sdInvDetGet(custs,slm);
   if(d.loading) return note(`⏳ กำลังโหลดรายการสินค้าจากใบกำกับ${multi?` (${custs.length} สาขา)`:''}…`);
   if(d.error) return note('⚠️ โหลดรายละเอียดใบกำกับไม่ได้: '+esc(d.error),'var(--R)');
@@ -9769,11 +9796,14 @@ function _sdInvBranchHtml(b,slm,bk,pad,cols,cells){
   let h=`<tr style="background:var(--bg)"><td style="padding-left:${pad}px;font-size:11px;color:var(--BL)" colspan="${cols}">🧾 รายการสินค้าจากใบกำกับจริง${multi?` รวม ${custs.length} สาขา`:''}${partial}${btn}</td></tr>`;
   Object.values(grp).sort((a,b2)=>b2.tot-a.tot).forEach((g,gi)=>{
     const gk=bk+'_ig'+gi,og=g.flat?true:_sd.op[gk];
+    const gq=qi===undefined?undefined:qi===null?null:_sdQtySum(g.it.map(it=>qOf(it.sku)));
     if(!g.flat) h+=`<tr onclick="sdTogOp('${gk}')" style="cursor:pointer;background:var(--bg)">
-      <td style="padding-left:${pad}px">${_xa(og)}<span style="font-size:12px">${esc(g.n)}</span> <span style="color:var(--TX3);font-size:11px">${g.it.length} รายการ</span></td>${cells(g.tot,b._tot)}</tr>`;
+      <td style="padding-left:${pad}px">${_xa(og)}<span style="font-size:12px">${esc(g.n)}</span> <span style="color:var(--TX3);font-size:11px">${g.it.length} รายการ</span></td>${cells(g.tot,b._tot,undefined,gq)}</tr>`;
     if(og) g.it.forEach(it=>{
+      // ตารางที่มีคอลัมน์ปริมาณแล้ว ไม่ต้องต่อท้ายชื่อซ้ำ (2026-10-21)
+      const inl=qi===undefined?`${(Number(it.qty)||0).toLocaleString()} ${esc(it.unit||'')} · `:'';
       h+=`<tr style="background:var(--bg2);font-size:12px">
-        <td style="padding-left:${pad+20}px"><span class="mono">${esc(it.sku)}</span> — ${esc(it.sku_name||it.sku)} <span style="color:var(--TX3);font-size:11px">· ${(Number(it.qty)||0).toLocaleString()} ${esc(it.unit||'')} · ${it.invoices} ใบ${multi?` · ${it.custs} สาขา`:''}</span></td>${cells(Number(it.amount)||0,g.tot)}</tr>`;
+        <td style="padding-left:${pad+20}px"><span class="mono">${esc(it.sku)}</span> — ${esc(it.sku_name||it.sku)} <span style="color:var(--TX3);font-size:11px">· ${inl}${it.invoices} ใบ${multi?` · ${it.custs} สาขา`:''}</span></td>${cells(Number(it.amount)||0,g.tot,undefined,qOf(it.sku))}</tr>`;
     });
   });
   const psum=prods.reduce((a,x)=>a+(Number(x.amount)||0),0);
@@ -10164,7 +10194,7 @@ function sdCust(){
   const hHdr=`<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:42%">ชื่อบริษัท / สาขา / กลุ่มสินค้า / สินค้า</th>
-      ${_sdValHead(sDn)}
+      ${_sdValHead(sDn)}${_sdSplitOn()?'<th class="r" style="white-space:nowrap">ปริมาณขาย<div style="font-size:10px;font-weight:400;color:var(--TX3)">ตามหน่วยขาย</div></th>':''}
       <th class="r" style="width:110px">สัดส่วน</th>${_sdYoYHead()}<th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
 
@@ -10179,6 +10209,10 @@ function sdCust(){
     const F=_sdFiltered();
     const T=(F?F.total:_sdApi.total)||1;
     const yoyM=_sdYoYMaps();
+    // ปริมาณขาย (2026-10-21) — มีเฉพาะยอดจากใบกำกับ · QI null = กำลังโหลดบรรทัดใบกำกับ
+    const QON=_sdSplitOn(),QI=QON?_sdQtyIdx(F?F.slm:''):undefined;
+    const QC=(qu,o)=>QON?_sdQtyCell(qu,o):'';
+    const qOfCodes=codes=>QI===null?null:QI?_sdQtySum(codes.map(c=>QI.byC.get(c))):undefined;
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
     // corp groups can span >1 customer code/salesperson, so filter by membership (_slms) rather
     // than equality on the single .slm field left over from whichever row was merged in last
@@ -10192,16 +10226,16 @@ function sdCust(){
     // กดสลับทิศที่หัว NET แล้วไม่เปลี่ยน)
     if(_sd.groupBy==='cat2'){const ci=new Map();custs.forEach(c=>{if(!ci.has(c._cat))ci.set(c._cat,ci.size);});sorted=[...custs].sort((a,b)=>(ci.get(a._cat)-ci.get(b._cat))||_sdCmp(a._tot,b._tot,_sd.sort?.dir||1));}
     else if(_sd.groupBy!=='corp') sorted.sort((a,b)=>(a._none?1:0)-(b._none?1:0)); // "ไม่มีกลุ่ม" ไว้ท้ายสุด
-    const nCols=(_sd.showYoY?5:4)+_sdValCols()-1;
+    const nCols=(_sd.showYoY?5:4)+_sdValCols()-1+(QON?1:0);
     if(_sdPv.cust&&_sdApi.invoiceBased){document.getElementById('sd-ta').innerHTML=_sdPivotBar('cust')+_sdPivotHtml('cust',F?F.custs:(isAll?_sdApi.custs:_sdApi.custs.filter(c=>custHasSlm(c,slmId))),F?F.slm:'');return;}
     let h=(_sdApi.invoiceBased?_sdPivotBar('cust'):'')+hHdr,curCat=null;
-    const catSum={};if(_sd.groupBy==='cat2')sorted.forEach(c=>{const s=catSum[c._cat]=catSum[c._cat]||{t:0,n:0,x:{sb:0,sg:0,cb:0,cg:0}};s.t+=c._tot;s.n+=(c.branches||[]).length;for(const k in s.x)s.x[k]+=c._x?.[k]||0;});
+    const catSum={};if(_sd.groupBy==='cat2')sorted.forEach(c=>{const s=catSum[c._cat]=catSum[c._cat]||{t:0,n:0,x:{sb:0,sg:0,cb:0,cg:0},codes:[]};s.t+=c._tot;s.n+=(c.branches||[]).length;for(const k in s.x)s.x[k]+=c._x?.[k]||0;(c.branches||[]).forEach(b=>s.codes.push(b.c));});
     sorted.forEach(c=>{
       if(_sd.groupBy==='cat2'&&c._cat!==curCat){
         // (2026-10-14, ผู้ใช้ขอให้อ่านง่าย) หัวกลุ่ม Category พื้นฟ้าอ่อน + ตัวอักษรน้ำเงินเข้ม — เดิมพื้นน้ำเงินเข้ม
         // แต่ตัวเลขยอด/CN ยังเป็นสีเทา/แดงแบบแถวปกติ จนแทบมองไม่เห็น
         curCat=c._cat;const s=catSum[curCat],kk='cat_'+curCat,oo=_sd.op[kk]!==false;
-        h+=`<tr onclick="_sd.op['${_promoJsKey(kk)}']=${oo?'false':'true'};sdRender()" style="cursor:pointer;background:var(--LN);color:var(--N);border-top:2px solid var(--N)"><td style="font-weight:700;border-left:4px solid var(--N)">${oo?'▼':'▶'} ${esc(curCat)} <span style="font-size:11px;color:var(--TX2);font-weight:400">${s.n.toLocaleString()} สาขา</span></td>${_sdVT(s.t,s.x,null,{b:1})}<td class="r">${_sdBar(s.t,T)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+        h+=`<tr onclick="_sd.op['${_promoJsKey(kk)}']=${oo?'false':'true'};sdRender()" style="cursor:pointer;background:var(--LN);color:var(--N);border-top:2px solid var(--N)"><td style="font-weight:700;border-left:4px solid var(--N)">${oo?'▼':'▶'} ${esc(curCat)} <span style="font-size:11px;color:var(--TX2);font-weight:400">${s.n.toLocaleString()} สาขา</span></td>${_sdVT(s.t,s.x,null,{b:1})}${QC(qOfCodes(s.codes),{b:1})}<td class="r">${_sdBar(s.t,T)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
       }
       if(_sd.groupBy==='cat2'&&_sd.op['cat_'+c._cat]===false)return;
       // toggle state keyed by the corp GROUP NAME (c.grp), not c.c — c.c is now "N สาขา" or a
@@ -10211,22 +10245,22 @@ function sdCust(){
       const unassigned=c.grp===UNASSIGNED_CORP_LABEL;
       h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--LN)">
         <td style="font-weight:700">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span> <button class="btn btn-xs btn-g" onclick="event.stopPropagation();nav('groups')">ไปตั้งค่ากลุ่ม →</button>`:`<strong>${c.n}</strong>`} ${(()=>{const sc=_sdCatOf(c);return sc?`<span class="badge bbl" style="font-size:10px" title="Category (Sales)">🏷 ${esc(sc)}</span>`:(c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:'');})()} <span style="font-size:11px;color:var(--TX3)">${(c.branches||[]).length} สาขา</span>${_sdTop10Btn(ck,c,F?F.slm:'')}</td>
-        ${_sdVT(cv,c._x,null,{b:1})}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${c._regrouped?'—':_vc(cv,cvYoY)}</td></tr>`;
+        ${_sdVT(cv,c._x,null,{b:1})}${QC(qOfCodes((c.branches||[]).map(b=>b.c)),{b:1})}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${c._regrouped?'—':_vc(cv,cvYoY)}</td></tr>`;
       // บริษัท › สินค้า / สาขา › สินค้า: เปิดแล้วเห็นรายการสินค้าทันที ไม่มีแถวสาขา
       if(oc&&(_sd.level==='corp_prod'||_sd.level==='branch_prod')){
-        h+=_sdApi.invoiceBased?_sdInvBranchHtml({c:(c.branches||[]).map(b=>b.c),n:c.n,_tot:c._tot,_x:c._x},F?F.slm:'',ck+'_p',20,nCols,(v,par,x)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
+        h+=_sdApi.invoiceBased?_sdInvBranchHtml({c:(c.branches||[]).map(b=>b.c),n:c.n,_tot:c._tot,_x:c._x},F?F.slm:'',ck+'_p',20,nCols,(v,par,x,qu)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}${QC(qu)}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
           :(()=>{const by=new Map();(c.branches||[]).forEach(b=>(b.g||[]).forEach(g=>(g.it||[]).forEach(it=>{const e=by.get(it.c)||{c:it.c,n:it.n,v:0};e.v+=it._tot||0;by.set(it.c,e);})));
             return [...by.values()].sort((a,b)=>b.v-a.v).map(it=>`<tr style="background:var(--bg2);font-size:12px"><td style="padding-left:40px"><span class="mono">${esc(it.c)}</span> — ${esc(it.n)}</td><td class="r">${_sdFmtTotal(_sdV(it.v))}</td><td class="r">${_sdBar(it.v,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`).join('');})();
         return;
       }
-      if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,F?F.slm:'',ck,20,(_sd.showYoY?5:4)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`);
+      if(oc&&_sdApi.invoiceBased) h+=_sdInvGroupHtml(c,F?F.slm:'',ck,20,nCols,(v,par,x,qu)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}${QC(qu)}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`);
       if(oc) (c.branches||[]).forEach((b,bi)=>{
         const bv=b._tot;const bk=ck+'_b'+bi;const ob=_sd.op[bk];
         h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:20px">${_xa(ob)}${_sdBranchCell(b)}</td>
-          ${_sdVT(bv,b._x,null,{fs:1})}<td class="r">${_sdBar(bv,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+          ${_sdVT(bv,b._x,null,{fs:1})}${QC(qOfCodes([b.c]))}<td class="r">${_sdBar(bv,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
         if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased
-          ?_sdInvBranchHtml(b,F?F.slm:'',bk,40,(_sd.showYoY?5:4)+_sdValCols()-1,(v,par,x)=>`${_sdVT(v,x,_sdVatR(b._x),{fs:1})}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
+          ?_sdInvBranchHtml(b,F?F.slm:'',bk,40,nCols,(v,par,x,qu)=>`${_sdVT(v,x,_sdVatR(b._x),{fs:1})}${QC(qu)}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
           :`<tr style="background:var(--bg)"><td style="padding-left:40px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า) — ดูสินค้าที่แท็บ รายสินค้า</td></tr>`;
         if(ob) (b.g||[]).forEach((g,gi)=>{
           const gv=g._tot;const gk=bk+'_g'+gi;const og=_sd.op[gk];
@@ -10605,14 +10639,22 @@ function refreshSalesOverviewGrouping(){
   _applySalesRowsToSd(_salesRowsForMode(rows,{includeConsi:false}),_sdApi.month||_sdApiMonth(),'');
   sdRender();
 }
-function sdExport(){
+// ปริมาณขายใน Excel (2026-10-21, ผู้ใช้ขอ "export ให้บอกทั้งมูลค่า ปริมาณการขาย") — รอบรรทัดใบกำกับ (ชุดเดียวกับ Pivot) โหลดเสร็จก่อน
+async function _sdPvReady(slm){for(let i=0;i<300;i++){const d=_sdPvLoad(slm);if(!d.loading)return d;await new Promise(r=>setTimeout(r,200));}return _sdPvLoad(slm);}
+// หน่วยที่มีในชุดข้อมูล เรียงตามปริมาณรวม → คอลัมน์ "ปริมาณ (หน่วย)" ละคอลัมน์ (ไม่บวกต่างหน่วย)
+function _sdQtyUnits(QI){const t={};if(QI)QI.byC.forEach(o=>{for(const u in o)t[u]=(t[u]||0)+o[u];});return Object.keys(t).sort((a,b)=>t[b]-t[a]);}
+const _sdQtyRow=(units,qu)=>units.map(u=>{const v=Math.round((qu||{})[u]||0);return v||'';});
+async function sdExport(){
   const d=_sdD(),T=d.t,wi=_sdWI();
+  const QF=_sdFiltered(),QSLM=QF?QF.slm:'';
+  if(_sdApi.loaded&&_sdApi.invoiceBased&&(_sd.at==='cust'||_sd.at==='prod')){toast('กำลังเตรียมข้อมูลปริมาณขาย…');await _sdPvReady(QSLM);}
+  const QI=_sdApi.loaded&&_sdApi.invoiceBased?_sdQtyIdx(QSLM):null,QU=_sdQtyUnits(QI),QH=QU.map(u=>`ปริมาณ (${u||'ไม่ระบุหน่วย'})`);
   const period=_sd.pt==='custom'?`${_sd.dateFrom}_${_sd.dateTo}`:(_sd.pt==='week'?'สัปดาห์'+_sd.cw+'_':'')+(_sd.pt==='year'?'ปี'+_sd.cy_y:SD_MTH[_sd.cm]+'_'+_sd.cy);
   let cols,rows=[],sheet;
   if(_sd.at==='cust'){
     if(_sdApi.loaded){
       _sdEnsureBuilt('cust');
-      cols=['บริษัท / สาขา / กลุ่มสินค้า / สินค้า','รหัส','Category','ยอดขาย/จำนวน','สัดส่วน%'];
+      cols=['บริษัท / สาขา / กลุ่มสินค้า / สินค้า','รหัส','Category',QI?'ยอดขาย NET (บาท)':'ยอดขาย/จำนวน','สัดส่วน%',...QH];
       const F=_sdFiltered();
       const T2=(F?F.total:_sdApi.total)||1;
       const q=(_sd.q||'').toLowerCase();
@@ -10623,10 +10665,24 @@ function sdExport(){
       let custs=F?[...F.custs]:(isManager()&&_sd.mgrView)?[...(_sdApi.custs||[])]:(_sdApi.custs||[]).filter(c=>custHasSlm(c,slmId));
       if(q) custs=_sdCustSearch(custs,q);
       if(_sd.sort.col==='val') custs=_sdByValue(custs);
+      // บรรทัดสินค้าต่อสาขาจากใบกำกับ (ชุดเดียวกับ Pivot) — ยอดตามบรรทัดสินค้า (ก่อนหักลดหนี้ระดับใบ) + ปริมาณตามหน่วย
+      const pvRows=QI?(_sdPvLoad(QSLM).rows||[]):[];
+      const pvByC=new Map();pvRows.forEach(r=>{if(!r.k||r.k==='(none)')return;(pvByC.get(r.c)||pvByC.set(r.c,[]).get(r.c)).push(r);});
+      const qC=codes=>QI?_sdQtySum(codes.map(x=>QI.byC.get(x))):null;
       custs.forEach(c=>{
-        rows.push([c.n,c.c,c.category||c.ty||'',_sdV(c._tot),Math.round((c._tot||0)/T2*100)]);
+        rows.push([c.n,c.c,c.category||c.ty||'',_sdV(c._tot),Math.round((c._tot||0)/T2*100),..._sdQtyRow(QU,qC((c.branches||[]).map(b=>b.c)))]);
         (c.branches||[]).forEach(b=>{
-          rows.push(['  '+b.n,b.c,'',_sdV(b._tot),Math.round((b._tot||0)/(c._tot||1)*100)]);
+          rows.push(['  '+b.n,b.c,'',_sdV(b._tot),Math.round((b._tot||0)/(c._tot||1)*100),..._sdQtyRow(QU,qC([b.c]))]);
+          if(QI){
+            const grp=new Map();
+            (pvByC.get(b.c)||[]).forEach(r=>{const gn=expressGroupLabel(r.g)||'อื่นๆ';const g=grp.get(gn)||grp.set(gn,{a:0,qu:{},it:new Map()}).get(gn);
+              const u=String(r.u||'').trim(),q=Number(r.q)||0,a=Number(r.a)||0;g.a+=a;if(q)g.qu[u]=(g.qu[u]||0)+q;
+              const it=g.it.get(r.k)||g.it.set(r.k,{n:r.n||r.k,a:0,qu:{}}).get(r.k);it.a+=a;if(q)it.qu[u]=(it.qu[u]||0)+q;});
+            [...grp.entries()].sort((x,y)=>y[1].a-x[1].a).forEach(([gn,g])=>{
+              rows.push(['    '+gn,'','',Math.round(g.a),Math.round(g.a/(b._tot||1)*100),..._sdQtyRow(QU,g.qu)]);
+              [...g.it.entries()].sort((x,y)=>y[1].a-x[1].a).forEach(([k,it])=>rows.push(['      '+k+' — '+it.n,'','',Math.round(it.a),Math.round(it.a/(g.a||1)*100),..._sdQtyRow(QU,it.qu)]));
+            });
+          }
           (b.g||[]).forEach(g=>{
             rows.push(['    '+g.n,'','',_sdV(g._tot),Math.round((g._tot||0)/(b._tot||1)*100)]);
             (g.it||[]).forEach(it=>rows.push(['      '+it.c+' — '+it.n,'','',_sdV(it._tot),Math.round((it._tot||0)/(g._tot||1)*100)]));
@@ -10658,14 +10714,15 @@ function sdExport(){
     const q=(_sd.q||'').toLowerCase();
     if(_sdApi.loaded){
       _sdEnsureBuilt('prod');
-      cols=['กลุ่มสินค้า / สินค้า','ยอดขาย/จำนวน','สัด่วน%','ลูกค้าที่ซื้อ'];
+      cols=['กลุ่มสินค้า / สินค้า','ยอดขาย/จำนวน','สัดส่วน%',...QH,'ลูกค้าที่ซื้อ'];
       const F=_sdFiltered();
       const T2=(F?F.total:_sdApi.total)||1;
       let prods=[...((F?F.prods:_sdApi.prods)||[])];
       if(q) prods = prods.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)));
       if(_sd.sort.col==='val') prods=_sdByValue(prods);
       else if(_sd.sort.col==='vs') prods.sort((a,b)=>_sd.sort.dir*(b.vs-a.vs));
-      prods.forEach(p=>{rows.push([p.n,_sdV(p._tot),Math.round((p._tot||0)/T2*100),'']);(p.it||[]).forEach(it=>rows.push(['  '+it.c+' — '+it.n,_sdV(it._tot),Math.round((it._tot||0)/(p._tot||1)*100),(it.custs||[]).flatMap(t=>(t.cs||[]).map(c=>c.n)).join(', ')]));});
+      const qK=k=>QI?QI.byK.get(k):null;
+      prods.forEach(p=>{rows.push([p.n,_sdV(p._tot),Math.round((p._tot||0)/T2*100),..._sdQtyRow(QU,QI?_sdQtySum((p.it||[]).map(it=>qK(it.c))):null),'']);(p.it||[]).forEach(it=>rows.push(['  '+it.c+' — '+it.n,_sdV(it._tot),Math.round((it._tot||0)/(p._tot||1)*100),..._sdQtyRow(QU,qK(it.c)),(it.custs||[]).flatMap(t=>(t.cs||[]).map(c=>c.n)).join(', ')]));});
       return toXLSX([['รายสินค้า', cols, rows]], `Sales_${period}_รายสินค้า.xlsx`);
     }
     const base=q?SD_PRODS.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q))):SD_PRODS;

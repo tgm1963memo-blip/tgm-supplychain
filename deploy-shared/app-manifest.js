@@ -47,6 +47,7 @@ const SALES_ONLY = [
   'sdCust', 'sdProd', 'sdSlm', 'sdSetPT', 'sdNav', 'sdGoNow', 'sdTab', 'sdTogView', 'sdSort',
   'sdSetYear', 'sdSetQ', 'sdClear', 'sdExport',
   // Export Business Review .pptx (2026-10-20)
+  '_sdQtyIdx', '_sdQtySum', '_sdQtyFmt', '_sdQtyCell', '_sdPvReady', '_sdQtyUnits', '_sdQtyRow', // ปริมาณขาย (2026-10-21)
   'CDN_PPTX', 'ensurePptx', '_BR_MTH', 'sdBrOpen', '_sdBrRows', '_sdBrByCust', '_sdBrSum', 'sdBrExport', '_sdBrBuild',
 
   // ฝากขาย CONSI
