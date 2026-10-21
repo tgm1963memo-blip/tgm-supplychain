@@ -10209,10 +10209,10 @@ function sdCust(){
     const F=_sdFiltered();
     const T=(F?F.total:_sdApi.total)||1;
     const yoyM=_sdYoYMaps();
-    // ปริมาณขาย (2026-10-21) — มีเฉพาะยอดจากใบกำกับ · QI null = กำลังโหลดบรรทัดใบกำกับ
-    const QON=_sdSplitOn(),QI=QON?_sdQtyIdx(F?F.slm:''):undefined;
-    const QC=(qu,o)=>QON?_sdQtyCell(qu,o):'';
-    const qOfCodes=codes=>QI===null?null:QI?_sdQtySum(codes.map(c=>QI.byC.get(c))):undefined;
+    // ปริมาณขาย (2026-10-21) — มีเฉพาะยอดจากใบกำกับ · แสดงเฉพาะรายการย่อย (กลุ่มสินค้า / สินค้า — ผู้ใช้ขอ 2026-10-21)
+    // แถวหมวด / บริษัท / สาขา เว้นว่าง (รวมหลายสินค้าหลายหน่วยแล้วอ่านยาก) · ตัวเลขมาจาก _sdInvBranchHtml
+    const QON=_sdSplitOn();
+    const QC=(qu,o)=>QON?(qu===undefined?'<td></td>':_sdQtyCell(qu,o)):'';
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
     // corp groups can span >1 customer code/salesperson, so filter by membership (_slms) rather
     // than equality on the single .slm field left over from whichever row was merged in last
@@ -10235,7 +10235,7 @@ function sdCust(){
         // (2026-10-14, ผู้ใช้ขอให้อ่านง่าย) หัวกลุ่ม Category พื้นฟ้าอ่อน + ตัวอักษรน้ำเงินเข้ม — เดิมพื้นน้ำเงินเข้ม
         // แต่ตัวเลขยอด/CN ยังเป็นสีเทา/แดงแบบแถวปกติ จนแทบมองไม่เห็น
         curCat=c._cat;const s=catSum[curCat],kk='cat_'+curCat,oo=_sd.op[kk]!==false;
-        h+=`<tr onclick="_sd.op['${_promoJsKey(kk)}']=${oo?'false':'true'};sdRender()" style="cursor:pointer;background:var(--LN);color:var(--N);border-top:2px solid var(--N)"><td style="font-weight:700;border-left:4px solid var(--N)">${oo?'▼':'▶'} ${esc(curCat)} <span style="font-size:11px;color:var(--TX2);font-weight:400">${s.n.toLocaleString()} สาขา</span></td>${_sdVT(s.t,s.x,null,{b:1})}${QC(qOfCodes(s.codes),{b:1})}<td class="r">${_sdBar(s.t,T)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+        h+=`<tr onclick="_sd.op['${_promoJsKey(kk)}']=${oo?'false':'true'};sdRender()" style="cursor:pointer;background:var(--LN);color:var(--N);border-top:2px solid var(--N)"><td style="font-weight:700;border-left:4px solid var(--N)">${oo?'▼':'▶'} ${esc(curCat)} <span style="font-size:11px;color:var(--TX2);font-weight:400">${s.n.toLocaleString()} สาขา</span></td>${_sdVT(s.t,s.x,null,{b:1})}${QC(undefined)}<td class="r">${_sdBar(s.t,T)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
       }
       if(_sd.groupBy==='cat2'&&_sd.op['cat_'+c._cat]===false)return;
       // toggle state keyed by the corp GROUP NAME (c.grp), not c.c — c.c is now "N สาขา" or a
@@ -10245,7 +10245,7 @@ function sdCust(){
       const unassigned=c.grp===UNASSIGNED_CORP_LABEL;
       h+=`<tr onclick="sdTogOp('${ck}')" style="cursor:pointer;background:var(--LN)">
         <td style="font-weight:700">${_xa(oc)}${unassigned?`<span style="color:var(--R)">⚠️ ${c.n}</span> <button class="btn btn-xs btn-g" onclick="event.stopPropagation();nav('groups')">ไปตั้งค่ากลุ่ม →</button>`:`<strong>${c.n}</strong>`} ${(()=>{const sc=_sdCatOf(c);return sc?`<span class="badge bbl" style="font-size:10px" title="Category (Sales)">🏷 ${esc(sc)}</span>`:(c.ty?`<span class="badge bbl" style="font-size:10px">${c.ty}</span>`:'');})()} <span style="font-size:11px;color:var(--TX3)">${(c.branches||[]).length} สาขา</span>${_sdTop10Btn(ck,c,F?F.slm:'')}</td>
-        ${_sdVT(cv,c._x,null,{b:1})}${QC(qOfCodes((c.branches||[]).map(b=>b.c)),{b:1})}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${c._regrouped?'—':_vc(cv,cvYoY)}</td></tr>`;
+        ${_sdVT(cv,c._x,null,{b:1})}${QC(undefined)}<td class="r">${_sdBar(cv,T)}</td>${_sdYoYCell(cvYoY)}<td class="r">${c._regrouped?'—':_vc(cv,cvYoY)}</td></tr>`;
       // บริษัท › สินค้า / สาขา › สินค้า: เปิดแล้วเห็นรายการสินค้าทันที ไม่มีแถวสาขา
       if(oc&&(_sd.level==='corp_prod'||_sd.level==='branch_prod')){
         h+=_sdApi.invoiceBased?_sdInvBranchHtml({c:(c.branches||[]).map(b=>b.c),n:c.n,_tot:c._tot,_x:c._x},F?F.slm:'',ck+'_p',20,nCols,(v,par,x,qu)=>`${_sdVT(v,x,_sdVatR(c._x),{fs:1})}${QC(qu)}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
@@ -10258,7 +10258,7 @@ function sdCust(){
         const bv=b._tot;const bk=ck+'_b'+bi;const ob=_sd.op[bk];
         h+=`<tr onclick="sdTogOp('${bk}')" style="cursor:pointer;background:var(--bg2)">
           <td style="padding-left:20px">${_xa(ob)}${_sdBranchCell(b)}</td>
-          ${_sdVT(bv,b._x,null,{fs:1})}${QC(qOfCodes([b.c]))}<td class="r">${_sdBar(bv,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+          ${_sdVT(bv,b._x,null,{fs:1})}${QC(undefined)}<td class="r">${_sdBar(bv,cv)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
         if(ob&&!(b.g&&b.g.length)) h+=_sdApi.invoiceBased
           ?_sdInvBranchHtml(b,F?F.slm:'',bk,40,nCols,(v,par,x,qu)=>`${_sdVT(v,x,_sdVatR(b._x),{fs:1})}${QC(qu)}<td class="r">${_sdBar(v,par)}</td>${_sdYoYCell(0)}<td class="r">—</td>`)
           :`<tr style="background:var(--bg)"><td style="padding-left:40px;font-size:11px;color:var(--TX3)" colspan="${_sd.showYoY?5:4}">ไม่มีข้อมูลระดับสินค้า (ยอด Invoice ไม่ผูกกับสินค้า) — ดูสินค้าที่แท็บ รายสินค้า</td></tr>`;
@@ -10668,7 +10668,7 @@ async function sdExport(){
       // บรรทัดสินค้าต่อสาขาจากใบกำกับ (ชุดเดียวกับ Pivot) — ยอดตามบรรทัดสินค้า (ก่อนหักลดหนี้ระดับใบ) + ปริมาณตามหน่วย
       const pvRows=QI?(_sdPvLoad(QSLM).rows||[]):[];
       const pvByC=new Map();pvRows.forEach(r=>{if(!r.k||r.k==='(none)')return;(pvByC.get(r.c)||pvByC.set(r.c,[]).get(r.c)).push(r);});
-      const qC=codes=>QI?_sdQtySum(codes.map(x=>QI.byC.get(x))):null;
+      const qC=()=>null; // แถวบริษัท / สาขา ไม่แสดงปริมาณ — เหมือนหน้าจอ (2026-10-21)
       custs.forEach(c=>{
         rows.push([c.n,c.c,c.category||c.ty||'',_sdV(c._tot),Math.round((c._tot||0)/T2*100),..._sdQtyRow(QU,qC((c.branches||[]).map(b=>b.c)))]);
         (c.branches||[]).forEach(b=>{
