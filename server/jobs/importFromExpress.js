@@ -458,6 +458,9 @@ const STCRD_CATEGORY = {
   // RH/RS มาแล้ว JX/JT จะถูกลบทิ้ง) — ผู้ใช้ยืนยันให้ถือเป็น "รับเข้า" เหมือน RH/RS ตอนคำนวณเทียบยอดนับสต็อก
   RC: 'received', RH: 'received', RR: 'received', RN: 'received', RI: 'received', RS: 'received', PM: 'received', JU: 'received', JW: 'received',
   JX: 'received', JT: 'received',
+  // ADDED (2026-10-21 ตามที่ผู้ใช้ระบุ "ให้เพิ่มเอายอดจากหัวเอกสาร JY มารวมด้วย"): JY = "SHOPคืนสินค้ารอบิล" (เริ่มใช้
+  // 21 ต.ค. 69, POSOPR 1 เข้าคลัง 01) — เดิมตกไปที่ fallback ตาม POSOPR (ได้ 'received' อยู่แล้ว) ใส่ให้ชัด
+  JY: 'received',
   RL: 'transferred', VL: 'transferred', TP: 'transferred', MK: 'transferred', TG: 'transferred', LT: 'transferred',
   FF: 'converted',
   CN: 'other', XV: 'other', SR: 'other', XZ: 'other', HN: 'other', HI: 'other', SS: 'other', GR: 'other', XX: 'other', TK: 'other', PI: 'other', KA: 'other', KB: 'other',
@@ -505,7 +508,9 @@ const WMS_GENERAL_SALE_PREFIXES = new Set([
   'IV', 'AB', 'BE', 'DA', 'AK', 'AY', 'DD', 'DM', 'GP', 'DB', 'IT', 'IE', 'BM', 'FB', 'ON', 'INV', 'BA', 'CJ', 'CK', 'IC', 'DV', 'DL', 'OL', 'KB',
 ]);
 const WMS_TRANSFER_PREFIXES = new Set(['RL', 'VL', 'TP', 'MK', 'TG', 'LT', 'GR']);
-const WMS_RETURN_PREFIXES = new Set(['PM']);
+// JY (2026-10-21) = ร้านคืนสินค้ารอบิล — การคืนของแบบเดียวกับ PM: นับเข้าเป็นของวันนั้น (ไม่ถูกหักออกแบบ "รับเข้า"
+// ตอนเทียบยอดนับ) · เดิมไม่อยู่ในชุดไหนเลย ยอด JY จึงหายจาก stock_movements_wms_daily ทั้งก้อน (kind "net"/"total")
+const WMS_RETURN_PREFIXES = new Set(['PM', 'JY']);
 const WMS_WRITEOFF_PREFIXES = new Set(['XX']);
 const WMS_CONSI_WAREHOUSES = new Set(['03', '04', '05']);
 // Purchase-cost basis for the tgm-wms conversion-BOM cost comparison feature (added 2026-08-18,
@@ -723,7 +728,7 @@ async function syncStockMovements(db) {
       const key = `${sku}|${warehouse}|${day}`;
       if (!daily.has(key)) daily.set(key, { received: 0, sold: 0, converted: 0, transferred: 0, other: 0, pm: 0, wmsReceived: 0 });
       daily.get(key)[category] += signed;
-      if (prefix === 'PM' && category === 'received') daily.get(key).pm += signed;
+      if (WMS_RETURN_PREFIXES.has(prefix) && category === 'received') daily.get(key).pm += signed;
       // the WMS "รับเข้า" definition (RH/RS/CP/JX/JT), per warehouse — what tgm-wms backs out of the
       // count day's Express figure, see migrations.js's wms_received_qty comment
       if (WMS_RECEIVED_PREFIXES.has(prefix)) daily.get(key).wmsReceived += signed;
