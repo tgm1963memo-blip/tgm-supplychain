@@ -533,7 +533,9 @@ const WMS_DISPATCHED_PREFIXES = new Set(['VL', 'LT', 'TP']);
 // ชั้นสำหรับของที่โยกเข้าคลัง 02/08/10 พอดี (บั๊กคลาสเดียวกับที่เคยแก้ไปแล้วกับ consi 03/04/05 เมื่อ 2026-08-21
 // ด้านบน แค่ไม่เคยขยายมาครอบคลุม 02/08/10 ที่เพิ่มเข้ามาทีหลัง) — รวมเป็น set เดียวกันไว้กันลืมขยายซ้ำอีกรอบถ้า
 // tgm-wms เพิ่มคลังยกเว้นตัวใหม่ในอนาคต ต้องแก้ทั้ง 2 ที่คู่กันเสมอ (ที่นี่ + KIND_EXTRA_EXCLUDE_WAREHOUSES)
-const WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES = new Set(['02', '08', '10']);
+// UPDATED (2026-10-21 ตามตารางคลัง "นับ/ไม่นับ" ที่ผู้ใช้กำหนด): + 07 TGM ส่งแทน, 13 สินค้าตัวอย่าง, 18 รอเคลียร์,
+// 99 ของเสียทั่วไป — คู่กับ NON_COUNTED_WAREHOUSES ใน tgm-wms App.jsx
+const WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES = new Set(['02', '07', '08', '10', '13', '18', '99']);
 
 
 const INVOICE_LINE_COMPANIES = ['TSS', 'CONSI'];
