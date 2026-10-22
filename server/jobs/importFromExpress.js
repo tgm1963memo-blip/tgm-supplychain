@@ -241,10 +241,11 @@ async function syncProducts(db) {
   const seen = new Set();
   const unitNames = await loadUnitNameMap();
   const upsert = db.prepare(`
-    INSERT INTO products (code, name, group_name, unit, standard_price, price_company, is_active, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    INSERT INTO products (code, name, group_name, unit, standard_price, price_company, created_date, is_active, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(code) DO UPDATE SET name = excluded.name, group_name = excluded.group_name,
       unit = excluded.unit, standard_price = excluded.standard_price, price_company = excluded.price_company,
+      created_date = COALESCE(excluded.created_date, products.created_date),
       is_active = 1, updated_at = excluded.updated_at
   `);
   // Combo/set codes (STKTYP != '0', e.g. the -A/-B suffix codes STMAS uses for bundle SKUs) are
@@ -298,7 +299,8 @@ async function syncProducts(db) {
         const unit = (unitCode && unitNames.get(unitCode)) || unitCode || 'กิโลกรัม';
         const standardPrice = [r.SELLPR1, r.SELLPR2, r.SELLPR3, r.SELLPR4, r.SELLPR5].map(Number).find(v => Number.isFinite(v) && v > 0) || null;
         // price_company: TSS keys STMAS prices as net cost — ใบเคาะราคา reverse-calculates a sell price from it
-        upsert.run(code, (r.STKDES || '').trim(), (r.STKGRP || '').trim(), unit, standardPrice, standardPrice ? company : null);
+        // created_date (2026-10-22): STMAS.CREDAT — วันที่สร้างรหัสสินค้าใน Express (tgm-wms ABC ใช้แยก "สินค้าใหม่" อายุ < 3 เดือน)
+        upsert.run(code, (r.STKDES || '').trim(), (r.STKGRP || '').trim(), unit, standardPrice, standardPrice ? company : null, toIsoDate(r.CREDAT));
         seen.add(code);
         importedByCompany[company]++;
       }
@@ -1646,6 +1648,11 @@ async function runImport(db) {
     rowsProcessed += await syncWarehouses(db);
     rowsProcessed += await syncStock(db);
     rowsProcessed += await syncStockMovements(db);
+    // first_movement_date (2026-10-22): วันแรกที่สินค้ามีความเคลื่อนไหวใน Stock Card (STCRD) — ใช้แทน created_date
+    // เมื่อ STMAS.CREDAT ว่าง (~1/3 ของรหัสสินค้า) · stock_movements_daily ถูกสร้างใหม่ทั้งตารางทุกรอบ จึงคำนวณหลังจากนั้น
+    try {
+      db.prepare('UPDATE products SET first_movement_date = (SELECT MIN(day) FROM stock_movements_daily m WHERE m.sku = products.code)').run();
+    } catch (e) { console.warn('[importFromExpress] first_movement_date failed:', e.message); }
     const salesResult = await syncSales(db);
     rowsProcessed += salesResult.ordersImported + salesResult.linesImported + (salesResult.componentsImported || 0);
     refreshSalesRollups(db);

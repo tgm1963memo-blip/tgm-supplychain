@@ -91,6 +91,10 @@ function runMigrations(db) {
   // products.price_company (2026-09-23): which company's STMAS supplied standard_price — TSS keys its
   // prices in as net cost (ราคาทุนสุทธิ), so ใบเคาะราคา must reverse-calculate a selling price from it.
   addColumnIfMissing(db, 'products', 'price_company', 'price_company TEXT');
+  // products.created_date / first_movement_date (2026-10-22): อายุสินค้าสำหรับ "สินค้าใหม่" ใน tgm-wms ABC Analysis —
+  // created_date = STMAS.CREDAT, first_movement_date = วันแรกใน stock_movements_daily (ใช้เมื่อ CREDAT ว่าง)
+  addColumnIfMissing(db, 'products', 'created_date', 'created_date TEXT');
+  addColumnIfMissing(db, 'products', 'first_movement_date', 'first_movement_date TEXT');
 
   // stock_movements_wms_daily.return_qty/writeoff_qty: added 2026-08-17 — PM (customer returns) and
   // XX (waste/spoilage write-offs) used to fall through every WMS_*_PREFIXES bucket uncategorized and
@@ -711,6 +715,14 @@ function runMigrations(db) {
     const ins = db.prepare('INSERT OR IGNORE INTO sales_slm_override (cust_code, slm_code, note) VALUES (?, ?, ?)');
     for (const c of ['30-LC-0013', '30-LC-0014']) ins.run(c, '207', 'Tops เซ็นทรัล ฟู้ด รีเทล — ย้ายจากคุณปู (106) ไป 207 ตามที่ผู้ใช้สั่ง 2026-10-20');
     db.prepare("INSERT INTO app_migrations(id) VALUES ('20261020_slm_override_tops_lc')").run();
+  }
+  // ลูกค้าส่งออก (Bplus โรงงาน TGM) ทั้งหมดเป็นของคุณอุ้ม 114 (2026-10-22, ผู้ใช้สั่ง — ไฟล์ "ยอดขายลูกค้าต่างประเทศ เดือน 1-9.69
+  // ส่ง 08.10.69.xlsx") · ใน Bplus ส่วนใหญ่อยู่ใต้ "0 ขายเอง" (BP-0) บางตัวใต้ 05/06 จุฑารัตน์ · ม.ค.–ก.ย. 69 รวม 70.48 ล้าน
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261022_slm_override_export_oum'").get()) {
+    const ins = db.prepare('INSERT OR IGNORE INTO sales_slm_override (cust_code, slm_code, note) VALUES (?, ?, ?)');
+    for (const c of ['TOA-01-QC', 'LSH-01-PC', 'NE-01-QC', 'REX-01-QC', 'PAN-01-QC', 'CNC-01-QC', 'PIT-01-QC', 'SAN',
+      'PNP-01-PC', 'PIT-01-PC', 'CNC-01-PC', 'KCG-01-QC']) ins.run(c, '114', 'ลูกค้าส่งออก — เป็นของคุณอุ้ม (114) ตามที่ผู้ใช้สั่ง 2026-10-22');
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261022_slm_override_export_oum')").run();
   }
 
   // ตัวเลขของ v_sc_data_confidence ยังไม่เคยนับ (ฐานข้อมูลเดิมก่อน 2026-10-20 / ฐานใหม่) → นับครั้งแรกตอนเปิด server

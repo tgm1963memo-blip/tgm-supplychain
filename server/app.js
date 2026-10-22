@@ -149,7 +149,7 @@ function buildApp(db, opts = {}) {
   //    so these mounts no longer expose write verbs at all. ──
   app.use('/api/products', authed, makeCrudRouter(db, 'products', {
     pk: 'code',
-    fields: ['code', 'name', 'group_name', 'unit', 'lead_time', 'moq', 'min_stock', 'shelf_life', 'plant', 'is_active', 'note', 'standard_price', 'price_company'],
+    fields: ['code', 'name', 'group_name', 'unit', 'lead_time', 'moq', 'min_stock', 'shelf_life', 'plant', 'is_active', 'note', 'standard_price', 'price_company', 'created_date', 'first_movement_date'],
     readOnly: true,
   }));
 
