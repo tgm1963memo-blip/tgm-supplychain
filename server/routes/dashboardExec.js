@@ -3,7 +3,8 @@
 const express = require('express');
 const { DatabaseSync } = require('node:sqlite');
 const { requireRole } = require('../middleware/auth');
-const { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, guessExecChannel } = require('../lib/execChannel');
+const execCh = require('../lib/execChannel');
+const { EXEC_CHANNELS, guessExecChannel } = execCh;
 const { groupNameOf } = require('../lib/customerGroup');
 const { autofillBusinessTypes } = require('../lib/businessType');
 const { cacheJson } = require('../lib/responseCache');
@@ -12,7 +13,6 @@ const chainSales = require('../lib/chainSales');
 const { productGroupResolver } = require('../lib/productGroupMatch');
 const { weightFromName } = require('../lib/weightFromName');
 const nonSales = require('../lib/nonSales');
-const CHAIN_CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
 
 // Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
 // ตามช่วงเวลาที่เลือก (YTD / เดือน / ไตรมาส / ทั้งปี) เทียบช่วงเดียวกันของปีก่อน:
@@ -210,33 +210,9 @@ module.exports = function dashboardExecRoutes(db) {
     return map;
   }
 
-  function customerMeta() {
-    const map = new Map();
-    for (const r of db.prepare(`SELECT c.code, c.name, cp.name AS pname, cp.category, cp.corporate, cp.exec_channel, cp.exec_channel_source
-      FROM customers c LEFT JOIN customer_profiles cp ON cp.code = c.code`).all()) map.set(r.code, r);
-    for (const r of db.prepare(`SELECT code, name AS pname, category, corporate, exec_channel, exec_channel_source
-      FROM customer_profiles WHERE code NOT IN (SELECT code FROM customers)`).all()) map.set(r.code, { ...r, name: r.pname });
-    // ลูกค้า Bplus ของโรงงาน — รหัสชุดเดียวกับ Express; รหัสที่ไม่มีใน Express ใช้ชื่อจาก bplus_customers · has_export ช่วยเดาหมวด
-    // สาขาห้างจากห้อง SKU (รหัสไม่มีใน customers ของห้อง VAT) — corporate ตามห้างให้รวมเครือ/หมวดถูก
-    for (const r of db.prepare('SELECT code, chain, name FROM chain_customers').all()) {
-      const cur = map.get(r.code);
-      if (!cur) map.set(r.code, { code: r.code, name: r.name, corporate: CHAIN_CORP[r.chain] || r.chain });
-      else if (!cur.corporate) cur.corporate = CHAIN_CORP[r.chain] || r.chain;
-    }
-    for (const r of db.prepare('SELECT code, name, has_export FROM bplus_customers').all()) {
-      const cur = map.get(r.code);
-      if (cur) cur.has_export = r.has_export; else map.set(r.code, { code: r.code, name: r.name, has_export: r.has_export });
-    }
-    return map;
-  }
-
-  // ใช้ค่าที่บันทึกไว้เฉพาะที่คนตั้งเอง (manual) — ค่า 'auto' เดาซ้ำทุกครั้งตามกฎปัจจุบัน (2026-10-08) ไม่งั้นค่าที่เดาไว้ก่อน
-  // ตั้งกลุ่ม/เครือหรือก่อนแก้กฎจะค้าง เช่น TG-IG-0001 (Shop พระราม 3) ค้างเป็นร้านค้าทั่วไป
-  function channelOf(meta, code, hasConsi) {
-    const m = meta.get(code) || {};
-    if (m.exec_channel_source === 'manual' && EXEC_CHANNEL_KEYS.has(m.exec_channel)) return m.exec_channel;
-    return guessExecChannel({ code, name: m.pname || m.name || '', category: m.category || '', corporate: m.corporate || '', hasConsi, hasExport: !!m.has_export });
-  }
+  // ข้อมูลเดาหมวด + กติกาหมวด ย้ายไป lib/execChannel.js (2026-10-22) — ใช้ร่วมกับสิทธิ์ "ดูทีมห้างทั้งหมด" ใน lib/customerScope.js
+  const customerMeta = () => execCh.customerMeta(db);
+  const channelOf = execCh.channelOf;
 
   // ลูกค้าที่ไม่นับเป็นยอดขาย (2026-10-08, ผู้ใช้ยืนยันตาม Excel "Sales Update" ของฝ่ายขาย):
   //   ic    = ขายให้บริษัทในเครือฝั่ง Express (ทีจีเอ็ม 30-IA-0002, ไทย-เยอรมัน 30-TG-*/30-TGM-*, รายได้บริหารจัดการ) → แสดงรวมกับยอดในเครือ
@@ -496,7 +472,8 @@ module.exports = function dashboardExecRoutes(db) {
         : null;
       if (noBakery) slmCodes.sql += ` AND ${BAKERY_SQL}`;
       {
-        const salesView = !!String(req.query.slm || '').trim() || !scope.all;
+        // ผู้ดูทีมห้างทั้งหมด (scope.allMt, 2026-10-22) เห็นยอดห้างระดับบริษัท — ไม่แทนยอด DC ด้วยยอดสาขาห้อง (ยกเว้นเลือก Sales เอง)
+        const salesView = !!String(req.query.slm || '').trim() || (!scope.all && !scope.allMt);
         const cmap = salesView ? chainSales.loadChainMap(db) : null;
         const slms = new Set(String(req.query.slm || '').trim() ? wantSlm : (scope.slmCodes || []));
         reqChain = cmap && chainSales.replacedRanges(cmap).length ? { map: cmap, slms } : null;

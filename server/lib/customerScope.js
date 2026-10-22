@@ -11,6 +11,7 @@ const st = require('./salesTeams');
 const { loadCodeMap, ruleForCode } = require('./promoNumber');
 
 const PEOPLE_ENTITY = 'mt_assign_people';
+const MT_TEAM_ID = 'mt'; // ทีมห้าง (lib/salesTeams.js DEFAULT_TEAMS)
 const SALES_ROLES = new Set(['sales', 'sales_manager', 'sales_officer', 'sales_worker']);
 const parse = v => { try { return typeof v === 'string' ? JSON.parse(v) : v; } catch { return null; } };
 
@@ -49,14 +50,24 @@ function codesByRule(db, rules, mapKey) {
   return byRule;
 }
 
+// ลูกค้าหมวดห้าง/Makro ทั้งหมด (lib/execChannel.js — กติกาเดียวกับ Dashboard) · cache 5 นาที
+let mallCache = { at: 0, codes: null };
+function mallChannelCodes(db) {
+  if (mallCache.codes && Date.now() - mallCache.at < 5 * 60 * 1000) return mallCache.codes;
+  mallCache = { at: Date.now(), codes: require('./execChannel').customerCodesInChannels(db, ['mall', 'makro']) };
+  return mallCache.codes;
+}
+
 // แถวเจ้า MT ที่ผู้ใช้เห็น (index) + บทบาทที่ทำให้เห็น
-function mtRulesFor(rules, people, uid, poolUids) {
+// allMt (2026-10-22, ผู้ใช้ขอ "คุณแต้วดูทีมห้างได้ทั้งหมด"): สิทธิ์ 'teams' ที่รวมทีมห้าง = เห็นทุกแถวในไฟล์ MT
+// รวมแถวที่เซลล์อยู่นอกแผนก (แด้/เป็ด ฝ่ายขายร้านค้า) และแถวที่ไม่มีชื่อเซลล์
+function mtRulesFor(rules, people, uid, poolUids, allMt = false) {
   const pool = new Set(poolUids && poolUids.length ? poolUids : [uid]);
   const out = [];
   rules.forEach((r, i) => {
     const salesHit = (r.sales || []).map(n => people.map[`sales:${n}`]).filter(Boolean);
     const mgrHit = (r.manager || []).some(n => people.map[`mgr:${n}`] === uid);
-    const via = salesHit.includes(uid) ? 'sales' : mgrHit ? 'manager' : salesHit.some(u => pool.has(u)) ? 'team' : null;
+    const via = salesHit.includes(uid) ? 'sales' : mgrHit ? 'manager' : salesHit.some(u => pool.has(u)) ? 'team' : allMt ? 'team' : null;
     if (via) out.push({ i, via });
   });
   return out;
@@ -85,9 +96,12 @@ function resolveScope(db, user) {
     scope = { all: true, restricted: false, version: ver };
   } else {
     const cm = loadCodeMap(db), people = loadPeople(db);
-    const mine = mtRulesFor(cm.rules, people, user.uid, sc.uids);
+    const allMt = sc.scope === 'teams' && (sc.scope_teams || []).includes(MT_TEAM_ID);
+    const mine = mtRulesFor(cm.rules, people, user.uid, sc.uids, allMt);
     const byRule = codesByRule(db, cm.rules, `${cm.imported_at}|${cm.rules.length}`);
-    const mtCodes = [...new Set(mine.flatMap(m => byRule.get(m.i) || []))];
+    // allMt (2026-10-22, ผู้ใช้ขอ "ยอดห้าง/Makro ต้องเท่าภาพรวมบริษัท"): เห็นลูกค้าทุกรายที่ Dashboard จัดเป็นหมวดห้าง/Makro ด้วย
+    // แม้ไม่อยู่ในไฟล์ MT และขายโดยเซลล์นอกทีม (เช่น ฝากขาย Tops รหัส 153, บิ๊กซี/ไทยยามาซากิ รหัส 105)
+    const mtCodes = [...new Set([...mine.flatMap(m => byRule.get(m.i) || []), ...(allMt ? mallChannelCodes(db) : [])])];
     const slmCodes = sc.codes || [];
     const own = new Set(mtCodes);
     const masterCodes = [];
@@ -99,7 +113,7 @@ function resolveScope(db, user) {
         .all(JSON.stringify(slmCodes)).forEach(r => r.cust_code && own.add(r.cust_code));
     }
     scope = {
-      all: false, restricted: true, version: ver, uids: sc.uids || [user.uid], slmCodes, mtCodes, masterCodes, ownCustCodes: [...own],
+      all: false, restricted: true, allMt, version: ver, uids: sc.uids || [user.uid], slmCodes, mtCodes, masterCodes, ownCustCodes: [...own],
       chains: mine.map(m => { const r = cm.rules[m.i]; return { name: r.name, cls: r.cls, src: r.src, via: m.via, codes: (byRule.get(m.i) || []).length }; }),
     };
   }
@@ -190,7 +204,7 @@ function visibleDraftNos(db, scope, uid, user) {
   return out;
 }
 
-function clearScopeCache() { scopeCache = new Map(); ownerCache = { key: '', at: 0, byRule: null }; }
+function clearScopeCache() { scopeCache = new Map(); ownerCache = { key: '', at: 0, byRule: null }; mallCache = { at: 0, codes: null }; }
 
 module.exports = { PEOPLE_ENTITY, SALES_ROLES, loadPeople, resolveScope, factSql, blankOwnerCond, ownerSlmExpr, slmListSql, custSql, canSeeCust, draftParticipant, visibleDraftNos,
   mtRulesFor, codesByRule, configVersion, clearScopeCache };

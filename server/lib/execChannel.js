@@ -62,4 +62,43 @@ function execChannelLabel(key) {
   return (EXEC_CHANNELS.find((c) => c.key === key) || {}).label || key || '';
 }
 
-module.exports = { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, guessExecChannel, execChannelLabel };
+// ข้อมูลที่ใช้เดาหมวดของลูกค้าทุกราย (ย้ายมาจาก routes/dashboardExec.js 2026-10-22 ให้ lib/customerScope.js ใช้กติกาเดียวกัน)
+const CHAIN_CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
+function customerMeta(db) {
+  const map = new Map();
+  for (const r of db.prepare(`SELECT c.code, c.name, cp.name AS pname, cp.category, cp.corporate, cp.exec_channel, cp.exec_channel_source
+    FROM customers c LEFT JOIN customer_profiles cp ON cp.code = c.code`).all()) map.set(r.code, r);
+  for (const r of db.prepare(`SELECT code, name AS pname, category, corporate, exec_channel, exec_channel_source
+    FROM customer_profiles WHERE code NOT IN (SELECT code FROM customers)`).all()) map.set(r.code, { ...r, name: r.pname });
+  // ลูกค้า Bplus ของโรงงาน — รหัสชุดเดียวกับ Express; รหัสที่ไม่มีใน Express ใช้ชื่อจาก bplus_customers · has_export ช่วยเดาหมวด
+  // สาขาห้างจากห้อง SKU (รหัสไม่มีใน customers ของห้อง VAT) — corporate ตามห้างให้รวมเครือ/หมวดถูก
+  for (const r of db.prepare('SELECT code, chain, name FROM chain_customers').all()) {
+    const cur = map.get(r.code);
+    if (!cur) map.set(r.code, { code: r.code, name: r.name, corporate: CHAIN_CORP[r.chain] || r.chain });
+    else if (!cur.corporate) cur.corporate = CHAIN_CORP[r.chain] || r.chain;
+  }
+  for (const r of db.prepare('SELECT code, name, has_export FROM bplus_customers').all()) {
+    const cur = map.get(r.code);
+    if (cur) cur.has_export = r.has_export; else map.set(r.code, { code: r.code, name: r.name, has_export: r.has_export });
+  }
+  return map;
+}
+
+// ใช้ค่าที่บันทึกไว้เฉพาะที่คนตั้งเอง (manual) — ค่า 'auto' เดาซ้ำทุกครั้งตามกฎปัจจุบัน (2026-10-08) ไม่งั้นค่าที่เดาไว้ก่อน
+// ตั้งกลุ่ม/เครือหรือก่อนแก้กฎจะค้าง เช่น TG-IG-0001 (Shop พระราม 3) ค้างเป็นร้านค้าทั่วไป
+function channelOf(meta, code, hasConsi) {
+  const m = meta.get(code) || {};
+  if (m.exec_channel_source === 'manual' && EXEC_CHANNEL_KEYS.has(m.exec_channel)) return m.exec_channel;
+  return guessExecChannel({ code, name: m.pname || m.name || '', category: m.category || '', corporate: m.corporate || '', hasConsi, hasExport: !!m.has_export });
+}
+
+// รหัสลูกค้าทุกรายที่ Dashboard จัดเข้าหมวดที่ระบุ (hasConsi = เคยมียอดฝากขาย ชุดเดียวกับ Dashboard)
+function customerCodesInChannels(db, keys) {
+  const want = new Set(keys), meta = customerMeta(db);
+  const consi = new Set(db.prepare(`SELECT DISTINCT cust_code FROM invoice_sales_monthly WHERE company = 'CONSI'`).all().map((r) => r.cust_code));
+  const codes = new Set(meta.keys());
+  for (const r of db.prepare('SELECT DISTINCT cust_code FROM invoice_sales_monthly').all()) if (r.cust_code) codes.add(r.cust_code);
+  return [...codes].filter((c) => want.has(channelOf(meta, c, consi.has(c))));
+}
+
+module.exports = { EXEC_CHANNELS, EXEC_CHANNEL_KEYS, CHAIN_CORP, guessExecChannel, execChannelLabel, customerMeta, channelOf, customerCodesInChannels };
