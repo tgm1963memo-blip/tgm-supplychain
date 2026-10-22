@@ -284,6 +284,25 @@ function buildApp(db, opts = {}) {
     readOnly: true,
   }));
 
+  // ห้องสต็อกเพิ่มเติม (2026-10-22, SHOP3) — 3 ตารางด้านบนในแบบมีคอลัมน์ company · tgm-wms เรียกพร้อม company=eq.SHOP3
+  // (ดู syncExtraStockCompany ใน importFromExpress.js)
+  app.use('/api/company_stock', authed, makeCrudRouter(db, 'company_stock', {
+    pk: 'sku',
+    fields: ['company', 'sku', 'warehouse', 'qty', 'unit', 'last_updated'],
+    orderBy: 'sku',
+    readOnly: true,
+  }));
+  app.use('/api/company_stock_movements_daily', authed, makeCrudRouter(db, 'company_stock_movements_daily', {
+    pk: 'sku',
+    fields: ['company', 'sku', 'warehouse', 'day', 'received_qty', 'sold_qty', 'converted_qty', 'transferred_qty', 'other_qty', 'pm_qty', 'wms_received_qty'],
+    readOnly: true,
+  }));
+  app.use('/api/company_wms_stock_movements_daily', authed, makeCrudRouter(db, 'company_stock_movements_wms_daily', {
+    pk: 'sku',
+    fields: ['company', 'sku', 'day', 'received_qty', 'general_sale_qty', 'consi_qty', 'transfer_qty', 'converted_qty', 'reserved_qty', 'return_qty', 'writeoff_qty', 'received_value', 'dispatched_qty'],
+    readOnly: true,
+  }));
+
 
   // Invoice-level STCRD lines for tax-invoice fallback in tgm-wms route billing.
   app.use('/api/invoice_lines', authed, makeCrudRouter(db, 'invoice_lines', {

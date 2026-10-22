@@ -382,6 +382,54 @@ function runMigrations(db) {
       UNIQUE(snapshot_date, kind, sku_code)
     );
   `);
+  // ห้อง SHOP3 ใช้ kind แบบมีคำนำหน้าห้อง (เช่น "SHOP3:net_no10") ในตารางเดียวกันนี้ — ไม่ต้องเพิ่มคอลัมน์
+
+  // ยอดสต็อก/ความเคลื่อนไหวของห้องสต็อกเพิ่มเติม (2026-10-22, SHOP3 = SHOP TGM RAMA III) — โครงเดียวกับ stock /
+  // stock_movements_daily / stock_movements_wms_daily ของ TSS บวกคอลัมน์ company · แยกตารางโดยตั้งใจ ไม่ให้ไปปนกับ
+  // ผู้อ่านตารางของ TSS ที่ไม่กรอง company (ดู EXTRA_STOCK_COMPANIES ใน jobs/importFromExpress.js)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS company_stock (
+      company      TEXT NOT NULL,
+      sku          TEXT NOT NULL,
+      warehouse    TEXT NOT NULL,
+      qty          REAL NOT NULL DEFAULT 0,
+      unit         TEXT NOT NULL DEFAULT 'กก.',
+      last_updated TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (company, sku, warehouse)
+    );
+    CREATE TABLE IF NOT EXISTS company_stock_movements_daily (
+      company          TEXT NOT NULL,
+      sku              TEXT NOT NULL,
+      warehouse        TEXT NOT NULL,
+      day              TEXT NOT NULL,
+      received_qty     REAL NOT NULL DEFAULT 0,
+      sold_qty         REAL NOT NULL DEFAULT 0,
+      converted_qty    REAL NOT NULL DEFAULT 0,
+      transferred_qty  REAL NOT NULL DEFAULT 0,
+      other_qty        REAL NOT NULL DEFAULT 0,
+      pm_qty           REAL NOT NULL DEFAULT 0,
+      wms_received_qty REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, sku, warehouse, day)
+    );
+    CREATE INDEX IF NOT EXISTS idx_company_stock_mov_day ON company_stock_movements_daily(company, day);
+    CREATE TABLE IF NOT EXISTS company_stock_movements_wms_daily (
+      company           TEXT NOT NULL,
+      sku               TEXT NOT NULL,
+      day               TEXT NOT NULL,
+      received_qty      REAL NOT NULL DEFAULT 0,
+      general_sale_qty  REAL NOT NULL DEFAULT 0,
+      consi_qty         REAL NOT NULL DEFAULT 0,
+      transfer_qty      REAL NOT NULL DEFAULT 0,
+      converted_qty     REAL NOT NULL DEFAULT 0,
+      reserved_qty      REAL NOT NULL DEFAULT 0,
+      return_qty        REAL NOT NULL DEFAULT 0,
+      writeoff_qty      REAL NOT NULL DEFAULT 0,
+      received_value    REAL NOT NULL DEFAULT 0,
+      dispatched_qty    REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, sku, day)
+    );
+    CREATE INDEX IF NOT EXISTS idx_company_stock_mov_wms_day ON company_stock_movements_wms_daily(company, day);
+  `);
 
   // sc_users.slm_codes (2026-09-28): รหัสพนักงานขายใน Express (SLMCOD เช่น 101,110-1) ที่ผูกกับผู้ใช้ — คั่นด้วย ,
   // เดิม slm_id เก็บชื่อบัญชี (piyaporn ฯลฯ) ซึ่งไม่ตรงกับรหัสในข้อมูลขาย จึงกรองยอดของเซลส์ไม่ได้

@@ -82,6 +82,12 @@ const PRODUCT_COMPANIES = companyListFromEnv('PRODUCT_COMPANIES', ['TSS', 'CONSI
 // recurring sync going forward. COMPANY_DATE_CUTOFF below still applies, so the TSS-NV/TSSN-68
 // cutover fix keeps working under the wider list.
 const SALES_COMPANIES = companyListFromEnv('SALES_COMPANIES', ['TSS', 'CONSI', 'TGM', 'TSS-68', 'TSSN-68', 'TSSN-67', 'TSS-67', 'TSS-NV']);
+// ห้องสต็อกเพิ่มเติม (2026-10-22 ตามที่ผู้ใช้ขอ "ตรวจนับ stock และกระทบยอด แยก TSS กับ Shop"): Express เปิดห้อง
+// SHOP3 (SHOP TGM RAMA III) คุมสต็อกของ Shop แยกจาก TSS — ย้ายของ Shop ออกจากคลัง 10/12 ของ TSS มาทั้งหมด
+// เก็บลงตาราง company_stock / company_stock_movements_daily / company_stock_movements_wms_daily (มีคอลัมน์ company)
+// แยกจากตาราง stock/stock_movements_* เดิมของ TSS โดยตั้งใจ — ตารางเดิมมีผู้อ่านหลายจุด (views, ABC, planning)
+// ที่ไม่กรอง company เลย ถ้าปนกันยอด Shop จะไปโผล่ในยอด TSS (รหัสคลัง 01–19 ซ้ำกันด้วย)
+const EXTRA_STOCK_COMPANIES = companyListFromEnv('EXTRA_STOCK_COMPANIES', ['SHOP3']);
 
 // Confirmed with user 2026-07-10 (TSS) and re-checked 2026-07-13 (CONSI, same distribution shape):
 // STKTYP='0' = real sellable products on this system.
@@ -437,6 +443,55 @@ async function syncStock(db) {
   }
 }
 
+// ห้องสต็อกเพิ่มเติม (EXTRA_STOCK_COMPANIES เช่น SHOP3, 2026-10-22) — ยอดคงเหลือรายคลัง (STLOC) + ความเคลื่อนไหว
+// รายวัน (STCRD) ด้วยสูตรเดียวกับ TSS ลงตาราง company_* (ดูเหตุผลที่แยกตารางที่ EXTRA_STOCK_COMPANIES) · ลบ/เขียน
+// ใหม่เฉพาะแถวของห้องนั้นใน transaction เดียว · โฟลเดอร์ห้องหาย (เช่นไดรฟ์หลุด) = ข้ามรอบนี้ ไม่ลบยอดเดิมทิ้ง
+async function syncExtraStockCompany(db, company) {
+  if (!fs.existsSync(path.join(EXPRESS_ROOT, company))) {
+    console.warn(`[importFromExpress] ${company}: folder not found — skipped (old data kept)`);
+    return 0;
+  }
+  const [locRows, crdRows] = await Promise.all([readTable(company, 'STLOC.DBF'), readTable(company, 'STCRD.DBF')]);
+  const { daily, wmsDaily } = buildStockMovements(crdRows, company);
+  const getProductUnit = db.prepare('SELECT unit FROM products WHERE code = ?');
+  const insertStock = db.prepare('INSERT INTO company_stock (company, sku, warehouse, qty, unit, last_updated) VALUES (?, ?, ?, ?, ?, ?)');
+  const insertDaily = db.prepare(`
+    INSERT INTO company_stock_movements_daily (company, sku, warehouse, day, received_qty, sold_qty, converted_qty, transferred_qty, other_qty, pm_qty, wms_received_qty)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertWms = db.prepare(`
+    INSERT INTO company_stock_movements_wms_daily (company, sku, day, received_qty, general_sale_qty, consi_qty, transfer_qty, converted_qty, reserved_qty, return_qty, writeoff_qty, received_value, dispatched_qty)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.exec('BEGIN');
+  try {
+    for (const t of ['company_stock', 'company_stock_movements_daily', 'company_stock_movements_wms_daily']) {
+      db.prepare(`DELETE FROM ${t} WHERE company = ?`).run(company);
+    }
+    let n = 0;
+    for (const r of locRows) {
+      if (!r.STKCOD || !r.LOCCOD) continue;
+      const sku = r.STKCOD.trim();
+      insertStock.run(company, sku, r.LOCCOD.trim(), r.LOCBAL || 0, getProductUnit.get(sku)?.unit || 'กก.', toIsoDate(r.LMOVDAT) || new Date().toISOString());
+      n++;
+    }
+    for (const [key, d] of daily) {
+      const [sku, warehouse, day] = key.split('|');
+      insertDaily.run(company, sku, warehouse, day, d.received, d.sold, d.converted, d.transferred, d.other, d.pm, d.wmsReceived);
+    }
+    for (const [key, d] of wmsDaily) {
+      const [sku, day] = key.split('|');
+      insertWms.run(company, sku, day, d.received, d.general_sale, d.consi, d.transfer, d.converted, d.reserved, d.return, d.writeoff, d.received_value, d.dispatched);
+    }
+    db.exec('COMMIT');
+    console.log(`[importFromExpress] ${company} stock: ${n} sku/warehouse rows, ${daily.size} sku/warehouse/day rows, ${wmsDaily.size} sku/day WMS rows`);
+    return n + daily.size + wmsDaily.size;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
 // Daily stock movement ledger from Express's real per-transaction stock card (STCRD.DBF) — `stock`
 // above is a current-balance snapshot only (no history at all); this is the actual day-by-day
 // activity behind it. Document-number prefix -> category confirmed directly by the user 2026-07-22:
@@ -538,6 +593,42 @@ const WMS_DISPATCHED_PREFIXES = new Set(['VL', 'LT', 'TP']);
 // UPDATED (2026-10-21 ตามตารางคลัง "นับ/ไม่นับ" ที่ผู้ใช้กำหนด): + 07 TGM ส่งแทน, 13 สินค้าตัวอย่าง, 18 รอเคลียร์,
 // 99 ของเสียทั่วไป — คู่กับ NON_COUNTED_WAREHOUSES ใน tgm-wms App.jsx
 const WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES = new Set(['02', '07', '08', '10', '13', '18', '99']);
+
+// กติกา prefix/ทิศทางต่อห้อง (2026-10-22) — ค่าตั้งต้นคือชุดของ TSS ด้านบน ห้องอื่นทับเฉพาะส่วนที่ต่าง
+// SHOP3 (ผู้ใช้ยืนยัน 2026-10-22 + ตรวจกับ STLOC จริง: สมมติฐานนี้ตรงยอดคงเหลือมากที่สุด):
+//   RR = รับสินค้าเข้า (POSOPR 0), JU = ปรับเข้า (POSOPR 1) → "รับเข้า"
+//   SH = ขาย (POSOPR 9), HT = รับคืนจากลูกค้า (POSOPR 2, ลูกค้าเดียวกับใบ SH) → แบบ PM/JY
+//   GR = คืนผู้ขาย (POSOPR 7, ผู้ขาย V001) → ของออก — ต่างจาก GR ของ TSS (รับโอนเข้าคลัง 10) ที่ POSOPR 7 ต้องเป็น
+//   ขาเข้า (ยืนยันกับรายงานคงเหลือ 2026-09-23) จึงกลับทิศเฉพาะห้องนี้ · ลงช่อง writeoff ของรายงาน WMS (ช่องขาออกที่
+//   ไม่ใช่การขาย ซึ่งสูตรยอดย้อนหลังทุกตัวรวมอยู่แล้ว)
+const TSS_STCRD_RULES = {
+  category: STCRD_CATEGORY,
+  posoprSign: {},
+  received: WMS_RECEIVED_PREFIXES,
+  generalSale: WMS_GENERAL_SALE_PREFIXES,
+  transfer: WMS_TRANSFER_PREFIXES,
+  returns: WMS_RETURN_PREFIXES,
+  writeoff: WMS_WRITEOFF_PREFIXES,
+  dispatched: WMS_DISPATCHED_PREFIXES,
+};
+const STCRD_COMPANY_RULES = {
+  SHOP3: {
+    category: { ...STCRD_CATEGORY, HT: 'received', GR: 'other', SH: 'sold' },
+    posoprSign: { '7': -1 },
+    received: new Set(['RR', 'JU']),
+    generalSale: new Set(['SH']),
+    transfer: new Set(),
+    returns: new Set(['HT']),
+    writeoff: new Set(['GR']),
+    dispatched: new Set(),
+    // บรรทัดหัวชุดโปร (เช่น 10003-B) ไม่ขยับสต็อกจริง — ตารางรายงาน WMS ของ TSS ยังนับอยู่ตามเดิม (ไม่แตะ) แต่ของห้องนี้
+    // ข้าม ไม่งั้นยอดย้อนหลังแบบ "net" ของรหัสชุดโปรกลายเป็นของผีหลายร้อยหน่วย (ตรวจแล้ว 13 รหัส)
+    wmsSkipBundleHeader: true,
+  },
+};
+function stcrdRules(company) {
+  return STCRD_COMPANY_RULES[company] || TSS_STCRD_RULES;
+}
 
 
 const INVOICE_LINE_COMPANIES = ['TSS', 'CONSI'];
@@ -664,8 +755,10 @@ async function buildInvoiceLineComponents(invoiceLines) {
   return rows;
 }
 
-async function syncStockMovements(db) {
-  const rows = await readTable(STOCK_COMPANY, 'STCRD.DBF');
+// แยกส่วนคำนวณออกจาก syncStockMovements (2026-10-22) ให้ห้องสต็อกเพิ่มเติม (SHOP3) ใช้สูตรเดียวกันได้ — ต่างกันแค่
+// กติกา prefix ต่อห้อง (stcrdRules) · invoiceLines/conversionLines ใช้เฉพาะของ TSS ห้องอื่นทิ้งไป
+function buildStockMovements(rows, company) {
+  const rules = stcrdRules(company);
   const daily = new Map(); // `${sku}|${warehouse}|${day}` -> {received,sold,converted,transferred,other}
   const wmsDaily = new Map(); // `${sku}|${day}` -> {received,general_sale,consi,transfer,converted,reserved,return,writeoff,received_value}
   const invoiceLines = new Map(); // `${doc}|${seq}|${sku}|${warehouse}` -> invoice item line from STCRD
@@ -706,7 +799,7 @@ async function syncStockMovements(db) {
     const qty = Number(r.XTRNQTY) || 0;
     const val = Number(r.TRNVAL) || 0;
 
-    addInvoiceLine(invoiceLines, STOCK_COMPANY, r, day);
+    addInvoiceLine(invoiceLines, company, r, day);
 
     // FIXED (2026-09-23, verified against Express's own "สินค้าคงเหลือ แยกตามคลังสินค้า" report for
     // 2026-09-22: report + these movements now reproduces live STLOC for all but 10 of ~3,255 SKUs, down
@@ -716,7 +809,8 @@ async function syncStockMovements(db) {
     // transfer's source, and (c) count bundle header lines. POSOPR already records each line's real
     // direction, so use it; the category only decides which bucket the signed amount lands in.
     const isBundleHeader = bundleParentsByDoc.get((r.DOCNUM || '').trim())?.has(sku);
-    const signed = stcrdSignedQty(r.POSOPR, qty);
+    const signOverride = rules.posoprSign[String(r.POSOPR || '').trim()];
+    const signed = signOverride ? signOverride * Math.abs(qty) : stcrdSignedQty(r.POSOPR, qty);
     if (prefix === 'FF' && !isBundleHeader && signed !== 0) {
       const docNum = cleanText(r.DOCNUM);
       const seqNum = cleanText(r.SEQNUM);
@@ -728,15 +822,16 @@ async function syncStockMovements(db) {
       conversionLines.get(ck).qty += Math.abs(signed);
     }
     if (!isBundleHeader && signed !== 0) {
-      const category = STCRD_CATEGORY[prefix] || STCRD_CATEGORY_BY_POSOPR[String(r.POSOPR || '').trim()] || 'other';
+      const category = rules.category[prefix] || STCRD_CATEGORY_BY_POSOPR[String(r.POSOPR || '').trim()] || 'other';
       const key = `${sku}|${warehouse}|${day}`;
       if (!daily.has(key)) daily.set(key, { received: 0, sold: 0, converted: 0, transferred: 0, other: 0, pm: 0, wmsReceived: 0 });
       daily.get(key)[category] += signed;
-      if (WMS_RETURN_PREFIXES.has(prefix) && category === 'received') daily.get(key).pm += signed;
+      if (rules.returns.has(prefix) && category === 'received') daily.get(key).pm += signed;
       // the WMS "รับเข้า" definition (RH/RS/CP/JX/JT), per warehouse — what tgm-wms backs out of the
       // count day's Express figure, see migrations.js's wms_received_qty comment
-      if (WMS_RECEIVED_PREFIXES.has(prefix)) daily.get(key).wmsReceived += signed;
+      if (rules.received.has(prefix)) daily.get(key).wmsReceived += signed;
     }
+    if (isBundleHeader && rules.wmsSkipBundleHeader) continue;
 
     // WMS report's own categorization, computed in the same pass to avoid a second DBF read/parse.
     const wmsKey = `${sku}|${day}`;
@@ -744,7 +839,7 @@ async function syncStockMovements(db) {
       if (!wmsDaily.has(wmsKey)) wmsDaily.set(wmsKey, { received: 0, general_sale: 0, consi: 0, transfer: 0, converted: 0, reserved: 0, return: 0, writeoff: 0, received_value: 0, dispatched: 0 });
       return wmsDaily.get(wmsKey);
     };
-    if (WMS_RECEIVED_PREFIXES.has(prefix)) {
+    if (rules.received.has(prefix)) {
       ensureWms().received += qty;
     }
     if (RH_RS_PREFIXES.has(prefix)) {
@@ -758,27 +853,33 @@ async function syncStockMovements(db) {
     // the same physical units): exclude WMS_CONSI_WAREHOUSES here too, matching the destination the
     // "consi" bucket below already claims — dispatched_qty should only cover VL/LT/TP shipments to
     // destinations "net" does NOT already exclude (real branches, warehouse 09, 10, 11, 19, ...).
-    if (WMS_DISPATCHED_PREFIXES.has(prefix) && warehouse !== '01' && warehouse !== '19' && !WMS_CONSI_WAREHOUSES.has(warehouse) && !WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES.has(warehouse)) {
+    if (rules.dispatched.has(prefix) && warehouse !== '01' && warehouse !== '19' && !WMS_CONSI_WAREHOUSES.has(warehouse) && !WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES.has(warehouse)) {
       // only the destination-side row is recorded, same reasoning as the transfer/consi bucket below —
       // independent top-level `if` (not part of the if/else chain) so this doesn't change what consi/
       // transfer/reserved already get credited — this is purely an ADDITIONAL field for tgm-wms's
       // StockCountSummaryPage to subtract on top, not a replacement for the existing buckets
       ensureWms().dispatched += qty;
     }
-    if (WMS_GENERAL_SALE_PREFIXES.has(prefix)) {
+    if (rules.generalSale.has(prefix)) {
       ensureWms().general_sale -= qty;
     } else if (prefix === 'FF') {
       ensureWms().converted += qty; // already signed in TRNQTY, same as stock_movements_daily
-    } else if (WMS_TRANSFER_PREFIXES.has(prefix) && warehouse !== '01') {
+    } else if (rules.transfer.has(prefix) && warehouse !== '01') {
       // only the destination-side row is recorded — see schema.sql comment for why
       const bucket = WMS_CONSI_WAREHOUSES.has(warehouse) ? 'consi' : (warehouse === '09' ? 'reserved' : 'transfer');
       ensureWms()[bucket] += qty;
-    } else if (WMS_RETURN_PREFIXES.has(prefix)) {
+    } else if (rules.returns.has(prefix)) {
       ensureWms().return += qty;
-    } else if (WMS_WRITEOFF_PREFIXES.has(prefix)) {
+    } else if (rules.writeoff.has(prefix)) {
       ensureWms().writeoff -= qty;
     }
   }
+  return { daily, wmsDaily, invoiceLines, conversionLines };
+}
+
+async function syncStockMovements(db) {
+  const rows = await readTable(STOCK_COMPANY, 'STCRD.DBF');
+  const { daily, wmsDaily, invoiceLines, conversionLines } = buildStockMovements(rows, STOCK_COMPANY);
   for (const company of INVOICE_LINE_COMPANIES) {
     if (company === STOCK_COMPANY) continue;
     await addCompanyInvoiceLines(invoiceLines, company);
@@ -1648,6 +1749,10 @@ async function runImport(db) {
     rowsProcessed += await syncWarehouses(db);
     rowsProcessed += await syncStock(db);
     rowsProcessed += await syncStockMovements(db);
+    // ห้องสต็อกเพิ่มเติม (SHOP3) — พังแล้วไม่ให้ทั้งรอบ sync ของ TSS ล้มตาม
+    for (const company of EXTRA_STOCK_COMPANIES) {
+      try { rowsProcessed += await syncExtraStockCompany(db, company); } catch (e) { console.warn(`[importFromExpress] ${company} stock failed:`, e.message); }
+    }
     // first_movement_date (2026-10-22): วันแรกที่สินค้ามีความเคลื่อนไหวใน Stock Card (STCRD) — ใช้แทน created_date
     // เมื่อ STMAS.CREDAT ว่าง (~1/3 ของรหัสสินค้า) · stock_movements_daily ถูกสร้างใหม่ทั้งตารางทุกรอบ จึงคำนวณหลังจากนั้น
     try {
@@ -1682,4 +1787,4 @@ async function runImport(db) {
   }
 }
 
-module.exports = { branchFromArmas, runImport, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { branchFromArmas, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
