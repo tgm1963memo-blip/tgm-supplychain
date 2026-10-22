@@ -660,7 +660,7 @@ module.exports = function dashboardExecRoutes(db) {
 
   // บรรทัดสินค้าจริงของโรงงาน (Bplus) สำหรับ Sales Overview แท็บรายสินค้า + ชื่อลูกค้า/พนักงานขายโรงงาน (2026-10-05)
   // กลุ่มสินค้าใช้ products.group_name (STKGRP) ชุดเดียวกับ TSS — รหัสโรงงานที่ไม่มีใน Express (เช่น 20394-177 "ตราทีจีเอ็ม (HK)")
-  // ใช้กลุ่มของสินค้า Express ที่ขึ้นต้นรหัสเดียวกัน (20394-xx) · รหัส 0000 = ยอดสรุปสินค้ารหัส TG ที่ Bplus ไม่แยกรายตัว
+  // ใช้กลุ่มของสินค้า Express ที่ขึ้นต้นรหัสเดียวกัน (20394-xx) · รหัส 0000 = ยอดสรุปสินค้ารหัส TG ที่ Bplus ไม่แยกรายตัว (แตกจาก Express TGM ด้านล่าง)
   // ไม่มีทั้งรหัสตรงและขึ้นต้นรหัส (บาร์โค้ด 8850826…, 20368-177 HK) → เทียบชื่อกับสินค้า Express (lib/productGroupMatch.js, 2026-10-14)
   // กลุ่มสินค้าจากรหัสขึ้นต้น / ชื่อ — ย้ายไป lib/productGroupMatch.js (ใช้ร่วมกับ /api/invoice_detail/pivot, 2026-10-14)
   const productGroupByPrefix = () => productGroupResolver(db);
@@ -677,12 +677,41 @@ module.exports = function dashboardExecRoutes(db) {
         FROM sales_lines_monthly l LEFT JOIN products p ON p.code = l.sku LEFT JOIN bplus_skus s ON s.code = l.sku
         WHERE l.company = 'BP-TGM' AND l.ym >= ? AND l.ym <= ?${sc ? ` AND ${sc.sql}` : ''}
         GROUP BY l.ym, l.cust_code, l.slm_code, l.sku`).all(from, to, ...(sc ? sc.params : []));
+      // บรรทัด 0000 (ใบสรุป Makro "A M" / Lotus EA) → แตกเป็นรายการสินค้าจริงของบิลชุดเดียวกันจาก Express TGM
+      // (tgm_detail_lines_daily) ลูกค้า+เดือนเดียวกัน ปรับสัดส่วนให้รวมเท่ายอด Bplus เดิม (2026-10-22, ผู้ใช้ขอ: เห็นแต่สาขาไม่เห็นสินค้า)
+      // ไม่มีรายการใน Express → คงเป็น "ไม่ระบุสินค้า (TG)" ตามเดิม
+      const lumps = rows.filter((r) => r.sku === TG_LUMP_SKU);
+      const detail = new Map(); // `${ym}|${cust}` → [{ sku, qty, amount, p_name, p_group }]
+      if (lumps.length) {
+        const custs = [...new Set(lumps.map((r) => r.cust_code))];
+        const dRows = db.prepare(`SELECT substr(t.d, 1, 7) AS ym, t.cust_code, t.sku, SUM(t.qty) AS qty, SUM(t.amount) AS amount,
+            p.name AS p_name, p.group_name AS p_group
+          FROM tgm_detail_lines_daily t LEFT JOIN products p ON p.code = t.sku
+          WHERE t.d >= ? AND t.d <= ? AND t.cust_code IN (SELECT value FROM json_each(?))
+          GROUP BY substr(t.d, 1, 7), t.cust_code, t.sku`).all(`${from}-01`, `${to}-31`, JSON.stringify(custs));
+        for (const d of dRows) {
+          const k = `${d.ym}|${d.cust_code}`;
+          if (!detail.has(k)) detail.set(k, []);
+          detail.get(k).push(d);
+        }
+      }
       const { map: pre, byName } = productGroupByPrefix();
-      const out = rows.map((r) => {
-        const group = r.sku === '0000' ? 'ไม่ระบุสินค้า (TG)'
-          : (r.p_group || pre.get(String(r.sku).split('-')[0]) || byName(r.s_name || r.p_name) || '');
-        return { ym: r.ym, cust_code: r.cust_code, slm_code: r.slm_code, prod_code: r.sku, prod_name: r.s_name || r.p_name || r.sku,
-          prod_group: group, qty: Number(r.qty) || 0, amount: Number(r.amount) || 0 };
+      const groupOf = (sku, pGroup, name) => pGroup || pre.get(String(sku).split('-')[0]) || byName(name) || '';
+      const out = rows.flatMap((r) => {
+        const amount = Number(r.amount) || 0;
+        if (r.sku === TG_LUMP_SKU) {
+          const lines = detail.get(`${r.ym}|${r.cust_code}`) || [];
+          const total = lines.reduce((a, d) => a + (Number(d.amount) || 0), 0);
+          if (Math.abs(total) < 0.005) {
+            return [{ ym: r.ym, cust_code: r.cust_code, slm_code: r.slm_code, prod_code: r.sku, prod_name: r.s_name || r.p_name || r.sku,
+              prod_group: 'ไม่ระบุสินค้า (TG)', qty: Number(r.qty) || 0, amount }];
+          }
+          const f = amount / total;
+          return lines.map((d) => ({ ym: r.ym, cust_code: r.cust_code, slm_code: r.slm_code, prod_code: d.sku, prod_name: d.p_name || d.sku,
+            prod_group: groupOf(d.sku, d.p_group, d.p_name), qty: Number(d.qty) || 0, amount: (Number(d.amount) || 0) * f }));
+        }
+        return [{ ym: r.ym, cust_code: r.cust_code, slm_code: r.slm_code, prod_code: r.sku, prod_name: r.s_name || r.p_name || r.sku,
+          prod_group: groupOf(r.sku, r.p_group, r.s_name || r.p_name), qty: Number(r.qty) || 0, amount }];
       });
       // ถูกจำกัดสิทธิ์ = ส่งชื่อเฉพาะรหัสที่อยู่ในแถวที่เห็น
       const seenCust = new Set(out.map((r) => r.cust_code)), seenSlm = new Set(out.map((r) => r.slm_code));
