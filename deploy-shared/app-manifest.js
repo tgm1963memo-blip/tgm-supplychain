@@ -107,6 +107,8 @@ const SALES_ONLY = [
   '_draftPlanFillDefaults', '_draftPlanHtml', 'draftPlanSetRoute', 'draftPlanAuto', 'draftPlanAdd', 'draftPlanAddByText', 'draftPlanRem', '_draftPlanOver', '_draftPlanOverSet', '_draftPlanOverList', 'draftPlanOverRem', 'draftPlanOverAdd', 'draftPlanOverReset', '_draftPlanForSave', '_draftPromoDocsCache', '_draftRefSeq', '_draftFormSeq', '_draftLoadRouteOptions',
   '_draftRefCode', '_draftListQ', '_draftBusy', '_pdCodeMap', '_pdCodeMapDraft', '_pdRenumberPlan', '_pdCanCodeMap', '_pdYm', '_pdCodeMapHtml', 'pdCodeMapImport', 'pdCodeMapSave', 'pdCodeMapTest', 'pdRenumberAllPreview', 'pdRenumberAllApply', '_draftCustGroupsText', '_draftRenderCustSummary', '_draftPtypeOrder', 'DRAFT_VERDICT',
   '_draftLineVerdicts', '_draftSavedLineVerdicts', '_draftIsAuditTurn', '_draftVerdictCounts', '_draftVerdictSummary', '_draftVerdictCellHtml', 'draftSetLineVerdict',
+  // ผลวิเคราะห์โปร (2026-10-27, พิจารณาอนุมัติโปร เฟส 2)
+  '_draftEval', '_draftEvalView', '_draftEvalSuggested', 'PD_EVAL_MARK', 'PD_EVAL_FLAG', 'draftLoadEval', 'draftRenderEval', 'pdEvalHtml',
 
   // ข้อมูลลูกค้า (custreg — สมัคร/แก้ไขข้อมูลลูกค้าใหม่) — ไม่รวม custregSubToRow/custregRowToSub (ใช้ใน
   // SB.getCustregSubs()/upsertCustreg() ซึ่งเป็นส่วนหนึ่งของ SB object กลาง อยู่ทั้ง 2 แอปเสมอ — ย้ายไป core)
