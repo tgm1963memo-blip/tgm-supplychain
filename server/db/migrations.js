@@ -816,6 +816,15 @@ function runMigrations(db) {
       updated_by TEXT,
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
+    -- เฟส 2 (2026-10-27, lib/promoEval.js): ผลวิเคราะห์ ณ ตอนส่งอนุมัติแต่ละรอบ
+    CREATE TABLE IF NOT EXISTS promo_eval_snapshots (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      draft_no     TEXT NOT NULL,
+      created_by   TEXT,
+      created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      payload_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_promo_eval_snapshots_draft ON promo_eval_snapshots(draft_no, id);
   `);
 
   // กำหนด Sales เจ้าของยอดรายลูกค้า (2026-10-20, lib/slmOverride.js) — ตั้งต้น: Tops เซ็นทรัล ฟู้ด รีเทล 30-LC-0013/0014

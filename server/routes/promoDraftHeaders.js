@@ -3,6 +3,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 const { genId } = require('../lib/crud');
 const { validateChange, holdOf, completeAfterHold } = require('../lib/promoApproval');
+const { saveSnapshot } = require('../lib/promoEval');
 const { overlapsFor } = require('../lib/promoOverlap');
 const cs = require('../lib/customerScope');
 const promoMail = require('../lib/promoApprovalMail');
@@ -70,6 +71,10 @@ function applyHeaderChange(db, target, input, user, opts = {}) {
     .run(...cols.map(c => body[c]), target.draft_no);
   const saved = parseRow(db.prepare('SELECT * FROM promo_draft_headers WHERE draft_no=?').get(target.draft_no));
   logHeaderChange(db, target, saved, user, opts.channel || 'system');
+  // ส่งอนุมัติ → เก็บผลวิเคราะห์ ณ ตอนนี้ (lib/promoEval.js) · คำนวณไม่ได้ต้องไม่ขวางการส่งอนุมัติ
+  if (saved.status === 'pending_approval' && ['draft', 'rejected', null, undefined, ''].includes(target.status)) {
+    try { saveSnapshot(db, target.draft_no, user.uid); } catch (e) { console.warn('[promo-eval] snapshot failed', target.draft_no, e.message); }
+  }
   return saved;
 }
 // URL สาธารณะของ server (ใช้สร้างลิงก์อนุมัติในอีเมล) — PUBLIC_API_URL ถ้าตั้งไว้ ไม่งั้นใช้ host ที่ request

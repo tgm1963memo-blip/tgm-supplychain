@@ -17302,6 +17302,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
     <datalist id="draft-sku-opts"></datalist>
     <div id="draft-overlap-warning"></div>
     </div>
+    ${draftNo && _pcCanWrite() ? '<div class="card" style="margin-top:16px" id="draft-eval"></div>' : ''}
 
     <div class="card" style="margin-top:16px">
       <div class="ch"><div class="ct2">🧭 ลำดับการอนุมัติ</div></div>
@@ -17352,6 +17353,7 @@ async function showPromoDraftModal(draftNo = '', opts = {}) {
   draftRefreshLineRefData();
   draftRenderAuditTrail(draftNo);
   draftRenderApprovalTrail();
+  if (draftNo) draftLoadEval(draftNo);
   draftRenderLogs();
   _draftCmtMode = false;
   draftLoadAnchorComments();
@@ -18604,6 +18606,7 @@ function _draftVerdictCellHtml(i) {
     const btn = (val) => { const x = DRAFT_VERDICT[val], on = v === val;
       return `<button class="btn btn-xs" onclick="draftSetLineVerdict(${i},'${val}')" style="padding:2px 7px;${on ? `background:${x.bg};color:${x.color};border-color:${x.color};font-weight:700` : 'opacity:.75'}">${x.icon} ${x.t}</button>`; };
     return `<div style="display:flex;gap:4px;justify-content:center;white-space:nowrap">${btn('profit')}${btn('loss')}</div>`
+      + (_draftEvalSuggested.has(l.sku) ? '<div style="font-size:10.5px;color:var(--TX3);text-align:center;margin-top:2px" title="จากผลวิเคราะห์โปร — ตรวจแล้วกดเลือกเองได้">ระบบแนะนำ</div>' : '')
       + (v === 'loss' ? `<input type="text" maxlength="500" placeholder="เหตุผลที่ขาดทุน *" value="${esc(_draftLineVerdictNotes[l.sku] || '')}" oninput="_draftLineVerdictNotes['${_promoJsKey(l.sku)}']=this.value" style="width:100%;margin-top:4px;font-size:11.5px;padding:3px 6px;border:1px solid var(--R);border-radius:5px">` : '');
   }
   const x = DRAFT_VERDICT[v];
@@ -18613,8 +18616,93 @@ function _draftVerdictCellHtml(i) {
 function draftSetLineVerdict(i, v) {
   const l = _draftLines[i]; if (!l?.sku || !_draftIsAuditTurn()) return;
   _draftLineVerdicts[l.sku] = v;
+  _draftEvalSuggested.delete(l.sku);
   // SKU เดียวกันมีได้บรรทัดเดียว แต่ re-render ทุกช่องกันกรณีบรรทัดย่อย
   _draftLines.forEach((x, j) => { const el = document.getElementById(`draft-line-verdict-${j}`); if (el) el.innerHTML = _draftVerdictCellHtml(j); });
+}
+// ── ผลวิเคราะห์โปร (2026-10-27, เฟส 2) — server: lib/promoEval.js · เห็นเฉพาะ admin/superadmin (มีทุนผลิต) ──
+// live = คำนวณตอนนี้ · snapshot = ผล ณ ตอนส่งอนุมัติรอบล่าสุด (ทุน/ราคาหมูที่อัปโหลดทีหลังไม่กระทบ)
+// ขั้นตรวจสอบ: SKU ที่ผู้ตรวจยังไม่เลือก ระบบเติม ขายได้/ขาดทุน ตามผลแนะนำไว้ก่อน (ป้าย "ระบบแนะนำ") — ผู้ตรวจยังกดเปลี่ยนได้
+let _draftEval = null, _draftEvalView = 'live';
+let _draftEvalSuggested = new Set();
+const PD_EVAL_MARK = {
+  ok: { s: '✓', c: 'var(--N)', t: 'ผ่าน' }, warn: { s: '⚠', c: 'var(--A)', t: 'ระวัง' },
+  fail: { s: '✗', c: 'var(--R)', t: 'ไม่ผ่าน' }, na: { s: '—', c: 'var(--TX3)', t: 'ข้อมูลไม่พอ' },
+};
+const PD_EVAL_FLAG = {
+  p_p_from_compensate: 'ใบ Compensate: ราคาโปรของ TGM = ทุนสุทธิปกติ − Compensate ÷ 1.07 (สมมติฐาน TGM คืน Compensate ทุกชิ้นที่ขาย)',
+  cost_per_kg_x_weight: 'ทุนเป็นต่อกิโลกรัม คูณน้ำหนักต่อหน่วยของบรรทัดแล้ว',
+  no_cost: 'ยังไม่มีทุนสินค้า — นำเข้าที่หน้า ทุนสินค้า & ราคาหมู',
+  no_pork_pct: 'ยังไม่มี %เนื้อหมู — ใช้ทุนปัจจุบัน ไม่ปรับตามราคาหมู',
+  no_pig_base: 'ไม่มีราคาหมูของเดือนที่ทุนมีผล — ใช้ทุนปัจจุบัน',
+  pig_missing: 'บางเดือนในช่วงโปรไม่มีราคาหมู — เดือนนั้นใช้ทุนปัจจุบัน',
+};
+async function draftLoadEval(draftNo) {
+  const box = document.getElementById('draft-eval'); if (!box) return;
+  _draftEval = null; _draftEvalView = 'live'; _draftEvalSuggested = new Set();
+  box.innerHTML = '<div class="ch"><div class="ct2">ผลวิเคราะห์โปร</div></div><div style="color:var(--TX3);font-size:12.5px">กำลังคำนวณ baseline / ทุนคาดการณ์…</div>';
+  const r = await apiFetch('/api/promo_eval/' + encodeURIComponent(draftNo));
+  if (draftNo !== _draftEditNo || !document.getElementById('draft-eval')) return;
+  if (r.error) { box.innerHTML = `<div class="ch"><div class="ct2">ผลวิเคราะห์โปร</div></div><div class="al alw">คำนวณไม่สำเร็จ: ${esc(r.error.message)}</div>`; return; }
+  _draftEval = r.data;
+  if (_draftIsAuditTurn()) {
+    (r.data.live?.skus || []).forEach(x => { if (x.suggestion && !_draftLineVerdicts[x.sku]) { _draftLineVerdicts[x.sku] = x.suggestion; _draftEvalSuggested.add(x.sku); } });
+    _draftLines.forEach((x, j) => { const el = document.getElementById(`draft-line-verdict-${j}`); if (el) el.innerHTML = _draftVerdictCellHtml(j); });
+  }
+  draftRenderEval();
+}
+function draftRenderEval() {
+  const box = document.getElementById('draft-eval'); if (!box || !_draftEval) return;
+  const snap = _draftEval.snapshot;
+  const d = _draftEvalView === 'snapshot' && snap ? snap.payload : _draftEval.live;
+  const seg = snap ? `<div style="display:inline-flex;border:1px solid var(--BD);border-radius:8px;padding:2px;gap:2px">${[['live', 'ข้อมูลล่าสุด'], ['snapshot', 'ตอนส่งอนุมัติ ' + new Date(snap.created_at).toLocaleDateString('th-TH')]].map(([k, l]) =>
+    `<button class="btn btn-xs" onclick="_draftEvalView='${k}';draftRenderEval()" style="border:0;${_draftEvalView === k ? 'background:var(--N);color:#fff' : ''}">${l}</button>`).join('')}</div>` : '';
+  box.innerHTML = `<div class="ch"><div><div class="ct2">ผลวิเคราะห์โปร</div><div style="font-size:12px;color:var(--TX3)">เห็นเฉพาะ Admin · ระบบแนะนำเท่านั้น ไม่บล็อกการอนุมัติ</div></div>${seg}</div>${pdEvalHtml(d)}`;
+}
+// ส่วนแสดงผลวิเคราะห์ (ใช้ซ้ำในแผงด้านขวาของหน้ารายการ เฟส 3)
+function pdEvalHtml(d) {
+  if (!d) return '<div class="al alw">ไม่มีข้อมูล</div>';
+  if (d.flags?.includes('no_period')) return '<div class="al alw">ยังไม่ได้กำหนดช่วงเวลาโปร</div>';
+  if (d.flags?.includes('no_lines')) return '<div class="al ali">เอกสารนี้ไม่มีรายการสินค้า</div>';
+  const n0 = v => v == null ? '—' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 0 });
+  const b = v => v == null ? '—' : '฿' + Number(v).toLocaleString('th-TH', { maximumFractionDigits: 0 });
+  // ROI แสดงเป็น % (กำไรส่วนเพิ่ม ÷ เงินลงทุนโปร) · ติดลบ = แดง ▼ ตาม DESIGN.md
+  const roi = v => v == null ? '—' : `<span style="color:${v < 0 ? 'var(--R)' : 'inherit'}">${v < 0 ? '▼ ' : ''}${(v * 100).toLocaleString('th-TH', { maximumFractionDigits: 1 })}%</span>`;
+  const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toLocaleString('th-TH', { maximumFractionDigits: 1 }) + '%';
+  const mark = (c, text) => { const m = PD_EVAL_MARK[c?.status || 'na']; return `<span title="${esc(m.t + (c?.note ? ' · ' + c.note : ''))}" style="color:${m.c};font-weight:600;white-space:nowrap">${m.s} ${text ?? ''}</span>`; };
+  const crit = (x, k) => x.criteria.find(c => c.key === k);
+  const p = d.period, t = d.totals || {};
+  const pend = p.status === 'not_started' ? `รอผลหลัง ${promoFmtD(p.start)}` : p.status === 'running' ? `ถึง ${promoFmtD(p.actual_to)} (โปรยังวิ่งอยู่)` : `จบโปร ${promoFmtD(p.due)}`;
+  const strip = _pcStrip([
+    ['ROI แผน', roi(t.pre?.roi), t.pre ? `กำไรส่วนเพิ่ม ${b(t.pre.incremental_gp)}` : 'บาง SKU ข้อมูลไม่พอ'],
+    ['เงินลงทุนโปร (แผน)', b(t.pre?.investment), `ส่วนลด + ค่าใช้จ่ายอื่น ${b(d.other_costs_total)}`],
+    ['ROI จริง', p.status === 'not_started' ? '—' : roi(t.post?.roi), pend],
+    ['ผลประเมิน', `${PD_EVAL_MARK[t.status || 'na'].s} ${PD_EVAL_MARK[t.status || 'na'].t}`, `ผ่าน ${t.counts?.ok || 0} · ระวัง ${t.counts?.warn || 0} · ไม่ผ่าน ${t.counts?.fail || 0} SKU`],
+  ]);
+  const rows = d.skus.map(x => {
+    const g1 = crit(x, 'G1'), g2 = crit(x, 'G2'), g3 = crit(x, 'G3'), g6 = crit(x, 'G6');
+    const sg = x.suggestion ? DRAFT_VERDICT[x.suggestion] : null;
+    return `<tr>
+      <td><span class="mono">${esc(x.sku)}</span><div style="font-size:11.5px;color:var(--TX3)">${esc(x.sku_name || '')}</div></td>
+      <td class="r" title="เฉลี่ย ${x.baseline.avg_daily ?? '—'}/วัน จาก ${x.baseline.clean_days} วันที่ไม่มีโปร (${promoFmtD(x.baseline.from)} – ${promoFmtD(x.baseline.to)}) · ${x.source === 'consi' ? 'ยอดส่ง CONSI' : 'ยอดขาย TSS'}">${n0(x.qty.baseline)}${x.qty.baseline == null ? '<div style="font-size:11px;color:var(--A)">ข้อมูลไม่พอ</div>' : ''}</td>
+      <td class="r">${n0(x.qty.forecast)}${x.qty.lift_plan != null ? `<div style="font-size:11px;color:var(--TX3)">${pct(x.qty.lift_plan)}</div>` : ''}</td>
+      <td class="r">${n0(x.qty.actual)}${x.qty.lift_actual != null ? `<div style="font-size:11px;color:var(--TX3)">${pct(x.qty.lift_actual)}</div>` : ''}</td>
+      <td class="r">${_pcNum(x.unit.p_p)}</td><td class="r">${_pcNum(x.unit.c_f)}</td>
+      <td class="r">${mark(g1, g1.value != null ? pct(g1.value).replace('+', '') : '')}</td>
+      <td class="r">${mark(g2, g2.value != null ? pct(g2.value) : '')}</td>
+      <td class="r" title="จุดคุ้มทุน ${n0(x.breakeven_qty)} หน่วย">${mark(g3, g3.value != null ? g3.value.toFixed(2) + '×' : '')}</td>
+      <td class="r">${roi(x.pre?.roi)}</td><td class="r">${p.status === 'not_started' ? '—' : roi(x.post?.roi)}</td>
+      <td>${mark(g6, g6.status === 'fail' ? 'ซ้อน' : 'ไม่ซ้อน')}</td>
+      <td>${sg ? `<span style="color:${sg.color};font-weight:700;white-space:nowrap">${sg.t}</span>` : '<span style="color:var(--TX3)">ข้อมูลไม่พอ</span>'}</td></tr>`;
+  }).join('');
+  const notes = [...new Set(d.skus.flatMap(x => x.flags))].filter(f => PD_EVAL_FLAG[f]).map(f => `<li>${esc(PD_EVAL_FLAG[f])} <span style="color:var(--TX3)">(${d.skus.filter(x => x.flags.includes(f)).map(x => esc(x.sku)).join(', ')})</span></li>`).join('');
+  return `${strip}
+    <div class="tw" style="overflow:auto"><table><thead><tr>
+      <th>SKU</th><th class="r">Baseline</th><th class="r">Forecast</th><th class="r">ขายจริง</th><th class="r">ราคาโปร TGM</th><th class="r">ทุนคาดการณ์</th>
+      <th class="r">G1 Margin</th><th class="r">G2 ทุนขึ้น</th><th class="r">G3 F/จุดคุ้มทุน</th><th class="r">ROI แผน</th><th class="r">ROI จริง</th><th>ช่วงเวลา</th><th>แนะนำ</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div style="font-size:11.5px;color:var(--TX3);margin-top:8px">ช่วงโปร ${promoFmtD(p.start)} – ${promoFmtD(p.due)} (${p.days} วัน) · Baseline = ยอดเฉลี่ยต่อวันช่วง ${d.settings.baseline_days} วันก่อนโปร ไม่นับวันที่มีโปรอื่น × จำนวนวันโปร · ราคา/ทุนต่อหน่วยไม่รวม VAT · ชี้ที่เครื่องหมายเพื่อดูเหตุผล</div>
+    ${notes ? `<ul style="font-size:12px;margin:6px 0 0 18px;padding:0">${notes}</ul>` : ''}`;
 }
 // ── ลำดับการอนุมัติในหน้าเอกสาร (2026-09-24) — ทุกขั้น (ผ่านแล้ว/ปัจจุบัน) พร้อมสถานะ เวลา ความเห็น
 // ให้ผู้อนุมัติขั้นถัดไปเห็นความเห็นของขั้นก่อนหน้าตั้งแต่เปิดเอกสาร
