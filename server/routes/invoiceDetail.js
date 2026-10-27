@@ -197,7 +197,8 @@ function invoiceDetailRoutes(db) {
       const fi = filt('i', true);
       // u = หน่วยขาย (2026-10-14, ผู้ใช้ขอ) — แยกแถวตามหน่วย ไม่บวกจำนวนต่างหน่วยรวมกัน (กก. + แพ็ค)
       // s = เจ้าของยอด (ใบไม่มีรหัส Sales → รหัสที่ master ผูกกับลูกค้า · ไม่มี = "(ไม่ระบุ)" รวม "(none)" ด้วย) — ตรงกับแท็บรายเซลส์ / ตัวกรอง Sales
-      const sExpr = cs.ownerSlmExpr({ cust: 'i.cust_code', slm: 'i.slm_code' });
+      // + เจ้าของยอดรายสินค้า (2026-10-27, sales_slm_sku_override — lib/slmOverride.js) ชนะเจ้าของหัวใบ
+      const sExpr = `COALESCE((SELECT o.slm_code FROM sales_slm_sku_override o WHERE o.cust_code = i.cust_code AND o.sku = l.sku), ${cs.ownerSlmExpr({ cust: 'i.cust_code', slm: 'i.slm_code' })})`;
       const rows = db.prepare(`SELECT i.cust_code AS c, ${sExpr} AS s, l.sku AS k, MAX(l.sku_name) AS n,
           MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.line_value) AS a
         FROM v_invoice_heads i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?

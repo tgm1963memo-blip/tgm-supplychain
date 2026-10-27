@@ -843,6 +843,27 @@ function runMigrations(db) {
       'PNP-01-PC', 'PIT-01-PC', 'CNC-01-PC', 'KCG-01-QC']) ins.run(c, '114', 'ลูกค้าส่งออก — เป็นของคุณอุ้ม (114) ตามที่ผู้ใช้สั่ง 2026-10-22');
     db.prepare("INSERT INTO app_migrations(id) VALUES ('20261022_slm_override_export_oum')").run();
   }
+  // VILAVONG MANYKEO 01-KF-0002 (บิลไม่มี VAT) เป็นของคุณเป็ด 108 (2026-10-27, ผู้ใช้ยืนยันตอนเทียบไฟล์ "ยอดกันยายน 69.xlsx")
+  // ใบใน Express ลงรหัส 114 (คุณอุ้ม) ตั้งแต่ ก.พ. 2025 · ม.ค.–มิ.ย. 69 รวม 1.29 ล้าน
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261027_slm_override_vilavong_ped'").get()) {
+    db.prepare('INSERT OR IGNORE INTO sales_slm_override (cust_code, slm_code, note) VALUES (?, ?, ?)')
+      .run('01-KF-0002', '108', 'VILAVONG MANYKEO — เป็นของคุณเป็ด (108) ไม่ใช่ 114 ตามที่ผู้ใช้สั่ง 2026-10-27');
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261027_slm_override_vilavong_ped')").run();
+  }
+  // เจ้าของยอดรายสินค้า (2026-10-27, lib/slmOverride.js effectiveSlmSku) — Tops 30-LC-0013/0014 ทั้งลูกค้าเป็นของ 207
+  // แต่สินค้าเบเกอรี่เป็นของคุณลักษณา 106 (ผู้ใช้สั่ง): 10008 แซนวิสแฮม TOPS (เบเกอรี่) + 20283-27 สโมคเบค่อน 6 นิ้ว
+  // + TG0010 โรสต์แฮม 80ก. (สองตัวหลังขายให้ลูกค้ากลุ่มเบเกอรี่ด้วย) · ม.ค.–ก.ย. 69 รวมราว 0.21 ล้าน
+  db.exec(`CREATE TABLE IF NOT EXISTS sales_slm_sku_override (
+    cust_code TEXT NOT NULL, sku TEXT NOT NULL, slm_code TEXT NOT NULL, note TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (cust_code, sku))`);
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261027_slm_sku_override_tops_bakery'").get()) {
+    const ins = db.prepare('INSERT OR IGNORE INTO sales_slm_sku_override (cust_code, sku, slm_code, note) VALUES (?, ?, ?, ?)');
+    for (const c of ['30-LC-0013', '30-LC-0014']) {
+      for (const sku of ['10008', '20283-27', 'TG0010']) ins.run(c, sku, '106', 'Tops LC — สินค้าเบเกอรี่เป็นของคุณลักษณา (106) ตามที่ผู้ใช้สั่ง 2026-10-27');
+    }
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261027_slm_sku_override_tops_bakery')").run();
+  }
 
   // ตัวเลขของ v_sc_data_confidence ยังไม่เคยนับ (ฐานข้อมูลเดิมก่อน 2026-10-20 / ฐานใหม่) → นับครั้งแรกตอนเปิด server
   // ไม่งั้น Dashboard ขึ้นค่าว่างจนจบรอบ sync ถัดไป · หลังจากนี้นับตอนจบทุกรอบ sync (lib/dataCounts.js)

@@ -99,7 +99,7 @@ const ORDER_DOCSTAT_INCLUDE = ['M'];
 // (2026-10-20) ย้ายรายการเล่มไป lib/salesDocs.js + เพิ่ม IT (ค่าขนส่ง) / IV (ขายวัสดุ) — ใช้กับยอดขาย/รายสินค้าเท่านั้น
 // syncInvoices() (ตาราง invoices ของหน้าจ่ายสินค้าตามใบกำกับ) ยังตัดเฉพาะ LF/LE/LG แบบเดิม — ใบ IT/IV ยังต้องจ่ายของ/วางบิล
 const { isNonSalesDocNum } = require('../lib/salesDocs');
-const { loadSlmOverrides, effectiveSlm } = require('../lib/slmOverride');
+const { loadSlmOverrides, effectiveSlm, loadSlmSkuOverrides, effectiveSlmSku } = require('../lib/slmOverride');
 const SALES_DOCNUM_EXCLUDE_PREFIXES = new Set(['LF', 'LE', 'LG']);
 function isExcludedSalesDocNum(docNum) {
   const prefix = String(docNum || '').trim().toUpperCase().slice(0, 2);
@@ -1162,6 +1162,20 @@ async function syncSales(db) {
 // shape but serves WMS dispatch matching against the real billed amount — TOTAL is correct there.)
 async function syncInvoiceSales(db) {
   const slmOv = loadSlmOverrides(db);
+  // เจ้าของยอดรายสินค้า (2026-10-27, lib/slmOverride.js) — ARTRN ไม่มีสินค้า จึงแบ่งยอดบรรทัดของสินค้าที่กำหนดจาก invoice_lines
+  // (STCRD ก่อน VAT, เติมแล้วใน syncStockMovements รอบเดียวกัน) ไปให้รหัสนั้น · doc_num -> Map<slm, ยอด>
+  const skuOv = loadSlmSkuOverrides(db);
+  const movedByDoc = new Map();
+  if (skuOv.size) {
+    const skus = [...new Set([...skuOv.values()].flatMap(m => [...m.keys()]))];
+    const lines = db.prepare(`SELECT doc_num, UPPER(TRIM(sku)) AS sku, SUM(line_value) AS v FROM invoice_lines
+      WHERE UPPER(TRIM(sku)) IN (${skus.map(() => '?').join(',')}) GROUP BY doc_num, UPPER(TRIM(sku))`).all(...skus);
+    for (const l of lines) {
+      const doc = String(l.doc_num).trim();
+      if (!movedByDoc.has(doc)) movedByDoc.set(doc, []);
+      movedByDoc.get(doc).push({ sku: l.sku, v: Number(l.v) || 0 });
+    }
+  }
   // Plain INSERT, not upsert: each company's rows are deleted immediately below before these run,
   // so there's never a pre-existing row to conflict with within one sync cycle.
   const insert = db.prepare(`
@@ -1195,26 +1209,46 @@ async function syncInvoiceSales(db) {
       // ARTRN carries its own SLMCOD per transaction — the salesperson recorded at invoice time,
       // not necessarily the customer's current owner in the customers table.
       const slmCode = effectiveSlm(slmOv, custCode, normalizeSlmCode(r.SLMCOD) || '(none)'); // lib/slmOverride.js (2026-10-20)
-      const signedNetVal = r.RECTYP === '5' ? -(Number(r.NETVAL) || 0) : (Number(r.NETVAL) || 0);
-      const key = `${period}|${custCode}|${slmCode}`;
-      const cur = monthly.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, gross_amount: 0, cn_vat: 0 };
-      cur.amount += signedNetVal;
-      if (r.RECTYP !== '5') cur.invoice_count += 1;
-      // (2026-09-30) CN + แยก VAT — NETVAL = ก่อน VAT ทุกแบบ (FLGVAT 2 = VAT แยกนอก, 1 = รวมใน, 0 = ไม่มี VAT)
-      // VATAMT = VAT ของใบ → ยอดรวม VAT = NETVAL + VATAMT · ลดหนี้ (RECTYP 5) ติดลบ, cn_amount เก็บค่าบวก (NETVAL)
+      const netVal = Number(r.NETVAL) || 0;
       const sign = r.RECTYP === '5' ? -1 : 1;
       const vat = Number(r.VATAMT) || 0;
-      cur.vat_amount += sign * vat;
-      cur.gross_amount += sign * ((Number(r.NETVAL) || 0) + vat);
-      if (r.RECTYP === '5') { cur.cn_count += 1; cur.cn_amount += Number(r.NETVAL) || 0; cur.cn_vat += vat; }
-      monthly.set(key, cur);
-      // วันที่แปลงด้วย toIsoDate() — วิธีเดียวกับ ym() ด้านบน ยอดรายวันจึงรวมกลับเป็นรายเดือนได้ตรงกันทุกบาท
+      // ส่วนของใบที่เป็นสินค้าที่กำหนดเจ้าของรายสินค้า (ไม่เกินยอดใบ) — ส่วนที่เหลืออยู่กับ slmCode · ไม่มี = ทั้งใบ
+      const parts = new Map();
+      const skuMap = skuOv.get(custCode.toUpperCase());
+      const moved = skuMap ? movedByDoc.get(String(r.DOCNUM || '').trim()) : null;
+      let rest = netVal;
+      if (moved && netVal > 0) {
+        for (const m of moved) {
+          const to = skuMap.get(m.sku);
+          if (!to || to === slmCode || !(m.v > 0)) continue;
+          const v = Math.min(m.v, rest);
+          if (v <= 0) continue;
+          parts.set(to, (parts.get(to) || 0) + v);
+          rest -= v;
+        }
+      }
+      parts.set(slmCode, (parts.get(slmCode) || 0) + rest);
       const day = toIsoDate(r.DOCDAT);
-      const dk = `${day}|${custCode}|${slmCode}`;
-      const dc = daily.get(dk) || { amount: 0, invoice_count: 0 };
-      dc.amount += signedNetVal;
-      if (r.RECTYP !== '5') dc.invoice_count += 1;
-      daily.set(dk, dc);
+      for (const [slm, part] of parts) {
+        const main = slm === slmCode; // นับจำนวนใบ/ลดหนี้ให้เจ้าของใบครั้งเดียว ส่วนที่แบ่งไปนับเฉพาะยอด
+        const share = netVal ? part / netVal : (main ? 1 : 0); // VAT แบ่งตามสัดส่วนยอดก่อน VAT
+        const key = `${period}|${custCode}|${slm}`;
+        const cur = monthly.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, gross_amount: 0, cn_vat: 0 };
+        cur.amount += sign * part;
+        if (main && r.RECTYP !== '5') cur.invoice_count += 1;
+        // (2026-09-30) CN + แยก VAT — NETVAL = ก่อน VAT ทุกแบบ (FLGVAT 2 = VAT แยกนอก, 1 = รวมใน, 0 = ไม่มี VAT)
+        // VATAMT = VAT ของใบ → ยอดรวม VAT = NETVAL + VATAMT · ลดหนี้ (RECTYP 5) ติดลบ, cn_amount เก็บค่าบวก (NETVAL)
+        cur.vat_amount += sign * vat * share;
+        cur.gross_amount += sign * (part + vat * share);
+        if (r.RECTYP === '5') { if (main) cur.cn_count += 1; cur.cn_amount += part; cur.cn_vat += vat * share; }
+        monthly.set(key, cur);
+        // วันที่แปลงด้วย toIsoDate() — วิธีเดียวกับ ym() ด้านบน ยอดรายวันจึงรวมกลับเป็นรายเดือนได้ตรงกันทุกบาท
+        const dk = `${day}|${custCode}|${slm}`;
+        const dc = daily.get(dk) || { amount: 0, invoice_count: 0 };
+        dc.amount += sign * part;
+        if (main && r.RECTYP !== '5') dc.invoice_count += 1;
+        daily.set(dk, dc);
+      }
     }
 
     db.exec('BEGIN');
@@ -1644,6 +1678,7 @@ async function syncTgmDetailLines(db) {
 const SALES_LINES_MIN_INTERVAL_MS = (Number(process.env.SALES_LINES_MIN_INTERVAL_MIN) || 60) * 60 * 1000;
 async function syncSalesLinesMonthly(db) {
   const slmOv = loadSlmOverrides(db);
+  const skuOv = loadSlmSkuOverrides(db); // เจ้าของยอดรายสินค้า (2026-10-27)
   const getState = db.prepare('SELECT mtime_ms, synced_at FROM sync_file_state WHERE source = ?');
   const setState = db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
     ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`);
@@ -1658,7 +1693,9 @@ async function syncSalesLinesMonthly(db) {
   const rulesKey = '#sales_lines_rules';
   const rulesSig = (() => {
     // + รหัส Sales ย่อยที่เก็บแยก (2026-10-27, KEEP_SUB_SLM_CODES) — เปลี่ยนแล้วต้องสร้างใหม่ทุกแฟ้มเช่นกัน
-    const s = JSON.stringify([require('../lib/salesDocs').NON_SALES_DOC_PREFIXES, [...slmOv].sort(), [...KEEP_SUB_SLM_CODES].sort()]);
+    // + เจ้าของยอดรายสินค้า (2026-10-27)
+    const skuSig = [...skuOv].map(([c, m]) => [c, [...m].sort()]).sort();
+    const s = JSON.stringify([require('../lib/salesDocs').NON_SALES_DOC_PREFIXES, [...slmOv].sort(), [...KEEP_SUB_SLM_CODES].sort(), skuSig]);
     let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
     return h;
   })();
@@ -1688,7 +1725,7 @@ async function syncSalesLinesMonthly(db) {
       const sku = cleanText(r.STKCOD);
       if (!period || !sku) continue;
       const cust = cleanText(r.PEOPLE) || '(none)';
-      const slm = effectiveSlm(slmOv, cust, normalizeSlmCode(r.SLMCOD) || '(none)'); // ลูกค้าที่กำหนดเจ้าของยอดไว้ (lib/slmOverride.js)
+      const slm = effectiveSlmSku(slmOv, skuOv, cust, sku, normalizeSlmCode(r.SLMCOD) || '(none)'); // เจ้าของยอดรายสินค้า/รายลูกค้า (lib/slmOverride.js)
       const unit = cleanText(r.TQUCOD);
       const qty = Math.abs(Number(r.XTRNQTY) || Number(r.TRNQTY) || 0);
       const factor = Number(r.TFACTOR) || 1;

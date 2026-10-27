@@ -18,6 +18,7 @@
 // TRD_WEIGHT ใน Bplus เป็น 0 ทุกบรรทัด → KG คิดแบบเดียวกับ Express (หน่วยกิโลกรัม หรือ skus.weight_per_unit ของ WMS)
 
 const sql = require('mssql');
+const { loadSlmOverrides, effectiveSlm } = require('../lib/slmOverride');
 
 const FROM_DATE = '2025-01-01';
 const COMPANY = 'BP-TGM';
@@ -129,7 +130,10 @@ async function runBplusImport(db, { force = false } = {}) {
     if (!data.monthly.length) throw new Error('Bplus ส่งข้อมูลกลับมา 0 แถว — ข้ามรอบนี้เพื่อไม่ลบข้อมูลเดิม');
     const map = new Map(db.prepare('SELECT bp_code, slm_code FROM bplus_salesman_map WHERE slm_code IS NOT NULL AND slm_code <> \'\'').all()
       .map((r) => [r.bp_code, r.slm_code]));
-    const slmOf = (bp) => map.get(bp) || (bp ? `BP-${bp}` : 'BP-(none)');
+    const slmOfBp = (bp) => map.get(bp) || (bp ? `BP-${bp}` : 'BP-(none)');
+    // ลูกค้าที่กำหนดเจ้าของยอดไว้ (sales_slm_override, lib/slmOverride.js — เช่น ลูกค้าส่งออกของคุณอุ้ม 2026-10-22) ชนะรหัสของ Bplus
+    const slmOv = loadSlmOverrides(db);
+    const slmOf = (bp, cust) => effectiveSlm(slmOv, custCodeOf(cust), slmOfBp(bp));
     const companyOf = (ic) => (ic ? COMPANY_IC : COMPANY);
 
     // รวมซ้ำฝั่ง JS อีกชั้น เผื่อรหัสลูกค้า '0' หลายตัว/ชื่อซ้ำทำให้ key ชนกันหลังแปลงรหัส
@@ -140,7 +144,7 @@ async function runBplusImport(db, { force = false } = {}) {
     const invDaily = new Map();
     for (const r of data.monthly) {
       if (String(r.d).slice(0, 10) > today) continue;
-      const base = [companyOf(r.ic), custCodeOf(r.cust_code), slmOf(r.slmn)];
+      const base = [companyOf(r.ic), custCodeOf(r.cust_code), slmOf(r.slmn, r.cust_code)];
       for (const [map, period] of [[inv, String(r.d).slice(0, 7)], [invDaily, String(r.d).slice(0, 10)]]) {
         const key = [base[0], period, base[1], base[2]].join('\u0001');
         const cur = map.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, cn_vat: 0 };
@@ -153,7 +157,7 @@ async function runBplusImport(db, { force = false } = {}) {
     for (const r of data.lines) {
       if (String(r.d).slice(0, 10) > today) continue;
       for (const [map, period] of [[lines, String(r.d).slice(0, 7)], [linesDaily, String(r.d).slice(0, 10)]]) {
-        const key = [companyOf(r.ic), period, custCodeOf(r.cust_code), slmOf(r.slmn), r.sku, r.unit].join('\u0001');
+        const key = [companyOf(r.ic), period, custCodeOf(r.cust_code), slmOf(r.slmn, r.cust_code), r.sku, r.unit].join('\u0001');
         const cur = map.get(key) || { qty: 0, qty_base: 0, amount: 0 };
         cur.qty += Number(r.qty) || 0; cur.qty_base += Number(r.qty_base) || 0; cur.amount += Number(r.amount) || 0;
         map.set(key, cur);
@@ -205,7 +209,7 @@ async function runBplusImport(db, { force = false } = {}) {
         const insDoc = db.prepare(`INSERT OR REPLACE INTO bplus_invoices (doc_key, doc_num, doc_date, cust_code, slm_code, company, doc_code, is_cn, amount, vat_amount)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
         const insDocLine = db.prepare('INSERT INTO bplus_invoice_lines (doc_key, sku, unit_code, qty, amount) VALUES (?, ?, ?, ?, ?)');
-        for (const r of data.docs) if (r.doc_key != null) insDoc.run(String(r.doc_key), r.doc_num || '', String(r.d).slice(0, 10), custCodeOf(r.cust_code), slmOf(r.slmn), companyOf(r.ic), r.doc_code || '', r.is_cn ? 1 : 0, Number(r.amount) || 0, Number(r.vat_amount) || 0);
+        for (const r of data.docs) if (r.doc_key != null) insDoc.run(String(r.doc_key), r.doc_num || '', String(r.d).slice(0, 10), custCodeOf(r.cust_code), slmOf(r.slmn, r.cust_code), companyOf(r.ic), r.doc_code || '', r.is_cn ? 1 : 0, Number(r.amount) || 0, Number(r.vat_amount) || 0);
         for (const r of data.docLines || []) if (r.doc_key != null && r.sku) insDocLine.run(String(r.doc_key), r.sku, r.unit || '', Number(r.qty) || 0, Number(r.amount) || 0);
       }
       for (const c of data.customers) upCust.run(custCodeOf(c.code), c.name || '', c.slmn || '', c.ic ? 1 : 0, c.has_export ? 1 : 0);
