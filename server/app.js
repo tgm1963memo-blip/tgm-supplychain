@@ -584,6 +584,9 @@ function buildApp(db, opts = {}) {
   app.use('/api/price_tiers', require('./routes/priceTiers')(db, [...PROMO_DRAFT_ROLES, 'manager'], ['superadmin', 'admin', 'sales_manager']));
   // ใบเสนอราคา (2026-10-08, รอบ 2) — ฝ่ายขายทุกระดับสร้างได้ · Sales เห็นเฉพาะของตัวเอง ผู้จัดการเห็นทั้งหมด
   app.use('/api/quotation_headers', require('./routes/quotationHeaders')(db, [...PROMO_DRAFT_ROLES, 'manager']));
+  // ทุนสินค้า + ราคาหมูหน้าฟาร์ม + เกณฑ์พิจารณาโปร (2026-10-22) — ทุนผลิตเป็นข้อมูลอ่อนไหว: ผู้ใช้สั่ง 2026-10-27 ให้เห็นเฉพาะ admin/superadmin
+  const PROMO_COST_ROLES = ['superadmin', 'admin'];
+  app.use('/api/promo_costs', require('./routes/promoCosts')(db, PROMO_COST_ROLES, PROMO_COST_ROLES, PROMO_COST_ROLES));
   app.use('/api/promo_draft_attachments', require('./routes/promoDraftAttachments')(db, PROMO_DRAFT_ROLES));
 
   // Comment ต่อแถวสินค้า (ต่อ SKU ต่อเอกสาร, 2026-09-11) — mount แบบเดียวกับ audit_log (readOnly:true

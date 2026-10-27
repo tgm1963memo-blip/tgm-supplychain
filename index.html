@@ -5408,7 +5408,7 @@ const RNAV={
   // ── Super Admin / Admin ───────────────────────────────────────────────
   superadmin:[
     ['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['promocosts','📉','ทุน & ราคาหมู'],
     ['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
     ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
     ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
@@ -5419,7 +5419,7 @@ const RNAV={
   ],
   admin:[
     ['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['promocosts','📉','ทุน & ราคาหมู'],
     ['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
     ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
     ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
@@ -5478,7 +5478,7 @@ const RNAV={
   warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['sample','🧪','ของตัวอย่าง']],
   manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
-const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
+const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',promocosts:'ทุนสินค้า & ราคาหมู',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
 
 // แยกแอป Sales/Planning (2026-09-15) — role ไหน "เป็นของแผนกเดียวเท่านั้น" คืนค่า 'sales'/'planning',
@@ -5677,7 +5677,7 @@ function _permGroupKey(u){return `${u?.department||'Unassigned department'}|${u?
 const _NAV_GROUPS = [
   ['ภาพรวม', ['dash']],
   ['การขาย', ['mysales', 'consi', 'forecast']],
-  ['โปรโมชัน & ราคา', ['promo_history', 'pricetiers', 'quotation']],
+  ['โปรโมชัน & ราคา', ['promo_history', 'pricetiers', 'promocosts', 'quotation']],
   ['วางแผน & ผลิต', ['planstock', 'po', 'planbook', 'booksummary', 'prodplan', 'prodsummary', 'forecastdoc', 'stock', 'expiry', 'wms']],
   ['ลูกค้า & ตัวอย่าง', ['custreg', 'sample']],
   ['ตั้งค่าระบบ', ['skuadmin', 'groups', 'reports', 'users', 'perms', 'auditlog']]
@@ -5689,6 +5689,7 @@ const _NAV_ICONS = {
   forecast: '<path d="M2 12l4-4 3 3 5-6M10 5h4v4"/>',
   promo_history: '<path d="M4 2h5l3 3v9H4zM9 2v3h3M6 9h4M6 11.5h4"/>',
   pricetiers: '<path d="M2 2h6l6 6-6 6-6-6zM5.5 5.5h.01"/>',
+  promocosts: '<path d="M2 14h12M3 11l3-3 2.5 2L13 5M10 5h3v3"/>',
   quotation: '<path d="M3 2h10v12l-2-1.5L9 14l-1-1-1 1-2-1.5L3 14zM6 6h4M6 9h4"/>',
   planstock: '<path d="M1.5 6L8 2.5 14.5 6v8h-13zM4.5 14V8.5h7V14M4.5 11h7"/>',
   po: '<path d="M5.5 2.5h5v2h-5zM5.5 3.5H3.5v10.5h9V3.5h-2M6 8l1.5 1.5L10.5 6.5"/>',
@@ -5935,6 +5936,7 @@ function nav(page){
       case 'consi': pgConsignment(); break;
       case 'promo_history': pgPromoHistory(); break;
       case 'pricetiers': pgPriceTiers(); break;
+      case 'promocosts': pgPromoCosts(); break;
       case 'quotation': pgQuotation(); break;
       case 'forecast': pgForecast(); break;
       case 'planstock': pgPlanStock(); break;
@@ -15073,6 +15075,7 @@ const ALL_NAV_PAGES=[
   {id:'consi',lbl:'📦 ฝากขาย CONSI'},
   {id:'promo_history',lbl:'🎯 เอกสารโปรโมชัน'},
   {id:'pricetiers',lbl:'💰 ราคากลาง A–G'},
+  {id:'promocosts',lbl:'📉 ทุนสินค้า & ราคาหมู'},
   {id:'quotation',lbl:'🧾 ใบเสนอราคา'},
   {id:'forecast',lbl:'📝 Sales Forecast'},
   {id:'planstock',lbl:'📦 Stock & Planning'},
@@ -15119,7 +15122,7 @@ let _permTab='pages';
 const DEFAULT_ROLES={
   // ── 5-Level roles ใหม่ ──────────────────────────────────────────────
   superadmin:{label:'Super Admin',pages:(ALL_NAV_PAGES||[]).map(p=>p.id)},
-  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','promo_history','pricetiers','quotation','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custreg','sample','skuadmin','groups','reports','auditlog']},
+  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','promo_history','pricetiers','promocosts','quotation','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custreg','sample','skuadmin','groups','reports','auditlog']},
   // Sales department
   sales_manager:{label:'Sales Manager',pages:['dash','mysales','consi','promo_history','pricetiers','quotation','forecast','custreg','sample','reports']},
   sales_officer:{label:'Sales Officer',pages:['dash','mysales','promo_history','pricetiers','quotation','forecast','custreg','sample']},
@@ -19901,6 +19904,334 @@ function ptExport() {
   const rows = _ptFiltered().map(r => [r.code, r.name_th || '', r.name_en || '', r.unit || '',
     ...PT_TIERS.map(t => r[_ptCol(t)] ?? ''), r.is_active ? '' : 'ยกเลิกการขาย']);
   toXLSX([['ราคากลาง A-G', ['รหัส', 'รายการสินค้า', 'English Name', 'หน่วย', ...PT_TIERS, 'สถานะ'], rows]], `ราคากลาง_A-G_${today()}.xlsx`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ทุนสินค้า & ราคาหมูหน้าฟาร์ม (2026-10-22, พิจารณาอนุมัติโปร เฟส 1) — server: routes/promoCosts.js · สูตร: lib/promoCost.js
+// ทุนผลิตเป็นข้อมูลอ่อนไหว: ผู้ใช้สั่ง 2026-10-27 ให้เห็นเฉพาะ superadmin/admin (ทั้งเมนูและ API — server ตรวจซ้ำใน app.js)
+// ทุนคาดการณ์ c(m) = ทุน × (1 + %เนื้อหมู × (ราคาหมูเดือน m ÷ ราคาหมูเดือนของทุน − 1)) — ข้อมูลขาดแสดง "—" ไม่เดา
+// ═══════════════════════════════════════════════════════════════════
+let _pc = { tab: 'cost', costs: null, months: null, pig: null, settings: null, q: '', draft: null, err: '' };
+const _pcCanWrite = () => ['superadmin', 'admin'].includes(ROLE);
+const _pcCanSettings = () => ['superadmin', 'admin'].includes(ROLE);
+const _pcYm = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+const _pcAddM = (ym, n) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7); };
+const _PC_MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const _pcMon = ym => { const [y, m] = String(ym || '').split('-').map(Number); return m ? `${_PC_MON[m - 1]} ${String((y + 543) % 100).padStart(2, '0')}` : '—'; };
+const _pcNum = (v, d = 2) => v == null || v === '' ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: d, maximumFractionDigits: d });
+const _pcPct = v => v == null ? '—' : (v * 100).toLocaleString('th-TH', { maximumFractionDigits: 1 }) + '%';
+function _pcPigMap() {
+  const m = new Map();
+  (_pc.pig || []).forEach(r => { if (!m.has(r.month)) m.set(r.month, { actual: null, forecast: null }); m.get(r.month)[r.kind] = r.price_per_kg; });
+  return m;
+}
+const _pcPigFor = (map, ym) => { const p = map.get(ym); return p ? (p.actual ?? p.forecast ?? null) : null; };
+// ทุนคาดการณ์เดือน ym — สูตรเดียวกับ forecastCost ใน lib/promoCost.js (แก้สูตรต้องแก้ทั้งสองที่)
+function _pcCostAt(row, map, ym) {
+  if (row.pork_pct == null) return null;
+  const base = _pcPigFor(map, row.month), pig = _pcPigFor(map, ym);
+  return base == null || pig == null ? null : row.cost * (1 + row.pork_pct * (pig / base - 1));
+}
+
+async function pgPromoCosts(reload) {
+  // หน้าสิทธิ์ (ALL_NAV_PAGES) ติ๊กหน้านี้ให้ role อื่นได้ แต่ API ตอบ 403 — แจ้งตรงๆ แทนหน้าว่าง
+  if (!_pcCanWrite()) { document.getElementById('ct').innerHTML = '<div class="al alw">หน้านี้เปิดได้เฉพาะ Admin / Super Admin (ข้อมูลทุนผลิต)</div>'; return; }
+  if (_pc.costs === null || reload) {
+    document.getElementById('ct').innerHTML = '<div style="padding:30px;text-align:center;color:var(--TX3)">กำลังโหลดทุนสินค้าและราคาหมู…</div>';
+    const [c, m, p, s] = await Promise.all(['/sku', '/sku/months', '/pig', '/settings'].map(u => apiFetch('/api/promo_costs' + u)));
+    if (!_isActivePage('promocosts')) return;
+    const err = [c, m, p, s].find(r => r.error);
+    _pc.err = err ? err.error.message : '';
+    _pc.costs = c.data || []; _pc.months = m.data || { months: [], uploads: [] }; _pc.pig = p.data || []; _pc.settings = s.data || null;
+  }
+  pcRender();
+}
+
+function pcRender() {
+  const ct = document.getElementById('ct'); if (!ct) return;
+  const w = _pcCanWrite();
+  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="pcTemplate()">⬇ ไฟล์ทุน (Excel)</button>
+    ${w ? `<button class="btn btn-sm btn-p" onclick="document.getElementById('pc-file').click()">⬆ นำเข้าทุน Excel</button><input type="file" id="pc-file" accept=".xlsx,.xls" style="display:none" onchange="pcImport(this)">` : ''}`;
+  const tab = (id, lbl) => `<button class="btn btn-sm" onclick="_pc.tab='${id}';pcRender()" style="${_pc.tab === id ? 'background:var(--N);color:#fff;border-color:var(--N);font-weight:600' : ''}">${lbl}</button>`;
+  ct.innerHTML = `${_pc.err ? `<div class="al alw">โหลดข้อมูลไม่สำเร็จ: ${esc(_pc.err)}</div>` : ''}
+    <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${tab('cost', 'ทุนสินค้า')}${tab('pig', 'ราคาหมูหน้าฟาร์ม')}${tab('rules', 'เกณฑ์พิจารณาโปร')}</div>
+    <div id="pc-draft">${_pcDraftHtml()}</div>
+    <div id="pc-body"></div>`;
+  ({ cost: pcRenderCost, pig: pcRenderPig, rules: pcRenderRules })[_pc.tab]();
+}
+
+// แถบตัวเลขสรุป (compact stat strip ตาม DESIGN.md) — [[ชื่อ, ค่า, บรรทัดรอง]]
+const _pcStrip = cells => `<div style="display:flex;flex-wrap:wrap;border:1px solid var(--BD);border-radius:10px;background:var(--W);margin-bottom:12px">${cells.map(([k, v, sub], i) => `
+  <div style="flex:1 1 160px;padding:10px 16px;${i ? 'border-left:1px solid var(--BD)' : ''}"><div style="font-size:12.5px;color:var(--TX3)">${k}</div>
+  <div style="font-size:22px;font-weight:700;color:var(--N)">${v}</div>${sub ? `<div style="font-size:12px;color:var(--TX3)">${sub}</div>` : ''}</div>`).join('')}</div>`;
+
+function pcRenderCost() {
+  const box = document.getElementById('pc-body'); if (!box) return;
+  const all = _pc.costs || [], map = _pcPigMap(), now = _pcYm();
+  const latest = _pc.months?.months?.[0];
+  const noPork = all.filter(r => r.pork_pct == null).length;
+  const pigNow = _pcPigFor(map, now);
+  const fut = [1, 2, 3].map(n => _pcAddM(now, n));
+  box.innerHTML = _pcStrip([
+    ['ทุนล่าสุด', latest ? _pcMon(latest.month) : '—', latest ? `${latest.n.toLocaleString()} SKU` : 'ยังไม่มีไฟล์ทุน'],
+    ['SKU ที่มีทุน', all.length.toLocaleString(), 'ใช้ทุนเดือนล่าสุดของแต่ละ SKU'],
+    ['ยังไม่มี %เนื้อหมู', noPork.toLocaleString(), noPork ? 'คาดการณ์ทุนไม่ได้ ใช้ทุนปัจจุบันแทน' : 'ครบทุก SKU'],
+    ['ราคาหมู ' + _pcMon(now), pigNow == null ? '—' : _pcNum(pigNow) + ' <small style="font-size:13px">฿/กก.</small>', pigNow == null ? 'ยังไม่ได้กรอก' : (map.get(now)?.actual != null ? 'ราคาจริง' : 'ราคาคาดการณ์')],
+  ]) + `<div class="card">
+    <div class="ch"><div class="ct2">ทุนสินค้าต่อหน่วยขาย (ไม่รวม VAT)</div>
+      <span style="font-size:12px;color:var(--TX3)">ทุนคาดการณ์ = ทุน × (1 + %เนื้อหมู × การเปลี่ยนของราคาหมูเทียบเดือนของทุน)</span></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <input type="text" placeholder="ค้นหารหัส / ชื่อสินค้า" value="${esc(_pc.q)}" oninput="_pc.q=this.value;pcRenderCostRows()" style="width:280px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px">
+      <span id="pc-count" style="font-size:12px;color:var(--TX3)"></span>
+    </div>
+    <div class="tw" style="max-height:calc(100vh - 380px);overflow:auto"><table><thead><tr>
+      <th>รหัส</th><th>สินค้า</th><th>หน่วย</th><th>เดือนของทุน</th><th class="r">ทุน/หน่วย</th><th class="r">%เนื้อหมู</th>
+      ${fut.map(m => `<th class="r">คาดการณ์ ${_pcMon(m)}</th>`).join('')}<th></th></tr></thead><tbody id="pc-rows"></tbody></table></div>
+  </div>`;
+  pcRenderCostRows();
+}
+
+function pcRenderCostRows() {
+  const body = document.getElementById('pc-rows'); if (!body) return;
+  const q = _pc.q.trim().toLowerCase(), map = _pcPigMap(), now = _pcYm(), w = _pcCanWrite();
+  const fut = [1, 2, 3].map(n => _pcAddM(now, n));
+  const rows = (_pc.costs || []).filter(r => !q || [r.sku, r.name].some(x => String(x || '').toLowerCase().includes(q)));
+  const cnt = document.getElementById('pc-count'); if (cnt) cnt.textContent = `แสดง ${rows.length.toLocaleString()} รายการ`;
+  const fc = (r, m) => {
+    const v = _pcCostAt(r, map, m); if (v == null) return '<td class="r" style="color:var(--TX3)">—</td>';
+    const d = v / r.cost - 1, a = Math.abs(d) < 0.0005;
+    return `<td class="r">${_pcNum(v)}${a ? '' : ` <span style="font-size:11px;color:${d > 0 ? 'var(--R)' : 'var(--G)'}">${d > 0 ? '▲' : '▼'}${Math.abs(d * 100).toFixed(1)}%</span>`}</td>`;
+  };
+  body.innerHTML = rows.map(r => `<tr>
+    <td class="mono">${esc(r.sku)}</td><td>${esc(r.name || '')}${r.name ? '' : '<span style="color:var(--TX3)">ไม่พบใน Express</span>'}</td><td style="font-size:12px">${esc(r.unit || '')}</td>
+    <td>${_pcMon(r.month)}</td><td class="r">${_pcNum(r.cost)}</td>
+    <td class="r" ${w ? `style="cursor:pointer" title="คลิกเพื่อแก้ %เนื้อหมู" onclick="pcPorkEdit(this,'${esc(r.sku)}')"` : ''}>${r.pork_pct == null ? '<span class="badge bba">ยังไม่มี</span>' : _pcPct(r.pork_pct)}</td>
+    ${fut.map(m => fc(r, m)).join('')}
+    <td><button class="btn btn-xs" onclick="pcCostLogs('${esc(r.sku)}')" title="ประวัติทุน">ประวัติ</button></td></tr>`).join('')
+    || `<tr><td colspan="10" style="padding:24px;text-align:center;color:var(--TX3)">${(_pc.costs || []).length ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีทุนสินค้า — กด "ไฟล์ทุน (Excel)" เพื่อดาวน์โหลดแบบฟอร์ม แล้ว "นำเข้าทุน Excel"'}</td></tr>`;
+}
+
+// แก้ %เนื้อหมูในตาราง (ของเดือนทุนแถวนั้น) · ว่าง = ล้างค่า · Enter/ออกจากช่อง = บันทึก · Esc = ยกเลิก
+function pcPorkEdit(td, sku) {
+  if (td.querySelector('input')) return;
+  const row = (_pc.costs || []).find(r => r.sku === sku); if (!row) return;
+  const old = row.pork_pct;
+  td.innerHTML = `<input type="number" step="0.1" min="0" max="100" value="${old == null ? '' : +(old * 100).toFixed(2)}" style="width:70px;text-align:right;padding:2px 4px" aria-label="%เนื้อหมูของ ${esc(sku)}">`;
+  const inp = td.firstChild; inp.focus(); inp.select();
+  let done = false;
+  const finish = async save => {
+    if (done) return; done = true;
+    const v = inp.value.trim(), nv = v === '' ? null : Number(v) / 100;
+    if (!save || nv === old || (nv != null && old != null && Math.abs(nv - old) < 1e-6)) { pcRenderCostRows(); return; }
+    if (nv != null && !(nv >= 0 && nv <= 1)) { toast('%เนื้อหมูต้องอยู่ระหว่าง 0–100'); pcRenderCostRows(); return; }
+    td.textContent = '…';
+    const r = await apiFetch('/api/promo_costs/sku/' + encodeURIComponent(sku), { method: 'PUT', body: JSON.stringify({ month: row.month, pork_pct: nv == null ? null : nv * 100 }) });
+    if (r.error) toast('บันทึกไม่สำเร็จ: ' + r.error.message); else { Object.assign(row, r.data); toast(`บันทึก %เนื้อหมู ${sku}: ${_pcPct(old)} → ${_pcPct(row.pork_pct)}`); }
+    pcRenderCostRows();
+  };
+  inp.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); };
+  inp.onblur = () => finish(true);
+}
+
+async function pcCostLogs(sku) {
+  openMod(`<div class="mh"><div class="mt2">ประวัติทุน ${esc(sku)}</div><span class="mx" onclick="closeM()">✕</span></div><div id="pc-logs" style="font-size:12px;color:var(--TX3)">กำลังโหลด…</div>`);
+  const r = await apiFetch('/api/promo_costs/sku/logs?sku=' + encodeURIComponent(sku));
+  const box = document.getElementById('pc-logs'); if (!box) return;
+  const lbl = f => ({ '*': 'สร้างใหม่', cost: 'ทุน/หน่วย', unit: 'หน่วย', pork_pct: '%เนื้อหมู' }[f] || f);
+  const val = (f, v) => v == null ? '—' : f === 'pork_pct' ? _pcPct(Number(v)) : f === 'cost' ? _pcNum(v) : esc(v);
+  box.innerHTML = r.error ? esc(r.error.message) : (r.data || []).length ? `<div class="tw" style="max-height:360px;overflow:auto"><table><thead><tr><th>เวลา</th><th>ผู้แก้</th><th>เดือนทุน</th><th>รายการ</th><th class="r">เดิม</th><th class="r">ใหม่</th><th>ที่มา</th></tr></thead><tbody>${r.data.map(l => `<tr>
+    <td>${esc(new Date(l.at).toLocaleString('th-TH'))}</td><td>${esc(uidToName(l.by_uid) || l.by_uid || '')}</td><td>${_pcMon(l.month)}</td><td>${lbl(l.field)}</td>
+    <td class="r">${l.field === '*' ? '' : val(l.field, l.old_value)}</td><td class="r">${l.field === '*' ? '' : val(l.field, l.new_value)}</td><td>${l.upload_id ? 'นำเข้า Excel' : 'แก้บนเว็บ'}</td></tr>`).join('')}</tbody></table></div>` : 'ยังไม่มีประวัติ';
+}
+
+// แบบฟอร์ม/ส่งออก: ทุนล่าสุดทุก SKU (แก้แล้วนำเข้ากลับเป็นเดือนใหม่ได้เลย) · ยังไม่มีทุน = แถวตัวอย่างหัวคอลัมน์
+// %เนื้อหมูส่งออกเป็นข้อความ "62%" — ตัวเลขเปล่า 1 จะถูกอ่านกลับเป็น 100% (server ถือว่า ≤ 1 = สัดส่วน)
+function pcTemplate() {
+  const rows = (_pc.costs || []).map(r => [r.sku, r.name || '', r.unit || '', r.cost, r.pork_pct == null ? '' : `${+(r.pork_pct * 100).toFixed(2)}%`]);
+  toXLSX([['ทุนสินค้า', ['รหัสสินค้า', 'รายการสินค้า', 'หน่วย', 'ทุนต่อหน่วย (ไม่รวม VAT)', '%เนื้อหมูในทุน'], rows]], `ทุนสินค้า_${today()}.xlsx`);
+}
+
+// อ่านชีตทุน: หาแถวหัวที่มีช่องขึ้นต้น "รหัส" แล้วจับคอลัมน์ ทุน (ไม่ใช่ช่อง %เนื้อหมู) / %เนื้อหมู / หน่วย / ชื่อ
+function _pcParseSheet(ws) {
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: false });
+  const h = aoa.slice(0, 20).findIndex(r => (r || []).some(c => /^รหัส/.test(String(c ?? '').trim())));
+  if (h < 0) return null;
+  const head = aoa[h].map(c => String(c ?? '').trim());
+  const find = re => head.findIndex(c => re.test(c));
+  const cCode = find(/^รหัส/), cName = find(/รายการ|ชื่อ/), cUnit = find(/^หน่วย/), cPork = find(/หมู/);
+  const cCost = head.findIndex((c, j) => /ทุน/.test(c) && j !== cPork);
+  if (cCost < 0) return null;
+  const rows = [];
+  for (let i = h + 1; i < aoa.length; i++) {
+    const r = aoa[i] || [], code = String(r[cCode] ?? '').trim();
+    if (!code) continue;
+    rows.push({ row: i + 1, code, name: cName >= 0 ? r[cName] : null, unit: cUnit >= 0 ? r[cUnit] : null, cost: r[cCost], pork_pct: cPork >= 0 ? r[cPork] : null });
+  }
+  return { rows, hasPork: cPork >= 0 };
+}
+
+function pcImport(input) {
+  const file = input.files[0]; if (!file) return;
+  input.value = '';
+  const rd = new FileReader();
+  rd.onload = async e => {
+    try {
+      await ensureXLSX();
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const sheets = wb.SheetNames.map(n => ({ name: n, parsed: _pcParseSheet(wb.Sheets[n]) })).filter(s => s.parsed && s.parsed.rows.length);
+      if (!sheets.length) { toast('ไม่พบชีตที่มีคอลัมน์ "รหัส" และ "ทุน" ในไฟล์'); return; }
+      _pc.draft = { file: file.name, sheets, sheet: sheets[0].name, month: _pcYm(), preview: null, error: '' };
+      _pc.tab = 'cost'; pcRender();
+      await pcPreview();
+    } catch (err) { toast('อ่านไฟล์ไม่สำเร็จ: ' + (err.message || err)); }
+  };
+  rd.readAsArrayBuffer(file);
+}
+const _pcDraftSheet = () => _pc.draft?.sheets.find(s => s.name === _pc.draft.sheet)?.parsed;
+async function pcPreview() {
+  const d = _pc.draft; if (!d) return;
+  d.preview = null; d.error = '';
+  const box = () => document.getElementById('pc-draft');
+  if (box()) box().innerHTML = _pcDraftHtml();
+  const r = await apiFetch('/api/promo_costs/sku/import/preview', { method: 'POST', body: JSON.stringify({ month: d.month, rows: _pcDraftSheet().rows }) });
+  if (_pc.draft !== d) return;
+  if (r.error) d.error = r.error.message; else d.preview = r.data;
+  if (box()) box().innerHTML = _pcDraftHtml();
+}
+function _pcDraftHtml() {
+  const d = _pc.draft; if (!d) return '';
+  const pv = d.preview, p = _pcDraftSheet();
+  const fl = f => ({ cost: 'ทุน', unit: 'หน่วย', pork_pct: '%เนื้อหมู' }[f] || f);
+  const fv = (f, v) => v == null ? '—' : f === 'pork_pct' ? _pcPct(v) : f === 'cost' ? _pcNum(v) : esc(v);
+  const list = (arr, max = 60) => arr.slice(0, max).map(esc).join(', ') + (arr.length > max ? ` … (+${arr.length - max})` : '');
+  return `<div class="card" style="border:2px solid var(--N)">
+    <div class="ch"><div class="ct2">ตรวจไฟล์ทุนก่อนนำเข้า: ${esc(d.file)}</div>
+      ${d.sheets.length > 1 ? `<select onchange="_pc.draft.sheet=this.value;pcPreview()" style="padding:4px 8px">${d.sheets.map(s => `<option value="${esc(s.name)}" ${s.name === d.sheet ? 'selected' : ''}>ชีต ${esc(s.name)} (${s.parsed.rows.length} แถว)</option>`).join('')}</select>` : `<span style="font-size:12px;color:var(--TX3)">ชีต ${esc(d.sheet)} · ${p.rows.length.toLocaleString()} แถว</span>`}</div>
+    <div class="field" style="max-width:260px;margin-bottom:8px"><label for="pc-month">ทุนนี้มีผลตั้งแต่เดือน <span style="color:var(--R)">*</span></label>
+      <input type="month" id="pc-month" value="${esc(d.month)}" onchange="_pc.draft.month=this.value;pcPreview()"></div>
+    ${p.hasPork ? '' : '<div class="al ali" style="font-size:12px">ไฟล์นี้ไม่มีคอลัมน์ %เนื้อหมู — ระบบใช้ค่าเดิมของแต่ละ SKU (ถ้ามี)</div>'}
+    ${d.error ? `<div class="al alw">${esc(d.error)}</div>` : !pv ? '<div style="color:var(--TX3);padding:8px">กำลังตรวจ…</div>' : `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <span class="badge bbg">ใหม่ ${pv.new_count}</span><span class="badge bbl">เปลี่ยน ${pv.changed_count}</span><span class="badge bbgr">ไม่เปลี่ยน ${pv.unchanged_count}</span>
+      ${pv.no_pork.length ? `<span class="badge bba">ไม่มี %เนื้อหมู ${pv.no_pork.length}</span>` : ''}
+      ${pv.carried.length ? `<span class="badge bbgr">ใช้ %เนื้อหมูเดิม ${pv.carried.length}</span>` : ''}
+      ${pv.invalid.length ? `<span class="badge bba">อ่านค่าไม่ได้ ${pv.invalid.length}</span>` : ''}
+      ${pv.dup.length ? `<span class="badge bba">รหัสซ้ำในไฟล์ ${pv.dup.length}</span>` : ''}
+      ${pv.unknown.length ? `<span class="badge bba">ไม่พบใน Express ${pv.unknown.length}</span>` : ''}
+    </div>
+    ${pv.invalid.length ? `<details open style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">ค่าที่อ่านไม่ได้ (ข้ามแถวนี้) ${pv.invalid.length} แถว</summary><div style="margin:4px 0 0 16px">${pv.invalid.slice(0, 60).map(x => `แถว ${x.row} ${esc(x.code)} ${fl(x.field)}: "${esc(x.value)}"`).join('<br>')}</div></details>` : ''}
+    ${pv.dup.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">รหัสซ้ำในไฟล์ (ใช้แถวล่างสุด)</summary><div style="margin:4px 0 0 16px">${list(pv.dup)}</div></details>` : ''}
+    ${pv.unknown.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">รหัสที่ไม่พบในสินค้า Express ${pv.unknown.length} รหัส — นำเข้าได้ แต่ควรตรวจว่ารหัสพิมพ์ถูกหรือไม่</summary><div style="margin:4px 0 0 16px">${list(pv.unknown, 200)}</div></details>` : ''}
+    ${pv.changed.length ? `<details ${pv.changed_count <= 50 ? 'open' : ''} style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer">รายการที่เปลี่ยน ${pv.changed_count}</summary>
+      <div class="tw" style="max-height:260px;overflow:auto;margin-top:4px"><table><thead><tr><th>รหัส</th><th>สินค้า</th><th>การเปลี่ยนแปลง</th></tr></thead><tbody>${pv.changed.map(x => `<tr><td class="mono">${esc(x.code)}</td><td>${esc(x.name || '')}</td><td>${x.changes.map(c => `<span style="white-space:nowrap">${fl(c.field)}: ${fv(c.field, c.old)} → <b>${fv(c.field, c.new)}</b></span>`).join(' · ')}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`}
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-sm" onclick="_pc.draft=null;pcRender()">ยกเลิก</button>
+      ${pv && (pv.new_count || pv.changed_count) ? `<button class="btn btn-sm btn-p" style="margin-left:auto" onclick="pcImportSave(this)">บันทึกทุนเดือน ${_pcMon(d.month)}</button>` : pv ? '<span style="margin-left:auto;font-size:12.5px;color:var(--G)">ทุนในไฟล์ตรงกับระบบแล้ว</span>' : ''}</div>
+  </div>`;
+}
+async function pcImportSave(btn) {
+  const d = _pc.draft; if (!d) return;
+  btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+  const r = await apiFetch('/api/promo_costs/sku/import', { method: 'POST', body: JSON.stringify({ month: d.month, rows: _pcDraftSheet().rows, file: `${d.file} · ชีต ${d.sheet}` }) });
+  if (r.error) { toast('นำเข้าไม่สำเร็จ: ' + r.error.message); btn.disabled = false; btn.textContent = `บันทึกทุนเดือน ${_pcMon(d.month)}`; return; }
+  _pc.draft = null;
+  toast(`นำเข้าทุน ${_pcMon(r.data.month)} แล้ว — ใหม่ ${r.data.created} · แก้ ${r.data.updated}`);
+  pgPromoCosts(true);
+}
+
+// ราคาหมูหน้าฟาร์ม: 12 เดือนก่อน – 6 เดือนหน้า · คลิกช่องเพื่อแก้ · ว่าง = ลบ · เดือนที่มีราคาจริงใช้ราคาจริงคำนวณ
+function pcRenderPig() {
+  const box = document.getElementById('pc-body'); if (!box) return;
+  const map = _pcPigMap(), now = _pcYm(), w = _pcCanWrite();
+  const months = Array.from({ length: 19 }, (_, i) => _pcAddM(now, i - 12));
+  const used = months.map(m => _pcPigFor(map, m));
+  const cell = (m, kind) => {
+    const v = map.get(m)?.[kind];
+    return `<td class="r" data-m="${m}" data-k="${kind}" ${w ? 'style="cursor:pointer" onclick="pcPigEdit(this)" title="คลิกเพื่อแก้"' : ''}>${v == null ? '<span style="color:var(--TX3)">—</span>' : _pcNum(v)}</td>`;
+  };
+  box.innerHTML = `<div class="card">
+    <div class="ch"><div class="ct2">ราคาหมูหน้าฟาร์ม (บาท/กก.)</div><span style="font-size:12px;color:var(--TX3)">เส้นทึบ = ราคาจริง · เส้นประ = ราคาคาดการณ์</span></div>
+    <div style="height:240px"><canvas id="pc-pig-chart" role="img" aria-label="กราฟราคาหมูหน้าฟาร์มรายเดือน ราคาจริงและราคาคาดการณ์"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="ch"><div class="ct2">ราคารายเดือน</div>${w ? '<span style="font-size:12px;color:var(--TX3)">คลิกที่ช่องเพื่อกรอก/แก้ · ลบตัวเลขออก = ลบราคาเดือนนั้น</span>' : ''}</div>
+    <div class="tw"><table><thead><tr><th>เดือน</th><th class="r">ราคาจริง</th><th class="r">ราคาคาดการณ์</th><th class="r">ใช้คำนวณทุน</th><th class="r">เทียบเดือนก่อน</th></tr></thead><tbody>
+    ${months.map((m, i) => {
+      const u = used[i], p = i ? used[i - 1] : null, d = u != null && p != null ? u / p - 1 : null;
+      return `<tr style="${m === now ? 'background:var(--bg2);font-weight:600' : ''}"><td>${_pcMon(m)}${m === now ? ' <span class="badge bbl">เดือนนี้</span>' : ''}</td>
+        ${cell(m, 'actual')}${cell(m, 'forecast')}<td class="r">${u == null ? '—' : _pcNum(u)}</td>
+        <td class="r">${d == null ? '—' : `<span style="color:${d > 0 ? 'var(--R)' : d < 0 ? 'var(--G)' : 'var(--TX3)'}">${d > 0 ? '▲' : d < 0 ? '▼' : ''}${Math.abs(d * 100).toFixed(1)}%</span>`}</td></tr>`;
+    }).join('')}</tbody></table></div>
+  </div>`;
+  const css = getComputedStyle(document.documentElement);
+  const navy = css.getPropertyValue('--N').trim() || '#1B2064';
+  mkChart('pc-pig-chart', 'line', months.map(_pcMon), [
+    { label: 'ราคาจริง', data: months.map(m => map.get(m)?.actual ?? null), borderColor: navy, backgroundColor: navy, borderWidth: 2, pointRadius: 3, spanGaps: false },
+    { label: 'ราคาคาดการณ์', data: months.map(m => map.get(m)?.forecast ?? null), borderColor: navy, backgroundColor: 'transparent', borderDash: [6, 4], borderWidth: 2, pointRadius: 3, pointStyle: 'rectRot', spanGaps: true },
+  ], { scales: { y: { title: { display: true, text: 'บาท/กก.' } } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${_pcNum(c.parsed.y)} ฿/กก.` } } } });
+}
+
+function pcPigEdit(td) {
+  if (td.querySelector('input')) return;
+  const m = td.dataset.m, k = td.dataset.k, old = _pcPigMap().get(m)?.[k] ?? null;
+  td.innerHTML = `<input type="number" step="0.01" min="0" value="${old ?? ''}" style="width:80px;text-align:right;padding:2px 4px" aria-label="ราคาหมู${k === 'actual' ? 'จริง' : 'คาดการณ์'} ${_pcMon(m)}">`;
+  const inp = td.firstChild; inp.focus(); inp.select();
+  let done = false;
+  const finish = async save => {
+    if (done) return; done = true;
+    const v = inp.value.trim(), nv = v === '' ? null : Number(v);
+    if (!save || nv === old) { pcRenderPig(); return; }
+    if (nv != null && !(nv > 0)) { toast('ราคาหมูไม่ถูกต้อง'); pcRenderPig(); return; }
+    td.textContent = '…';
+    const r = await apiFetch('/api/promo_costs/pig', { method: 'PUT', body: JSON.stringify({ month: m, kind: k, price_per_kg: nv }) });
+    if (r.error) toast('บันทึกไม่สำเร็จ: ' + r.error.message);
+    else {
+      _pc.pig = (_pc.pig || []).filter(x => !(x.month === m && x.kind === k));
+      if (r.data?.price_per_kg != null) _pc.pig.push(r.data);
+      toast(`ราคาหมู${k === 'actual' ? 'จริง' : 'คาดการณ์'} ${_pcMon(m)}: ${_pcNum(old)} → ${_pcNum(nv)}`);
+    }
+    pcRenderPig();
+  };
+  inp.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); };
+  inp.onblur = () => finish(true);
+}
+
+// เกณฑ์พิจารณาโปร G1–G4 + baseline — ค่าที่ใช้คำนวณในหน้าใบเคาะราคา (เฟส 2) · แก้ได้เฉพาะ admin
+const _PC_RULES = [
+  ['baseline_days', 'Baseline: จำนวนวันก่อนเริ่มโปร', 'วัน', 'ยอดขายปกติเฉลี่ยต่อวันจากช่วงนี้ ไม่นับวันที่มีโปรอื่น'],
+  ['baseline_min_clean_days', 'Baseline: วันที่ไม่มีโปรขั้นต่ำ', 'วัน', 'ต่ำกว่านี้ถือว่าข้อมูลไม่พอ ไม่คำนวณ ROI'],
+  ['g1_margin_ok', 'G1 Margin โปรขั้นต่ำ (ใช้ทุนคาดการณ์)', '%', 'ต่ำกว่านี้ = ระวัง · ติดลบ = ไม่ผ่าน (ขายต่ำกว่าทุน)'],
+  ['g2_cost_rise_warn', 'G2 ทุนขึ้นระหว่างโปร — ระวัง', '%', 'ทุนคาดการณ์ช่วงโปรสูงกว่าทุนปัจจุบันเกินค่านี้'],
+  ['g2_cost_rise_fail', 'G2 ทุนขึ้นระหว่างโปร — ไม่ผ่าน', '%', ''],
+  ['g3_breakeven_buffer', 'G3 Forecast เกินจุดคุ้มทุนอย่างน้อย', '%', 'Forecast ≥ จุดคุ้มทุน × (1 + ค่านี้) = ผ่าน · ต่ำกว่าจุดคุ้มทุน = ไม่ผ่าน'],
+  ['g4_lift_ratio_fail', 'G4 Lift ที่วางแผนสูงกว่าที่เคยทำได้', 'เท่า', 'เกินค่านี้ × lift จริงสูงสุดในอดีต = ไม่ผ่าน'],
+];
+const _pcIsPctRule = k => _PC_RULES.find(r => r[0] === k)?.[2] === '%';
+function pcRenderRules() {
+  const box = document.getElementById('pc-body'); if (!box) return;
+  const s = _pc.settings; if (!s) { box.innerHTML = '<div class="al alw">โหลดเกณฑ์ไม่สำเร็จ</div>'; return; }
+  const w = _pcCanSettings();
+  const shown = (k, v) => _pcIsPctRule(k) ? +(v * 100).toFixed(2) : v;
+  box.innerHTML = `<div class="card">
+    <div class="ch"><div class="ct2">เกณฑ์พิจารณาโปร</div><span style="font-size:12px;color:var(--TX3)">${w ? 'ค่าเริ่มต้นเป็นค่าตั้งต้น ควรให้ผู้บริหารยืนยันก่อนใช้งานจริง' : 'แก้ไขได้เฉพาะ Admin'}</span></div>
+    <div class="al ali" style="font-size:12px">ระบบใช้เกณฑ์เหล่านี้ "แนะนำ" ผล ขายได้/ขาดทุน ในใบเคาะราคา — ไม่บล็อกการอนุมัติ ผู้ตรวจยังเป็นผู้ตัดสิน</div>
+    <div class="fg">${_PC_RULES.map(([k, lbl, unit, hint]) => `<div class="field"><label for="pcr-${k}">${lbl} (${unit})</label>
+      <input type="number" step="any" min="0" id="pcr-${k}" value="${shown(k, s.values[k])}" ${w ? '' : 'disabled'}>
+      <div style="font-size:11.5px;color:var(--TX3);margin-top:3px">${hint}${s.values[k] !== s.defaults[k] ? `${hint ? ' · ' : ''}ค่าเริ่มต้น ${shown(k, s.defaults[k])}` : ''}</div></div>`).join('')}</div>
+    ${w ? '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn btn-sm" onclick="pcRulesSave(true)">กลับค่าเริ่มต้น</button><button class="btn btn-sm btn-p" onclick="pcRulesSave(false)">บันทึกเกณฑ์</button></div>' : ''}
+  </div>`;
+}
+async function pcRulesSave(reset) {
+  const body = {};
+  for (const [k] of _PC_RULES) {
+    if (reset) { body[k] = null; continue; }
+    const v = Number(document.getElementById('pcr-' + k)?.value);
+    if (!Number.isFinite(v) || v < 0) { toast('ค่าเกณฑ์ไม่ถูกต้อง'); document.getElementById('pcr-' + k)?.focus(); return; }
+    body[k] = _pcIsPctRule(k) ? v / 100 : v;
+  }
+  if (reset && !confirm('กลับเกณฑ์ทั้งหมดเป็นค่าเริ่มต้น?')) return;
+  const r = await apiFetch('/api/promo_costs/settings', { method: 'PUT', body: JSON.stringify(body) });
+  if (r.error) { toast('บันทึกไม่สำเร็จ: ' + r.error.message); return; }
+  _pc.settings = r.data; toast(reset ? 'กลับค่าเริ่มต้นแล้ว' : 'บันทึกเกณฑ์แล้ว'); pcRenderRules();
 }
 
 // ═══════════════════════════════════════════════════════════════════

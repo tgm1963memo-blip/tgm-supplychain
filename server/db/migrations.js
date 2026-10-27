@@ -756,6 +756,68 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_conversion_doc_lines_doc ON conversion_doc_lines(doc_num);
   `);
 
+  // ทุนสินค้า + ราคาหมูหน้าฟาร์ม (2026-10-22, พิจารณาอนุมัติโปร เฟส 1) — routes/promoCosts.js · lib/promoCost.js
+  // sku_costs: ทุนต่อหน่วยขาย (ex-VAT) รายเดือนจากไฟล์ Excel ฝ่ายต้นทุน · pork_pct = สัดส่วนเนื้อหมูในทุน (0–1, ว่าง = ยังไม่รู้)
+  // pig_prices: ราคาหมูหน้าฟาร์ม บาท/กก. รายเดือน แยก actual / forecast · promo_eval_settings: เกณฑ์ G1–G5 + พารามิเตอร์ baseline
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sku_costs (
+      sku        TEXT NOT NULL,
+      month      TEXT NOT NULL,
+      cost       REAL NOT NULL,
+      unit       TEXT,
+      pork_pct   REAL,
+      upload_id  TEXT,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (sku, month)
+    );
+    CREATE TABLE IF NOT EXISTS sku_cost_uploads (
+      id          TEXT PRIMARY KEY,
+      file_name   TEXT,
+      month       TEXT NOT NULL,
+      created     INTEGER NOT NULL DEFAULT 0,
+      updated     INTEGER NOT NULL DEFAULT 0,
+      uploaded_by TEXT,
+      uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS sku_cost_logs (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      sku       TEXT NOT NULL,
+      month     TEXT NOT NULL,
+      field     TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      upload_id TEXT,
+      by_uid    TEXT,
+      at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sku_cost_logs_sku ON sku_cost_logs(sku, month);
+    CREATE TABLE IF NOT EXISTS pig_prices (
+      month        TEXT NOT NULL,
+      kind         TEXT NOT NULL CHECK (kind IN ('actual', 'forecast')),
+      price_per_kg REAL NOT NULL,
+      note         TEXT,
+      updated_by   TEXT,
+      updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (month, kind)
+    );
+    CREATE TABLE IF NOT EXISTS pig_price_logs (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      month     TEXT NOT NULL,
+      kind      TEXT NOT NULL,
+      old_value REAL,
+      new_value REAL,
+      by_uid    TEXT,
+      at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS promo_eval_settings (
+      key        TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+  `);
+
   // กำหนด Sales เจ้าของยอดรายลูกค้า (2026-10-20, lib/slmOverride.js) — ตั้งต้น: Tops เซ็นทรัล ฟู้ด รีเทล 30-LC-0013/0014
   // ใบออกในชื่อคุณปู (106) แต่ผู้ใช้สั่งย้ายไปเป็นของ 207 (ห้าง-เมย์) · INSERT OR IGNORE = ไม่ทับค่าที่แก้ภายหลัง
   // (ตารางสร้างไว้แล้วก่อน v_invoice_heads ด้านบน)
