@@ -151,9 +151,14 @@ function ym(d) {
 // first 3 characters (dropping any "-N" suffix) so sub-codes collapse onto one parent salesperson
 // code and joins/rollups group correctly; letter-prefixed codes are left untouched. Applied at every
 // point SLMCOD is read from a raw Express DBF, so every table that stores a salesperson code agrees.
+// (2026-10-27, ผู้ใช้ขอ) รหัสหลักใน KEEP_SUB_SLM_CODES เก็บรหัสย่อยตามจริง ไม่รวบ — คุณไกด์ 110: 110-1 ร้านค้า /
+// 110-2 ลูกค้าโรงแรม (Express ผูกทั้งใน ARMAS และใบกำกับ ARTRN) ให้บัญชี sales-hotel เห็นเฉพาะยอด 110-2
+// ผู้ใช้ที่ต้องเห็นยอดรวมต้องมีรหัสย่อยใน sc_users.slm_codes ครบ · ข้อมูลเก่ารหัส 110 ยังอยู่ในบริษัทปีเก่า
+const KEEP_SUB_SLM_CODES = new Set(companyListFromEnv('KEEP_SUB_SLM_CODES', ['110']));
 function normalizeSlmCode(raw) {
   const code = String(raw || '').trim();
   if (!code) return code;
+  if (code.includes('-') && KEEP_SUB_SLM_CODES.has(code.split('-')[0])) return code;
   return /^[0-9]/.test(code) ? code.slice(0, 3) : code;
 }
 
@@ -1505,8 +1510,9 @@ function refreshSalesRollups(db) {
   // fall back on — do one full rebuild in that case; every cycle after that, the table is non-empty
   // and this takes the fast scoped path.
   const isEmpty = db.prepare('SELECT COUNT(*) AS n FROM v_sc_dashboard_sales_monthly').get().n === 0;
-  // (2026-10-14) ตัดลูกค้าที่ไม่นับยอดย้อนหลังด้วย — สร้างใหม่ทั้งหมดหนึ่งครั้ง (ข้อมูลเดิมยังแสดงระหว่างรอ ไม่ล้างตารางก่อน)
-  const FULL_ONCE = '20261014_rollup_exclude_nonsales_v1';
+  // สร้างใหม่ทั้งหมดหนึ่งครั้งเมื่อเปลี่ยน id (ข้อมูลเดิมยังแสดงระหว่างรอ ไม่ล้างตารางก่อน): 2026-10-14 ตัดลูกค้าที่ไม่นับยอด ·
+  // 2026-10-27 แยกรหัสย่อย 110-1/110-2 (normalizeSlmCode) ย้อนหลังในตารางสรุป
+  const FULL_ONCE = '20261027_rollup_keep_sub_slm_110';
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
   const fullOnce = !db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(FULL_ONCE);
   const cutoffYm = isEmpty || fullOnce ? '0000-00' : db.prepare("SELECT strftime('%Y-%m','now','-1 month') AS ym").get().ym;
@@ -1787,4 +1793,4 @@ async function runImport(db) {
   }
 }
 
-module.exports = { branchFromArmas, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { branchFromArmas, normalizeSlmCode, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
