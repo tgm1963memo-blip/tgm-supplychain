@@ -1657,7 +1657,8 @@ async function syncSalesLinesMonthly(db) {
   // แฟ้มปีเก่า (TSS-67/68) ไม่เคยเปลี่ยน จึงค้างกติกาเก่าตลอด (30-LC-0013 ปี 2567–68 ยังเป็นของ 106, ใบ IT/IV ปีเก่ายังอยู่)
   const rulesKey = '#sales_lines_rules';
   const rulesSig = (() => {
-    const s = JSON.stringify([require('../lib/salesDocs').NON_SALES_DOC_PREFIXES, [...slmOv].sort()]);
+    // + รหัส Sales ย่อยที่เก็บแยก (2026-10-27, KEEP_SUB_SLM_CODES) — เปลี่ยนแล้วต้องสร้างใหม่ทุกแฟ้มเช่นกัน
+    const s = JSON.stringify([require('../lib/salesDocs').NON_SALES_DOC_PREFIXES, [...slmOv].sort(), [...KEEP_SUB_SLM_CODES].sort()]);
     let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
     return h;
   })();
