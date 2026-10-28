@@ -12,6 +12,8 @@ function makeDb() {
     price_a REAL, price_b REAL, price_c REAL, price_d REAL, price_e REAL, price_f REAL, price_g REAL, is_active INTEGER NOT NULL DEFAULT 1)`);
   db.exec(`CREATE TABLE customer_special_prices (id INTEGER PRIMARY KEY, cust_key TEXT, customer_code TEXT, customer_name TEXT, product_code TEXT,
     price REAL, source_quotation_id TEXT, approved_by TEXT, approved_at TEXT, is_active INTEGER DEFAULT 1, updated_at TEXT)`);
+  db.exec('CREATE TABLE quotation_headers (id TEXT PRIMARY KEY, created_by TEXT)');
+  db.prepare("INSERT INTO quotation_headers VALUES ('Q-S1','s1'),('Q-S2','s2')").run();
   db.prepare("INSERT INTO price_tiers VALUES ('10001-2','ค๊อกเทล 500 ก.','Cocktail 500g','กิโลกรัม',140,150,155,155,160,165,175,1)").run();
   db.prepare("INSERT INTO price_tiers VALUES ('X1','ยกเลิก',NULL,'กก.',1,1,1,1,1,1,1,0)").run();
   db.prepare("INSERT INTO price_tiers VALUES ('NOP','ไม่มีราคา',NULL,'กก.',NULL,NULL,NULL,NULL,NULL,NULL,NULL,1)").run();
@@ -44,7 +46,7 @@ test('ราคาเสนอต่ำกว่าราคาฐานสิ�
 
 test('ราคาพิเศษประจำลูกค้า: เป็นราคาตั้งต้น และราคา ≥ ราคาพิเศษไม่ต้องขออนุมัติซ้ำ', () => {
   const db = makeDb();
-  db.prepare("INSERT INTO customer_special_prices (cust_key, product_code, price) VALUES ('N:ลูกค้าทดสอบ', '10001-2', 150)").run();
+  db.prepare("INSERT INTO customer_special_prices (cust_key, product_code, price, source_quotation_id) VALUES ('N:ลูกค้าทดสอบ', '10001-2', 150, 'Q-S1')").run();
   const d = buildDoc(db, base, sales).lines[0];
   assert.equal(d.quoted_price, 150);
   assert.equal(d.price_source, 'special');
@@ -52,6 +54,16 @@ test('ราคาพิเศษประจำลูกค้า: เป็น
   assert.equal(buildDoc(db, { ...base, lines: [{ product_code: '10001-2', quoted_price: 149 }] }, sales).lines[0].needs_approval, 1);
   // ลูกค้าอื่นไม่ได้ราคาพิเศษนี้
   assert.equal(buildDoc(db, { ...base, customer_name: 'ลูกค้าอื่น' }, sales).lines[0].quoted_price, 165);
+});
+
+// 2026-10-28 (security review): ลูกค้าใหม่ไม่มีรหัส = คีย์จากชื่อที่พิมพ์เอง — Sales อื่นพิมพ์ชื่อเดียวกันต้องไม่ได้ราคาพิเศษนี้
+test('ราคาพิเศษลูกค้าใหม่ (คีย์ชื่อ) ใช้ได้เฉพาะผู้สร้างใบที่ได้รับอนุมัติ', () => {
+  const db = makeDb();
+  db.prepare("INSERT INTO customer_special_prices (cust_key, product_code, price, source_quotation_id) VALUES ('N:ลูกค้าทดสอบ', '10001-2', 150, 'Q-S1')").run();
+  const other = { ...sales, uid: 's2' };
+  const d = buildDoc(db, { ...base, customer_name: ' ลูกค้าทดสอบ ' }, other).lines[0];
+  assert.equal(d.price_source, 'tier');
+  assert.equal(buildDoc(db, { ...base, lines: [{ product_code: '10001-2', quoted_price: 150 }] }, other).lines[0].needs_approval, 1);
 });
 
 test('รหัสไม่มี / ยกเลิกขาย / ไม่มีราคาและไม่ระบุราคา ถูกปฏิเสธ', () => {

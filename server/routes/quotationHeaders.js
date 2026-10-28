@@ -25,6 +25,12 @@ const minTierOf = u => (tierIdx(u.min_price_tier) >= 0 ? String(u.min_price_tier
 const httpErr = (status, msg, extra) => Object.assign(new Error(msg), { status, ...extra });
 // ลูกค้าเดิมใช้รหัส · ลูกค้าใหม่ (ยังไม่มีรหัส) ใช้ชื่อแบบตัดช่องว่าง/ตัวพิมพ์เล็ก
 const custKeyOf = (code, name) => code ? `C:${String(code).trim()}` : `N:${String(name || '').replace(/\s+/g, ' ').trim().toLowerCase()}`;
+// ลูกค้าใหม่ (คีย์ชื่อ N:) — ชื่อพิมพ์เองซ้ำกันได้ (2026-10-28, security review): ใช้ราคาพิเศษได้เฉพาะที่มาจากใบเสนอราคา
+// ของผู้สร้างคนเดียวกัน ไม่งั้น Sales อื่นพิมพ์ชื่อเดียวกันแล้วได้ราคาที่ผู้จัดการอนุมัติให้คนอื่นโดยไม่ต้องขออนุมัติ
+// คืนเงื่อนไข SQL ต่อท้าย WHERE ของ customer_special_prices · ลูกค้ามีรหัส = ไม่กรองเพิ่ม (ตรวจสิทธิ์รหัสแล้วใน buildDoc)
+const specialQuery = (custKey, user) => custKey.startsWith('N:')
+  ? { sql: ' AND source_quotation_id IN (SELECT id FROM quotation_headers WHERE created_by = ?)', params: [user.uid] }
+  : { sql: '', params: [] };
 const EDITABLE = ['draft', 'rejected'];
 
 function tx(db, fn) {
@@ -76,8 +82,9 @@ function buildDoc(db, body, user) {
   if (!raw.length) throw httpErr(400, 'กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ');
   if (raw.length > MAX_LINES) throw httpErr(400, `สินค้าเกิน ${MAX_LINES} รายการ`);
   const get = db.prepare('SELECT * FROM price_tiers WHERE code = ?');
-  const special = db.prepare('SELECT price FROM customer_special_prices WHERE cust_key = ? AND product_code = ? AND is_active = 1');
   const custKey = custKeyOf(head.customer_code, head.customer_name);
+  const sq = specialQuery(custKey, user);
+  const special = db.prepare(`SELECT price FROM customer_special_prices WHERE cust_key = ? AND product_code = ? AND is_active = 1${sq.sql}`);
   const errors = [];
   const lines = raw.map((l, i) => {
     const code = String(l?.product_code ?? '').trim();
@@ -86,7 +93,7 @@ function buildDoc(db, body, user) {
     if (!p.is_active) { errors.push(`แถว ${i + 1}: ${code} ยกเลิกขายแล้ว`); return null; }
     const base = p[col(tier)];
     const floor = p[col(min)];
-    const sp = special.get(custKey, code)?.price ?? null;
+    const sp = special.get(custKey, code, ...sq.params)?.price ?? null;
     // ไม่ระบุราคา = ราคาพิเศษของลูกค้า (ถ้ามี) ไม่งั้นราคาฐานที่เลือก
     const q = l?.quoted_price === '' || l?.quoted_price == null ? (sp ?? base) : Number(l.quoted_price);
     if (!(Number.isFinite(q) && q > 0)) { errors.push(`แถว ${i + 1}: ${code} ไม่มีราคาฐาน ${tier} — กรุณาระบุราคาเสนอ`); return null; }
@@ -159,7 +166,8 @@ module.exports = function quotationHeadersRoutes(db, roles) {
     // ราคาพิเศษของลูกค้าที่ไม่อยู่ในสิทธิ์ = ไม่ส่ง (2026-10-12, security review) · ผู้จัดการเห็นได้ทั้งหมด
     if (code && !isManager(req.user)) { const cs = require('../lib/customerScope'); if (!cs.canSeeCust(cs.resolveScope(db, req.user), code)) return []; }
     const key = custKeyOf(code, req.query.customer_name);
-    return db.prepare('SELECT product_code, price, approved_by, approved_at, source_quotation_id FROM customer_special_prices WHERE cust_key = ? AND is_active = 1').all(key);
+    const sq = isManager(req.user) ? { sql: '', params: [] } : specialQuery(key, req.user);
+    return db.prepare(`SELECT product_code, price, approved_by, approved_at, source_quotation_id FROM customer_special_prices WHERE cust_key = ? AND is_active = 1${sq.sql}`).all(key, ...sq.params);
   }));
   router.get('/special-prices/all', (req, res) => send(res, () => {
     if (!isManager(req.user)) throw httpErr(403, 'เฉพาะผู้จัดการ');

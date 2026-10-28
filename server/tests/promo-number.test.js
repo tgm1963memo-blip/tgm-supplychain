@@ -108,7 +108,8 @@ test('doc_no / promo_no follow the customer code table, renumber drafts and exis
   assert.match((await call(r4, 'PATCH', { status: 'approved' }, 'M')).data[0].promo_no, /^PM\d{4}-0001$/);
 
   // ออกเลขใหม่ให้เอกสารทั้งหมด: ตัวอย่างก่อน แล้ว admin ยืนยัน — เอกสาร PC เดิมของ 30-NU ได้เลขตามรหัส + log
-  const plan = (await call('/promo_draft_headers/renumber-all')).data;
+  assert.equal((await call('/promo_draft_headers/renumber-all', 'GET', undefined, 'S')).status, 403); // ตัวอย่างก็ admin เท่านั้น
+  const plan = (await call('/promo_draft_headers/renumber-all', 'GET', undefined, 'A')).data;
   assert.equal(plan.find(p => p.draft_no === old.draft_no).new_doc_no, old.doc_no); // ไม่มีบรรทัดสินค้า = คงเลขเดิม
   db.prepare('INSERT INTO promo_drafts(draft_no,cust_code,sku,unit_price) VALUES(?,?,?,?)').run(old.draft_no, '30-NU-0011', 'A', 1);
   assert.equal((await call('/promo_draft_headers/renumber-all', 'POST', {}, 'S')).status, 403);

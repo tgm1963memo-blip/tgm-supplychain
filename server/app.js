@@ -161,6 +161,8 @@ function buildApp(db, opts = {}) {
   // ยอดขาย: ตัดลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ + Shop ของบริษัท, 2026-10-14) ทุกผู้ใช้ — lib/nonSales.js
   const ns = require('./lib/nonSales');
   const salesScope = cols => req => ns.withExclude(db, cs.factSql(scopeOf(req), cols), cols.cust);
+  // ตารางที่มีแต่รหัส Sales ไม่มีรหัสลูกค้า (sales_history / v_sales_history_company) — เห็นเฉพาะรหัส Sales ที่ดูได้
+  const slmScope = col => req => { const s = scopeOf(req); return s.all ? null : { sql: `${col} IN (SELECT value FROM json_each(?))`, params: [JSON.stringify(s.slmCodes || [])] }; };
 
   app.use('/api/customers', authed, makeCrudRouter(db, 'customers', {
     pk: 'code',
@@ -185,6 +187,7 @@ function buildApp(db, opts = {}) {
     fields: ['slm_id', 'sku', 'ym', 'qty', 'amount'],
     touch: [],
     readOnly: true,
+    scope: slmScope('slm_id'), // 2026-10-28, security review — ช่องเดียวกับ v_sales_history_company
   }));
 
   app.use('/api/sales_transactions', authed, makeCrudRouter(db, 'sales_transactions', {
@@ -192,6 +195,8 @@ function buildApp(db, opts = {}) {
     fields: ['company', 'tx_date', 'sku', 'cust_code', 'slm_id', 'qty', 'amount', 'so_ref'],
     touch: [],
     readOnly: true,
+    // กรองสิทธิ์อย่างเดียว ไม่ตัดลูกค้า nonSales (ผู้ไม่ถูกจำกัดได้ข้อมูลเท่าเดิม)
+    scope: req => cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_id' }),
   }));
 
   // ยอดขายจริง + ยอดเคลื่อนไหวอื่นต่อ SKU × เดือน สำหรับหน้า ABC Analysis ของ tgm-wms (2026-10-16 ผู้ใช้แจ้ง SKU
@@ -542,9 +547,12 @@ function buildApp(db, opts = {}) {
     pk: 'doc_num',
     // route_code/route_name added 2026-09-16 for tgm-wms's "สายรถ" delivery-route billing feature —
     // see importFromExpress.js's ROUTE_TABTYP comment for where these come from.
-    fields: ['doc_num', 'doc_date', 'cust_code', 'slm_code', 'so_num', 'total', 'rectyp', 'route_code', 'route_name', 'ship_to_code', 'ship_to_address', 'updated_at'],
+    fields: ['doc_num', 'doc_date', 'cust_code', 'slm_code', 'so_num', 'total', 'rectyp', 'route_code', 'route_name', 'ship_to_code', 'ship_to_address', 'remark', 'updated_at'],
     orderBy: 'doc_date',
     readOnly: true,
+    // remark ของบิล OL มีชื่อ/เบอร์/ที่อยู่ผู้รับ (2026-10-28, security review) — กรองตามสิทธิ์ลูกค้าเหมือน /api/invoice_detail/lines
+    // (ผู้ใช้ tgm-wms / ฝ่ายคลัง ไม่ใช่ฝ่ายขาย = ไม่ถูกจำกัด เห็นทั้งหมดเหมือนเดิม)
+    scope: custScope('cust_code'),
   }));
 
   // ค้นหาใบโปรทุกช่วงวันที่ (2026-10-02): หน้า "ใบโปร" โหลดตามช่วงวันที่สร้างเอกสาร — ค้นไม่เจอเพราะใบอยู่นอกช่วง
@@ -716,12 +724,16 @@ function buildApp(db, opts = {}) {
     pk: 'prod_code',
     fields: ['ym', 'company', 'prod_code', 'prod_name', 'prod_group', 'qty', 'amount', 'invoice_count'],
     readOnly: true,
+    // ยอดรวมทั้งบริษัท ไม่มีมิติ Sales/ลูกค้า (2026-10-28, security review) — ผู้ที่ถูกจำกัดได้ว่าง
+    // หน้าเว็บ fallback ไปอ่าน v_sales_history_company / sales_history ที่กรองตามรหัส Sales เอง
+    scope: req => (scopeOf(req).all ? null : { sql: '0', params: [] }),
   }));
 
   app.use('/api/v_sales_history_company', authed, makeCrudRouter(db, 'v_sales_history_company', {
     pk: 'sku',
     fields: ['slm_id', 'sku', 'ym', 'qty', 'amount', 'company', 'product_name', 'group_name', 'plant'],
     readOnly: true,
+    scope: slmScope('slm_id'),
   }));
 
   // Real invoiced revenue (Express's AR ledger, ARTRN.DBF) — see db/schema.sql's invoice_sales_monthly

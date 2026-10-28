@@ -138,6 +138,15 @@ async function readTable(company, baseName) {
   return dbf.readRecords();
 }
 
+// ARTRNRM.DBF ถูกอ่าน 3 จุดต่อรอบ sync (syncSales / buildInvoiceLineComponents / syncInvoices) — อ่านครั้งเดียวต่อบริษัทต่อรอบ
+// (2026-10-28, code review) · cache มีเฉพาะระหว่าง runImport (ล้างใน finally) ไม่ค้างหน่วยความจำข้ามรอบ · ผู้เรียกต้องไม่แก้ array ที่ได้
+let remarkCycleCache = null;
+async function readRemarks(company) {
+  if (!remarkCycleCache) return readTable(company, 'ARTRNRM.DBF');
+  if (!remarkCycleCache.has(company)) remarkCycleCache.set(company, readTable(company, 'ARTRNRM.DBF'));
+  try { return await remarkCycleCache.get(company); } catch (e) { remarkCycleCache.delete(company); throw e; }
+}
+
 function toIsoDate(d) {
   return d instanceof Date && !isNaN(d) ? d.toISOString().slice(0, 10) : null;
 }
@@ -696,7 +705,7 @@ function componentCandidateKey(docNum, seqNum) {
 async function buildInvoiceLineComponents(invoiceLines) {
   const rows = [];
   for (const company of INVOICE_LINE_COMPANIES) {
-    const remarks = await readTable(company, 'ARTRNRM.DBF');
+    const remarks = await readRemarks(company);
     const remarkByDocSeq = new Map();
     for (const rm of remarks) {
       const docNum = cleanText(rm.DOCNUM);
@@ -1055,7 +1064,7 @@ async function syncSales(db) {
   for (const company of SALES_COMPANIES) {
     const headers = await readTable(company, 'OESO.DBF');
     const items = await readTable(company, 'OESOIT.DBF');
-    const remarks = await readTable(company, 'ARTRNRM.DBF');
+    const remarks = await readRemarks(company);
 
     const byOrder = new Map();
     for (const h of headers) {
@@ -1287,6 +1296,25 @@ const INVOICE_SYNC_WINDOW_DAYS = 90;
 // (คอลัมน์ที่ JOIN ใช้เท่านั้น) ครั้งแรก backfill ตั้งแต่ HEAD_HISTORY_FROM · รอบต่อไปอัปเดตเฉพาะช่วง 90 วันล่าสุด
 const HEAD_HISTORY_FROM = '2024-01-01';
 
+// หมายเหตุท้ายบิล (ARTRNRM.DBF) ต่อเลขที่บิล เรียงตามลำดับในแฟ้ม — บิล OL เก็บ "คุณ X โทร.0xx" + ที่อยู่ 2-3 บรรทัด,
+// บิล AB เก็บสาขา (เช่น "C.ชลบุรี") · ตัดบรรทัดส่วนประกอบสินค้าชุด (รหัส + จำนวน เช่น "90022 ... 20p") ที่อยู่แฟ้มเดียวกันออก
+async function loadInvoiceRemarks(company, docNums) {
+  const out = new Map();
+  for (const rm of await readRemarks(company)) {
+    const docNum = cleanText(rm.DOCNUM);
+    if (!docNums.has(docNum)) continue;
+    const text = cleanText(rm.REMARK);
+    if (!text) continue;
+    const comp = parseSalesLineComponentRemark(text);
+    if (comp?.childCode && comp.childQty > 0) continue;
+    // น้ำหนักรายบรรทัดของ SO (เช่น "(10กก)" ที่ SB…) ไม่ใช่ข้อมูลจัดส่ง
+    if (/^\(?\s*\d+(?:\.\d+)?\s*(?:กก|กิโล|kg)\.?\s*\)?$/i.test(text)) continue;
+    if (!out.has(docNum)) out.set(docNum, []);
+    out.get(docNum).push(text);
+  }
+  return out;
+}
+
 async function syncInvoices(db) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - INVOICE_SYNC_WINDOW_DAYS);
@@ -1307,13 +1335,13 @@ async function syncInvoices(db) {
   const shipToAddresses = await loadShipToAddressMap();
 
   const upsert = db.prepare(`
-    INSERT INTO invoices (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_code, route_name, ship_to_code, ship_to_address, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    INSERT INTO invoices (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_code, route_name, ship_to_code, ship_to_address, remark, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(doc_num) DO UPDATE SET doc_date = excluded.doc_date, cust_code = excluded.cust_code,
       slm_code = excluded.slm_code, so_num = excluded.so_num, total = excluded.total,
       rectyp = excluded.rectyp, route_code = excluded.route_code, route_name = excluded.route_name,
       ship_to_code = excluded.ship_to_code, ship_to_address = excluded.ship_to_address,
-      updated_at = excluded.updated_at
+      remark = CASE WHEN ? THEN excluded.remark ELSE invoices.remark END, updated_at = excluded.updated_at
   `);
   // Keep the document-level invoice import aligned with syncInvoiceSales() above.
   const INVOICE_RECTYP = new Set(['0', '1', '3', '5']);
@@ -1326,6 +1354,15 @@ async function syncInvoices(db) {
     let rows = [];
     try { rows = await readTable(company, 'ARTRN.DBF'); } catch (e) { console.warn(`[importFromExpress] invoice heads: read ${company} failed:`, e.message); }
     if (rows.length) readOk.push(company); else unreadable = true;
+    // รวมเลข SO ของบิลด้วย — บิลที่เปิดจาก SO มักพิมพ์ชื่อ/ที่อยู่ผู้รับไว้ที่ SO (ARTRNRM แฟ้มเดียวกัน) ไม่ใช่ที่บิล
+    const recentDocs = new Set(rows.filter(r => r.DOCDAT instanceof Date && r.DOCDAT >= cutoff && r.DOCNUM)
+      .flatMap(r => [r.DOCNUM.trim(), (r.SONUM || '').trim()]).filter(Boolean));
+    let remarks = new Map();
+    // อ่าน ARTRNRM ไม่ได้ (เช่น Express ล็อกแฟ้ม) = คง remark เดิมไว้ ไม่เขียนทับเป็นค่าว่าง (2026-10-28, code review)
+    let remarksOk = 1;
+    if (recentDocs.size) {
+      try { remarks = await loadInvoiceRemarks(company, recentDocs); } catch (e) { remarksOk = 0; console.warn(`[importFromExpress] invoice remarks: read ${company} failed:`, e.message); }
+    }
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
       if (!r.DOCNUM) continue;
@@ -1356,6 +1393,8 @@ async function syncInvoices(db) {
       upsert.run(
         docNum, toIsoDate(r.DOCDAT), custCode, normalizeSlmCode(r.SLMCOD) || null,
         (r.SONUM || '').trim() || null, signedTotal, r.RECTYP, routeCode, routeName, shipToCode, shipToAddress,
+        (remarks.get(docNum) || remarks.get((r.SONUM || '').trim()))?.join('\n') || null,
+        remarksOk,
       );
     }
   }
@@ -1773,6 +1812,7 @@ async function runImport(db) {
   const info = db.prepare('INSERT INTO sync_log (source, started_at, status) VALUES (?, ?, ?)').run(EXPRESS_ROOT, startedAt, 'running');
   const logId = info.lastInsertRowid;
   let rowsProcessed = 0;
+  remarkCycleCache = new Map();
 
   try {
     // ADDED (2026-08-20): confirmed live via service-stdout-20260820T005006 log that Z:\ExpressI can go
@@ -1828,6 +1868,8 @@ async function runImport(db) {
     console.error('[importFromExpress] failed:', e.message);
     db.prepare("UPDATE sync_log SET finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), status = 'error', message = ?, rows_processed = ? WHERE id = ?")
       .run(e.message, rowsProcessed, logId);
+  } finally {
+    remarkCycleCache = null;
   }
 }
 

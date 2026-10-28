@@ -357,6 +357,9 @@ function runMigrations(db) {
   // joining ARSHIP.DBF on CUSCOD+SHIPTO at sync time so tgm-wms can print the real delivery place.
   addColumnIfMissing(db, 'invoices', 'ship_to_code', 'ship_to_code TEXT');
   addColumnIfMissing(db, 'invoices', 'ship_to_address', 'ship_to_address TEXT');
+  // invoices.remark (2026-10-27, tgm-wms "แยกบิลตามสายส่ง"): หมายเหตุท้ายบิลจาก ARTRNRM.DBF — บิล OL (ออนไลน์)
+  // เก็บชื่อ/เบอร์/ที่อยู่ผู้รับไว้ที่นี่ ไม่มีใน ARSHIP
+  addColumnIfMissing(db, 'invoices', 'remark', 'remark TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_route_code ON invoices(route_code)');
   // Dashboard and Sales Overview read current-year aggregates by month and salesperson on every open.
   // Keep those reads index-backed so the single SQLite-backed API does not stall the UI as history grows.

@@ -77,12 +77,15 @@ function applyHeaderChange(db, target, input, user, opts = {}) {
   }
   return saved;
 }
-// URL สาธารณะของ server (ใช้สร้างลิงก์อนุมัติในอีเมล) — PUBLIC_API_URL ถ้าตั้งไว้ ไม่งั้นใช้ host ที่ request
-// เข้ามา (ผ่าน tunnel จะได้ URL ของ tunnel เอง)
-function publicBaseUrl(req) {
+// URL สาธารณะของ server (ใช้สร้างลิงก์อนุมัติในอีเมล) — PUBLIC_API_URL ถ้าตั้งไว้ ไม่งั้นใช้ API URL ที่หน้าเว็บใช้
+// (deploy-shared/api-config.js — อ่านใหม่ทุกครั้ง เพราะ URL ของ tunnel เปลี่ยนได้โดยไม่ restart server)
+// FIXED (2026-10-28, security review): เดิม fallback เป็น Host / X-Forwarded-Proto ของ request — ผู้ใช้ปลอม header
+// ให้ลิงก์อนุมัติในอีเมลชี้ไปโดเมนของตัวเอง แล้วขโมย token อนุมัติได้ · ห้ามใช้ค่าจาก request สร้างลิงก์
+function publicBaseUrl(_req) {
   if (process.env.PUBLIC_API_URL) return process.env.PUBLIC_API_URL.replace(/\/+$/, '');
-  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
-  return `${proto}://${req.get('host')}`;
+  const cfgPath = require.resolve('../../deploy-shared/api-config');
+  delete require.cache[cfgPath];
+  return require(cfgPath).getApiBase();
 }
 
 function parseRow(row) {
@@ -127,7 +130,8 @@ module.exports = function promoDraftHeadersRoutes(db, writeRoles) {
     res.json(promoNo.previewForCodes(db, codes));
   });
   // ออกเลขใหม่ให้เอกสารทั้งหมดตามตาราง — GET = ตัวอย่าง, POST = บันทึก (admin) + log เลขเดิม
-  router.get('/renumber-all', (req, res) => res.json(promoNo.planRenumberAll(db)));
+  // ตัวอย่างก็ admin เท่านั้น (2026-10-28, security review) — คืนเลขที่/ชื่อโปรของใบทั้งบริษัท ไม่ผ่านการกรองสิทธิ์เห็นใบ
+  router.get('/renumber-all', requireRole(...MAP_ADMIN), (req, res) => res.json(promoNo.planRenumberAll(db)));
   router.post('/renumber-all', requireRole(...MAP_ADMIN), (req, res) => {
     try {
       db.exec('BEGIN IMMEDIATE');

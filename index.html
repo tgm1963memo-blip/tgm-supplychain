@@ -650,6 +650,46 @@ const CDN = {
   xlsx: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
   chart: 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js',
 };
+// ── Typing focus guard ───────────────────────────────────────────
+// หลายหน้า render innerHTML ใหม่ทั้งก้อน (รวมช่องค้นหา) ทุก keystroke → ช่องเดิมถูกถอดออกจาก DOM, focus หลุด
+// พิมพ์ได้ทีละตัวต้องคลิกช่องใหม่ทุกครั้ง. ตัวนี้จำช่องที่กำลังพิมพ์ แล้วคืน focus + ตำแหน่ง cursor ให้ช่องใหม่
+// (id เดียวกัน หรือ oninput/placeholder/name เดียวกัน) หลัง re-render — รวมกรณี render แบบ async ภายใน 2 วินาที
+(function () {
+  const TEXTY = /^(text|search|tel|url|email|number|password)$/;
+  const sigOf = el => (el.getAttribute('oninput') || '') + '|' + (el.getAttribute('placeholder') || '') + '|' + (el.name || '');
+  const sameSig = sig => [...document.querySelectorAll('input,textarea')].filter(x => !x.id && sigOf(x) === sig);
+  let last = null, until = 0, mo = null;
+  const stop = () => { last = null; if (mo) { mo.disconnect(); mo = null; } };
+  const restore = () => {
+    if (!last) return;
+    if (Date.now() > until) return stop();
+    if (last.el.isConnected) return; // ช่องเดิมยังอยู่ = ไม่ได้ถูก re-render
+    const a = document.activeElement;
+    if (a && a !== document.body && a !== document.documentElement && a.isConnected) return stop(); // ผู้ใช้ย้ายไปช่องอื่นแล้ว
+    let el = last.id ? document.getElementById(last.id) : null;
+    // ไม่มี id: ช่องที่ซ้ำกันทุกแถว (oninput/placeholder/name เหมือนกัน) แยกด้วยลำดับ — จำนวนช่องต้องเท่าเดิม
+    // ไม่งั้นไม่รู้ว่าแถวไหน = ไม่คืน focus (ดีกว่าย้ายไปพิมพ์ทับแถวอื่น)
+    if (!el && !last.id) { const same = sameSig(last.sig); el = same.length === last.n ? same[last.i] || null : null; }
+    if (!el || el.disabled || el.readOnly) return;
+    last.el = el;
+    el.focus({ preventScroll: true });
+    try {
+      const n = el.value.length;
+      el.setSelectionRange(Math.min(last.s, n), Math.min(last.e, n));
+    } catch (_) { /* type=number ไม่รองรับ selection */ }
+  };
+  document.addEventListener('input', ev => {
+    const el = ev.target;
+    if (!el || !(el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && TEXTY.test(el.type || 'text')))) return;
+    let s = 0, e = 0;
+    try { s = el.selectionStart ?? el.value.length; e = el.selectionEnd ?? s; } catch (_) { s = e = el.value.length; }
+    const sig = sigOf(el), same = el.id ? [] : sameSig(sig);
+    last = { el, id: el.id || '', sig, i: same.indexOf(el), n: same.length, s, e };
+    until = Date.now() + 2000;
+    if (!mo) { mo = new MutationObserver(restore); mo.observe(document.body, { childList: true, subtree: true }); }
+  }, true);
+  document.addEventListener('mousedown', ev => { if (last && ev.target !== last.el) stop(); }, true);
+})();
 const _assetLoads = {};
 function loadAsset(name, url, ready) {
   if (ready()) return Promise.resolve();
