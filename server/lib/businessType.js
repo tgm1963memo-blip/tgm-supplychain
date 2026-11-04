@@ -29,6 +29,8 @@ const BUSINESS_TYPE_KEYS = new Set(BUSINESS_TYPES.map((t) => t.key));
 const MALL_RE = /เซ็นทรัล\s*ฟุ้ด|เซ็นทรัล\s*ฟู้ด\s*รีเทล|central\s*food|tops|ท็อปส์|บิ๊กซี|big\s*c|วิลล่า|villa|โลตัส|lotus|เดอะมอลล์|the\s*mall|อิออน|aeon|ลอว์สัน|lawson|ฟู้ดแลนด์|foodland|ยูเอฟเอ็ม|ufm|ซี\.จ|cj\s*more|ซุปเปอร์ชีป|ไอคอนสยาม|iconsiam|มิตซูโคชิ|ซีพี\s*ออลล์|7-?eleven|เซเว่น|gourmet|กูร์เมต์|max\s*valu|แม็กซ์\s*แวลู|rimping|ริมปิง|ภูเก็ตโกรเซอรี่|ซี\.เจ|makro|แม็คโคร|แม็กโคร|แมคโคร|แอ็กซ์ตร้า|เอ็มโพเรี่ยม|สยามพารากอน|go\s*wholesale/i;
 const SHOP_RE = /สุทธิดา|สุธิดา|shop\s*พระราม\s*3|shop\s*โรงงาน|tgm\.?\s*shop|ที\.จี\.เอ็ม\.\s*ช็อป|ซุปเปอร์\s*โรงงาน|pos\s*ซุปเปอร์/i;
 const AFFILIATE_RE = /บริษัทในเครือ|ไทย-เยอรมัน\s*มีท|^ไทย-เยอรมัน$|ไทยซอสเซส|ทีจี\s*โคลด์\s*สตอเรจ/;
+// ไทยซอสเซส มีทซัพพลาย นับเป็นยอดขาย ไม่ใช่บริษัทในเครือ (2026-11-04, ผู้ใช้สั่ง) — ไทยซอสเซส มาร์เก็ตติ้ง ยังเป็นบริษัทในเครือ
+const NOT_AFFILIATE_RE = /ไทยซอสเซส\s*มีท\s*ซัพพลาย/;
 const OTHER_RE = /เบิกตัวอย่าง|ออกบูธ|(^|\|\s*)วัด/;
 const HOTEL_RE = /โรงแรม|hotel|resort|รีสอร์ท|คันทรี่\s*คลับ|country\s*club|กอล์ฟ|golf|อพาร์ท|apartment|เรสซิเดนซ์|residence|โฮเทล|โฮสเทล|hostel|ฮอสพิแทลลิตี้|hospitality/i;
 const CATERING_RE = /เคเทอ|catering|จัดเลี้ยง|เอ็กซิบิชั่น|exhibition/i;
@@ -44,7 +46,7 @@ function guessBusinessType({ code = '', name = '', category = '', corporate = ''
   if (execChannel === 'shop_factory' || execChannel === 'shop_rama3' || SHOP_RE.test(all)) return 'company_shop';
   // เบิกตัวอย่าง/ออกบูธ ก่อนบริษัทในเครือ — รหัสเบิกตัวอย่างบางรายตั้งชื่อเป็นบริษัทในเครือ (01-IH-0007 ไทยซอสเซสพัทยา)
   if (OTHER_RE.test(`${cat} | ${corp} | ${name}`)) return 'other';
-  if ([cat, corp, name].some((v) => AFFILIATE_RE.test(String(v).trim()))) return 'affiliate';
+  if ([cat, corp, name].some((v) => AFFILIATE_RE.test(String(v).trim()) && !NOT_AFFILIATE_RE.test(String(v)))) return 'affiliate';
   if (/พนักงาน/.test(`${cat} | ${corp}`) || /^20-LG/.test(code)) return 'employee';
   if (hasExport || execChannel === 'export_agent') return 'export';
   if (/^online$/i.test(cat) || /^online$/i.test(corp) || execChannel === 'online') return 'online';

@@ -405,4 +405,26 @@ function applySalesGroupsFix20261019(db) {
   console.log(`[migrations] sales groups corp-note fix 2026-10-19: ${n}/${items.length} customers`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014, applySalesGroupsFix20261019 };
+// ไทยซอสเซส มีทซัพพลาย จำกัด นับเป็นยอดขาย และเป็นลูกค้าของคุณอุ้ม 114 (2026-11-04, ผู้ใช้สั่ง)
+// เดิมถูกตัดจากยอดเพราะระบบเดาเป็น affiliate จากคำว่า "ไทยซอสเซส" (lib/nonSales.js) — ตั้ง manual กันระบบเดาทับ
+// LA-30-0005 ไม่ตั้ง override: ใบปัจจุบันลงรหัส 114 อยู่แล้ว ส่วนใบก่อน พ.ย. 2567 เป็นยอดของคุณหลิน 111 ต้องคงไว้
+function applyMeatSupplyCounted20261104(db) {
+  const id = '20261104_meat_supply_counted_oum';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const by = 'user-2026-11-04';
+  const setProfile = db.prepare(`UPDATE customer_profiles SET corporate = ?, corp_source = 'manual', corp_confirmed = 1,
+      corp_confirmed_by = ?, corp_confirmed_at = ?, business_type = 'agent', business_type_source = 'manual',
+      sales_category = COALESCE(NULLIF(TRIM(sales_category), ''), 'Agent Domestic'), edited_by = ?, updated_at = ?
+    WHERE code = ?`);
+  const setOwner = db.prepare('INSERT OR IGNORE INTO sales_slm_override (cust_code, slm_code, note) VALUES (?, ?, ?)');
+  const now = new Date().toISOString();
+  for (const code of ['LA-30-0005', 'TSM-02-QA', '30-NL-0001', '30-TS-0002']) {
+    setProfile.run('ไทยซอสเซส มีทซัพพลาย จำกัด', by, now, by, now, code);
+  }
+  for (const code of ['TSM-02-QA', '30-NL-0001']) {
+    setOwner.run(code, '114', 'ไทยซอสเซส มีทซัพพลาย — เป็นของคุณอุ้ม (114) ตามที่ผู้ใช้สั่ง 2026-11-04');
+  }
+  db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014, applySalesGroupsFix20261019, applyMeatSupplyCounted20261104 };

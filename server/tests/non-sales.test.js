@@ -45,3 +45,38 @@ test('remaining sales categories come from existing system groups', () => {
   assert.equal(get('01-ON-0001'), 'Online');
   assert.equal(get('CNC-01-QC'), 'Direct Domestic');
 });
+
+// ไทยซอสเซส มีทซัพพลาย นับเป็นยอดขาย (2026-11-04) — ไทยซอสเซส มาร์เก็ตติ้ง ยังตัดเหมือนเดิม
+test('Thai Sausage Meat Supply counts as sales and belongs to 114; Marketing stays excluded', () => {
+  const { guessBusinessType } = require('../lib/businessType');
+  const { applyMeatSupplyCounted20261104 } = require('../db/customerProfilesV2');
+  assert.notEqual(guessBusinessType({ name: 'ไทยซอสเซสมีทซัพพลาย จำกัด' }), 'affiliate');
+  assert.notEqual(guessBusinessType({ name: 'ไทยซอสเซส มีทซัพพลาย จำกัด' }), 'affiliate');
+  assert.equal(guessBusinessType({ name: 'ไทยซอสเซส มาร์เก็ตติ้ง จำกัด' }), 'affiliate');
+
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  db.prepare("DELETE FROM app_migrations WHERE id = '20261104_meat_supply_counted_oum'").run();
+  db.prepare("DELETE FROM sales_slm_override WHERE cust_code IN ('TSM-02-QA', '30-NL-0001')").run();
+  const p = db.prepare(`INSERT INTO customer_profiles (code, corporate, category, business_type, business_type_source, sales_category) VALUES (?, ?, ?, 'affiliate', 'auto', ?)
+    ON CONFLICT(code) DO UPDATE SET corporate = excluded.corporate, category = excluded.category, business_type = 'affiliate', business_type_source = 'auto', sales_category = excluded.sales_category`);
+  p.run('LA-30-0005', 'ไทยซอสเซส มีทซัพพลาย จำกัด', 'ร้านค้าทั่วไป', 'Agent Domestic');
+  p.run('TSM-02-QA', 'ไทยซอสเซส (บริษัทในเครือ)', null, null);
+  p.run('30-NL-0001', 'ไทยซอสเซส มีทซัพพลาย', null, null);
+  p.run('30-TS-0002', 'ไทยซอสเซส (บริษัทในเครือ)', null, null);
+  p.run('TSM-01-QD', 'ไทยซอสเซส (บริษัทในเครือ)', null, null);
+  applyMeatSupplyCounted20261104(db);
+  applyMeatSupplyCounted20261104(db); // รันซ้ำต้องไม่พัง
+  resetNonSalesCache();
+  const ns = nonSalesCodes(db);
+  for (const c of ['LA-30-0005', 'TSM-02-QA', '30-NL-0001', '30-TS-0002']) assert.ok(!ns.has(c), c);
+  assert.ok(ns.has('TSM-01-QD'));
+  const owner = (c) => db.prepare('SELECT slm_code FROM sales_slm_override WHERE cust_code = ?').get(c)?.slm_code;
+  assert.equal(owner('TSM-02-QA'), '114');
+  assert.equal(owner('30-NL-0001'), '114');
+  assert.equal(owner('LA-30-0005'), undefined); // ยอดเก่าของคุณหลิน 111 ต้องไม่ย้าย
+  assert.equal(db.prepare("SELECT business_type_source s FROM customer_profiles WHERE code = 'LA-30-0005'").get().s, 'manual');
+  resetNonSalesCache();
+  db.close();
+});
