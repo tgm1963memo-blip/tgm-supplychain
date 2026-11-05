@@ -169,9 +169,9 @@ function buildLines(rows, ctx) {
 //   1) ลูกค้าของเซลส์เจ้าของใบ (customers.slm_id) — ยอมรับเมื่อได้รายเดียว หรือหลายรายแต่เลือกจากยอดขายปีนี้ได้
 //   2) ลูกค้าทั้งหมด — ยอมรับเฉพาะรายที่มียอดขายจริงปีนี้ (กันจับชื่อคน/รหัสเก่าที่ไม่ใช้แล้ว) เลือกยอดสูงสุด
 // ใช้ตั้งชื่อ/จัดกลุ่มในหน้าเว็บเท่านั้น ไม่ใช้กำหนดสิทธิ์ (สิทธิ์ยังตามเจ้าของใบ)
-const CUST_MATCH_VERSION = 1;
+const CUST_MATCH_VERSION = 2;
 const CHAIN_ALIAS = {
-  'The Mall': ['เดอะมอลล์', 'themall', 'เดอะมอล', 'สยามพารากอน', 'พารากอน', 'เอ็มควอเทียร์', 'เอ็มโพเรียม'],
+  'The Mall': ['เดอะมอลล์', 'themall', 'เดอะมอล'],
   'Makro': ['แม็คโคร', 'makro', 'แมคโคร', 'แม็กโคร'],
   'Big C': ['บิ๊กซี', 'bigc'],
   'Tops': ['ท็อปส์', 'tops', 'ท๊อปส์'],
@@ -180,6 +180,9 @@ const CHAIN_ALIAS = {
   'โลตัส': ['โลตัส', 'lotus'],
   'ซีพี แอ็กซ์ตร้า': ['ซีพีแอ็กซ์ตร้า', 'ซีพีแอ็กซ์คร้า', 'cpaxtra'],
 };
+// สาขาในกลุ่มเดอะมอลล์ที่เป็นบริษัทแยก ("The Mall/เอ็มควอเทียร์") → ชื่อขึ้นต้นของลูกค้าในระบบ (เอ็ม ควอเทียร์ จำกัด ฯลฯ)
+const MALL_SUB = { 'เอ็มควอเทียร์': 'เอ็มควอเทียร์', 'เอ็มโพเรียม': 'เอ็มโพเรียม', 'พารากอน': 'สยามพารากอน', 'สยามพารากอน': 'สยามพารากอน',
+  'พรอมานาด': 'พรอมานาด', 'โพรมานาด': 'พรอมานาด', 'เดอะพรอมานาด': 'พรอมานาด' };
 const normCust = s => T(s).toLowerCase()
   .replace(/บริษัท|บจก\.?|บ\.|หจก\.?|ห้างหุ้นส่วนจำกัด|จำกัด|มหาชน|ร้าน|คุณ|สาขา|สนญ\.?|co\.?,?\s*ltd\.?|ltd\.?/g, ' ')
   .replace(/[^0-9a-z฀-๿]+/g, '');
@@ -197,7 +200,8 @@ function remarkParts(remark) {
 function displayFromRemark(remark) {
   const parts = remarkParts(remark);
   if (!parts.length) return '';
-  return parts.map(p => { const c = Object.entries(CHAIN_ALIAS).find(([, al]) => al.some(a => normCust(p) === a)); return c ? c[0] : p; }).join(' / ');
+  const shown = parts.map(p => { const c = Object.entries(CHAIN_ALIAS).find(([, al]) => al.some(a => normCust(p) === a)); return c ? c[0] : p; });
+  return [...new Set(shown)].join(' / ');
 }
 // customers: [{code, name, slm_id, sales}] — sales = ยอดขายปีนี้ (ใช้เลือกรหัสที่ยังใช้งานจริง)
 function buildCustIndex(customers) {
@@ -215,7 +219,8 @@ function matchCustomer(remark, ownerSlm, idx) {
         .map(s => chain.reduce((x, a) => x.replace(a, ''), s)).filter(s => s.length >= 3);
       if (!branch.length) return []; // รู้แค่เชน ไม่รู้สาขา
       // ชื่อต้องขึ้นต้นด้วยชื่อเชน — กัน "ไทยยามาซากิ (สาขาเดอะมอลล์บางแค)" ถูกนับเป็นเดอะมอลล์บางแค
-      return pool.filter(c => chain.some(a => c.n.startsWith(a)) && branch.some(b => c.n.includes(b)));
+      const subs = chain === CHAIN_ALIAS['The Mall'] ? branch.map(b => MALL_SUB[b]).filter(Boolean) : [];
+      return pool.filter(c => (chain.some(a => c.n.startsWith(a)) && branch.some(b => c.n.includes(b))) || subs.some(p => c.n.startsWith(p)));
     }
     return pool.filter(c => segs.some(s => c.n === s || (s.length >= minLen && c.n.includes(s)) || (c.n.length >= minLen && s.includes(c.n))));
   };

@@ -143,6 +143,8 @@ test('sample issues: match customer from remark', () => {
     { code: 'TA-IA-0020', name: 'โชติรส (ผู้จัดการออลนอร์ธ เชียงราย)', slm_id: '12', sales: 0 },
     { code: '01-OT-0001', name: 'ลูกค้าเงินสด..Tiktok', slm_id: '101', sales: 5000 },
     { code: '01-IH-0098', name: 'โชติรส ศรีสยาม (คุณโอ๊ต)', slm_id: '101', sales: 0 },
+    { code: '30-MZ-0011', name: 'สยามพารากอน รีเทล จำกัด', slm_id: '213', sales: 1685150 },
+    { code: '01-M2-0018', name: 'เอ็ม ควอเทียร์ จำกัด (ของชิม)', slm_id: '209', sales: 8378 },
   ]);
   // เจ้าของใบมีลูกค้ารายนี้ → ใช้ของเจ้าของ (แม้รายอื่นยอดสูงกว่า)
   assert.equal(si.matchCustomer('The Mall/บางแค/สาย21', '212', idx).code, '01-M2-0005');
@@ -153,6 +155,10 @@ test('sample issues: match customer from remark', () => {
   assert.equal(si.matchCustomer('โชติรส ศรีสยาม/P', '', idx), null, 'ไม่จับชื่อคน/รหัสภายใน');
   assert.equal(si.matchCustomer('ลูกค้า/เมกาบางนา', '', idx), null, 'คำกลางๆ ไม่ใช้จับ');
   assert.equal(si.matchCustomer('Makro/เซลล์ส่ง', '', idx), null, 'รู้แค่เชน');
+  // สาขาที่เป็นบริษัทแยกในกลุ่มเดอะมอลล์
+  assert.equal(si.matchCustomer('The Mall/พารากอน/สาย11', '', idx).code, '30-MZ-0011');
+  assert.equal(si.matchCustomer('The Mall/เอ็มควอเทียร์/สาย22', '', idx).code, '01-M2-0018');
+  assert.equal(si.displayFromRemark('The Mall/เอ็มโพเรียม/สาย22'), 'The Mall / เอ็มโพเรียม');
   // ชื่อแสดงจากหมายเหตุ
   assert.equal(si.displayFromRemark('Makro/มหาชัย/เซลล์ส่ง'), 'Makro / มหาชัย');
   assert.equal(si.displayFromRemark('The Mall/The Mall/สาย3'), 'The Mall');
