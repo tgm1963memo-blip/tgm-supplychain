@@ -46,10 +46,11 @@ module.exports = function sampleIssuesRoutes(db) {
     if (f) { where.push(f.sql); params.push(...f.params); }
     const cost = canCost(req.user);
     const rows = db.prepare(`SELECT doc_date, doc_num, prefix, kind, sku, sku_name, qty, unit, sell_value, cost_value, owner_slm,
-        cust_code, owner_cust_name, owner_from FROM v_sample_issue_lines WHERE ${where.join(' AND ')} ORDER BY doc_date, doc_num, seq`)
+        cust_code, cust_match, cust_name, owner_cust_name, owner_from FROM v_sample_issue_lines WHERE ${where.join(' AND ')} ORDER BY doc_date, doc_num, seq`)
       .all(...params)
+      // รหัสลูกค้า (คอลัมน์ที่หน้าเว็บใช้จัดกลุ่ม): ผู้จัดการพิมพ์ชื่อเอง = จัดกลุ่มตามชื่อนั้น · จับลูกค้าในระบบได้ = รหัสนั้น · อื่นๆ = รหัสในใบ
       .map(r => [r.doc_date, r.doc_num, r.prefix, r.kind, r.sku, r.sku_name, r.qty, r.unit, r.sell_value, cost ? r.cost_value : null,
-        r.owner_slm, r.cust_code, r.owner_cust_name, r.owner_from]);
+        r.owner_slm, r.owner_cust_name !== r.cust_name ? '' : (r.cust_match || r.cust_code), r.owner_cust_name, r.owner_from]);
     const sync = db.prepare("SELECT MAX(synced_at) AS at FROM sync_file_state WHERE source LIKE '%#sample_issues'").get();
     res.json({ from, to, can_cost: cost, can_manage: canManage(req.user), synced_at: sync?.at || null, slm_names: slmNames(), rows });
   });

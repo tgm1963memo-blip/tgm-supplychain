@@ -163,7 +163,76 @@ function buildLines(rows, ctx) {
   return out;
 }
 
+// ── ชื่อลูกค้าจากหมายเหตุ → ลูกค้าในระบบ (2026-11-05, ผู้ใช้ขอ "ใช้ชื่อเดียวกับในระบบ ถ้าไม่มีให้ใช้ชื่อจากหมายเหตุ") ──────────
+// ใบ KA/KB/PD: STTRN.REMARK เช่น "The Mall/บางแค/สาย21", "สห ลอว์สัน/P" · ใบ LA: ARTRNRM (มีแค่ ~1% ของใบ — ที่เหลือไม่มีชื่อลูกค้าใน Express)
+// ข้อมูลลูกค้ามีรหัสซ้ำหลายรหัสต่อสาขา (เดอะมอลล์ 7 (บางแค) ~8 รหัส) จึงเลือกแบบระวัง:
+//   1) ลูกค้าของเซลส์เจ้าของใบ (customers.slm_id) — ยอมรับเมื่อได้รายเดียว หรือหลายรายแต่เลือกจากยอดขายปีนี้ได้
+//   2) ลูกค้าทั้งหมด — ยอมรับเฉพาะรายที่มียอดขายจริงปีนี้ (กันจับชื่อคน/รหัสเก่าที่ไม่ใช้แล้ว) เลือกยอดสูงสุด
+// ใช้ตั้งชื่อ/จัดกลุ่มในหน้าเว็บเท่านั้น ไม่ใช้กำหนดสิทธิ์ (สิทธิ์ยังตามเจ้าของใบ)
+const CUST_MATCH_VERSION = 1;
+const CHAIN_ALIAS = {
+  'The Mall': ['เดอะมอลล์', 'themall', 'เดอะมอล', 'สยามพารากอน', 'พารากอน', 'เอ็มควอเทียร์', 'เอ็มโพเรียม'],
+  'Makro': ['แม็คโคร', 'makro', 'แมคโคร', 'แม็กโคร'],
+  'Big C': ['บิ๊กซี', 'bigc'],
+  'Tops': ['ท็อปส์', 'tops', 'ท๊อปส์'],
+  'วิลล่า': ['วิลล่า', 'villa'],
+  'ริมปิง': ['ตันตราภัณฑ์', 'ริมปิง', 'ตัณตราภัณฑ์'],
+  'โลตัส': ['โลตัส', 'lotus'],
+  'ซีพี แอ็กซ์ตร้า': ['ซีพีแอ็กซ์ตร้า', 'ซีพีแอ็กซ์คร้า', 'cpaxtra'],
+};
+const normCust = s => T(s).toLowerCase()
+  .replace(/บริษัท|บจก\.?|บ\.|หจก\.?|ห้างหุ้นส่วนจำกัด|จำกัด|มหาชน|ร้าน|คุณ|สาขา|สนญ\.?|co\.?,?\s*ltd\.?|ltd\.?/g, ' ')
+  .replace(/[^0-9a-z฀-๿]+/g, '');
+// ส่วนของหมายเหตุที่เป็นชื่อปลายทาง: ตัด /P (ผู้คีย์), สายรถ, "เซลล์ส่ง…", "เบิกให้…"
+const NOISE_RE = /สาย\s*\S+|เซล(?:ล์|ส์|ล)?\s*ส่ง.*|ส่งเอง.*|ด่วน|^ว่าง$|^เบิก(?:ไป)?ให้\s*|รับของ.*|ขอรับ.*/g;
+// คำกลางๆ ที่ไม่ใช่ชื่อลูกค้า — ห้ามใช้จับชื่อ (เคยจับ "ลูกค้า/เมกาบางนา" ไปเป็น "ลูกค้าเงินสด..Tiktok")
+const GENERIC_PARTS = new Set(['ลูกค้า', 'คุณ', 'พี่', 'น้อง', 'เซลล์', 'เซลส์', 'สินค้า', 'ตัวอย่าง', 'p', 'm', 'm1', 'mei']);
+function remarkParts(remark) {
+  const seen = new Set();
+  return stripKeyerTag(remark).split(/[\/,]/).map(s => T(s.replace(NOISE_RE, '')))
+    .filter(s => s && !/^\d/.test(s) && !GENERIC_PARTS.has(s.toLowerCase()))
+    .filter(s => { const k = normCust(s); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+}
+// ชื่อสำหรับแสดงเมื่อหาลูกค้าในระบบไม่ได้ = หมายเหตุที่ตัดส่วนเกินแล้ว (เชนในชื่อมาตรฐาน)
+function displayFromRemark(remark) {
+  const parts = remarkParts(remark);
+  if (!parts.length) return '';
+  return parts.map(p => { const c = Object.entries(CHAIN_ALIAS).find(([, al]) => al.some(a => normCust(p) === a)); return c ? c[0] : p; }).join(' / ');
+}
+// customers: [{code, name, slm_id, sales}] — sales = ยอดขายปีนี้ (ใช้เลือกรหัสที่ยังใช้งานจริง)
+function buildCustIndex(customers) {
+  return customers.filter(c => !/^01-I[AH]-/.test(c.code)) // รหัสภายใน (พนักงาน/งานออกบูธ)
+    .map(c => ({ code: c.code, name: T(c.name), slm: T(c.slm_id), sales: Number(c.sales) || 0, n: normCust(c.name) }))
+    .filter(c => c.n.length >= 3);
+}
+function matchCustomer(remark, ownerSlm, idx) {
+  const segs = remarkParts(remark).map(normCust).filter(s => s.length >= 3);
+  if (!segs.length) return null;
+  const chain = Object.values(CHAIN_ALIAS).find(al => segs.some(s => al.some(a => s.includes(a))));
+  const hitsIn = (pool, minLen) => {
+    if (chain) {
+      const branch = segs.filter(s => !chain.some(a => s.includes(a)) || s.length > Math.max(...chain.map(a => a.length)) + 2)
+        .map(s => chain.reduce((x, a) => x.replace(a, ''), s)).filter(s => s.length >= 3);
+      if (!branch.length) return []; // รู้แค่เชน ไม่รู้สาขา
+      // ชื่อต้องขึ้นต้นด้วยชื่อเชน — กัน "ไทยยามาซากิ (สาขาเดอะมอลล์บางแค)" ถูกนับเป็นเดอะมอลล์บางแค
+      return pool.filter(c => chain.some(a => c.n.startsWith(a)) && branch.some(b => c.n.includes(b)));
+    }
+    return pool.filter(c => segs.some(s => c.n === s || (s.length >= minLen && c.n.includes(s)) || (c.n.length >= minLen && s.includes(c.n))));
+  };
+  const pick = (hits, needSales) => {
+    if (!hits.length) return null;
+    const ranked = [...hits].sort((a, b) => b.sales - a.sales || a.code.localeCompare(b.code));
+    if (ranked[0].sales > 0) return ranked[0];
+    if (needSales) return null;
+    return new Set(ranked.map(h => h.n)).size === 1 ? ranked[0] : null; // ไม่มียอดเลย: ยอมรับเมื่อชื่อเดียวกันทั้งหมด
+  };
+  const own = ownerSlm ? pick(hitsIn(idx.filter(c => c.slm === ownerSlm), 4), false) : null;
+  const hit = own || pick(hitsIn(idx, 6), true);
+  return hit ? { code: hit.code, name: hit.name } : null;
+}
+
 module.exports = {
   SAMPLE_YEAR, SOURCES, KIND_BY_PREFIX, stripKeyerTag, nickFromSlmName, nickFromUserName, buildNickMap,
   slmFromRemark, chainFromRemark, resolveFromRemark, sellValue, buildLines,
+  CUST_MATCH_VERSION, normCust, remarkParts, displayFromRemark, buildCustIndex, matchCustomer,
 };

@@ -26,7 +26,7 @@ async function syncSampleIssues(db, { force = false } = {}) {
   const nickMap = si.buildNickMap(
     db.prepare('SELECT slm_id, name FROM salesmen').all(),
     db.prepare('SELECT name, slm_id, slm_codes FROM sc_users WHERE is_active = 1 OR is_active IS NULL').all());
-  const rulesSig = hashOf([[...nickMap].sort(), si.SOURCES]);
+  const rulesSig = hashOf([[...nickMap].sort(), si.SOURCES, si.CUST_MATCH_VERSION]);
 
   // สถานะไฟล์ของทุกห้อง — เปลี่ยนห้องไหนก็สร้างใหม่ห้องนั้น
   const plans = [];
@@ -57,6 +57,11 @@ async function syncSampleIssues(db, { force = false } = {}) {
     }
   }
   const custNames = new Map(db.prepare('SELECT code, name FROM customers').all().map(r => [r.code, r.name]));
+  // ลูกค้าในระบบ + ยอดขายปีนี้ — ใช้จับชื่อลูกค้าจากหมายเหตุ (lib/sampleIssues.js matchCustomer)
+  const custIndex = si.buildCustIndex(db.prepare(`SELECT c.code, c.name, c.slm_id, COALESCE(s.amt, 0) AS sales FROM customers c
+    LEFT JOIN (SELECT cust_code, SUM(amount) AS amt FROM invoice_sales_monthly WHERE ym >= ? GROUP BY cust_code) s ON s.cust_code = c.code`)
+    .all(`${si.SAMPLE_YEAR}-01`));
+  const personSlm = new Map(db.prepare('SELECT people_code, slm_code FROM sample_person_slm_map').all().map(r => [r.people_code, r.slm_code]));
 
   let imported = 0;
   for (const plan of plans) {
@@ -90,14 +95,30 @@ async function syncSampleIssues(db, { force = false } = {}) {
     }
     const lines = si.buildLines(rows, { company: plan.company, prefixes, cancelled, headerRemarks, lineRemarks, nickMap, products, custNames, normalizeSlm: ife.normalizeSlmCode });
 
+    // ชื่อลูกค้าจากหมายเหตุ (ใบละครั้ง): KA/KB/PD ใช้หมายเหตุหัวใบ · LA ใช้ ARTRNRM (มีน้อย) · ใบที่มีลูกค้าในใบอยู่แล้ว (LB/LD/LE) ไม่ต้องหา
+    // เจอในระบบ = ใช้ชื่อในระบบ · ไม่เจอ = ใช้ข้อความหมายเหตุ · ไม่มีหมายเหตุ = คงชื่อเดิม (เชน / ผู้เบิก)
+    const perDoc = new Map();
+    for (const l of lines) {
+      if (!['KA', 'KB', 'PD', 'LA'].includes(l.prefix) || l.cust_name === 'ออฟฟิศ') continue;
+      if (!perDoc.has(l.doc_num)) {
+        const remark = l.prefix === 'LA' ? T(lineRemarks.get(l.doc_num)) : T(headerRemarks.get(l.doc_num));
+        const owner = l.prefix === 'LA' ? (personSlm.get(l.cust_code) || '') : l.slm_code;
+        const m = remark ? si.matchCustomer(remark, owner, custIndex) : null;
+        perDoc.set(l.doc_num, m ? { code: m.code, name: m.name } : { code: '', name: remark ? si.displayFromRemark(remark) : '' });
+      }
+      const r = perDoc.get(l.doc_num);
+      l.cust_match = r.code;
+      if (r.name) l.cust_name = r.name;
+    }
+
     const ins = db.prepare(`INSERT OR REPLACE INTO sample_issue_lines (company, doc_num, seq, doc_date, prefix, kind, sku, loc_code, sku_name, qty, unit,
-      cost_value, sell_value, cust_code, cust_name, slm_code, dept_code, remark, owner_src) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      cost_value, sell_value, cust_code, cust_name, slm_code, dept_code, remark, owner_src, cust_match) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     db.exec('BEGIN');
     try {
       db.prepare('DELETE FROM sample_issue_lines WHERE company = ? AND doc_date >= ? AND doc_date <= ?').run(plan.company, `${si.SAMPLE_YEAR}-01-01`, `${si.SAMPLE_YEAR}-12-31`);
       for (const l of lines) {
         ins.run(l.company, l.doc_num, l.seq, l.doc_date, l.prefix, l.kind, l.sku, l.loc_code, l.sku_name, l.qty, l.unit,
-          l.cost_value, l.sell_value, l.cust_code, l.cust_name, l.slm_code, l.dept_code, l.remark, l.owner_src);
+          l.cost_value, l.sell_value, l.cust_code, l.cust_name, l.slm_code, l.dept_code, l.remark, l.owner_src, l.cust_match || '');
       }
       setState.run(plan.key, plan.sig, new Date().toISOString());
       db.exec('COMMIT');

@@ -907,6 +907,9 @@ function runMigrations(db) {
       LEFT JOIN sample_issue_owner_override o ON o.doc_num = l.doc_num
       LEFT JOIN sample_person_slm_map pm ON pm.people_code = l.cust_code;
   `);
+  // รหัสลูกค้าในระบบที่จับได้จากหมายเหตุใบเบิก (2026-11-05, lib/sampleIssues.js matchCustomer) — ใช้จัดกลุ่ม/แสดงชื่อเท่านั้น
+  // ไม่ใช้กำหนดสิทธิ์ (factSql ยังดู cust_code/owner_slm เดิม) · view ใช้ l.* จึงเห็นคอลัมน์นี้เอง
+  addColumnIfMissing(db, 'sample_issue_lines', 'cust_match', "cust_match TEXT NOT NULL DEFAULT ''");
   // ผู้เบิกใบ LA (รหัสพนักงาน 01-IH-xxxx ใน TSS-NV) → รหัสเซลส์ จับคู่จากชื่อในบัญชีผู้ใช้ (2026-11-05) · แก้ต่อได้ในหน้า "รอระบุเจ้าของ"
   if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261105_sample_person_map'").get()) {
     const ins = db.prepare("INSERT OR IGNORE INTO sample_person_slm_map (people_code, slm_code, note, updated_by) VALUES (?, ?, ?, 'system')");

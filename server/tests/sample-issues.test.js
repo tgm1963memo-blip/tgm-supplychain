@@ -131,3 +131,31 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
   assert.equal((await call('/person/01-IH-0999', 'A', 'PUT', { slm_code: '207' })).status, 200);
   assert.deepEqual((await call('/lines', 'S2')).data.rows.map(x => x[1]), ['LA6900009']);
 });
+
+// ชื่อลูกค้าจากหมายเหตุ → ลูกค้าในระบบ (2026-11-05): ลูกค้าของเจ้าของใบก่อน · ทั้งหมดต้องมียอดปีนี้ · ไม่เจอใช้ข้อความหมายเหตุ
+test('sample issues: match customer from remark', () => {
+  const idx = si.buildCustIndex([
+    { code: '01-M2-0005', name: 'เดอะมอลล์ 7 (บางแค)', slm_id: '212', sales: 11425 },
+    { code: 'SB-LE-0003', name: 'เดอะมอลล์กรุ๊ป จำกัด (สาขาบางแค)', slm_id: '105', sales: 147336 },
+    { code: 'TI-LC-0038', name: 'ไทยยามาซากิ จำกัด(สาขาเดอะมอลล์บางแค)', slm_id: '105', sales: 305300 },
+    { code: 'TV-LF-0005', name: 'เดอะมอลล์กรุ๊ป จำกัด สาขาบางแค', slm_id: '10', sales: 0 },
+    { code: '30-SS-0001', name: 'สห ลอว์สัน จำกัด', slm_id: '213', sales: 0 },
+    { code: 'TA-IA-0020', name: 'โชติรส (ผู้จัดการออลนอร์ธ เชียงราย)', slm_id: '12', sales: 0 },
+    { code: '01-OT-0001', name: 'ลูกค้าเงินสด..Tiktok', slm_id: '101', sales: 5000 },
+    { code: '01-IH-0098', name: 'โชติรส ศรีสยาม (คุณโอ๊ต)', slm_id: '101', sales: 0 },
+  ]);
+  // เจ้าของใบมีลูกค้ารายนี้ → ใช้ของเจ้าของ (แม้รายอื่นยอดสูงกว่า)
+  assert.equal(si.matchCustomer('The Mall/บางแค/สาย21', '212', idx).code, '01-M2-0005');
+  // ไม่รู้เจ้าของ → รายที่มียอดสูงสุด ที่ชื่อขึ้นต้นด้วยชื่อเชน (ไม่ใช่ไทยยามาซากิสาขาในห้าง)
+  assert.equal(si.matchCustomer('The Mall/บางแค', '', idx).code, 'SB-LE-0003');
+  assert.equal(si.matchCustomer('สห ลอว์สัน/P', '213', idx).code, '30-SS-0001', 'ลูกค้าของเจ้าของใบไม่ต้องมียอด');
+  assert.equal(si.matchCustomer('สห ลอว์สัน/P', '', idx), null, 'ลูกค้าคนอื่นต้องมียอดปีนี้');
+  assert.equal(si.matchCustomer('โชติรส ศรีสยาม/P', '', idx), null, 'ไม่จับชื่อคน/รหัสภายใน');
+  assert.equal(si.matchCustomer('ลูกค้า/เมกาบางนา', '', idx), null, 'คำกลางๆ ไม่ใช้จับ');
+  assert.equal(si.matchCustomer('Makro/เซลล์ส่ง', '', idx), null, 'รู้แค่เชน');
+  // ชื่อแสดงจากหมายเหตุ
+  assert.equal(si.displayFromRemark('Makro/มหาชัย/เซลล์ส่ง'), 'Makro / มหาชัย');
+  assert.equal(si.displayFromRemark('The Mall/The Mall/สาย3'), 'The Mall');
+  assert.equal(si.displayFromRemark('สุกี้ตี๋น้อย/P'), 'สุกี้ตี๋น้อย');
+  assert.equal(si.displayFromRemark('เบิกให้เคบีฟู้ดหัวหิน รับของ24/2'), 'เคบีฟู้ดหัวหิน');
+});
