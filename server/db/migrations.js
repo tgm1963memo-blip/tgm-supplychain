@@ -868,6 +868,8 @@ function runMigrations(db) {
     db.prepare("INSERT INTO app_migrations(id) VALUES ('20261027_slm_sku_override_tops_bakery')").run();
   }
   require('./customerProfilesV2').applyMeatSupplyCounted20261104(db);
+  require('./customerProfilesV2').applySalesCategoryFix20261105(db);
+  require('./customerProfilesV2').applySalesGroupsPoo20261105(db);
 
   // ตัวเลขของ v_sc_data_confidence ยังไม่เคยนับ (ฐานข้อมูลเดิมก่อน 2026-10-20 / ฐานใหม่) → นับครั้งแรกตอนเปิด server
   // ไม่งั้น Dashboard ขึ้นค่าว่างจนจบรอบ sync ถัดไป · หลังจากนี้นับตอนจบทุกรอบ sync (lib/dataCounts.js)

@@ -427,4 +427,68 @@ function applyMeatSupplyCounted20261104(db) {
   db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014, applySalesGroupsFix20261019, applyMeatSupplyCounted20261104 };
+// Category (Sales) ของลูกค้าคุณปู (คุณลักษณา) ตามชีตหลักของไฟล์ Group (2026-11-05, ผู้ใช้แจ้ง "จารุณี เหมือนสุวรรณ เป็น Restaurant แต่ในระบบเป็น
+// Direct Domestic") — ชีตหลักมีค่าในคอลัมน์ M แต่ไม่มีหัว "Group" สคริปต์รอบ 2026-10-14 เลยอ่านแต่ Sheet1 (ชีต Corporate ของคุณปู): 87 รายไม่อยู่ใน Sheet1
+// ตกไปเป็นค่าเดา และ 128 รายสองชีตไม่ตรงกัน (แบล็คแคนยอน/Yakun: ชีตหลัก Chain Restaurants, Sheet1 Bakery) · ถือชีตหลักเป็นค่าจริง + 7 รหัสที่ไม่อยู่ในไฟล์
+// แต่ corporate เดียวกัน · data/sales-category-fix-20261105.json = [รหัส, ค่าเดิม, ค่าที่ถูก] · เปลี่ยนเฉพาะแถวที่ยังเป็นค่าเดิมหรือว่าง
+// (ไม่ทับที่คนแก้ในหน้า จัดการกลุ่ม) · รันครั้งเดียว
+function applySalesCategoryFix20261105(db) {
+  const id = '20261105_sales_category_poo_main_sheet';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const file = path.join(__dirname, 'data', 'sales-category-fix-20261105.json');
+  if (!fs.existsSync(file)) return;
+  const items = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
+  const upd = db.prepare(`INSERT INTO customer_profiles (code, name, sales_category, edited_by, updated_at)
+    VALUES (?, ?, ?, 'sales-category-fix-2026-11-05', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET sales_category = excluded.sales_category, edited_by = excluded.edited_by, updated_at = excluded.updated_at,
+      name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name)
+    WHERE COALESCE(TRIM(customer_profiles.sales_category), '') = '' OR TRIM(customer_profiles.sales_category) = ?`);
+  let n = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [code, from, to] of items) {
+      const nm = nameOf.get(code, code);
+      n += upd.run(code, nm.c ? null : (nm.b || null), to, from).changes;
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] sales category fix 2026-11-05: ${n}/${items.length} customers`);
+}
+
+// กลุ่ม (Sales) ของลูกค้าคุณปู (2026-11-05) — Sheet1 คือชีต Corporate ของคุณปู (บล็อกคั่นด้วยแถวว่าง ชื่อกลุ่มอยู่คอลัมน์ "หมายเหตุ") แต่ชื่อชีตไม่มี "corp"
+// และหัวไม่มี "co" Scripts/build-sales-groups.py เลยไม่อ่าน ลูกค้าคุณปูจึงไม่มีกลุ่มเลย (เซลล์คนอื่นมีครบ) · data/sales-groups-poo-20261105.json = [รหัส, กลุ่ม]
+// ไม่รวม 30-TC-0001 ("ไม่ใช้ ลบได้") · รวมแบล็คแคนยอน 4 รหัสที่ไม่อยู่ในไฟล์ · เติมเฉพาะช่องที่ยังว่าง (ไม่ทับที่คนแก้) · รันครั้งเดียว
+function applySalesGroupsPoo20261105(db) {
+  const id = '20261105_sales_groups_poo_sheet1';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const file = path.join(__dirname, 'data', 'sales-groups-poo-20261105.json');
+  if (!fs.existsSync(file)) return;
+  const items = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
+  const upd = db.prepare(`INSERT INTO customer_profiles (code, name, sales_group, sales_group_by, edited_by, updated_at)
+    VALUES (?, ?, ?, 'ลักษณา', 'sales-groups-poo-2026-11-05', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET sales_group = excluded.sales_group, sales_group_by = excluded.sales_group_by,
+      edited_by = excluded.edited_by, updated_at = excluded.updated_at, name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name)
+    WHERE COALESCE(TRIM(customer_profiles.sales_group), '') = ''`);
+  let n = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [code, group] of items) {
+      const nm = nameOf.get(code, code);
+      n += upd.run(code, nm.c ? null : (nm.b || null), group).changes;
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] sales groups poo 2026-11-05: ${n}/${items.length} customers`);
+}
+
+module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014, applySalesGroupsFix20261019, applyMeatSupplyCounted20261104, applySalesCategoryFix20261105, applySalesGroupsPoo20261105 };

@@ -4,7 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
 const { runMigrations } = require('../db/migrations');
-const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014 } = require('../db/customerProfilesV2');
+const { applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFix20261105, applySalesGroupsPoo20261105 } = require('../db/customerProfilesV2');
 
 // กลุ่มลูกค้าฝั่ง Sales (2026-10-12): seed จากไฟล์ Group ของเซลล์ — ครั้งเดียว ไม่ทับค่าที่คนแก้
 test('sales groups seed applies once and never overwrites edited values', () => {
@@ -134,12 +134,55 @@ test('manual sales categories fill only the remaining blanks', () => {
   db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
   runMigrations(db);
   const get = code => db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?').get(code)?.sales_category;
-  assert.equal(get('BK-LD-0282'), 'Bakery');
-  assert.equal(get('AK-LD-0053'), 'Direct Domestic');
+  // ค่าหลังรันครบถูกแก้ต่อโดย 20261105_sales_category_poo_main_sheet — ดูเทสต์ถัดไป
+  assert.equal(get('BK-LD-0282'), 'Chain Restaurants');
+  assert.equal(get('AK-LD-0053'), 'Restaurant');
   db.prepare("UPDATE customer_profiles SET sales_category = 'Hotel' WHERE code = 'BK-LD-0282'").run();
   db.prepare("UPDATE customer_profiles SET sales_category = NULL WHERE code = 'AK-LD-0053'").run();
   db.prepare("DELETE FROM app_migrations WHERE id = '20261014_sales_category_manual_v1'").run();
   applySalesCategoryManual20261014(db);
   assert.equal(get('BK-LD-0282'), 'Hotel');
   assert.equal(get('AK-LD-0053'), 'Direct Domestic');
+});
+
+// ชีตหลักคุณปูไม่มีหัว Group (2026-11-05) — แก้ตามชีตหลัก เฉพาะแถวที่ยังเป็นค่าเดิม/ว่าง ไม่ทับที่คนตั้งเอง
+test('poo main sheet fix corrects categories but keeps values people changed', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  const get = code => db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?').get(code)?.sales_category;
+  assert.equal(get('AK-LD-0053'), 'Restaurant');
+  assert.equal(get('BK-LD-0001'), 'Chain Restaurants');
+  const set = db.prepare(`INSERT INTO customer_profiles (code, sales_category) VALUES (?, ?)
+    ON CONFLICT(code) DO UPDATE SET sales_category = excluded.sales_category`);
+  set.run('AK-LD-0053', 'Direct Domestic'); // ยังเป็นค่าเดิม → แก้
+  set.run('BK-LD-0001', 'Hotel'); // คนตั้งเป็นค่าอื่น → ไม่ทับ
+  set.run('AK-LF-2289', ''); // ว่าง → แก้
+  db.prepare("DELETE FROM app_migrations WHERE id = '20261105_sales_category_poo_main_sheet'").run();
+  applySalesCategoryFix20261105(db);
+  assert.equal(get('AK-LD-0053'), 'Restaurant');
+  assert.equal(get('BK-LD-0001'), 'Hotel');
+  assert.equal(get('AK-LF-2289'), 'Restaurant');
+  // marker กันรันซ้ำ
+  set.run('AK-LD-0053', 'Direct Domestic');
+  applySalesCategoryFix20261105(db);
+  assert.equal(get('AK-LD-0053'), 'Direct Domestic');
+});
+
+// Sheet1 คือชีต Corporate ของคุณปู (2026-11-05) — เติมกลุ่มเฉพาะช่องว่าง ไม่ทับที่คนตั้ง ไม่เอาแถว "ไม่ใช้ ลบได้"
+test('poo sheet1 blocks fill sales groups only where blank', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  const get = code => db.prepare('SELECT sales_group FROM customer_profiles WHERE code = ?').get(code)?.sales_group;
+  assert.equal(get('BK-LD-0001'), 'Black Canyon');
+  assert.equal(get('BK-LD-0282'), 'Black Canyon');
+  assert.equal(get('30-TA-0001'), 'Tops BK');
+  assert.ok(!get('30-TC-0001'));
+  db.prepare("UPDATE customer_profiles SET sales_group = 'ตั้งเอง' WHERE code = 'BK-LD-0001'").run();
+  db.prepare("UPDATE customer_profiles SET sales_group = NULL WHERE code = '30-TA-0001'").run();
+  db.prepare("DELETE FROM app_migrations WHERE id = '20261105_sales_groups_poo_sheet1'").run();
+  applySalesGroupsPoo20261105(db);
+  assert.equal(get('BK-LD-0001'), 'ตั้งเอง');
+  assert.equal(get('30-TA-0001'), 'Tops BK');
 });
