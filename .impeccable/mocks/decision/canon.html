@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><title>Dashboard มาตรฐาน</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#1B2064;--red:#C3161B;--ground:#F7F8FA;--line:#E5E7EF;--t1:#14163A;--t2:#4B4F6E;--t3:#6E7290;--tint:#EEF0F8;--green:#16824A;--greenbg:#E8F5EE;--redbg:#FCECEC}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{font-family:'IBM Plex Sans Thai',system-ui,sans-serif;background:var(--ground);color:var(--t1);font-size:13px;line-height:1.5;display:flex;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+aside{width:240px;height:900px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:16px 12px}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 16px}.brand b{font-size:14px;font-weight:600;color:var(--navy);letter-spacing:-.1px}
+.search{display:flex;align-items:center;gap:8px;height:32px;border:1px solid var(--line);border-radius:8px;padding:0 10px;color:var(--t3);margin:0 4px 16px}.search span{flex:1}.search kbd{font:500 11px 'IBM Plex Sans Thai';border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--t3);background:var(--ground)}
+.grp{font-size:11px;font-weight:600;color:var(--t3);padding:12px 12px 4px;letter-spacing:.2px}
+.nav{display:flex;align-items:center;gap:10px;height:32px;padding:0 12px;border-radius:8px;color:var(--t2);font-weight:500}
+.nav.on{background:var(--tint);color:var(--navy);font-weight:600}.nav .b{margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:600;min-width:18px;height:18px;border-radius:9px;text-align:center;line-height:18px;padding:0 5px}
+.user{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid var(--line)}
+.av{width:32px;height:32px;border-radius:50%;background:var(--tint);color:var(--navy);font-weight:600;display:grid;place-items:center;font-size:13px}
+.user small{display:block;color:var(--t3);font-size:11px;line-height:1.3}.user b{font-weight:600;font-size:13px;line-height:1.3}
+main{flex:1;min-width:0}
+header{height:64px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 24px;gap:12px}
+h1{font-size:18px;font-weight:600;color:var(--navy);letter-spacing:-.2px}
+.pill{font-size:11px;font-weight:500;color:var(--t2);background:var(--ground);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+.sp{flex:1}.sync{display:flex;align-items:center;gap:6px;color:var(--t3);font-size:12px}.dot{width:7px;height:7px;border-radius:50%;background:#22A35A;box-shadow:0 0 0 3px #E3F4EA}
+.ibtn{width:32px;height:32px;border:1px solid var(--line);border-radius:8px;display:grid;place-items:center;color:var(--t2);background:#fff;position:relative}.ibtn i{position:absolute;top:6px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--red);border:1.5px solid #fff}
+.btn{height:32px;border-radius:8px;padding:0 14px;font:600 13px 'IBM Plex Sans Thai';display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;color:var(--t1)}
+.btn.pri{background:var(--red);border-color:var(--red);color:#fff;box-shadow:0 1px 2px rgba(195,22,27,.18)}
+.wrap{padding:16px 24px}
+.filters{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.seg{display:flex;background:#fff;border:1px solid var(--line);border-radius:8px;padding:2px;height:32px}.seg span{padding:0 12px;line-height:26px;border-radius:6px;color:var(--t2);font-weight:500}.seg span.on{background:var(--navy);color:#fff}
+.chip{height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--t2);font-weight:500}.chip.on{border-color:#C9CCE3;background:var(--tint);color:var(--navy)}
+.vr{width:1px;height:20px;background:var(--line);margin:0 4px}
+.ghost{border-color:transparent;background:transparent;color:var(--t2)}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 1px 2px rgba(20,22,58,.04)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
+.kpi{padding:16px;position:relative}.kpi .l{color:var(--t3);font-size:12px;font-weight:500}.kpi .v{font-size:26px;font-weight:600;color:var(--navy);letter-spacing:-.5px;line-height:1.25;margin:6px 0 8px}.kpi .v small{font-size:14px;font-weight:500;color:var(--t2);margin-left:4px}
+.kpi .f{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t3)}.kpi svg.sp2{position:absolute;right:16px;top:40px}
+.d{font-size:11px;font-weight:600;border-radius:6px;padding:1px 6px}.d.up{color:var(--green);background:var(--greenbg)}.d.dn{color:var(--red);background:var(--redbg)}
+.bar{height:6px;border-radius:3px;background:var(--tint);overflow:hidden;flex:1}.bar i{display:block;height:100%;width:96.6%;background:var(--navy);border-radius:3px}
+.row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
+.ch{padding:16px 16px 12px}.ch h3,.tb h3{font-size:14px;font-weight:600;color:var(--t1)}.ch .hd{display:flex;align-items:center;gap:16px;margin-bottom:8px}.ch .sub{color:var(--t3);font-size:12px}
+.lg{display:flex;gap:16px;margin-left:auto;font-size:12px;color:var(--t2)}.lg span{display:inline-flex;align-items:center;gap:6px}.sw{width:10px;height:10px;border-radius:3px}
+.dn-wrap{display:flex;align-items:center;gap:20px;padding-top:8px}
+.dl{flex:1;display:flex;flex-direction:column;gap:10px}.dl div{display:flex;align-items:center;gap:8px;color:var(--t2)}.dl b{margin-left:auto;font-weight:600;color:var(--t1)}
+.tb .hd{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:4px}.tabs span{padding:4px 10px;border-radius:6px;color:var(--t2);font-weight:500}.tabs span.on{background:var(--tint);color:var(--navy);font-weight:600}
+table{width:100%;border-collapse:collapse}th{font-size:12px;font-weight:500;color:var(--t3);text-align:left;padding:8px 16px;background:#FBFBFD;border-bottom:1px solid var(--line)}th.r,td.r{text-align:right}
+td{padding:10px 16px;border-bottom:1px solid var(--line);color:var(--t1)}td.m{color:var(--t3)}.ar{color:#A6A9C0;font-size:11px;margin-left:4px}
+.tag{font-size:11px;font-weight:500;color:var(--t2);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="home" viewBox="0 0 16 16"><path d="M2.5 7 8 2.5 13.5 7v6.5h-4v-4h-3v4h-4z"/></symbol>
+<symbol id="chart" viewBox="0 0 16 16"><path d="M2.5 13.5h11M4.5 11V7M8 11V4M11.5 11V8.5"/></symbol>
+<symbol id="box" viewBox="0 0 16 16"><path d="M2.5 5 8 2.5 13.5 5v6L8 13.5 2.5 11zM2.5 5 8 7.5 13.5 5M8 7.5v6"/></symbol>
+<symbol id="trend" viewBox="0 0 16 16"><path d="M2.5 11.5 6 8l2.5 2.5 5-5M10 5.5h3.5V9"/></symbol>
+<symbol id="tag" viewBox="0 0 16 16"><path d="M2.5 2.5h5l6 6-5 5-6-6zM5.5 5.5h.01"/></symbol>
+<symbol id="gavel" viewBox="0 0 16 16"><path d="M3 13.5h6M9.5 2.5l4 4M7.5 4.5l4 4M8.5 3.5l-4 4 2 2 4-4M5.5 8.5 2.5 11.5"/></symbol>
+<symbol id="list" viewBox="0 0 16 16"><path d="M6 4h7.5M6 8h7.5M6 12h7.5M2.5 4h.01M2.5 8h.01M2.5 12h.01"/></symbol>
+<symbol id="doc" viewBox="0 0 16 16"><path d="M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M6 8h4.5M6 11h4.5"/></symbol>
+<symbol id="users" viewBox="0 0 16 16"><circle cx="6" cy="5.5" r="2.5"/><path d="M1.5 13.5c.5-2.5 2.3-3.5 4.5-3.5s4 1 4.5 3.5M10.5 3a2.5 2.5 0 0 1 0 5M12 10.3c1.4.5 2.2 1.5 2.5 3.2"/></symbol>
+<symbol id="gift" viewBox="0 0 16 16"><path d="M2.5 6h11v2.5h-11zM3.5 8.5h9v5h-9zM8 6v7.5M8 6S6.5 2.5 5 3.5 6 6 8 6m0 0s1.5-3.5 3-2.5S10 6 8 6"/></symbol>
+<symbol id="group" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/></symbol>
+<symbol id="file" viewBox="0 0 16 16"><path d="M3 2.5h10v11H3zM5.5 10.5V9M8 10.5V6.5M10.5 10.5V8"/></symbol>
+<symbol id="search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></symbol>
+<symbol id="bell" viewBox="0 0 16 16"><path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1H3zM6.5 14h3"/></symbol>
+<symbol id="dl" viewBox="0 0 16 16"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/></symbol>
+<symbol id="cal" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></symbol>
+</defs></svg>
+<aside>
+ <div class="brand"><svg width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14.5" fill="#fff" stroke="#C3161B" stroke-width="2.5"/><text x="16" y="19.6" text-anchor="middle" font-family="IBM Plex Sans Thai" font-weight="700" font-size="11" fill="#1B2064" letter-spacing=".3">TSS</text></svg><b>TSS Supply Chain</b></div>
+ <div class="search"><svg class="i"><use href="#search"/></svg><span>ค้นหา…</span><kbd>⌘K</kbd></div>
+ <div class="grp">ภาพรวม</div><div class="nav on"><svg class="i"><use href="#home"/></svg>Dashboard</div>
+ <div class="grp">การขาย</div><div class="nav"><svg class="i"><use href="#chart"/></svg>Sales Overview</div><div class="nav"><svg class="i"><use href="#box"/></svg>ฝากขาย CONSI</div><div class="nav"><svg class="i"><use href="#trend"/></svg>Sales Forecast</div>
+ <div class="grp">โปรโมชัน &amp; ราคา</div><div class="nav"><svg class="i"><use href="#tag"/></svg>เอกสารโปรโมชัน</div><div class="nav"><svg class="i"><use href="#gavel"/></svg>ใบเคาะราคา<span class="b num">3</span></div><div class="nav"><svg class="i"><use href="#list"/></svg>ราคากลาง A–G</div><div class="nav"><svg class="i"><use href="#doc"/></svg>ใบเสนอราคา</div>
+ <div class="grp">ลูกค้า &amp; ตัวอย่าง</div><div class="nav"><svg class="i"><use href="#users"/></svg>ข้อมูลลูกค้า</div><div class="nav"><svg class="i"><use href="#gift"/></svg>ของตัวอย่าง</div>
+ <div class="grp">ตั้งค่า</div><div class="nav"><svg class="i"><use href="#group"/></svg>จัดการกลุ่ม</div><div class="nav"><svg class="i"><use href="#file"/></svg>Reports</div>
+ <div class="user"><div class="av">สช</div><div><b>สมชาย ใจดี</b><small>ผู้จัดการฝ่ายขาย</small></div></div>
+</aside>
+<main>
+ <header><h1>ภาพรวมยอดขาย</h1><span class="pill">ข้อมูลตัวอย่าง</span><div class="sp"></div><span class="sync num"><span class="dot"></span>Sync 09:12 น.</span><span class="ibtn"><svg class="i"><use href="#bell"/></svg><i></i></span><span class="btn pri">+ สร้างใบเคาะราคา</span></header>
+ <div class="wrap">
+  <div class="filters"><div class="seg"><span class="on">ทุกบริษัท</span><span>TSS</span><span>TGM</span></div><div class="seg"><span class="on">YTD</span><span>เดือน</span><span>ไตรมาส</span><span>ทั้งปี</span><span style="display:flex;align-items:center;gap:6px"><svg class="i" style="width:14px;height:14px"><use href="#cal"/></svg>ช่วงวันที่</span></div><span class="vr"></span><span class="chip on">รวม Consi ✓</span><span class="chip">ไม่รวม Non-VAT</span><span class="chip">ไม่รวมเบเกอรี่</span><div class="sp"></div><span class="btn ghost"><svg class="i"><use href="#dl"/></svg>Export</span></div>
+  <div class="kpis">
+   <div class="card kpi"><div class="l">ยอดขายสุทธิ</div><div class="v num">฿742.6<small>ล้าน</small></div><div class="f"><span class="d up num">▲ 6.8%</span>vs 2568</div><svg class="sp2" width="88" height="32" viewBox="0 0 88 32"><polyline points="0,24 11,22 22,25 33,18 44,20 55,14 66,16 77,10 88,8" fill="none" stroke="#1B2064" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+   <div class="card kpi"><div class="l">ยอดฝากขาย Consi</div><div class="v num">฿58.3<small>ล้าน</small></div><div class="f"><span class="d up num">▲ 2.1%</span>vs 2568</div><svg class="sp2" width="88" height="32" viewBox="0 0 88 32"><polyline points="0,20 11,18 22,21 33,19 44,16 55,18 66,15 77,16 88,13" fill="none" stroke="#1B2064" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+   <div class="card kpi"><div class="l">ลูกค้าที่มียอด</div><div class="v num">1,284<small>ราย</small></div><div class="f"><span class="d dn num">▼ 0.9%</span>vs 2568</div><svg class="sp2" width="88" height="32" viewBox="0 0 88 32"><polyline points="0,12 11,10 22,14 33,12 44,15 55,13 66,17 77,16 88,18" fill="none" stroke="#6E7290" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+   <div class="card kpi"><div class="l">คาดการณ์ทั้งปี</div><div class="v num">฿918<small>ล้าน</small></div><div class="f num"><span class="bar"><i></i></span>เป้า ฿950 ล้าน · <b style="color:var(--navy);font-weight:600">96.6%</b></div></div>
+  </div>
+  <div class="row">
+   <div class="card ch"><div class="hd"><div><h3>ยอดขายรายเดือน 2569 vs เป้า</h3><div class="sub">หน่วย: ล้านบาท · ต.ค. ข้อมูลถึง 17 ต.ค.</div></div><div class="lg"><span><i class="sw" style="background:#1B2064"></i>ยอดขาย</span><span><i class="sw" style="background:#B9BCDB"></i>เดือนปัจจุบัน</span><span><svg width="16" height="2"><line x1="0" y1="1" x2="16" y2="1" stroke="#C3161B" stroke-width="1.6" stroke-dasharray="4 3"/></svg>เป้า 79 ล้าน/เดือน</span></div></div>
+    <svg width="100%" height="224" viewBox="0 0 720 224" class="num" font-family="IBM Plex Sans Thai" font-size="11">
+     <g stroke="#EEF0F4"><line x1="40" y1="10" x2="712" y2="10"/><line x1="40" y1="55" x2="712" y2="55"/><line x1="40" y1="100" x2="712" y2="100"/><line x1="40" y1="145" x2="712" y2="145"/></g><line x1="40" y1="190" x2="712" y2="190" stroke="#D5D8E4"/>
+     <g fill="#6E7290" text-anchor="end"><text x="32" y="14">100</text><text x="32" y="59">75</text><text x="32" y="104">50</text><text x="32" y="149">25</text><text x="32" y="194">0</text></g>
+     <g fill="#1B2064"><rect x="54" y="49.6" width="28" height="140.4" rx="3"/><rect x="110" y="56.8" width="28" height="133.2" rx="3"/><rect x="166" y="37" width="28" height="153" rx="3"/><rect x="222" y="47.8" width="28" height="142.2" rx="3"/><rect x="278" y="31.6" width="28" height="158.4" rx="3"/><rect x="334" y="40.6" width="28" height="149.4" rx="3"/><rect x="390" y="35.2" width="28" height="154.8" rx="3"/><rect x="446" y="42.4" width="28" height="147.6" rx="3"/><rect x="502" y="33.4" width="28" height="156.6" rx="3"/></g>
+     <rect x="558" y="116.2" width="28" height="73.8" rx="3" fill="#B9BCDB"/><text x="572" y="110" text-anchor="middle" fill="#4B4F6E" font-weight="600">41</text><text x="516" y="27" text-anchor="middle" fill="#1B2064" font-weight="600">87</text>
+     <line x1="40" y1="47.8" x2="712" y2="47.8" stroke="#C3161B" stroke-width="1.5" stroke-dasharray="5 4"/>
+     <g fill="#6E7290" text-anchor="middle"><text x="68" y="208">ม.ค.</text><text x="124" y="208">ก.พ.</text><text x="180" y="208">มี.ค.</text><text x="236" y="208">เม.ย.</text><text x="292" y="208">พ.ค.</text><text x="348" y="208">มิ.ย.</text><text x="404" y="208">ก.ค.</text><text x="460" y="208">ส.ค.</text><text x="516" y="208">ก.ย.</text><text x="572" y="208" fill="#1B2064" font-weight="600">ต.ค.</text><text x="628" y="208" fill="#B4B7C9">พ.ย.</text><text x="684" y="208" fill="#B4B7C9">ธ.ค.</text></g>
+    </svg></div>
+   <div class="card ch"><div class="hd"><div><h3>ช่องทางขาย</h3><div class="sub">สัดส่วนยอดขาย YTD</div></div></div>
+    <div class="dn-wrap"><svg width="160" height="160" viewBox="0 0 160 160"><g transform="rotate(-90 80 80)" fill="none" stroke-width="20"><circle cx="80" cy="80" r="60" stroke="#1B2064" stroke-dasharray="141.3 377"/><circle cx="80" cy="80" r="60" stroke="#3D4390" stroke-dasharray="80.9 377" stroke-dashoffset="-143.3"/><circle cx="80" cy="80" r="60" stroke="#6B70B0" stroke-dasharray="62.1 377" stroke-dashoffset="-226.2"/><circle cx="80" cy="80" r="60" stroke="#9EA2CF" stroke-dasharray="31.9 377" stroke-dashoffset="-290.3"/><circle cx="80" cy="80" r="60" stroke="#CDD0E6" stroke-dasharray="50.8 377" stroke-dashoffset="-324.2"/></g><text x="80" y="78" text-anchor="middle" font-family="IBM Plex Sans Thai" font-size="18" font-weight="600" fill="#1B2064" class="num">฿742.6</text><text x="80" y="96" text-anchor="middle" font-family="IBM Plex Sans Thai" font-size="11" fill="#6E7290">ล้านบาท</text></svg>
+     <div class="dl num"><div><i class="sw" style="background:#1B2064"></i>Modern Trade<b>38%</b></div><div><i class="sw" style="background:#3D4390"></i>Traditional Trade<b>22%</b></div><div><i class="sw" style="background:#6B70B0"></i>Food Service<b>17%</b></div><div><i class="sw" style="background:#9EA2CF"></i>ร้านค้าส่ง<b>9%</b></div><div><i class="sw" style="background:#CDD0E6"></i>อื่นๆ<b>14%</b></div></div></div></div>
+  </div>
+  <div class="card tb"><div class="hd"><h3>Top ลูกค้า</h3><div class="tabs"><span class="on">รวม</span><span>ห้าง</span><span>ร้านค้า</span></div><div class="sp"></div><span class="btn ghost" style="height:28px">ดูทั้งหมด →</span></div>
+   <table class="num"><thead><tr><th style="width:56px">#</th><th>ลูกค้า<span class="ar">↕</span></th><th>ช่องทาง<span class="ar">↕</span></th><th class="r">ยอดขาย<span class="ar" style="color:var(--navy)">↓</span></th><th class="r" style="width:120px">%YoY<span class="ar">↕</span></th></tr></thead>
+   <tbody><tr><td class="m">1</td><td>บจก. ฟู้ดมาร์ท สยาม</td><td><span class="tag">Modern Trade</span></td><td class="r" style="font-weight:600">฿48.2M</td><td class="r"><span class="d up">+8.1%</span></td></tr>
+   <tr><td class="m">2</td><td>เดลี่เฟรช ซัพพลาย</td><td><span class="tag">Traditional Trade</span></td><td class="r" style="font-weight:600">฿36.9M</td><td class="r"><span class="d up">+3.4%</span></td></tr>
+   <tr><td class="m">3</td><td>ริเวอร์ไซด์ โฮเทล กรุ๊ป</td><td><span class="tag">Food Service</span></td><td class="r" style="font-weight:600">฿21.5M</td><td class="r"><span class="d dn">−2.2%</span></td></tr></tbody></table></div>
+ </div>
+</main>
+</body></html>
