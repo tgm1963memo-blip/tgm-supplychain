@@ -867,6 +867,51 @@ function runMigrations(db) {
     }
     db.prepare("INSERT INTO app_migrations(id) VALUES ('20261027_slm_sku_override_tops_bakery')").run();
   }
+  // ประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม จาก Express (2026-11-05) — jobs/importSampleIssues.js, lib/sampleIssues.js, routes/sampleIssues.js
+  // sample_issue_lines สร้างใหม่ทั้งปีทุกรอบที่ไฟล์เปลี่ยน · เจ้าของที่ผู้จัดการระบุ/ตารางจับคู่ผู้เบิกอยู่คนละตาราง (ไม่หายตอน sync)
+  // เจ้าของจริง = ที่ผู้จัดการระบุ → ใบ LA: ตารางจับคู่ผู้เบิก → รหัสในใบ/อ่านจากหมายเหตุ (ดู v_sample_issue_lines)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sample_issue_lines (
+      company TEXT NOT NULL, doc_num TEXT NOT NULL, seq TEXT NOT NULL, doc_date TEXT NOT NULL,
+      prefix TEXT NOT NULL, kind TEXT NOT NULL, sku TEXT NOT NULL, sku_name TEXT, qty REAL NOT NULL DEFAULT 0, unit TEXT,
+      cost_value REAL NOT NULL DEFAULT 0, sell_value REAL,
+      cust_code TEXT NOT NULL DEFAULT '', cust_name TEXT, slm_code TEXT NOT NULL DEFAULT '', dept_code TEXT, remark TEXT,
+      owner_src TEXT NOT NULL DEFAULT 'none',
+      PRIMARY KEY (company, doc_num, seq, sku)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sample_issue_lines_date ON sample_issue_lines(doc_date);
+    CREATE INDEX IF NOT EXISTS idx_sample_issue_lines_doc ON sample_issue_lines(doc_num);
+    CREATE TABLE IF NOT EXISTS sample_person_slm_map (
+      people_code TEXT PRIMARY KEY, slm_code TEXT NOT NULL, note TEXT, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS sample_issue_owner_override (
+      doc_num TEXT PRIMARY KEY, slm_code TEXT NOT NULL DEFAULT '', cust_name TEXT, note TEXT, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    DROP VIEW IF EXISTS v_sample_issue_lines;
+    CREATE VIEW v_sample_issue_lines AS
+      SELECT l.*,
+        COALESCE(NULLIF(o.slm_code, ''), CASE WHEN l.prefix = 'LA' THEN pm.slm_code END, NULLIF(l.slm_code, ''), '') AS owner_slm,
+        CASE WHEN NULLIF(o.slm_code, '') IS NOT NULL THEN 'manual'
+             WHEN l.prefix = 'LA' THEN CASE WHEN pm.slm_code IS NOT NULL THEN 'person' ELSE 'none' END
+             ELSE l.owner_src END AS owner_from,
+        COALESCE(NULLIF(o.cust_name, ''), l.cust_name) AS owner_cust_name
+      FROM sample_issue_lines l
+      LEFT JOIN sample_issue_owner_override o ON o.doc_num = l.doc_num
+      LEFT JOIN sample_person_slm_map pm ON pm.people_code = l.cust_code;
+  `);
+  // ผู้เบิกใบ LA (รหัสพนักงาน 01-IH-xxxx ใน TSS-NV) → รหัสเซลส์ จับคู่จากชื่อในบัญชีผู้ใช้ (2026-11-05) · แก้ต่อได้ในหน้า "รอระบุเจ้าของ"
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261105_sample_person_map'").get()) {
+    const ins = db.prepare("INSERT OR IGNORE INTO sample_person_slm_map (people_code, slm_code, note, updated_by) VALUES (?, ?, ?, 'system')");
+    for (const [code, slm, who] of [
+      ['01-IH-0060', '106', 'ลักษณา'], ['01-IH-0038', '110-1', 'ธีระพล (ไกด์)'], ['01-IH-0097', '114', 'สรณ์ศจี (คุณอุ้ม)'],
+      ['01-IH-0058', '105', 'สุนทรี (แด้)'], ['01-IH-0044', '103', 'ขนิษฐา (คุณฐา)'], ['01-IH-0096', '113', 'นภัสสร (เน)'],
+      ['01-IH-0063', '107', 'เอกพงศ์ (แมน)'], ['01-IH-0056', '104', 'วีรวุฒิ (เอ้)'], ['01-IH-0095', '112', 'สรัลนุช (เซล)'],
+      ['01-IH-0083', '202', 'ดวงใจ'], ['01-IH-0010', '108', 'ปรัชญา (คุณเป็ด)'], ['01-IH-0066', '111', 'ณุวภา (หลิน)'],
+    ]) ins.run(code, slm, `จับคู่จากชื่อผู้ใช้ — ${who}`);
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261105_sample_person_map')").run();
+  }
   require('./customerProfilesV2').applyMeatSupplyCounted20261104(db);
   require('./customerProfilesV2').applySalesCategoryFix20261105(db);
   require('./customerProfilesV2').applySalesGroupsPoo20261105(db);

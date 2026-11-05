@@ -455,6 +455,8 @@ function buildApp(db, opts = {}) {
   }));
   app.use('/api/sample_request_actions', authed, require('./routes/sampleRequests')(db, SAMPLE_REQUEST_ROLES));
   app.use('/api/sample_request_attachments', require('./routes/sampleRequestAttachments')(db, SAMPLE_REQUEST_ROLES));
+  // ประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม จาก Express (2026-11-05) — routes/sampleIssues.js
+  app.use('/api/sample_issues', authed, require('./routes/sampleIssues')(db));
 
   // Workflow อนุมัติแบบ multi-level ใช้ร่วมกันหลาย entity (2026-09) — ดู db/schema.sql
   app.use('/api/approval_workflow_templates', authed, require('./middleware/validateWorkflow')(db), makeCrudRouter(db, 'approval_workflow_templates', {

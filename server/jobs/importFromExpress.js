@@ -1920,6 +1920,8 @@ async function runImport(db) {
     // เสริมสำหรับ KG ใน Dashboard — พังแล้วไม่ควรทำให้ทั้งรอบ sync ถูกนับว่า error (ข้อมูลหลักบันทึกไปแล้ว)
     try { rowsProcessed += await syncSalesLinesMonthly(db); } catch (e) { console.warn('[importFromExpress] sales lines monthly failed:', e.message); }
     try { rowsProcessed += await syncTgmDetailLines(db); } catch (e) { console.warn('[importFromExpress] TGM detail lines failed:', e.message); }
+    // ประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม (2026-11-05) — jobs/importSampleIssues.js · อ่านเมื่อไฟล์เปลี่ยน ไม่ถี่กว่าชั่วโมงละครั้ง
+    try { rowsProcessed += await require('./importSampleIssues').syncSampleIssues(db); } catch (e) { console.warn('[importFromExpress] sample issues failed:', e.message); }
 
     // standing tripwire: surface data-quality regressions automatically instead of needing a manual
     // DBF-reading investigation every time someone wonders "is the import still correct" — see

@@ -22142,12 +22142,265 @@ function srSetFilter(k, v) { _sr.f[k] = v; pgSample(); }
 function srClearFilter() { _sr.f = { from: '', to: '', status: '', cust: '', by: '' }; _sr.filter = ''; pgSample(); }
 function srSetType(t) { _sr.type = t; _sr.tab = 'all'; _sr.f.status = ''; pgSample(); }
 
+// ════════════════════════════════════════════════════════════════
+// ประวัติเบิก (Express) — สินค้าตัวอย่าง / ของชิม / ของแถม ปี 2569 (2026-11-05)
+// ข้อมูลจาก GET /api/sample_issues/lines (server/routes/sampleIssues.js) — server กรองสิทธิ์แล้ว (เซลส์เห็นของตัวเอง,
+// ไม่ส่งมูลค่าทุนให้เซลส์) · หน้าเว็บทำ pivot เอง: แถว ลูกค้า › สินค้า › ใบเบิก · คอลัมน์รายเดือนตามช่วงที่เลือก
+// แถวข้อมูล: [วันที่, เลขที่, เล่ม, ประเภท, รหัสสินค้า, ชื่อสินค้า, จำนวน, หน่วย, ราคาขาย, ทุน|null, เจ้าของ, รหัสลูกค้า, ชื่อลูกค้า, ที่มาเจ้าของ]
+// ════════════════════════════════════════════════════════════════
+let _sx = { from: '2026-01-01', to: '2026-12-31', preset: 'year', kinds: { sample: true, tasting: true, free: true }, slm: '', q: '',
+  measure: 'value', price: 'cost', rows: 'cust', open: new Set(), tab: 'pivot', data: null, at: 0, loading: false, err: null, unres: null };
+const SX_KINDS = [['sample', 'ตัวอย่าง', '#2f56c9', 'LA · KB'], ['tasting', 'ของชิม', '#c97a08', 'LB · KA'], ['free', 'ของแถม', '#0f8a68', 'LD · PD · LE']];
+const SX_FROM = { doc: ['ตามเอกสาร', 'var(--LG)', 'var(--G)'], person: ['จับคู่ผู้เบิก', 'var(--LBL)', 'var(--BL)'], remark: ['อ่านจากหมายเหตุ', 'var(--LBL)', 'var(--BL)'],
+  manual: ['ผู้จัดการระบุ', 'var(--LP)', 'var(--P)'], chain: ['รู้แค่เชน', 'var(--LY)', 'var(--O)'], office: ['ออฟฟิศ', 'var(--LY)', 'var(--O)'], none: ['รอระบุ', 'var(--LR)', 'var(--R)'] };
+const SX_TH = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const _sxFmt = n => (Math.round((n || 0) * 10) / 10).toLocaleString('th-TH', { maximumFractionDigits: 1 });
+const _sxBaht = n => '฿' + Math.round(n || 0).toLocaleString('th-TH');
+const _sxPill = f => { const s = SX_FROM[f] || SX_FROM.none; return `<span style="display:inline-block;border-radius:999px;padding:0 8px;font-size:11px;background:${s[1]};color:${s[2]};white-space:nowrap">${s[0]}</span>`; };
+const _sxSlmLabel = c => c ? `${c} ${(_sx.data?.slm_names || {})[c] || ''}`.trim() : 'รอระบุเจ้าของ';
+
+async function _sxLoad(force) {
+  if (_sx.loading || (!force && _sx.data && Date.now() - _sx.at < 5 * 60 * 1000)) return;
+  _sx.loading = true; _sx.err = null;
+  try {
+    const res = await apiFetch('/api/sample_issues/lines?from=2026-01-01&to=2026-12-31');
+    if (res.error) throw new Error(res.error.message);
+    _sx.data = res.data; _sx.at = Date.now();
+    if (!res.data.can_cost) _sx.price = 'sell';
+    if (!_sx.open.size) { const g = _sxGroup(_sxLines(), 'cust')[0]; if (g) _sx.open.add('/' + g.k); }
+  } catch (e) { _sx.err = e.message || String(e); }
+  _sx.loading = false;
+  if (sessionStorage.getItem('_pg') === 'sample' && _sr.type === 'express') pgSample();
+}
+function _sxVal(r) { return _sx.data?.can_cost && _sx.price === 'cost' ? (r[9] || 0) : Math.max(0, r[8] || 0); }
+function _sxLines() {
+  const rows = _sx.data?.rows || [], q = _sx.q.trim().toLowerCase();
+  return rows.filter(r => {
+    if (r[0] < _sx.from || r[0] > _sx.to || !_sx.kinds[r[3]]) return false;
+    if (_sx.slm && r[10] !== (_sx.slm === '-' ? '' : _sx.slm)) return false;
+    if (q && ![r[1], r[4], r[5], r[12], r[11]].some(v => String(v || '').toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+const SX_DIMS = {
+  cust: { n: 'ลูกค้า / ปลายทาง', key: r => r[11] || r[12], lab: (k, g) => esc(g.ls[0][12] || k) },
+  prod: { n: 'สินค้า', key: r => r[4], lab: (k, g) => `${esc(k)} ${esc(g.ls[0][5] || '')} <span style="color:var(--TX3)">(${esc([...new Set(g.ls.map(r => r[7]))].join('/'))})</span>` },
+  slm: { n: 'เซลส์', key: r => r[10], lab: k => esc(_sxSlmLabel(k)) },
+  doc: { n: 'ใบเบิก', key: r => r[1], lab: (k, g) => { const r = g.ls[0]; return `<span style="font-size:11px;border:1px solid var(--BD);border-radius:4px;padding:0 4px;color:var(--TX3)">${esc(r[2])}</span> ${esc(k)} <span style="color:var(--TX3)">${r[0].split('-').reverse().join('/')}</span> ${r[13] === 'doc' ? '' : _sxPill(r[13])}`; } },
+};
+const SX_ORDERS = { cust: ['cust', 'prod', 'doc'], prod: ['prod', 'cust', 'doc'], slm: ['slm', 'cust', 'prod'] };
+function _sxAgg(ls) {
+  const o = { v: 0, q: 0, cost: 0, sell: 0, m: {}, mq: {}, docs: new Set(), units: new Set(), k: { sample: 0, tasting: 0, free: 0 } };
+  for (const r of ls) {
+    const v = _sxVal(r), m = +r[0].slice(5, 7);
+    o.v += v; o.q += r[6]; o.cost += r[9] || 0; o.sell += Math.max(0, r[8] || 0);
+    o.m[m] = (o.m[m] || 0) + v; o.mq[m] = (o.mq[m] || 0) + r[6]; o.docs.add(r[1]); o.units.add(r[7]); o.k[r[3]] += v;
+  }
+  return o;
+}
+function _sxGroup(ls, dim) {
+  const g = new Map();
+  for (const r of ls) { const k = SX_DIMS[dim].key(r); if (!g.has(k)) g.set(k, []); g.get(k).push(r); }
+  return [...g].map(([k, arr]) => ({ k, ls: arr, a: _sxAgg(arr) })).sort((x, y) => y.a.v - x.a.v || y.a.q - x.a.q);
+}
+function sxSet(k, v) { _sx[k] = v; if (['q', 'slm', 'rows'].includes(k)) _sx.open.clear(); pgSample(); }
+function sxPreset(p, a, b) { _sx.preset = p; _sx.from = a; _sx.to = b; pgSample(); }
+function sxDate(k, v) { _sx[k] = v || (k === 'from' ? '2026-01-01' : '2026-12-31'); if (_sx.from > _sx.to) { if (k === 'from') _sx.to = _sx.from; else _sx.from = _sx.to; } _sx.preset = ''; pgSample(); }
+function sxKind(k) { _sx.kinds[k] = !_sx.kinds[k]; pgSample(); }
+function sxToggle(id) { _sx.open.has(id) ? _sx.open.delete(id) : _sx.open.add(id); pgSample(); }
+function sxExpandAll() {
+  const ord = SX_ORDERS[_sx.rows];
+  for (const g of _sxGroup(_sxLines(), ord[0]).slice(0, 30)) { _sx.open.add('/' + g.k); for (const c of _sxGroup(g.ls, ord[1])) _sx.open.add('/' + g.k + '/' + c.k); }
+  pgSample();
+}
+let _sxQT;
+function sxSearch(v) { clearTimeout(_sxQT); _sxQT = setTimeout(() => { _sx.q = v; _sx.open.clear(); pgSample(); const el = document.getElementById('sx-q'); if (el) { el.focus(); el.setSelectionRange(v.length, v.length); } }, 300); }
+
+function _sxRender(typeBar) {
+  const ct = document.getElementById('ct');
+  const D = _sx.data;
+  const pill = (on, onclick, label) => `<button onclick="${onclick}" style="padding:4px 11px;border-radius:999px;font-size:12px;cursor:pointer;font-family:var(--font);border:1px solid ${on ? 'var(--N)' : 'var(--BD)'};background:${on ? 'var(--N)' : 'var(--W)'};color:${on ? '#fff' : 'var(--TX2)'}">${label}</button>`;
+  const head = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${typeBar}</div>`;
+  if (!D) {
+    _sxLoad();
+    ct.innerHTML = head + `<div class="card" style="padding:28px;text-align:center;color:var(--TX3)">${_sx.err ? `โหลดประวัติเบิกไม่สำเร็จ: ${esc(_sx.err)} <button class="btn btn-sm" onclick="_sxLoad(true)">ลองใหม่</button>` : 'กำลังโหลดประวัติเบิกจาก Express…'}</div>`;
+    return;
+  }
+  const ls = _sxLines(), A = _sxAgg(ls);
+  const isCost = D.can_cost && _sx.price === 'cost';
+  const custN = new Set(ls.map(r => r[11] || r[12])).size;
+  const unresV = ls.filter(r => !r[10]).reduce((s, r) => s + _sxVal(r), 0);
+  const presets = [['year', 'ทั้งปี', '2026-01-01', '2026-12-31'], ['q1', 'ไตรมาส 1', '2026-01-01', '2026-03-31'], ['q2', 'ไตรมาส 2', '2026-04-01', '2026-06-30'],
+    ['q3', 'ไตรมาส 3', '2026-07-01', '2026-09-30'], ['q4', 'ไตรมาส 4', '2026-10-01', '2026-12-31']];
+  const today = new Date(), ym = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const lastDay = (y, m) => new Date(y, m, 0).getDate();
+  if (today.getFullYear() === 2026) {
+    const pm = new Date(2026, today.getMonth() - 1, 1);
+    if (pm.getFullYear() === 2026) presets.push(['lm', 'เดือนที่แล้ว', `${ym(pm)}-01`, `${ym(pm)}-${lastDay(2026, pm.getMonth() + 1)}`]);
+    presets.push(['tm', 'เดือนนี้', `${ym(today)}-01`, `${ym(today)}-${lastDay(2026, today.getMonth() + 1)}`]);
+  }
+  const slmCodes = [...new Set((D.rows || []).map(r => r[10]))].sort((a, b) => (a || 'zzz').localeCompare(b || 'zzz'));
+  const fSt = 'padding:5px 8px;border:1px solid var(--BD);border-radius:7px;font-size:12px;font-family:var(--font);background:var(--W);color:var(--TX)';
+  const kpi = (cls, l, v, s) => `<div class="kpi ${cls}"><div class="kl">${l}</div><div class="kv" style="font-size:20px">${v}</div><div style="font-size:11px;color:var(--TX3)">${s}</div></div>`;
+  const tabs = [['pivot', '📊 Pivot ลูกค้า / สินค้า']];
+  if (D.can_manage) tabs.push(['unres', '🧩 รอระบุเจ้าของ']);
+  if (!tabs.some(t => t[0] === _sx.tab)) _sx.tab = 'pivot';
+
+  ct.innerHTML = head + `
+  <div style="font-size:12px;color:var(--TX3);margin-bottom:10px">ประวัติเบิกจาก Express ห้อง TSS และ TSS-NV ปี 2569 (ไม่นับใบที่ยกเลิก) ·
+    ${D.can_cost ? 'คุณเห็นมูลค่าทุนและราคาขาย' : 'คุณเห็นเฉพาะใบเบิกของตัวเอง มูลค่าแสดงเป็นราคาขาย'}
+    ${D.synced_at ? ` · ดึงข้อมูลล่าสุด ${new Date(D.synced_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}` : ''}</div>
+  <div class="card" style="padding:12px 14px;margin-bottom:12px;display:grid;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:12px;color:var(--TX3)">ช่วงวันที่</span>
+      <input type="date" id="sx-from" style="${fSt}" min="2026-01-01" max="2026-12-31" value="${_sx.from}" onchange="sxDate('from',this.value)">
+      <span style="font-size:12px;color:var(--TX3)">ถึง</span>
+      <input type="date" id="sx-to" style="${fSt}" min="2026-01-01" max="2026-12-31" value="${_sx.to}" onchange="sxDate('to',this.value)">
+      ${presets.map(p => pill(_sx.preset === p[0], `sxPreset('${p[0]}','${p[2]}','${p[3]}')`, p[1])).join('')}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${SX_KINDS.map(k => `<button onclick="sxKind('${k[0]}')" style="padding:4px 11px;border-radius:999px;font-size:12px;cursor:pointer;font-family:var(--font);border:1px solid var(--BD);background:var(--W);color:var(--TX);opacity:${_sx.kinds[k[0]] ? 1 : .45}"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${k[2]};margin-right:5px"></span>${k[1]} <span style="font-size:10.5px;color:var(--TX3)">${k[3]}</span></button>`).join('')}
+      ${D.can_manage ? `<select id="sx-slm" style="${fSt}" onchange="sxSet('slm',this.value)"><option value="">ทุกเซลส์</option>${slmCodes.map(c => `<option value="${esc(c || '-')}" ${_sx.slm === (c || '-') ? 'selected' : ''}>${esc(_sxSlmLabel(c))}</option>`).join('')}</select>` : ''}
+      <input type="search" id="sx-q" style="${fSt};flex:1 1 200px" placeholder="ค้นหาลูกค้า / สินค้า / เลขที่ใบเบิก" value="${esc(_sx.q)}" oninput="sxSearch(this.value)">
+    </div>
+  </div>
+  <div class="krow">
+    ${kpi('b', isCost ? 'มูลค่าเบิก (ทุน)' : 'มูลค่าเบิก (ราคาขาย)', _sxBaht(A.v), D.can_cost ? (isCost ? 'ราคาขาย ' + _sxBaht(A.sell) : 'ทุน ' + _sxBaht(A.cost)) : 'ช่วงที่เลือก')}
+    ${kpi('g', 'ลูกค้า / ปลายทาง', custN.toLocaleString('th-TH'), 'ราย')}
+    ${kpi('t', 'ใบเบิก', A.docs.size.toLocaleString('th-TH'), ls.length.toLocaleString('th-TH') + ' รายการสินค้า')}
+    ${D.can_manage ? kpi('a', 'ยังไม่รู้เจ้าของ', _sxBaht(unresV), 'ในช่วงที่เลือก') : kpi('a', 'จำนวนที่เบิก', _sxFmt(A.q), 'รวมทุกหน่วย')}
+  </div>
+  <div class="tabs" style="margin-bottom:10px">${tabs.map(t => `<div class="tab ${_sx.tab === t[0] ? 'act' : ''}" onclick="_sx.tab='${t[0]}';pgSample()">${t[1]}</div>`).join('')}</div>
+  <div class="card" id="sx-body" style="padding:12px 14px">${_sx.tab === 'unres' ? _sxUnresHtml() : _sxPivotHtml(ls)}</div>`;
+  if (_sx.tab === 'unres' && !_sx.unres) _sxLoadUnres();
+}
+
+function _sxPivotHtml(ls) {
+  const D = _sx.data, ord = SX_ORDERS[_sx.rows], isQ = _sx.measure === 'qty';
+  const a = +_sx.from.slice(5, 7), b = +_sx.to.slice(5, 7), M = [];
+  for (let m = a; m <= b; m++) M.push(m);
+  const top = _sxGroup(ls, ord[0]);
+  let mx = 1;
+  for (const g of top) for (const m of M) mx = Math.max(mx, (isQ ? g.a.mq : g.a.m)[m] || 0);
+  const num = v => isQ ? _sxFmt(v) : Math.round(v).toLocaleString('th-TH');
+  const cell = v => v ? `<td style="text-align:right;background:rgba(42,48,128,${(0.04 + 0.26 * v / mx).toFixed(3)})">${num(v)}</td>` : '<td style="text-align:right;color:var(--BD)">·</td>';
+  const LIM = 200;
+  let body = '';
+  const row = (g, lvl, path) => {
+    const dim = ord[lvl], id = path + '/' + g.k, leaf = lvl === ord.length - 1, open = _sx.open.has(id);
+    const bg = lvl === 0 ? 'var(--LN)' : lvl === 1 ? 'var(--W)' : 'var(--bg)';
+    const dots = lvl < 2 ? SX_KINDS.map(k => g.a.k[k[0]] ? `<span title="${k[1]}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${k[2]};margin-right:3px"></span>` : '').join('') + ' ' : '';
+    const qty = lvl === 0 && dim !== 'prod' && g.a.units.size > 1 ? `<span style="color:var(--TX3)">${_sxFmt(g.a.q)}*</span>` : _sxFmt(g.a.q);
+    const idArg = esc(JSON.stringify(id));
+    body += `<tr style="background:${bg};${leaf ? '' : 'cursor:pointer'}" ${leaf ? '' : `onclick="sxToggle(${idArg})"`}>
+      <td style="position:sticky;left:0;background:${bg};padding-left:${8 + lvl * 20}px;${lvl === 0 ? 'font-weight:600' : ''};min-width:260px;max-width:420px;white-space:normal">
+        <span style="display:inline-block;width:14px;color:var(--TX3)">${leaf ? '' : open ? '▾' : '▸'}</span>${dots}${SX_DIMS[dim].lab(g.k, g)}</td>
+      ${M.map(m => cell((isQ ? g.a.mq : g.a.m)[m])).join('')}
+      <td style="text-align:right">${qty}</td><td style="text-align:right">${g.a.docs.size}</td><td style="text-align:right;font-weight:600">${_sxBaht(g.a.v)}</td></tr>`;
+    if (open && !leaf) for (const c of _sxGroup(g.ls, ord[lvl + 1])) row(c, lvl + 1, id);
+  };
+  top.slice(0, LIM).forEach(g => row(g, 0, ''));
+  const A = _sxAgg(ls);
+  const segBtn = (on, onclick, label) => `<button onclick="${onclick}" style="padding:3px 10px;font-size:12px;border:0;border-radius:999px;cursor:pointer;font-family:var(--font);background:${on ? 'var(--N)' : 'transparent'};color:${on ? '#fff' : 'var(--TX2)'}">${label}</button>`;
+  const seg = inner => `<span style="display:inline-flex;border:1px solid var(--BD);border-radius:999px;padding:2px;background:var(--W)">${inner}</span>`;
+  const rowOpts = [['cust', 'ลูกค้า › สินค้า › ใบเบิก'], ['prod', 'สินค้า › ลูกค้า › ใบเบิก']];
+  if (D.can_manage) rowOpts.push(['slm', 'เซลส์ › ลูกค้า › สินค้า']);
+  const th = 'position:sticky;top:0;background:var(--W);z-index:2;padding:7px 8px;font-size:11.5px;color:var(--TX3);font-weight:600;border-bottom:1px solid var(--BD);white-space:nowrap';
+  return `
+  <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:12px;color:var(--TX3)">แถว</span>
+      <select style="padding:4px 8px;border:1px solid var(--BD);border-radius:7px;font-size:12px;font-family:var(--font)" onchange="sxSet('rows',this.value)">${rowOpts.map(o => `<option value="${o[0]}" ${_sx.rows === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>
+      <span style="font-size:12px;color:var(--TX3)">ช่องเดือน</span>${seg(segBtn(!isQ, "sxSet('measure','value')", 'มูลค่า') + segBtn(isQ, "sxSet('measure','qty')", 'จำนวน'))}
+      ${D.can_cost ? seg(segBtn(_sx.price === 'cost', "sxSet('price','cost')", 'ราคาทุน') + segBtn(_sx.price === 'sell', "sxSet('price','sell')", 'ราคาขาย')) : ''}
+    </div>
+    <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="sxExpandAll()">ขยายทั้งหมด</button><button class="btn btn-sm" onclick="_sx.open.clear();pgSample()">ยุบทั้งหมด</button></div>
+  </div>
+  <div style="overflow:auto;max-height:620px;border:1px solid var(--BD);border-radius:8px">
+    <table style="border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums">
+      <thead><tr><th style="${th};text-align:left;left:0;z-index:3">${ord.map(d => SX_DIMS[d].n).join(' › ')}</th>${M.map(m => `<th style="${th};text-align:right">${SX_TH[m]}</th>`).join('')}
+        <th style="${th};text-align:right">จำนวน</th><th style="${th};text-align:right">ใบ</th><th style="${th};text-align:right">${_sx.price === 'cost' && D.can_cost ? 'มูลค่าทุน' : 'มูลค่า (ราคาขาย)'}</th></tr></thead>
+      <tbody>${body || `<tr><td colspan="${M.length + 4}" style="text-align:center;padding:24px;color:var(--TX3)">ไม่พบใบเบิกในช่วงนี้</td></tr>`}
+      ${body ? `<tr style="font-weight:700"><td style="position:sticky;left:0;bottom:0;background:var(--W);border-top:2px solid var(--N);padding:7px 8px;z-index:2">รวม ${top.length.toLocaleString('th-TH')} ${SX_DIMS[ord[0]].n}</td>${M.map(m => `<td style="position:sticky;bottom:0;background:var(--W);border-top:2px solid var(--N);text-align:right;padding:7px 8px">${num((isQ ? A.mq : A.m)[m] || 0)}</td>`).join('')}
+        <td style="position:sticky;bottom:0;background:var(--W);border-top:2px solid var(--N);text-align:right;padding:7px 8px">${_sxFmt(A.q)}</td><td style="position:sticky;bottom:0;background:var(--W);border-top:2px solid var(--N);text-align:right;padding:7px 8px">${A.docs.size}</td><td style="position:sticky;bottom:0;background:var(--W);border-top:2px solid var(--N);text-align:right;padding:7px 8px">${_sxBaht(A.v)}</td></tr>` : ''}</tbody>
+    </table>
+  </div>
+  <div style="font-size:11.5px;color:var(--TX3);margin-top:6px">คลิกแถวเพื่อขยายลงไปถึงสินค้าและใบเบิก · สีเข้มในช่องเดือน = มูลค่า/จำนวนสูง · * รวมหลายหน่วย ดูหน่วยจริงที่ระดับสินค้า ·
+    ใบ KA/KB/PD ไม่มีรหัสลูกค้าใน Express ใช้ชื่อเชนจากหมายเหตุแทน · ใบ LA แสดงพนักงานผู้เบิก${top.length > LIM ? ` · แสดง ${LIM} อันดับแรก ใช้ช่องค้นหาเพื่อหารายอื่น` : ''}</div>`;
+}
+// td ในตารางใช้ padding ร่วม
+(() => { const st = document.createElement('style'); st.textContent = '#sx-body td{padding:6px 8px;border-bottom:1px solid var(--BD);white-space:nowrap}'; document.head.appendChild(st); })();
+
+async function _sxLoadUnres() {
+  const res = await apiFetch('/api/sample_issues/unresolved');
+  _sx.unres = res.error ? { err: res.error.message } : res.data;
+  if (sessionStorage.getItem('_pg') === 'sample' && _sr.type === 'express' && _sx.tab === 'unres') pgSample();
+}
+function _sxSlmOptions(names, sel) {
+  return '<option value="">— เลือกเซลส์ —</option>' + Object.entries(names || {})
+    .filter(([c, n]) => /^\d{3}(-\d)?$/.test(c) && n && n !== '(รหัสเลิกใช้)').sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([c, n]) => `<option value="${esc(c)}" ${c === sel ? 'selected' : ''}>${esc(c)} ${esc(n)}</option>`).join('');
+}
+function _sxUnresHtml() {
+  const U = _sx.unres;
+  if (!U) return '<div style="padding:20px;color:var(--TX3)">กำลังโหลด…</div>';
+  if (U.err) return `<div style="padding:20px;color:var(--R)">โหลดไม่สำเร็จ: ${esc(U.err)}</div>`;
+  const fSt = 'padding:4px 6px;border:1px solid var(--BD);border-radius:6px;font-size:12px;font-family:var(--font);max-width:190px';
+  const docs = U.docs.slice(0, 150), unmapped = U.people.filter(p => !p.slm_code);
+  return `
+  <div style="font-size:12.5px;color:var(--TX2);margin-bottom:10px">ใบเบิก KA/KB/PD ที่ระบบหาเซลส์จากหมายเหตุไม่ได้ เลือกเซลส์ (และพิมพ์ลูกค้าถ้ารู้) แล้วกดบันทึก ·
+    ค่าที่ระบุจะไม่หายเมื่อดึงข้อมูลจาก Express รอบใหม่ · ทั้งหมด ${U.docs.length.toLocaleString('th-TH')} ใบ มูลค่าทุน ${_sxBaht(U.docs.reduce((s, d) => s + d.cost_value, 0))}${U.docs.length > 150 ? ' · แสดง 150 ใบมูลค่าสูงสุด บันทึกแล้วรายการถัดไปจะขึ้นมาแทน' : ''}</div>
+  <div style="overflow:auto;max-height:520px;border:1px solid var(--BD);border-radius:8px">
+  <table class="tbl" style="width:100%;font-size:12.5px"><thead><tr><th>วันที่</th><th>เลขที่</th><th>หมายเหตุใน Express</th><th>ระบบเดาได้</th><th style="text-align:right">มูลค่าทุน</th><th>ระบุเจ้าของ</th></tr></thead><tbody>
+  ${docs.map(d => `<tr><td>${d.doc_date.split('-').reverse().join('/')}</td><td>${esc(d.doc_num)}</td><td style="white-space:normal;max-width:280px">${esc(d.remark) || '<span style="color:var(--TX3)">(ว่าง)</span>'}</td>
+    <td>${_sxPill(d.owner_from)} ${d.owner_from === 'chain' ? esc(String(d.cust_name).replace(' (จากหมายเหตุ)', '')) : ''}</td><td style="text-align:right">${_sxBaht(d.cost_value)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap"><select id="sxo-s-${esc(d.doc_num)}" style="${fSt}">${_sxSlmOptions(U.slm_names)}</select>
+      <input id="sxo-c-${esc(d.doc_num)}" style="${fSt}" placeholder="ลูกค้า (ถ้ารู้)" value="">
+      <button class="btn btn-sm btn-p" onclick="sxSaveOwner('${esc(d.doc_num)}')">บันทึก</button></div></td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--TX3)">ไม่มีใบที่รอระบุ 🎉</td></tr>'}
+  </tbody></table></div>
+  <div style="font-weight:600;margin:16px 0 6px">ผู้เบิกใบ LA (ม.ค.–มิ.ย.) → เซลส์ <span style="font-weight:400;font-size:12px;color:var(--TX3)">ยังไม่จับคู่ ${unmapped.length} คน · ทุกใบของผู้เบิกจะเป็นของเซลส์ที่เลือก</span></div>
+  <div style="overflow:auto;max-height:360px;border:1px solid var(--BD);border-radius:8px">
+  <table class="tbl" style="width:100%;font-size:12.5px"><thead><tr><th>รหัส</th><th>ผู้เบิก</th><th style="text-align:right">ใบ</th><th style="text-align:right">มูลค่าทุน</th><th>เซลส์</th></tr></thead><tbody>
+  ${U.people.map(p => `<tr><td>${esc(p.people_code)}</td><td>${esc(String(p.name).replace(/^\(ผู้เบิก\)\s*/, ''))}</td><td style="text-align:right">${p.docs}</td><td style="text-align:right">${_sxBaht(p.cost_value)}</td>
+    <td><select style="${fSt}" onchange="sxSavePerson('${esc(p.people_code)}',this.value)">${_sxSlmOptions(U.slm_names, p.slm_code || '').replace('— เลือกเซลส์ —', '— ไม่ระบุ —')}</select></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+async function sxSaveOwner(doc) {
+  const slm = document.getElementById('sxo-s-' + doc)?.value || '', cust = document.getElementById('sxo-c-' + doc)?.value || '';
+  if (!slm && !cust) { toast('เลือกเซลส์หรือพิมพ์ชื่อลูกค้าก่อนบันทึก'); return; }
+  const res = await apiFetch('/api/sample_issues/owner/' + encodeURIComponent(doc), { method: 'PUT', body: JSON.stringify({ slm_code: slm, cust_name: cust }) });
+  if (res.error) { toast('บันทึกไม่สำเร็จ: ' + res.error.message); return; }
+  toast(`บันทึกเจ้าของใบ ${doc} แล้ว`);
+  _sx.unres = null; _sxLoad(true); pgSample();
+}
+async function sxSavePerson(code, slm) {
+  const res = await apiFetch('/api/sample_issues/person/' + encodeURIComponent(code), { method: 'PUT', body: JSON.stringify({ slm_code: slm }) });
+  if (res.error) { toast('บันทึกไม่สำเร็จ: ' + res.error.message); return; }
+  toast(slm ? `จับคู่ ${code} กับ ${slm} แล้ว` : `ยกเลิกการจับคู่ ${code} แล้ว`);
+  _sx.unres = null; _sxLoad(true); pgSample();
+}
+
+// ปุ่มประเภทบนสุดของหน้า: สินค้าเดิม / สินค้าใหม่ / ประวัติเบิก (Express, 2026-11-05)
+function _srTypeBar() {
+  const allSR = getSR();
+  const btn = (t, icon, lbl, n) => {
+    const on = _sr.type === t;
+    return `<button onclick="srSetType('${t}')" style="flex:1;min-width:150px;padding:10px 14px;border-radius:10px;cursor:pointer;font-family:var(--font);font-size:14px;font-weight:700;
+      border:2px solid ${on ? 'var(--N)' : 'var(--BD)'};background:${on ? 'var(--N)' : 'var(--W)'};color:${on ? '#fff' : 'var(--TX2)'}">
+      ${icon} ${lbl}${n ? ` <span style="font-size:11px;font-weight:500;opacity:.85">(ดำเนินการอยู่ ${n})</span>` : ''}</button>`;
+  };
+  const active = t => allSR.filter(r => srType(r) === t && !['draft', 'received', 'rejected'].includes(r.status)).length;
+  return btn('existing', SR_TYPES.existing.icon, SR_TYPES.existing.lbl, active('existing')) + btn('new', SR_TYPES.new.icon, SR_TYPES.new.lbl, active('new'))
+    + btn('express', '📊', 'ประวัติเบิก (Express)', 0);
+}
+
 // ── หน้าหลัก ─────────────────────────────────────────────────
 function pgSample() {
   document.getElementById('app').classList.remove('custreg-mode');
   if (_sr.view === 'form')       { _srRenderForm();             return; }
   if (_sr.view === 'testresult') { _srRenderTestResult(_sr.editId); return; }
   if (_sr.view === 'detail')     { _srRenderDetail(_sr.editId);   return; }
+  if (_sr.type === 'express')    { _sxRender(_srTypeBar());       return; }
 
   const canCreate = srCanCreate(), canApprove = srCanApprove(), canDispatch = srCanDispatch(), canRD = srCanRD();
   const isNew = _sr.type === 'new';
@@ -22164,19 +22417,13 @@ function pgSample() {
     const dot = n > 0 ? ` <span class="badge bbr" style="font-size:10px;padding:1px 5px">${n}</span>` : '';
     return `<div class="tab ${_sr.tab === id ? 'act' : ''}" onclick="_sr.tab='${id}';pgSample()">${lbl}${dot}</div>`;
   };
-  const typeBtn = t => {
-    const on = _sr.type === t, n = allSR.filter(r => srType(r) === t && !['draft', 'received', 'rejected'].includes(r.status)).length;
-    return `<button onclick="srSetType('${t}')" style="flex:1;min-width:150px;padding:10px 14px;border-radius:10px;cursor:pointer;font-family:var(--font);font-size:14px;font-weight:700;
-      border:2px solid ${on ? 'var(--N)' : 'var(--BD)'};background:${on ? 'var(--N)' : 'var(--W)'};color:${on ? '#fff' : 'var(--TX2)'}">
-      ${SR_TYPES[t].icon} ${SR_TYPES[t].lbl}${n ? ` <span style="font-size:11px;font-weight:500;opacity:.85">(ดำเนินการอยู่ ${n})</span>` : ''}</button>`;
-  };
   const users = [...new Set(all.map(r => r.by).filter(Boolean))].map(u => [u, uidToName(u) || u]).sort((a, b) => a[1].localeCompare(b[1], 'th'));
   const flow = SR_FLOW[_sr.type].concat('rejected');
   const fSt = 'padding:5px 8px;border:1px solid var(--BD);border-radius:7px;font-size:12px;font-family:var(--font)';
   const hasFilter = Object.values(_sr.f).some(Boolean) || _sr.filter;
 
   document.getElementById('ct').innerHTML = `
-  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${typeBtn('existing')}${typeBtn('new')}</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${_srTypeBar()}</div>
   <div class="krow">
     <div class="kpi b"><div class="kl">คำขอ${SR_TYPES[_sr.type].lbl}ทั้งหมด</div><div class="kv">${myReqs.length}</div></div>
     <div class="kpi a"><div class="kl">รออนุมัติ</div><div class="kv">${cntPending}</div></div>

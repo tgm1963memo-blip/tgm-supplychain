@@ -1,0 +1,100 @@
+'use strict';
+
+// ดึงประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม ปี 2569 จาก Express ห้อง TSS + TSS-NV → sample_issue_lines (2026-11-05)
+// กติกาการอ่าน/หาเจ้าของอยู่ใน lib/sampleIssues.js · เรียกจาก runImport() ทุกรอบ แต่จะอ่านจริงเมื่อไฟล์เปลี่ยน
+// และไม่ถี่กว่า SAMPLE_ISSUES_MIN_INTERVAL_MIN นาที (ค่าเริ่ม 60) — STCRD ของ TSS ใหญ่ ~265MB
+const fs = require('fs');
+const path = require('path');
+const si = require('../lib/sampleIssues');
+
+const MIN_INTERVAL_MS = (Number(process.env.SAMPLE_ISSUES_MIN_INTERVAL_MIN) || 60) * 60 * 1000;
+const T = s => String(s ?? '').trim();
+
+function hashOf(v) {
+  const s = JSON.stringify(v);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+async function syncSampleIssues(db, { force = false } = {}) {
+  const ife = require('./importFromExpress');
+  const getState = db.prepare('SELECT mtime_ms, synced_at FROM sync_file_state WHERE source = ?');
+  const setState = db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
+    ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`);
+
+  const nickMap = si.buildNickMap(
+    db.prepare('SELECT slm_id, name FROM salesmen').all(),
+    db.prepare('SELECT name, slm_id, slm_codes FROM sc_users WHERE is_active = 1 OR is_active IS NULL').all());
+  const rulesSig = hashOf([[...nickMap].sort(), si.SOURCES]);
+
+  // สถานะไฟล์ของทุกห้อง — เปลี่ยนห้องไหนก็สร้างใหม่ห้องนั้น
+  const plans = [];
+  for (const src of si.SOURCES) {
+    const folder = path.join(ife.EXPRESS_ROOT, src.company);
+    const files = ['STCRD.DBF', 'STTRN.DBF', 'ARTRN.DBF'].map(f => ife.findFile(folder, f)).filter(Boolean);
+    if (!files.some(f => /stcrd\.dbf$/i.test(f))) continue;
+    let mt;
+    try { mt = files.map(f => fs.statSync(f).mtimeMs).reduce((a, b) => a + b, 0); } catch (e) { console.warn(`[sampleIssues] stat ${src.company} failed: ${e.message}`); continue; }
+    const key = `${src.company}#sample_issues`;
+    const prev = getState.get(key);
+    const sig = mt + rulesSig;
+    if (!force && prev && prev.mtime_ms === sig) continue;
+    if (!force && prev && prev.synced_at && Date.now() - Date.parse(prev.synced_at) < MIN_INTERVAL_MS) continue;
+    plans.push({ ...src, key, sig });
+  }
+  if (!plans.length) return 0;
+
+  // ราคาขายแรกที่ > 0 ของสินค้า + ชื่อ/หน่วยหลัก (STMAS ของทั้งสองห้อง — products.unit เป็นชื่อหน่วยเต็ม เทียบกับ TQUCOD ไม่ได้)
+  const products = new Map();
+  for (const company of ['TSS', 'TSS-NV']) {
+    for (const r of await ife.readTable(company, 'STMAS.DBF')) {
+      const sku = T(r.STKCOD);
+      if (!sku || products.get(sku)?.price) continue;
+      const price = [r.SELLPR1, r.SELLPR2, r.SELLPR3, r.SELLPR4, r.SELLPR5].map(Number).find(x => x > 0) || 0;
+      products.set(sku, { price, unit: T(r.QUCOD), name: T(r.STKDES) });
+    }
+  }
+  const custNames = new Map(db.prepare('SELECT code, name FROM customers').all().map(r => [r.code, r.name]));
+
+  let imported = 0;
+  for (const plan of plans) {
+    const rows = await ife.readTable(plan.company, 'STCRD.DBF');
+    if (!rows.length) { console.warn(`[sampleIssues] ${plan.company}/STCRD.DBF read 0 rows — skipped (share dropped?)`); continue; }
+    const prefixes = new Set(plan.prefixes);
+    const cancelled = new Set();
+    const headerRemarks = new Map();
+    for (const r of await ife.readTable(plan.company, 'ARTRN.DBF')) if (T(r.DOCSTAT) === 'C') cancelled.add(T(r.DOCNUM));
+    for (const r of await ife.readTable(plan.company, 'STTRN.DBF')) {
+      const doc = T(r.DOCNUM);
+      if (!prefixes.has(doc.slice(0, 2))) continue;
+      if (T(r.DOCSTAT) === 'C') cancelled.add(doc);
+      headerRemarks.set(doc, T(r.REMARK));
+    }
+    const lineRemarks = new Map();
+    for (const r of await ife.readTable(plan.company, 'ARTRNRM.DBF')) {
+      const doc = T(r.DOCNUM);
+      if (!prefixes.has(doc.slice(0, 2))) continue;
+      const t = T(r.REMARK);
+      if (t) lineRemarks.set(doc, `${lineRemarks.get(doc) || ''} ${t}`);
+    }
+    const lines = si.buildLines(rows, { company: plan.company, prefixes, cancelled, headerRemarks, lineRemarks, nickMap, products, custNames, normalizeSlm: ife.normalizeSlmCode });
+
+    const ins = db.prepare(`INSERT OR REPLACE INTO sample_issue_lines (company, doc_num, seq, doc_date, prefix, kind, sku, sku_name, qty, unit,
+      cost_value, sell_value, cust_code, cust_name, slm_code, dept_code, remark, owner_src) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM sample_issue_lines WHERE company = ? AND doc_date >= ? AND doc_date <= ?').run(plan.company, `${si.SAMPLE_YEAR}-01-01`, `${si.SAMPLE_YEAR}-12-31`);
+      for (const l of lines) {
+        ins.run(l.company, l.doc_num, l.seq, l.doc_date, l.prefix, l.kind, l.sku, l.sku_name, l.qty, l.unit,
+          l.cost_value, l.sell_value, l.cust_code, l.cust_name, l.slm_code, l.dept_code, l.remark, l.owner_src);
+      }
+      setState.run(plan.key, plan.sig, new Date().toISOString());
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+    imported += lines.length;
+  }
+  return imported;
+}
+
+module.exports = { syncSampleIssues };
