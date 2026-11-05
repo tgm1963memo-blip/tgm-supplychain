@@ -3,7 +3,8 @@
 // ประวัติเบิกสินค้าตัวอย่าง / ของชิม / ของแถม จาก Express (2026-11-05, ผู้ใช้ขอ — เมนู "ของตัวอย่าง" › ประวัติเบิก)
 // แหล่งข้อมูล (ตรวจกับ DBF จริง 2026-11-05):
 //   · ห้อง TSS-NV ม.ค.–มิ.ย. 69: LA เปิดบิลของตัวอย่าง · LB เปิดบิลของชิม · LD เปิดบิลของแถม-ไส้กรอก (มีลูกค้า/เซลส์ในใบ
-//     ยกเว้น LA ที่ PEOPLE = รหัสพนักงานผู้เบิก 01-IH-xxxx และเซลส์ถูกคีย์เป็น 101 ทั้งเล่ม → จับคู่ผู้เบิกกับเซลส์ด้วยตาราง)
+//     ยกเว้น LA ที่ PEOPLE = รหัสพนักงานผู้เบิก 01-IH-xxxx และเซลส์ถูกคีย์เป็น 101 ทั้งเล่ม → จับคู่ผู้เบิกกับเซลส์ด้วยตาราง
+//     ส่วนชื่อลูกค้าของใบ LA อยู่ในหมายเหตุของใบ SL ที่อ้างถึง: ARTRN.SONUM → ARTRNRM เช่น "@1 ตัวอย่าง อินโนว่า" — มี 960 จาก 999 ใบ)
 //   · ห้อง TSS ก.ค. 69 เป็นต้นไป: KB เบิกของตัวอย่าง · KA เบิกของชิม-ไส้กรอก · PD เบิกของแถม (POSOPR 6 — ไม่มีลูกค้า/เซลส์
 //     มีแค่แผนก DEPCOD และหมายเหตุ STTRN.REMARK / ARTRNRM → อ่านชื่อเซลส์/เชนห้างจากหมายเหตุ ที่เหลือให้ผู้จัดการระบุ)
 //   · ห้อง TSS ทั้งปี: LE ใบเบิกของแถม (มีลูกค้า/เซลส์ในใบ)
@@ -52,8 +53,16 @@ function nickFromUserName(name) {
   return w ? w[0] : '';
 }
 
+// ชื่อจริงของบัญชีผู้ใช้ เช่น "คุณปิยพร คุ้มวงษ์ (คุณครีม)" → "ปิยพร"
+function firstNameFromUserName(name) {
+  const m = T(name).replace(/^คุณ/, '').match(/^[ก-๙]+/);
+  return m ? m[0] : '';
+}
+// ชื่อจริงที่สะกดต่างจากบัญชีผู้ใช้ ซึ่งพบในหมายเหตุจริง (ตรวจ 2026-11-05)
+const NAME_TYPOS = { 'ปิยะพร': 'ปิยพร', 'หทัยกาญ': 'หทัยกาญจน์', 'เอกพงษ์': 'เอกพงศ์', 'เองพงศ์': 'เอกพงศ์', 'วีระวุฒิ': 'วีรวุฒิ', 'สรุลนุช': 'สรัลนุช', 'สุภาสรณ์': 'สุภาภรณ์' };
+
 // ชื่อเล่น → รหัสเซลส์ · salesmen: [{slm_id,name}] (Express) · users: [{name, slm_id, slm_codes}] (บัญชีผู้ใช้)
-// ชื่อเล่นที่ชี้ไปหลายรหัสถือว่ากำกวม — ไม่ใช้
+// หมายเหตุหลัง มิ.ย. 69 มักใช้ชื่อจริง "(เซลล์ สุนทรี)" จึงรวมชื่อจริงของบัญชีผู้ใช้ด้วย · ชื่อที่ชี้ไปหลายรหัสถือว่ากำกวม — ไม่ใช้
 function buildNickMap(salesmen = [], users = []) {
   const cand = new Map();
   const add = (nick, code) => {
@@ -66,13 +75,20 @@ function buildNickMap(salesmen = [], users = []) {
     if (!/^\d{3}(-\d)?$/.test(code) || /^\*+/.test(T(s.name))) continue;
     add(nickFromSlmName(s.name), code);
   }
+  const seenUsers = new Set(); // คนเดียวกันมีได้หลายบัญชี (ธีระพล 110-1 / 110-2) — ใช้บัญชีแรก ไม่นับเป็นชื่อกำกวม
   for (const u of users) {
+    if (seenUsers.has(T(u.name))) continue;
+    seenUsers.add(T(u.name));
     const codes = T(u.slm_codes || u.slm_id).split(',').map(T).filter(c => /^\d{3}(-\d)?$/.test(c));
     const main = T(u.slm_id) || codes[0];
-    if (main) add(nickFromUserName(u.name), main.length === 3 && codes.includes(`${main}-1`) ? `${main}-1` : main);
+    if (!main) continue;
+    const code = main.length === 3 && codes.includes(`${main}-1`) ? `${main}-1` : main;
+    add(nickFromUserName(u.name), code);
+    add(firstNameFromUserName(u.name), code);
   }
   const out = new Map();
   for (const [nick, set] of cand) if (set.size === 1) out.set(nick, [...set][0]);
+  for (const [typo, name] of Object.entries(NAME_TYPOS)) if (out.has(name) && !out.has(typo)) out.set(typo, out.get(name));
   return out;
 }
 
@@ -164,12 +180,12 @@ function buildLines(rows, ctx) {
 }
 
 // ── ชื่อลูกค้าจากหมายเหตุ → ลูกค้าในระบบ (2026-11-05, ผู้ใช้ขอ "ใช้ชื่อเดียวกับในระบบ ถ้าไม่มีให้ใช้ชื่อจากหมายเหตุ") ──────────
-// ใบ KA/KB/PD: STTRN.REMARK เช่น "The Mall/บางแค/สาย21", "สห ลอว์สัน/P" · ใบ LA: ARTRNRM (มีแค่ ~1% ของใบ — ที่เหลือไม่มีชื่อลูกค้าใน Express)
+// ใบ KA/KB/PD: STTRN.REMARK เช่น "The Mall/บางแค/สาย21", "สห ลอว์สัน/P" · ใบ LA: หมายเหตุของใบ SL ที่อ้างถึง (laRemarkText)
 // ข้อมูลลูกค้ามีรหัสซ้ำหลายรหัสต่อสาขา (เดอะมอลล์ 7 (บางแค) ~8 รหัส) จึงเลือกแบบระวัง:
 //   1) ลูกค้าของเซลส์เจ้าของใบ (customers.slm_id) — ยอมรับเมื่อได้รายเดียว หรือหลายรายแต่เลือกจากยอดขายปีนี้ได้
 //   2) ลูกค้าทั้งหมด — ยอมรับเฉพาะรายที่มียอดขายจริงปีนี้ (กันจับชื่อคน/รหัสเก่าที่ไม่ใช้แล้ว) เลือกยอดสูงสุด
 // ใช้ตั้งชื่อ/จัดกลุ่มในหน้าเว็บเท่านั้น ไม่ใช้กำหนดสิทธิ์ (สิทธิ์ยังตามเจ้าของใบ)
-const CUST_MATCH_VERSION = 2;
+const CUST_MATCH_VERSION = 3;
 const CHAIN_ALIAS = {
   'The Mall': ['เดอะมอลล์', 'themall', 'เดอะมอล'],
   'Makro': ['แม็คโคร', 'makro', 'แมคโคร', 'แม็กโคร'],
@@ -203,6 +219,23 @@ function displayFromRemark(remark) {
   const shown = parts.map(p => { const c = Object.entries(CHAIN_ALIAS).find(([, al]) => al.some(a => normCust(p) === a)); return c ? c[0] : p; });
   return [...new Set(shown)].join(' / ');
 }
+// หมายเหตุใบ SL ของใบ LA → ชื่อลูกค้า · rows: [{seq, text}] · seq "@1" = หมายเหตุหัวใบ, ตัวเลข = หมายเหตุรายการสินค้า (ใช้เมื่อไม่มีหัวใบ)
+// รูปแบบที่พบ: "ตัวอย่าง อินโนว่า" + "เซลล์นำไปเอง วันที่10/2/69" · "เบิกสินค้าตัวอย่างให้" + "โกลบอล ฟู้ด" + "เซลล์ส่งเอง15/1/69"
+const LA_SKIP_RE = /^(?:เซล(?:ล์|ส์|ล)?\s*(?:นำ|ส่ง|รับ)|ฝาก|รับ(?:ของ|วันที่|สินค้า)|ส่ง(?:วันที่|พร้อม)|เพื่อ|ลูกค้าขอ|\d)/;
+const LA_LEAD_RE = /^(?:เบิก(?:สินค้า)?(?:ตัวอย่าง)?|(?:สินค้า)?ตัวอย่าง)(?:ให้|ไป)?\s*/;
+function laRemarkText(rows = []) {
+  const pickFrom = list => {
+    for (const r of list) {
+      const t = T(r.text);
+      if (!t || LA_SKIP_RE.test(t)) continue;
+      const name = T(t.replace(LA_LEAD_RE, '').replace(/^ลูกค้า\s*/, ''));
+      if (name) return name;
+    }
+    return '';
+  };
+  const bySeq = (a, b) => T(a.seq).localeCompare(T(b.seq), 'en', { numeric: true });
+  return pickFrom(rows.filter(r => T(r.seq).startsWith('@')).sort(bySeq)) || pickFrom(rows.filter(r => !T(r.seq).startsWith('@')).sort(bySeq));
+}
 // customers: [{code, name, slm_id, sales}] — sales = ยอดขายปีนี้ (ใช้เลือกรหัสที่ยังใช้งานจริง)
 function buildCustIndex(customers) {
   return customers.filter(c => !/^01-I[AH]-/.test(c.code)) // รหัสภายใน (พนักงาน/งานออกบูธ)
@@ -231,7 +264,9 @@ function matchCustomer(remark, ownerSlm, idx) {
     if (needSales) return null;
     return new Set(ranked.map(h => h.n)).size === 1 ? ranked[0] : null; // ไม่มียอดเลย: ยอมรับเมื่อชื่อเดียวกันทั้งหมด
   };
-  const own = ownerSlm ? pick(hitsIn(idx.filter(c => c.slm === ownerSlm), 4), false) : null;
+  // ownerSlm: รหัสเดียว หรือทุกรหัสของเซลส์คนนั้น (คุณแด้มีลูกค้าทั้ง 105 และ 40)
+  const owners = new Set([ownerSlm].flat().filter(Boolean));
+  const own = owners.size ? pick(hitsIn(idx.filter(c => owners.has(c.slm)), 4), false) : null;
   const hit = own || pick(hitsIn(idx, 6), true);
   return hit ? { code: hit.code, name: hit.name } : null;
 }
@@ -239,5 +274,5 @@ function matchCustomer(remark, ownerSlm, idx) {
 module.exports = {
   SAMPLE_YEAR, SOURCES, KIND_BY_PREFIX, stripKeyerTag, nickFromSlmName, nickFromUserName, buildNickMap,
   slmFromRemark, chainFromRemark, resolveFromRemark, sellValue, buildLines,
-  CUST_MATCH_VERSION, normCust, remarkParts, displayFromRemark, buildCustIndex, matchCustomer,
+  CUST_MATCH_VERSION, normCust, remarkParts, displayFromRemark, laRemarkText, buildCustIndex, matchCustomer,
 };

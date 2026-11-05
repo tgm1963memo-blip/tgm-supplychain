@@ -49,8 +49,9 @@ module.exports = function sampleIssuesRoutes(db) {
         cust_code, cust_match, cust_name, owner_cust_name, owner_from FROM v_sample_issue_lines WHERE ${where.join(' AND ')} ORDER BY doc_date, doc_num, seq`)
       .all(...params)
       // รหัสลูกค้า (คอลัมน์ที่หน้าเว็บใช้จัดกลุ่ม): ผู้จัดการพิมพ์ชื่อเอง = จัดกลุ่มตามชื่อนั้น · จับลูกค้าในระบบได้ = รหัสนั้น · อื่นๆ = รหัสในใบ
+      // ใบ LA รหัสในใบเป็นรหัสพนักงาน ไม่ใช่ลูกค้า — ส่งว่างให้จัดกลุ่มตามชื่อ ไม่งั้นลูกค้าทุกรายของผู้เบิกคนเดียวถูกรวมเป็นแถวเดียว
       .map(r => [r.doc_date, r.doc_num, r.prefix, r.kind, r.sku, r.sku_name, r.qty, r.unit, r.sell_value, cost ? r.cost_value : null,
-        r.owner_slm, r.owner_cust_name !== r.cust_name ? '' : (r.cust_match || r.cust_code), r.owner_cust_name, r.owner_from]);
+        r.owner_slm, r.owner_cust_name !== r.cust_name ? '' : (r.cust_match || (r.prefix === 'LA' ? '' : r.cust_code)), r.owner_cust_name, r.owner_from]);
     const sync = db.prepare("SELECT MAX(synced_at) AS at FROM sync_file_state WHERE source LIKE '%#sample_issues'").get();
     res.json({ from, to, can_cost: cost, can_manage: canManage(req.user), synced_at: sync?.at || null, slm_names: slmNames(), rows });
   });
@@ -60,7 +61,7 @@ module.exports = function sampleIssuesRoutes(db) {
     const docs = db.prepare(`SELECT doc_num, prefix, MIN(doc_date) AS doc_date, MAX(remark) AS remark, MAX(owner_cust_name) AS cust_name,
         MAX(owner_from) AS owner_from, COUNT(*) AS items, ROUND(SUM(cost_value), 2) AS cost_value, ROUND(SUM(COALESCE(sell_value, 0)), 2) AS sell_value
       FROM v_sample_issue_lines WHERE owner_slm = '' AND prefix <> 'LA' GROUP BY doc_num, prefix ORDER BY cost_value DESC`).all();
-    const people = db.prepare(`SELECT l.cust_code AS people_code, MAX(l.cust_name) AS name, COUNT(DISTINCT l.doc_num) AS docs,
+    const people = db.prepare(`SELECT l.cust_code AS people_code, COALESCE((SELECT name FROM customers WHERE code = l.cust_code LIMIT 1), l.cust_code) AS name, COUNT(DISTINCT l.doc_num) AS docs,
         ROUND(SUM(l.cost_value), 2) AS cost_value, pm.slm_code
       FROM sample_issue_lines l LEFT JOIN sample_person_slm_map pm ON pm.people_code = l.cust_code
       WHERE l.prefix = 'LA' GROUP BY l.cust_code ORDER BY (pm.slm_code IS NULL) DESC, cost_value DESC`).all();

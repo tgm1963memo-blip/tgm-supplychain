@@ -11,7 +11,24 @@ const si = require('../lib/sampleIssues');
 const NICK = si.buildNickMap(
   [{ slm_id: '213', name: 'ห้าง-ครีม.0960875229' }, { slm_id: '207', name: 'ห้าง-เมย์.0827904060' }, { slm_id: '217', name: 'ห้าง-นก.0889919742' },
     { slm_id: '206', name: '*****' }, { slm_id: '114', name: 'คุณอุ้ม.0919414669' }],
-  [{ name: 'คุณธีระพล สูงสุดปัญญา (ไกด์)', slm_id: '110', slm_codes: '110,110-1' }]);
+  [{ name: 'คุณธีระพล สูงสุดปัญญา (ไกด์)', slm_id: '110', slm_codes: '110,110-1' }, { name: 'คุณธีระพล สูงสุดปัญญา (ไกด์)', slm_id: '110', slm_codes: '110-2' },
+    { name: 'สุนทรี โนทะ (คุณแด้)', slm_id: '105', slm_codes: '105,40' }, { name: 'คุณปิยพร คุ้มวงษ์ (คุณครีม)', slm_id: '213', slm_codes: '213' }]);
+
+// ใบ ก.ค. เป็นต้นไปใช้ชื่อจริงของเซลส์ · ใบ LA เก็บชื่อลูกค้าไว้ในหมายเหตุใบ SL
+test('sample issues: first names in remarks and customer text from SL remarks', () => {
+  assert.equal(si.slmFromRemark('เซลล์ส่งเอง ส่งวันที่ 6/8/69 (เซลล์ สุนทรี)', NICK), '105');
+  assert.equal(si.slmFromRemark('(เซลล์ ธีระพล)', NICK), '110-1', 'คนเดียวกันสองบัญชีไม่ถือว่ากำกวม');
+  assert.equal(si.slmFromRemark('(เซลล์ ปิยะพร)', NICK), '213', 'สะกดต่างจากบัญชีผู้ใช้');
+  const rows = (...t) => t.map((text, i) => ({ seq: `@${i + 1}`, text }));
+  assert.equal(si.laRemarkText(rows('ตัวอย่าง อาร์ตออฟเบคกิ้ง', 'เซลล์นำไปเอง วันที่7/1/69')), 'อาร์ตออฟเบคกิ้ง');
+  assert.equal(si.laRemarkText(rows('เบิกสินค้าตัวอย่างให้', 'โกลบอล ฟู้ด', 'เซลล์ส่งเอง15/1/69')), 'โกลบอล ฟู้ด');
+  assert.equal(si.laRemarkText(rows('ลูกค้าขอตัวอย่าง', 'ลูกค้าชิสเตอร์ดูร (ร้านชาบูซัง)')), 'ชิสเตอร์ดูร (ร้านชาบูซัง)');
+  assert.equal(si.laRemarkText([{ seq: '3', text: 'รายการสินค้า' }, { seq: '@1', text: 'ตัวอย่าง Ronin pizza' }]), 'Ronin pizza', 'หมายเหตุหัวใบมาก่อน');
+  assert.equal(si.laRemarkText(rows('เซลล์นำไปเอง')), '');
+  assert.equal(si.laRemarkText(undefined), '');
+  const idx = si.buildCustIndex([{ code: 'X1', name: 'ร้านอินโนว่า', slm_id: '40', sales: 0 }]);
+  assert.equal(si.matchCustomer('อินโนว่า', ['105', '40'], idx).code, 'X1', 'ลูกค้าภายใต้รหัสอื่นของเซลส์คนเดียวกัน');
+});
 
 // ประวัติเบิกตัวอย่าง (2026-11-05): อ่านเจ้าของจากหมายเหตุใบ KA/KB/PD
 test('sample issues: remark parsing — strip /P, salesperson nickname, chain, office', () => {

@@ -23,9 +23,15 @@ async function syncSampleIssues(db, { force = false } = {}) {
   const setState = db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
     ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`);
 
-  const nickMap = si.buildNickMap(
-    db.prepare('SELECT slm_id, name FROM salesmen').all(),
-    db.prepare('SELECT name, slm_id, slm_codes FROM sc_users WHERE is_active = 1 OR is_active IS NULL').all());
+  const users = db.prepare('SELECT name, slm_id, slm_codes FROM sc_users WHERE is_active = 1 OR is_active IS NULL').all();
+  const nickMap = si.buildNickMap(db.prepare('SELECT slm_id, name FROM salesmen').all(), users);
+  // รหัสเซลส์ → ทุกรหัสของคนนั้น (ใช้หาลูกค้าของเจ้าของใบ)
+  const ownerCodes = new Map();
+  for (const u of users) {
+    const codes = T(u.slm_codes || u.slm_id).split(',').map(T).filter(Boolean);
+    const main = T(u.slm_id) || codes[0];
+    if (main) for (const c of [main, `${main}-1`]) if (codes.includes(c) && !ownerCodes.has(c)) ownerCodes.set(c, codes);
+  }
   const rulesSig = hashOf([[...nickMap].sort(), si.SOURCES, si.CUST_MATCH_VERSION]);
 
   // สถานะไฟล์ของทุกห้อง — เปลี่ยนห้องไหนก็สร้างใหม่ห้องนั้น
@@ -79,7 +85,13 @@ async function syncSampleIssues(db, { force = false } = {}) {
       console.warn(`[sampleIssues] ${plan.company}: ARTRN/STTRN/ARTRNRM read 0 rows — skipped (share dropped?)`);
       continue;
     }
-    for (const r of artrn) if (T(r.DOCSTAT) === 'C') cancelled.add(T(r.DOCNUM));
+    const laOrder = new Map(); // ใบ LA → ใบ SL ที่อ้างถึง
+    for (const r of artrn) {
+      const doc = T(r.DOCNUM);
+      if (T(r.DOCSTAT) === 'C') cancelled.add(doc);
+      if (prefixes.has('LA') && doc.startsWith('LA') && T(r.SONUM)) laOrder.set(doc, T(r.SONUM));
+    }
+    const orderDocs = new Set(laOrder.values());
     for (const r of sttrn) {
       const doc = T(r.DOCNUM);
       if (!prefixes.has(doc.slice(0, 2))) continue;
@@ -87,28 +99,33 @@ async function syncSampleIssues(db, { force = false } = {}) {
       headerRemarks.set(doc, T(r.REMARK));
     }
     const lineRemarks = new Map();
+    const orderRemarks = new Map(); // หมายเหตุใบ SL ของใบ LA — ที่เก็บชื่อลูกค้าจริงของใบ LA
     for (const r of remarks) {
       const doc = T(r.DOCNUM);
-      if (!prefixes.has(doc.slice(0, 2))) continue;
       const t = T(r.REMARK);
-      if (t) lineRemarks.set(doc, `${lineRemarks.get(doc) || ''} ${t}`);
+      if (!t) continue;
+      if (orderDocs.has(doc)) orderRemarks.set(doc, [...(orderRemarks.get(doc) || []), { seq: T(r.SEQNUM), text: t }]);
+      if (prefixes.has(doc.slice(0, 2))) lineRemarks.set(doc, `${lineRemarks.get(doc) || ''} ${t}`);
     }
     const lines = si.buildLines(rows, { company: plan.company, prefixes, cancelled, headerRemarks, lineRemarks, nickMap, products, custNames, normalizeSlm: ife.normalizeSlmCode });
 
-    // ชื่อลูกค้าจากหมายเหตุ (ใบละครั้ง): KA/KB/PD ใช้หมายเหตุหัวใบ · LA ใช้ ARTRNRM (มีน้อย) · ใบที่มีลูกค้าในใบอยู่แล้ว (LB/LD/LE) ไม่ต้องหา
+    // ชื่อลูกค้าจากหมายเหตุ (ใบละครั้ง): KA/KB/PD ใช้หมายเหตุหัวใบ · LA ใช้หมายเหตุใบ SL แล้วค่อยหมายเหตุของ LA เอง · ใบที่มีลูกค้าในใบอยู่แล้ว (LB/LD/LE) ไม่ต้องหา
     // เจอในระบบ = ใช้ชื่อในระบบ · ไม่เจอ = ใช้ข้อความหมายเหตุ · ไม่มีหมายเหตุ = คงชื่อเดิม (เชน / ผู้เบิก)
     const perDoc = new Map();
     for (const l of lines) {
       if (!['KA', 'KB', 'PD', 'LA'].includes(l.prefix) || l.cust_name === 'ออฟฟิศ') continue;
       if (!perDoc.has(l.doc_num)) {
-        const remark = l.prefix === 'LA' ? T(lineRemarks.get(l.doc_num)) : T(headerRemarks.get(l.doc_num));
+        const remark = l.prefix === 'LA'
+          ? (si.laRemarkText(orderRemarks.get(laOrder.get(l.doc_num))) || T(lineRemarks.get(l.doc_num)))
+          : T(headerRemarks.get(l.doc_num));
         const owner = l.prefix === 'LA' ? (personSlm.get(l.cust_code) || '') : l.slm_code;
-        const m = remark ? si.matchCustomer(remark, owner, custIndex) : null;
-        perDoc.set(l.doc_num, m ? { code: m.code, name: m.name } : { code: '', name: remark ? si.displayFromRemark(remark) : '' });
+        const m = remark ? si.matchCustomer(remark, ownerCodes.get(owner) || owner, custIndex) : null;
+        perDoc.set(l.doc_num, m ? { code: m.code, name: m.name, remark } : { code: '', name: remark ? si.displayFromRemark(remark) : '', remark });
       }
       const r = perDoc.get(l.doc_num);
       l.cust_match = r.code;
       if (r.name) l.cust_name = r.name;
+      if (l.prefix === 'LA') l.remark = r.remark;
     }
 
     const ins = db.prepare(`INSERT OR REPLACE INTO sample_issue_lines (company, doc_num, seq, doc_date, prefix, kind, sku, loc_code, sku_name, qty, unit,
