@@ -22172,7 +22172,7 @@ async function _sxLoad(force) {
   _sx.loading = false;
   if (sessionStorage.getItem('_pg') === 'sample' && _sr.type === 'express') pgSample();
 }
-function _sxVal(r) { return _sx.data?.can_cost && _sx.price === 'cost' ? (r[9] || 0) : Math.max(0, r[8] || 0); }
+function _sxVal(r) { return _sx.data?.can_cost && _sx.price === 'cost' ? (r[9] || 0) : (r[8] || 0); }
 function _sxLines() {
   const rows = _sx.data?.rows || [], q = _sx.q.trim().toLowerCase();
   return rows.filter(r => {
@@ -22193,7 +22193,7 @@ function _sxAgg(ls) {
   const o = { v: 0, q: 0, cost: 0, sell: 0, m: {}, mq: {}, docs: new Set(), units: new Set(), k: { sample: 0, tasting: 0, free: 0 } };
   for (const r of ls) {
     const v = _sxVal(r), m = +r[0].slice(5, 7);
-    o.v += v; o.q += r[6]; o.cost += r[9] || 0; o.sell += Math.max(0, r[8] || 0);
+    o.v += v; o.q += r[6]; o.cost += r[9] || 0; o.sell += r[8] || 0;
     o.m[m] = (o.m[m] || 0) + v; o.mq[m] = (o.mq[m] || 0) + r[6]; o.docs.add(r[1]); o.units.add(r[7]); o.k[r[3]] += v;
   }
   return o;
@@ -22222,7 +22222,8 @@ function _sxRender(typeBar) {
   const pill = (on, onclick, label) => `<button onclick="${onclick}" style="padding:4px 11px;border-radius:999px;font-size:12px;cursor:pointer;font-family:var(--font);border:1px solid ${on ? 'var(--N)' : 'var(--BD)'};background:${on ? 'var(--N)' : 'var(--W)'};color:${on ? '#fff' : 'var(--TX2)'}">${label}</button>`;
   const head = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${typeBar}</div>`;
   if (!D) {
-    _sxLoad();
+    // โหลดอัตโนมัติเฉพาะเมื่อยังไม่เคยพลาด — พลาดแล้วให้กด "ลองใหม่" เอง (กันยิง API วนไม่หยุดตอน server ล่ม, code review 2026-11-05)
+    if (!_sx.err) _sxLoad();
     ct.innerHTML = head + `<div class="card" style="padding:28px;text-align:center;color:var(--TX3)">${_sx.err ? `โหลดประวัติเบิกไม่สำเร็จ: ${esc(_sx.err)} <button class="btn btn-sm" onclick="_sxLoad(true)">ลองใหม่</button>` : 'กำลังโหลดประวัติเบิกจาก Express…'}</div>`;
     return;
   }
@@ -22356,13 +22357,13 @@ function _sxUnresHtml() {
     <td>${_sxPill(d.owner_from)} ${d.owner_from === 'chain' ? esc(String(d.cust_name).replace(' (จากหมายเหตุ)', '')) : ''}</td><td style="text-align:right">${_sxBaht(d.cost_value)}</td>
     <td><div style="display:flex;gap:6px;flex-wrap:wrap"><select id="sxo-s-${esc(d.doc_num)}" style="${fSt}">${_sxSlmOptions(U.slm_names)}</select>
       <input id="sxo-c-${esc(d.doc_num)}" style="${fSt}" placeholder="ลูกค้า (ถ้ารู้)" value="">
-      <button class="btn btn-sm btn-p" onclick="sxSaveOwner('${esc(d.doc_num)}')">บันทึก</button></div></td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--TX3)">ไม่มีใบที่รอระบุ 🎉</td></tr>'}
+      <button class="btn btn-sm btn-p" onclick="sxSaveOwner(${esc(JSON.stringify(d.doc_num))})">บันทึก</button></div></td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--TX3)">ไม่มีใบที่รอระบุ 🎉</td></tr>'}
   </tbody></table></div>
   <div style="font-weight:600;margin:16px 0 6px">ผู้เบิกใบ LA (ม.ค.–มิ.ย.) → เซลส์ <span style="font-weight:400;font-size:12px;color:var(--TX3)">ยังไม่จับคู่ ${unmapped.length} คน · ทุกใบของผู้เบิกจะเป็นของเซลส์ที่เลือก</span></div>
   <div style="overflow:auto;max-height:360px;border:1px solid var(--BD);border-radius:8px">
   <table class="tbl" style="width:100%;font-size:12.5px"><thead><tr><th>รหัส</th><th>ผู้เบิก</th><th style="text-align:right">ใบ</th><th style="text-align:right">มูลค่าทุน</th><th>เซลส์</th></tr></thead><tbody>
   ${U.people.map(p => `<tr><td>${esc(p.people_code)}</td><td>${esc(String(p.name).replace(/^\(ผู้เบิก\)\s*/, ''))}</td><td style="text-align:right">${p.docs}</td><td style="text-align:right">${_sxBaht(p.cost_value)}</td>
-    <td><select style="${fSt}" onchange="sxSavePerson('${esc(p.people_code)}',this.value)">${_sxSlmOptions(U.slm_names, p.slm_code || '').replace('— เลือกเซลส์ —', '— ไม่ระบุ —')}</select></td></tr>`).join('')}
+    <td><select style="${fSt}" onchange="sxSavePerson(${esc(JSON.stringify(p.people_code))},this.value)">${_sxSlmOptions(U.slm_names, p.slm_code || '').replace('— เลือกเซลส์ —', '— ไม่ระบุ —')}</select></td></tr>`).join('')}
   </tbody></table></div>`;
 }
 async function sxSaveOwner(doc) {

@@ -8,7 +8,10 @@ const { requireRole } = require('../middleware/auth');
 const cs = require('../lib/customerScope');
 
 const COST_ROLES = ['superadmin', 'admin', 'manager', 'sales_manager'];
+// ระบุเจ้าของ/จับคู่ผู้เบิก: ใบที่รอระบุยังไม่มีเจ้าของ จึงกรองตามทีมไม่ได้ — ให้เฉพาะคนที่เห็นภาพรวมทั้งบริษัท
+// (sales_manager ที่ดูแลแค่บางทีมทำไม่ได้ ไม่งั้นเห็นทุนของทุกใบและโอนใบทีมอื่นมาทีมตัวเองได้ — code review 2026-11-05)
 const MANAGE_ROLES = COST_ROLES;
+const SLM_RE = /^[0-9A-Za-z][0-9A-Za-z-]{0,9}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const T = s => String(s ?? '').trim();
 
@@ -28,6 +31,9 @@ module.exports = function sampleIssuesRoutes(db) {
     return out;
   }
   const canCost = u => COST_ROLES.includes(u?.role);
+  const canManage = u => ['superadmin', 'admin', 'manager'].includes(u?.role)
+    || (u?.role === 'sales_manager' && cs.resolveScope(db, u).all === true);
+  const requireManage = (req, res, next) => canManage(req.user) ? next() : res.status(403).json({ error: 'เฉพาะผู้ดูแลที่เห็นภาพรวมทั้งบริษัท' });
 
   // GET /lines?from=YYYY-MM-DD&to=YYYY-MM-DD — บรรทัดเบิกทั้งหมดในช่วง (หน้าเว็บทำ pivot เอง)
   // แถว: [วันที่, เลขที่, เล่ม, ประเภท, รหัสสินค้า, ชื่อสินค้า, จำนวน, หน่วย, ราคาขาย, ทุน|null, เจ้าของ, รหัสลูกค้า, ชื่อลูกค้า, ที่มาเจ้าของ]
@@ -45,11 +51,11 @@ module.exports = function sampleIssuesRoutes(db) {
       .map(r => [r.doc_date, r.doc_num, r.prefix, r.kind, r.sku, r.sku_name, r.qty, r.unit, r.sell_value, cost ? r.cost_value : null,
         r.owner_slm, r.cust_code, r.owner_cust_name, r.owner_from]);
     const sync = db.prepare("SELECT MAX(synced_at) AS at FROM sync_file_state WHERE source LIKE '%#sample_issues'").get();
-    res.json({ from, to, can_cost: cost, can_manage: MANAGE_ROLES.includes(req.user?.role), synced_at: sync?.at || null, slm_names: slmNames(), rows });
+    res.json({ from, to, can_cost: cost, can_manage: canManage(req.user), synced_at: sync?.at || null, slm_names: slmNames(), rows });
   });
 
   // GET /unresolved — ใบที่ยังไม่มีเจ้าของ + ผู้เบิกใบ LA ที่ยังไม่จับคู่ (ผู้จัดการ)
-  router.get('/unresolved', requireRole(...MANAGE_ROLES), (req, res) => {
+  router.get('/unresolved', requireRole(...MANAGE_ROLES), requireManage, (req, res) => {
     const docs = db.prepare(`SELECT doc_num, prefix, MIN(doc_date) AS doc_date, MAX(remark) AS remark, MAX(owner_cust_name) AS cust_name,
         MAX(owner_from) AS owner_from, COUNT(*) AS items, ROUND(SUM(cost_value), 2) AS cost_value, ROUND(SUM(COALESCE(sell_value, 0)), 2) AS sell_value
       FROM v_sample_issue_lines WHERE owner_slm = '' AND prefix <> 'LA' GROUP BY doc_num, prefix ORDER BY cost_value DESC`).all();
@@ -60,11 +66,12 @@ module.exports = function sampleIssuesRoutes(db) {
     res.json({ docs, people, slm_names: slmNames() });
   });
 
-  const validSlm = code => !code || !!db.prepare('SELECT 1 FROM salesmen WHERE slm_id = ?').get(code)
-    || db.prepare("SELECT 1 FROM sc_users WHERE ',' || REPLACE(COALESCE(slm_codes, slm_id, ''), ' ', '') || ',' LIKE '%,' || ? || ',%'").get(code);
+  // รหัสต้องเป็นรูปแบบรหัสเซลส์ และมีอยู่จริงใน Express หรือในบัญชีผู้ใช้ (เทียบแบบตรงตัว ไม่ใช้ LIKE — กัน % / _ ผ่าน)
+  const validSlm = code => !code || (SLM_RE.test(code) && (!!db.prepare('SELECT 1 FROM salesmen WHERE slm_id = ?').get(code)
+    || !!db.prepare("SELECT 1 FROM sc_users WHERE instr(',' || REPLACE(COALESCE(slm_codes, slm_id, ''), ' ', '') || ',', ',' || ? || ',') > 0").get(code)));
 
   // PUT /owner/:doc_num { slm_code, cust_name?, note? } — slm_code ว่างและไม่มี cust_name = ลบค่าที่ระบุไว้
-  router.put('/owner/:doc_num', requireRole(...MANAGE_ROLES), (req, res) => {
+  router.put('/owner/:doc_num', requireRole(...MANAGE_ROLES), requireManage, (req, res) => {
     const doc = T(req.params.doc_num);
     const slm = T(req.body?.slm_code), custName = T(req.body?.cust_name).slice(0, 200), note = T(req.body?.note).slice(0, 500);
     if (!db.prepare('SELECT 1 FROM sample_issue_lines WHERE doc_num = ?').get(doc)) return res.status(404).json({ error: 'ไม่พบใบเบิกนี้' });
@@ -80,7 +87,7 @@ module.exports = function sampleIssuesRoutes(db) {
   });
 
   // PUT /person/:people_code { slm_code } — ผู้เบิกใบ LA → เซลส์ · slm_code ว่าง = ลบการจับคู่
-  router.put('/person/:people_code', requireRole(...MANAGE_ROLES), (req, res) => {
+  router.put('/person/:people_code', requireRole(...MANAGE_ROLES), requireManage, (req, res) => {
     const code = T(req.params.people_code), slm = T(req.body?.slm_code);
     if (!validSlm(slm)) return res.status(400).json({ error: `ไม่พบรหัสเซลส์ ${slm}` });
     if (!slm) { db.prepare('DELETE FROM sample_person_slm_map WHERE people_code = ?').run(code); return res.json({ ok: true, removed: true }); }

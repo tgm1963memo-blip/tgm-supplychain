@@ -870,14 +870,20 @@ function runMigrations(db) {
   // ประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม จาก Express (2026-11-05) — jobs/importSampleIssues.js, lib/sampleIssues.js, routes/sampleIssues.js
   // sample_issue_lines สร้างใหม่ทั้งปีทุกรอบที่ไฟล์เปลี่ยน · เจ้าของที่ผู้จัดการระบุ/ตารางจับคู่ผู้เบิกอยู่คนละตาราง (ไม่หายตอน sync)
   // เจ้าของจริง = ที่ผู้จัดการระบุ → ใบ LA: ตารางจับคู่ผู้เบิก → รหัสในใบ/อ่านจากหมายเหตุ (ดู v_sample_issue_lines)
+  // คีย์ต้องมีคลัง (LOCCOD) — ใบเดียวกันอาจเบิกสินค้าเดียวกันจากหลายคลังในลำดับเดียวกัน (code review 2026-11-05)
+  // ตารางรูปแบบเก่า (ไม่มี loc_code) สร้างใหม่ได้เลย: ข้อมูลดึงใหม่จาก Express ทั้งปีในรอบ sync ถัดไป
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sample_issue_lines'").get() && !columnExists(db, 'sample_issue_lines', 'loc_code')) {
+    db.exec('DROP VIEW IF EXISTS v_sample_issue_lines; DROP TABLE sample_issue_lines;');
+    try { db.prepare("DELETE FROM sync_file_state WHERE source LIKE '%#sample_issues'").run(); } catch { /* ยังไม่มีตาราง */ }
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS sample_issue_lines (
       company TEXT NOT NULL, doc_num TEXT NOT NULL, seq TEXT NOT NULL, doc_date TEXT NOT NULL,
-      prefix TEXT NOT NULL, kind TEXT NOT NULL, sku TEXT NOT NULL, sku_name TEXT, qty REAL NOT NULL DEFAULT 0, unit TEXT,
+      prefix TEXT NOT NULL, kind TEXT NOT NULL, sku TEXT NOT NULL, loc_code TEXT NOT NULL DEFAULT '', sku_name TEXT, qty REAL NOT NULL DEFAULT 0, unit TEXT,
       cost_value REAL NOT NULL DEFAULT 0, sell_value REAL,
       cust_code TEXT NOT NULL DEFAULT '', cust_name TEXT, slm_code TEXT NOT NULL DEFAULT '', dept_code TEXT, remark TEXT,
       owner_src TEXT NOT NULL DEFAULT 'none',
-      PRIMARY KEY (company, doc_num, seq, sku)
+      PRIMARY KEY (company, doc_num, seq, sku, loc_code)
     );
     CREATE INDEX IF NOT EXISTS idx_sample_issue_lines_date ON sample_issue_lines(doc_date);
     CREATE INDEX IF NOT EXISTS idx_sample_issue_lines_doc ON sample_issue_lines(doc_num);

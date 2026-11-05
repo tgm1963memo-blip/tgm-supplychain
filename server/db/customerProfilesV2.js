@@ -472,7 +472,8 @@ function applySalesGroupsPoo20261105(db) {
   const nameOf = db.prepare(`SELECT (SELECT name FROM customers WHERE code = ?) AS c, (SELECT name FROM bplus_customers WHERE code = ?) AS b`);
   const upd = db.prepare(`INSERT INTO customer_profiles (code, name, sales_group, sales_group_by, edited_by, updated_at)
     VALUES (?, ?, ?, 'ลักษณา', 'sales-groups-poo-2026-11-05', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ON CONFLICT(code) DO UPDATE SET sales_group = excluded.sales_group, sales_group_by = excluded.sales_group_by,
+    ON CONFLICT(code) DO UPDATE SET sales_group = excluded.sales_group,
+      sales_group_by = COALESCE(NULLIF(TRIM(customer_profiles.sales_group_by), ''), excluded.sales_group_by),
       edited_by = excluded.edited_by, updated_at = excluded.updated_at, name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name)
     WHERE COALESCE(TRIM(customer_profiles.sales_group), '') = ''`);
   let n = 0;

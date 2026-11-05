@@ -1576,6 +1576,8 @@ async function syncExpressPoLines(db) {
   // อ่านไฟล์ไม่ได้/ไม่พบไฟล์ — คงข้อมูลรอบก่อนไว้ ดีกว่าล้างจนหน้ารับเข้าว่างเปล่า
   if (!headers.length) return 0;
   const items = await readTable(PO_COMPANY, 'POPRIT.DBF');
+  // หัวใบอ่านได้แต่บรรทัดอ่านไม่ได้ (share หลุดกลางรอบ) — เหมือนกัน: คงข้อมูลเดิม ไม่ล้างตาราง (code review 2026-11-05)
+  if (!items.length) return 0;
   const suppliers = await readTable(PO_COMPANY, 'APMAS.DBF');
   const unitNames = await loadUnitNameMap();
   const supplierName = new Map(suppliers.map((s) => [
@@ -1944,4 +1946,4 @@ async function runImport(db) {
   }
 }
 
-module.exports = { branchFromArmas, normalizeSlmCode, readTable, findFile, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncExpressPoLines, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { branchFromArmas, normalizeSlmCode, readTable, readRemarks, findFile, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncExpressPoLines, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };

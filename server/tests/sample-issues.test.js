@@ -74,6 +74,8 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
   ins.run('TSS', 'KA6907001', '1', '2026-07-01', 'KA', 'tasting', 'A', 'A', 2, 'แพ', 100, 150, '', 'The Mall (จากหมายเหตุ)', '213', 'x (เซลล์ ครีม)', 'remark');
   ins.run('TSS', 'KB6907002', '1', '2026-07-02', 'KB', 'sample', 'B', 'B', 1, 'แพ', 50, 80, '', 'Makro (จากหมายเหตุ)', '', 'Makro/เซลล์ส่ง', 'chain');
   ins.run('TSS-NV', 'LA6900002', '1', '2026-01-05', 'LA', 'sample', 'A', 'A', 1, 'กก', 30, 40, '01-IH-0096', '(ผู้เบิก) นภัสสร', '', '', 'person');
+  db.prepare(`INSERT INTO sample_issue_lines (company,doc_num,seq,doc_date,prefix,kind,sku,loc_code,qty,cost_value,cust_code,cust_name,slm_code,owner_src)
+    VALUES ('TSS','KA6907001','1','2026-07-01','KA','tasting','A','02',1,40,'','The Mall (จากหมายเหตุ)','213','remark')`).run();
   ins.run('TSS-NV', 'LA6900009', '1', '2026-02-05', 'LA', 'sample', 'A', 'A', 1, 'กก', 7, 9, '01-IH-0999', '(ผู้เบิก) ใครสักคน', '', '', 'person');
 
   const server = buildApp(db).listen(0, '127.0.0.1');
@@ -88,7 +90,7 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
   // เซลส์ 213: เห็นแค่ใบของตัวเอง ไม่มีทุน
   let r = await call('/lines?from=2026-01-01&to=2026-12-31', 'S');
   assert.equal(r.status, 200);
-  assert.deepEqual(r.data.rows.map(x => x[1]), ['KA6907001']);
+  assert.deepEqual(r.data.rows.map(x => x[1]), ['KA6907001', 'KA6907001'], 'สองคลัง = สองแถว');
   assert.equal(r.data.rows[0][9], null, 'เซลส์ไม่ได้รับมูลค่าทุน');
   assert.equal(r.data.rows[0][8], 150);
   assert.equal(r.data.can_cost, false);
@@ -97,7 +99,7 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
 
   // admin: เห็นทั้งหมด + ทุน · LA ที่จับคู่ผู้เบิกไว้ (01-IH-0096 → 113 จาก migration) มีเจ้าของ
   r = await call('/lines', 'A');
-  assert.equal(r.data.rows.length, 4);
+  assert.equal(r.data.rows.length, 5);
   assert.equal(r.data.can_cost, true);
   const la = r.data.rows.find(x => x[1] === 'LA6900002');
   assert.deepEqual([la[9], la[10], la[13]], [30, '113', 'person']);
@@ -105,18 +107,24 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
   assert.deepEqual((await call('/lines?from=2026-07-02&to=2026-07-31', 'A')).data.rows.map(x => x[1]), ['KB6907002']);
 
   // รอระบุ: KB (ใบ) + ผู้เบิก 01-IH-0999 ยังไม่จับคู่
-  r = await call('/unresolved', 'M');
+  // sales_manager ที่ดูแลแค่ทีม: ระบุเจ้าของไม่ได้ (ใบรอระบุยังไม่มีเจ้าของ กรองตามทีมไม่ได้)
+  assert.equal((await call('/unresolved', 'M')).status, 403);
+  assert.equal((await call('/owner/KB6907002', 'M', 'PUT', { slm_code: '207' })).status, 403);
+  assert.equal((await call('/lines', 'M')).data.can_manage, false);
+  r = await call('/unresolved', 'A');
   assert.deepEqual(r.data.docs.map(d => d.doc_num), ['KB6907002']);
   assert.equal(r.data.people[0].people_code, '01-IH-0999');
   assert.equal(r.data.people[0].slm_code, null);
 
   // ระบุเจ้าของ → เซลส์ 207 เห็น · ลบแล้วกลับเป็นรอระบุ
-  assert.equal((await call('/owner/KB6907002', 'M', 'PUT', { slm_code: 'XXX' })).status, 400);
-  assert.equal((await call('/owner/NOPE', 'M', 'PUT', { slm_code: '207' })).status, 404);
-  assert.equal((await call('/owner/KB6907002', 'M', 'PUT', { slm_code: '207', cust_name: 'Makro มหาชัย' })).status, 200);
+  assert.equal((await call('/owner/KB6907002', 'A', 'PUT', { slm_code: 'XXX' })).status, 400);
+  for (const bad of ['%', '1_', '2%']) assert.equal((await call('/owner/KB6907002', 'A', 'PUT', { slm_code: bad })).status, 400, `wildcard ${bad}`);
+  assert.equal((await call('/person/01-IH-0999', 'A', 'PUT', { slm_code: '%' })).status, 400);
+  assert.equal((await call('/owner/NOPE', 'A', 'PUT', { slm_code: '207' })).status, 404);
+  assert.equal((await call('/owner/KB6907002', 'A', 'PUT', { slm_code: '207', cust_name: 'Makro มหาชัย' })).status, 200);
   r = await call('/lines', 'S2');
   assert.deepEqual(r.data.rows.map(x => [x[1], x[12], x[13]]), [['KB6907002', 'Makro มหาชัย', 'manual']]);
-  await call('/owner/KB6907002', 'M', 'PUT', { slm_code: '' });
+  await call('/owner/KB6907002', 'A', 'PUT', { slm_code: '' });
   assert.deepEqual((await call('/lines', 'S2')).data.rows, []);
 
   // จับคู่ผู้เบิก LA

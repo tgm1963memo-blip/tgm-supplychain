@@ -32,7 +32,8 @@ async function syncSampleIssues(db, { force = false } = {}) {
   const plans = [];
   for (const src of si.SOURCES) {
     const folder = path.join(ife.EXPRESS_ROOT, src.company);
-    const files = ['STCRD.DBF', 'STTRN.DBF', 'ARTRN.DBF'].map(f => ife.findFile(folder, f)).filter(Boolean);
+    // ไฟล์ทุกตัวที่ใช้ — เปลี่ยนตัวไหนก็อ่านใหม่ (หมายเหตุ ARTRNRM / ราคาขาย STMAS ด้วย)
+    const files = ['STCRD.DBF', 'STTRN.DBF', 'ARTRN.DBF', 'ARTRNRM.DBF', 'STMAS.DBF'].map(f => ife.findFile(folder, f)).filter(Boolean);
     if (!files.some(f => /stcrd\.dbf$/i.test(f))) continue;
     let mt;
     try { mt = files.map(f => fs.statSync(f).mtimeMs).reduce((a, b) => a + b, 0); } catch (e) { console.warn(`[sampleIssues] stat ${src.company} failed: ${e.message}`); continue; }
@@ -64,15 +65,24 @@ async function syncSampleIssues(db, { force = false } = {}) {
     const prefixes = new Set(plan.prefixes);
     const cancelled = new Set();
     const headerRemarks = new Map();
-    for (const r of await ife.readTable(plan.company, 'ARTRN.DBF')) if (T(r.DOCSTAT) === 'C') cancelled.add(T(r.DOCNUM));
-    for (const r of await ife.readTable(plan.company, 'STTRN.DBF')) {
+    // อ่านได้ 0 แถว = share หลุดกลางรอบ — ข้ามห้องนี้ ไม่บันทึกสถานะ (ไม่งั้นใบยกเลิก/หมายเหตุหายค้างจนไฟล์เปลี่ยนรอบหน้า)
+    // ARTRNRM ใช้ readRemarks (cache ต่อรอบ sync ร่วมกับ job อื่น)
+    const artrn = await ife.readTable(plan.company, 'ARTRN.DBF');
+    const sttrn = await ife.readTable(plan.company, 'STTRN.DBF');
+    const remarks = await ife.readRemarks(plan.company);
+    if (!artrn.length || (plan.company === 'TSS' && !sttrn.length) || !remarks.length) {
+      console.warn(`[sampleIssues] ${plan.company}: ARTRN/STTRN/ARTRNRM read 0 rows — skipped (share dropped?)`);
+      continue;
+    }
+    for (const r of artrn) if (T(r.DOCSTAT) === 'C') cancelled.add(T(r.DOCNUM));
+    for (const r of sttrn) {
       const doc = T(r.DOCNUM);
       if (!prefixes.has(doc.slice(0, 2))) continue;
       if (T(r.DOCSTAT) === 'C') cancelled.add(doc);
       headerRemarks.set(doc, T(r.REMARK));
     }
     const lineRemarks = new Map();
-    for (const r of await ife.readTable(plan.company, 'ARTRNRM.DBF')) {
+    for (const r of remarks) {
       const doc = T(r.DOCNUM);
       if (!prefixes.has(doc.slice(0, 2))) continue;
       const t = T(r.REMARK);
@@ -80,13 +90,13 @@ async function syncSampleIssues(db, { force = false } = {}) {
     }
     const lines = si.buildLines(rows, { company: plan.company, prefixes, cancelled, headerRemarks, lineRemarks, nickMap, products, custNames, normalizeSlm: ife.normalizeSlmCode });
 
-    const ins = db.prepare(`INSERT OR REPLACE INTO sample_issue_lines (company, doc_num, seq, doc_date, prefix, kind, sku, sku_name, qty, unit,
-      cost_value, sell_value, cust_code, cust_name, slm_code, dept_code, remark, owner_src) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const ins = db.prepare(`INSERT OR REPLACE INTO sample_issue_lines (company, doc_num, seq, doc_date, prefix, kind, sku, loc_code, sku_name, qty, unit,
+      cost_value, sell_value, cust_code, cust_name, slm_code, dept_code, remark, owner_src) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     db.exec('BEGIN');
     try {
       db.prepare('DELETE FROM sample_issue_lines WHERE company = ? AND doc_date >= ? AND doc_date <= ?').run(plan.company, `${si.SAMPLE_YEAR}-01-01`, `${si.SAMPLE_YEAR}-12-31`);
       for (const l of lines) {
-        ins.run(l.company, l.doc_num, l.seq, l.doc_date, l.prefix, l.kind, l.sku, l.sku_name, l.qty, l.unit,
+        ins.run(l.company, l.doc_num, l.seq, l.doc_date, l.prefix, l.kind, l.sku, l.loc_code, l.sku_name, l.qty, l.unit,
           l.cost_value, l.sell_value, l.cust_code, l.cust_name, l.slm_code, l.dept_code, l.remark, l.owner_src);
       }
       setState.run(plan.key, plan.sig, new Date().toISOString());

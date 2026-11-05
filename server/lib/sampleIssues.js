@@ -154,7 +154,7 @@ function buildLines(rows, ctx) {
     }
     out.push({
       company: ctx.company, doc_num: doc, seq: T(r.SEQNUM), doc_date: date, prefix, kind: KIND_BY_PREFIX[prefix],
-      sku, sku_name: T(product?.name) || T(r.STKDES), qty: round2(Number(r.TRNQTY) || 0), unit: T(r.TQUCOD),
+      sku, loc_code: T(r.LOCCOD), sku_name: T(product?.name) || T(r.STKDES), qty: round2(Number(r.TRNQTY) || 0), unit: T(r.TQUCOD),
       cost_value: round2(Number(r.XTRNVAL) || 0), sell_value: sellValue(prefix, r, product),
       cust_code: custCode, cust_name: custName, slm_code: slm, dept_code: T(r.DEPCOD),
       remark: REMARK_PREFIXES.has(prefix) ? T(ctx.headerRemarks.get(doc)) : '', owner_src: src,

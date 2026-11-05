@@ -84,6 +84,16 @@ function Test-Health {
   $false
 }
 
+# Start time of the running service process - a restart done by hand (e.g. after npm install on a BLOCKED
+# result) means the service now runs whatever is on disk, so the watcher must take that as its new baseline.
+function Get-ServiceStart {
+  try {
+    $svcPid = (Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction Stop).ProcessId
+    if ($svcPid) { return (Get-Process -Id $svcPid -ErrorAction Stop).StartTime }
+  } catch { }
+  return $null
+}
+
 function Invoke-Restart($changed) {
   $rel = $changed | ForEach-Object { $_.Replace((Split-Path -Parent $serverDir) + '\', '') }
 
@@ -124,6 +134,7 @@ $mode = if ($Auto) { 'Auto' } else { 'Request' }
 Write-Log "watcher started (mode=$mode, quiet=${QuietSeconds}s, health=$healthUrl)"
 
 $baseline = Get-Snapshot          # assume the running service already has whatever is on disk now
+$baselineStart = Get-ServiceStart
 $lastSig = Get-Signature $baseline
 $lastChange = Get-Date
 $failedSig = $null                # don't retry the exact same broken state every poll
@@ -132,6 +143,11 @@ while ($true) {
   Start-Sleep -Seconds $PollSeconds
   try {
     $snap = Get-Snapshot
+    $svcStart = Get-ServiceStart
+    if ($svcStart -and $baselineStart -and $svcStart -gt $baselineStart) {
+      Write-Log "service was restarted outside the watcher ($svcStart) - taking current files as the new baseline"
+      $baseline = $snap; $baselineStart = $svcStart; $failedSig = $null
+    } elseif ($svcStart -and -not $baselineStart) { $baselineStart = $svcStart }
     $sig = Get-Signature $snap
     if ($sig -ne $lastSig) { $lastSig = $sig; $lastChange = Get-Date; continue }
     if (((Get-Date) - $lastChange).TotalSeconds -lt $QuietSeconds) { continue }
@@ -144,7 +160,7 @@ while ($true) {
     if ($requested) { Remove-Item $requestFile -Force -ErrorAction SilentlyContinue }
     $ok = Invoke-Restart $changed
     $lastSig = Get-Signature $snap   # request file is gone now, so re-sign before remembering a failure
-    if ($ok) { $baseline = $snap; $failedSig = $null } else { $failedSig = $lastSig }
+    if ($ok) { $baseline = $snap; $baselineStart = Get-ServiceStart; $failedSig = $null } else { $failedSig = $lastSig }
   } catch {
     Write-Log "watcher error: $_"
   }
