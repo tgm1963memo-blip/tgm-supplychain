@@ -1565,6 +1565,73 @@ async function syncPromoDocs(db) {
 const REAL_PRODUCT_GROUPS = ['001', '002', '003', '004', '005', '006'];
 const REAL_PRODUCT_GROUPS_SQL = REAL_PRODUCT_GROUPS.map((g) => `'${g}'`).join(',');
 
+// ใบสั่งซื้อจาก Express (POPR.DBF หัว + POPRIT.DBF บรรทัด) สำหรับหน้า "รับของเข้า" ของ tss-wms (2026-11-04)
+// เก็บเฉพาะสินค้าจริงหมวด 001-006 (PO มีค่าใช้จ่าย/ค่าบริการปนอยู่มาก) และไม่เอาใบยกเลิก (DOCSTAT='C')
+// เก็บใบที่ปิดแล้ว (DOCSTAT='M') ด้วย เพราะบัญชีมักปิดใบใน Express ก่อน/พร้อมกับที่คลังรับของจริง คลังยังต้องเห็นใบนั้น
+// ย้อนหลังแค่ PO_LINE_WINDOW_DAYS วัน — ใบค้างเก่าถึงปี 2006 ยังมีอยู่ใน Express แต่ไม่ใช่ของที่จะมาส่งแล้ว
+const PO_COMPANY = 'TSS';
+const PO_LINE_WINDOW_DAYS = 45;
+async function syncExpressPoLines(db) {
+  const headers = await readTable(PO_COMPANY, 'POPR.DBF');
+  // อ่านไฟล์ไม่ได้/ไม่พบไฟล์ — คงข้อมูลรอบก่อนไว้ ดีกว่าล้างจนหน้ารับเข้าว่างเปล่า
+  if (!headers.length) return 0;
+  const items = await readTable(PO_COMPANY, 'POPRIT.DBF');
+  const suppliers = await readTable(PO_COMPANY, 'APMAS.DBF');
+  const unitNames = await loadUnitNameMap();
+  const supplierName = new Map(suppliers.map((s) => [
+    (s.SUPCOD || '').trim(),
+    [s.PRENAM, s.SUPNAM].map(cleanText).filter(Boolean).join(' '),
+  ]));
+  const headerByPo = new Map();
+  for (const h of headers) {
+    const po = (h.PONUM || '').trim();
+    if (po && h.DOCSTAT !== 'C') headerByPo.set(po, h);
+  }
+  const productOf = db.prepare('SELECT group_name, unit FROM products WHERE code = ?');
+  const cutoff = toIsoDate(new Date(Date.now() - PO_LINE_WINDOW_DAYS * 86400000));
+
+  const rows = [];
+  for (const l of items) {
+    const poNo = (l.PONUM || '').trim();
+    const header = headerByPo.get(poNo);
+    const sku = (l.STKCOD || '').trim();
+    if (!header || !sku) continue;
+    const dueDate = toIsoDate(l.RCVDAT) || toIsoDate(header.RCVDAT);
+    if (!dueDate || dueDate < cutoff) continue;
+    const product = productOf.get(sku);
+    if (!product || !REAL_PRODUCT_GROUPS.includes(String(product.group_name || '').slice(0, 3))) continue;
+    const orderedQty = Number(l.ORDQTY) || 0;
+    const cancelledQty = Number(l.CANCELQTY) || 0;
+    if (orderedQty - cancelledQty <= 0) continue;
+    const seq = (l.SEQNUM || '').trim();
+    const supplierCode = (l.SUPCOD || header.SUPCOD || '').trim();
+    const unitCode = (l.TQUCOD || '').trim();
+    rows.push([
+      `${PO_COMPANY}:${poNo}:${seq}`, PO_COMPANY, poNo, seq, toIsoDate(header.PODAT), dueDate,
+      supplierCode, supplierName.get(supplierCode) || null, sku, cleanText(l.STKDES) || null,
+      unitNames.get(unitCode) || product.unit || unitCode || null, (l.LOCCOD || '').trim() || null,
+      orderedQty, cancelledQty, Number(l.REMQTY) || 0, header.DOCSTAT || null,
+    ]);
+  }
+
+  const insert = db.prepare(`
+    INSERT OR REPLACE INTO express_po_lines (id, company, po_no, seq, po_date, due_date, supplier_code, supplier_name,
+      sku, sku_name, unit, loc_code, ordered_qty, cancelled_qty, remain_qty, doc_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM express_po_lines WHERE company = ?').run(PO_COMPANY);
+    for (const r of rows) insert.run(...r);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[importFromExpress] purchase orders: ${rows.length} line rows`);
+  return rows.length;
+}
+
 // Rebuilds the 3 materialized sales rollup tables from sales_transactions (see db/schema.sql for why
 // these are real tables instead of views — a live GROUP BY over ~1M rows took 2.7-3.3s *per paginated
 // query*, dozens of times per page load). Runs once per 5-minute cycle, after syncSales() has refreshed
@@ -1848,6 +1915,8 @@ async function runImport(db) {
     rowsProcessed += await syncInvoiceSales(db);
     rowsProcessed += await syncInvoices(db);
     rowsProcessed += await syncPromoDocs(db);
+    // ฟีเจอร์เสริมของ WMS — อ่านไม่ได้ก็ไม่ควรทำให้ทั้งรอบ sync ยอดขาย/สต็อกล้มตาม
+    try { rowsProcessed += await syncExpressPoLines(db); } catch (e) { console.error('[importFromExpress] purchase orders failed:', e.message); }
     // เสริมสำหรับ KG ใน Dashboard — พังแล้วไม่ควรทำให้ทั้งรอบ sync ถูกนับว่า error (ข้อมูลหลักบันทึกไปแล้ว)
     try { rowsProcessed += await syncSalesLinesMonthly(db); } catch (e) { console.warn('[importFromExpress] sales lines monthly failed:', e.message); }
     try { rowsProcessed += await syncTgmDetailLines(db); } catch (e) { console.warn('[importFromExpress] TGM detail lines failed:', e.message); }
@@ -1873,4 +1942,4 @@ async function runImport(db) {
   }
 }
 
-module.exports = { branchFromArmas, normalizeSlmCode, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { branchFromArmas, normalizeSlmCode, readTable, findFile, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncExpressPoLines, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };

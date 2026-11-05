@@ -153,6 +153,14 @@ function buildApp(db, opts = {}) {
     readOnly: true,
   }));
 
+  // ใบสั่งซื้อ Express สำหรับหน้ารับของเข้าของ tss-wms — ดู syncExpressPoLines() ใน jobs/importFromExpress.js
+  app.use('/api/express_po_lines', authed, makeCrudRouter(db, 'express_po_lines', {
+    pk: 'id',
+    fields: ['id', 'company', 'po_no', 'seq', 'po_date', 'due_date', 'supplier_code', 'supplier_name', 'sku', 'sku_name', 'unit', 'loc_code', 'ordered_qty', 'cancelled_qty', 'remain_qty', 'doc_status', 'updated_at'],
+    orderBy: 'due_date',
+    readOnly: true,
+  }));
+
   // สิทธิ์การเห็นลูกค้า/ยอดขาย/ใบโปร ฝั่ง server (2026-10-06) — ดู lib/customerScope.js
   const cs = require('./lib/customerScope');
   const scopeOf = req => cs.resolveScope(db, req.user);

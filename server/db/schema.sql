@@ -785,6 +785,28 @@ CREATE INDEX IF NOT EXISTS idx_promo_docs_dates ON promo_docs(start_date, due_da
 -- Confirmed live 2026-08-26: this exact mistake put the service in a restart-crash loop. The index
 -- is created in migrations.js instead, right after the column is added.
 
+-- ใบสั่งซื้อจาก Express (POPR/POPRIT) สำหรับหน้ารับของเข้าของ tss-wms — ดู syncExpressPoLines() · ตารางใหม่ ใส่ index ตรงนี้ได้
+CREATE TABLE IF NOT EXISTS express_po_lines (
+  id            TEXT PRIMARY KEY,
+  company       TEXT NOT NULL,
+  po_no         TEXT NOT NULL,
+  seq           TEXT NOT NULL,
+  po_date       TEXT,
+  due_date      TEXT NOT NULL,
+  supplier_code TEXT,
+  supplier_name TEXT,
+  sku           TEXT NOT NULL,
+  sku_name      TEXT,
+  unit          TEXT,
+  loc_code      TEXT,
+  ordered_qty   REAL NOT NULL DEFAULT 0,
+  cancelled_qty REAL NOT NULL DEFAULT 0,
+  remain_qty    REAL NOT NULL DEFAULT 0,
+  doc_status    TEXT,
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_express_po_lines_due ON express_po_lines(due_date);
+
 -- Promo drafts (2026-09-03, requested: "สร้างใบโปรในระบบ" ก่อนคีย์เข้า Express จริง) — ร่างเอกสาร
 -- โปรโมชัน/เคาะราคา เก็บในระบบเราเองเท่านั้น ไม่เขียนเข้า Express DBF โดยตรง (Express ไม่มี write-path
 -- ในระบบนี้เลย มีแต่ read/sync ทางเดียว) พนักงานยังต้องคีย์เข้า Express เองหลังอนุมัติเสร็จเหมือนเดิม แล้ว
