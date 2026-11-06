@@ -81,7 +81,7 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
   db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
   runMigrations(db);
   const tokens = {};
-  for (const [uid, role, codes] of [['S', 'sales_officer', '213'], ['S2', 'sales_officer', '207'], ['M', 'sales_manager', ''], ['A', 'admin', '']]) {
+  for (const [uid, role, codes] of [['S', 'sales_officer', '213'], ['S2', 'sales_officer', '207'], ['M', 'sales_manager', ''], ['L', 'sales_manager', '207,213'], ['A', 'admin', '']]) {
     db.prepare('INSERT INTO sc_users(uid,name,role,department,slm_codes,pwd_hash) VALUES(?,?,?,?,?,?)').run(uid, uid, role, 'แผนกขายธุรกิจค้าปลีก', codes || null, 'x');
     tokens[uid] = createSession(db, uid).token;
   }
@@ -111,6 +111,8 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
   assert.equal(r.data.rows[0][9], null, 'เซลส์ไม่ได้รับมูลค่าทุน');
   assert.equal(r.data.rows[0][8], 150);
   assert.equal(r.data.can_cost, false);
+  assert.equal(r.data.slm_names['213'], 'S', 'รหัสลูกทีมของ sales_manager ไม่ทับชื่อเจ้าของรหัส');
+  assert.equal(r.data.slm_names['207'], 'S2');
   assert.equal((await call('/unresolved', 'S')).status, 403);
   assert.equal((await call('/owner/KB6907002', 'S', 'PUT', { slm_code: '213' })).status, 403);
 

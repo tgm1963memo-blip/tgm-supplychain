@@ -25,8 +25,17 @@ module.exports = function sampleIssuesRoutes(db) {
       const n = T(s.name).replace(/[.\-]?\s*0\d{8,9}.*$/, '').replace(/\s*\d{2}-\d{3}-\d{4}.*$/, '');
       out[s.slm_id] = /^\*+$/.test(n) ? '(รหัสเลิกใช้)' : n;
     }
-    for (const u of db.prepare("SELECT name, slm_id, slm_codes FROM sc_users WHERE COALESCE(is_active, 1) = 1").all()) {
-      for (const c of T(u.slm_codes || u.slm_id).split(',').map(T).filter(Boolean)) out[c] = T(u.name);
+    // slm_codes ของ sales_manager คือรหัสลูกทีม ไม่ใช่รหัสตัวเอง — ใช้แค่รหัสแรก และไม่ทับชื่อเจ้าของรหัส
+    // (เคยทำให้เซลส์ทั้งทีมแสดงเป็นชื่อหัวหน้าทีม)
+    const users = db.prepare("SELECT name, role, slm_id, slm_codes FROM sc_users WHERE COALESCE(is_active, 1) = 1").all();
+    const codesOf = u => T(u.slm_codes || u.slm_id).split(',').map(T).filter(Boolean);
+    const taken = new Set();
+    for (const u of users.filter(x => x.role !== 'sales_manager')) {
+      for (const c of codesOf(u)) { out[c] = T(u.name); taken.add(c); }
+    }
+    for (const u of users.filter(x => x.role === 'sales_manager')) {
+      const own = T(u.slm_id) || codesOf(u)[0];
+      if (own && !taken.has(own)) out[own] = T(u.name);
     }
     return out;
   }
