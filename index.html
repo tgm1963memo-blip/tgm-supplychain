@@ -22158,7 +22158,7 @@ function srSetType(t) { _sr.type = t; _sr.tab = 'all'; _sr.f.status = ''; pgSamp
 // แถวข้อมูล: [วันที่, เลขที่, เล่ม, ประเภท, รหัสสินค้า, ชื่อสินค้า, จำนวน, หน่วย, ราคาขาย, ทุน|null, เจ้าของ, รหัสลูกค้า, ชื่อลูกค้า, ที่มาเจ้าของ]
 // ════════════════════════════════════════════════════════════════
 let _sx = { from: '2026-01-01', to: '2026-12-31', preset: 'year', kinds: { sample: true, tasting: true, free: true }, slm: '', q: '',
-  measure: 'value', price: 'cost', rows: 'cust', open: new Set(), tab: 'pivot', data: null, at: 0, loading: false, err: null, unres: null };
+  measure: 'value', rows: 'cust', open: new Set(), tab: 'pivot', data: null, at: 0, loading: false, err: null, unres: null };
 const SX_KINDS = [['sample', 'ตัวอย่าง', '#2f56c9', 'LA · KB'], ['tasting', 'ของชิม', '#c97a08', 'LB · KA'], ['free', 'ของแถม', '#0f8a68', 'LD · PD · LE']];
 const SX_FROM = { doc: ['ตามเอกสาร', 'var(--LG)', 'var(--G)'], person: ['จับคู่ผู้เบิก', 'var(--LBL)', 'var(--BL)'], remark: ['อ่านจากหมายเหตุ', 'var(--LBL)', 'var(--BL)'],
   manual: ['ผู้จัดการระบุ', 'var(--LP)', 'var(--P)'], chain: ['รู้แค่เชน', 'var(--LY)', 'var(--O)'], office: ['ออฟฟิศ', 'var(--LY)', 'var(--O)'], none: ['รอระบุ', 'var(--LR)', 'var(--R)'] };
@@ -22175,14 +22175,13 @@ async function _sxLoad(force) {
     const res = await apiFetch('/api/sample_issues/lines?from=2026-01-01&to=2026-12-31');
     if (res.error) throw new Error(res.error.message);
     _sx.data = res.data; _sx.at = Date.now();
-    if (!res.data.can_cost) _sx.price = 'sell';
     if (!_sx.rowsPicked) _sx.rows = _sxMultiSlm() ? 'slm' : 'cust'; // เริ่มที่รายเซลส์ จนกว่าผู้ใช้จะเลือกมุมมองเอง
     if (!_sx.open.size) { const g = _sxGroup(_sxLines(), SX_ORDERS[_sx.rows][0])[0]; if (g) _sx.open.add('/' + g.k); }
   } catch (e) { _sx.err = e.message || String(e); }
   _sx.loading = false;
   if (sessionStorage.getItem('_pg') === 'sample' && _sr.type === 'express') pgSample();
 }
-function _sxVal(r) { return _sx.data?.can_cost && _sx.price === 'cost' ? (r[9] || 0) : (r[8] || 0); }
+function _sxVal(r) { return r[8] || 0; } // แสดงมูลค่าตามราคาขายอย่างเดียวทุกสิทธิ์ (ผู้ใช้ขอ 2026-11-06)
 function _sxLines() {
   const rows = _sx.data?.rows || [], q = _sx.q.trim().toLowerCase();
   return rows.filter(r => {
@@ -22202,10 +22201,10 @@ const SX_ORDERS = { cust: ['cust', 'prod', 'doc'], prod: ['prod', 'cust', 'doc']
 // เห็นข้อมูลหลายเซลส์ (ผู้จัดการ / หัวหน้าทีม) — ข้อมูลที่ได้ถูกกรองตามสิทธิ์จาก server แล้ว
 const _sxMultiSlm = () => new Set((_sx.data?.rows || []).map(r => r[10])).size > 1;
 function _sxAgg(ls) {
-  const o = { v: 0, q: 0, cost: 0, sell: 0, m: {}, mq: {}, docs: new Set(), units: new Set(), k: { sample: 0, tasting: 0, free: 0 } };
+  const o = { v: 0, q: 0, m: {}, mq: {}, docs: new Set(), units: new Set(), k: { sample: 0, tasting: 0, free: 0 } };
   for (const r of ls) {
     const v = _sxVal(r), m = +r[0].slice(5, 7);
-    o.v += v; o.q += r[6]; o.cost += r[9] || 0; o.sell += r[8] || 0;
+    o.v += v; o.q += r[6];
     o.m[m] = (o.m[m] || 0) + v; o.mq[m] = (o.mq[m] || 0) + r[6]; o.docs.add(r[1]); o.units.add(r[7]); o.k[r[3]] += v;
   }
   return o;
@@ -22240,7 +22239,6 @@ function _sxRender(typeBar) {
     return;
   }
   const ls = _sxLines(), A = _sxAgg(ls);
-  const isCost = D.can_cost && _sx.price === 'cost';
   const custN = new Set(ls.map(r => r[11] || r[12])).size;
   const unresV = ls.filter(r => !r[10]).reduce((s, r) => s + _sxVal(r), 0);
   const presets = [['year', 'ทั้งปี', '2026-01-01', '2026-12-31'], ['q1', 'ไตรมาส 1', '2026-01-01', '2026-03-31'], ['q2', 'ไตรมาส 2', '2026-04-01', '2026-06-30'],
@@ -22261,7 +22259,7 @@ function _sxRender(typeBar) {
 
   ct.innerHTML = head + `
   <div style="font-size:12px;color:var(--TX3);margin-bottom:10px">ประวัติเบิกจาก Express ห้อง TSS และ TSS-NV ปี 2569 (ไม่นับใบที่ยกเลิก) ·
-    ${D.can_cost ? 'คุณเห็นมูลค่าทุนและราคาขาย' : 'คุณเห็นเฉพาะใบเบิกของตัวเอง มูลค่าแสดงเป็นราคาขาย'}
+    ${_sxMultiSlm() ? 'มูลค่าแสดงเป็นราคาขาย' : 'คุณเห็นเฉพาะใบเบิกของตัวเอง มูลค่าแสดงเป็นราคาขาย'}
     ${D.synced_at ? ` · ดึงข้อมูลล่าสุด ${new Date(D.synced_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}` : ''}</div>
   <div class="card" style="padding:12px 14px;margin-bottom:12px;display:grid;gap:8px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -22278,7 +22276,7 @@ function _sxRender(typeBar) {
     </div>
   </div>
   <div class="krow">
-    ${kpi('b', isCost ? 'มูลค่าเบิก (ทุน)' : 'มูลค่าเบิก (ราคาขาย)', _sxBaht(A.v), D.can_cost ? (isCost ? 'ราคาขาย ' + _sxBaht(A.sell) : 'ทุน ' + _sxBaht(A.cost)) : 'ช่วงที่เลือก')}
+    ${kpi('b', 'มูลค่าเบิก (ราคาขาย)', _sxBaht(A.v), ls.some(r => !r[8]) ? `ไม่รวม ${ls.filter(r => !r[8]).length.toLocaleString('th-TH')} รายการที่ไม่มีราคาขาย` : 'ช่วงที่เลือก')}
     ${kpi('g', 'ลูกค้า / ปลายทาง', custN.toLocaleString('th-TH'), 'ราย')}
     ${kpi('t', 'ใบเบิก', A.docs.size.toLocaleString('th-TH'), ls.length.toLocaleString('th-TH') + ' รายการสินค้า')}
     ${D.can_manage ? kpi('a', 'ยังไม่รู้เจ้าของ', _sxBaht(unresV), 'ในช่วงที่เลือก') : kpi('a', 'จำนวนที่เบิก', _sxFmt(A.q), 'รวมทุกหน่วย')}
@@ -22325,14 +22323,13 @@ function _sxPivotHtml(ls) {
       <span style="font-size:12px;color:var(--TX3)">แถว</span>
       <select style="padding:4px 8px;border:1px solid var(--BD);border-radius:7px;font-size:12px;font-family:var(--font)" onchange="sxSet('rows',this.value)">${rowOpts.map(o => `<option value="${o[0]}" ${_sx.rows === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>
       <span style="font-size:12px;color:var(--TX3)">ช่องเดือน</span>${seg(segBtn(!isQ, "sxSet('measure','value')", 'มูลค่า') + segBtn(isQ, "sxSet('measure','qty')", 'จำนวน'))}
-      ${D.can_cost ? seg(segBtn(_sx.price === 'cost', "sxSet('price','cost')", 'ราคาทุน') + segBtn(_sx.price === 'sell', "sxSet('price','sell')", 'ราคาขาย')) : ''}
     </div>
     <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="sxExpandAll()">ขยายทั้งหมด</button><button class="btn btn-sm" onclick="_sx.open.clear();pgSample()">ยุบทั้งหมด</button></div>
   </div>
   <div style="overflow:auto;max-height:620px;border:1px solid var(--BD);border-radius:8px">
     <table style="border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums">
       <thead><tr><th style="${th};text-align:left;left:0;z-index:3">${ord.map(d => SX_DIMS[d].n).join(' › ')}</th>${M.map(m => `<th style="${th};text-align:right">${SX_TH[m]}</th>`).join('')}
-        <th style="${th};text-align:right">จำนวน</th><th style="${th};text-align:right">ใบ</th><th style="${th};text-align:right">${_sx.price === 'cost' && D.can_cost ? 'มูลค่าทุน' : 'มูลค่า (ราคาขาย)'}</th></tr></thead>
+        <th style="${th};text-align:right">จำนวน</th><th style="${th};text-align:right">ใบ</th><th style="${th};text-align:right">มูลค่า (ราคาขาย)</th></tr></thead>
       <tbody>${body || `<tr><td colspan="${M.length + 4}" style="text-align:center;padding:24px;color:var(--TX3)">ไม่พบใบเบิกในช่วงนี้</td></tr>`}
       ${body ? `<tr style="font-weight:700"><td style="position:sticky;left:0;bottom:0;background:var(--W);border-top:2px solid var(--N);padding:7px 8px;z-index:2">รวม ${top.length.toLocaleString('th-TH')} ${SX_DIMS[ord[0]].n}</td>${M.map(m => `<td style="position:sticky;bottom:0;background:var(--W);border-top:2px solid var(--N);text-align:right;padding:7px 8px">${num((isQ ? A.mq : A.m)[m] || 0)}</td>`).join('')}
         <td style="position:sticky;bottom:0;background:var(--W);border-top:2px solid var(--N);text-align:right;padding:7px 8px">${_sxFmt(A.q)}</td><td style="position:sticky;bottom:0;background:var(--W);border-top:2px solid var(--N);text-align:right;padding:7px 8px">${A.docs.size}</td><td style="position:sticky;bottom:0;background:var(--W);border-top:2px solid var(--N);text-align:right;padding:7px 8px">${_sxBaht(A.v)}</td></tr>` : ''}</tbody>
@@ -22362,19 +22359,19 @@ function _sxUnresHtml() {
   const docs = U.docs.slice(0, 150), unmapped = U.people.filter(p => !p.slm_code);
   return `
   <div style="font-size:12.5px;color:var(--TX2);margin-bottom:10px">ใบเบิก KA/KB/PD ที่ระบบหาเซลส์จากหมายเหตุไม่ได้ เลือกเซลส์ (และพิมพ์ลูกค้าถ้ารู้) แล้วกดบันทึก ·
-    ค่าที่ระบุจะไม่หายเมื่อดึงข้อมูลจาก Express รอบใหม่ · ทั้งหมด ${U.docs.length.toLocaleString('th-TH')} ใบ มูลค่าทุน ${_sxBaht(U.docs.reduce((s, d) => s + d.cost_value, 0))}${U.docs.length > 150 ? ' · แสดง 150 ใบมูลค่าสูงสุด บันทึกแล้วรายการถัดไปจะขึ้นมาแทน' : ''}</div>
+    ค่าที่ระบุจะไม่หายเมื่อดึงข้อมูลจาก Express รอบใหม่ · ทั้งหมด ${U.docs.length.toLocaleString('th-TH')} ใบ มูลค่า (ราคาขาย) ${_sxBaht(U.docs.reduce((s, d) => s + d.sell_value, 0))}${U.docs.length > 150 ? ' · แสดง 150 ใบมูลค่าสูงสุด บันทึกแล้วรายการถัดไปจะขึ้นมาแทน' : ''}</div>
   <div style="overflow:auto;max-height:520px;border:1px solid var(--BD);border-radius:8px">
-  <table class="tbl" style="width:100%;font-size:12.5px"><thead><tr><th>วันที่</th><th>เลขที่</th><th>หมายเหตุใน Express</th><th>ระบบเดาได้</th><th style="text-align:right">มูลค่าทุน</th><th>ระบุเจ้าของ</th></tr></thead><tbody>
+  <table class="tbl" style="width:100%;font-size:12.5px"><thead><tr><th>วันที่</th><th>เลขที่</th><th>หมายเหตุใน Express</th><th>ระบบเดาได้</th><th style="text-align:right">มูลค่า (ราคาขาย)</th><th>ระบุเจ้าของ</th></tr></thead><tbody>
   ${docs.map(d => `<tr><td>${d.doc_date.split('-').reverse().join('/')}</td><td>${esc(d.doc_num)}</td><td style="white-space:normal;max-width:280px">${esc(d.remark) || '<span style="color:var(--TX3)">(ว่าง)</span>'}</td>
-    <td>${_sxPill(d.owner_from)} ${d.owner_from === 'chain' ? esc(String(d.cust_name).replace(' (จากหมายเหตุ)', '')) : ''}</td><td style="text-align:right">${_sxBaht(d.cost_value)}</td>
+    <td>${_sxPill(d.owner_from)} ${d.owner_from === 'chain' ? esc(String(d.cust_name).replace(' (จากหมายเหตุ)', '')) : ''}</td><td style="text-align:right">${_sxBaht(d.sell_value)}</td>
     <td><div style="display:flex;gap:6px;flex-wrap:wrap"><select id="sxo-s-${esc(d.doc_num)}" style="${fSt}">${_sxSlmOptions(U.slm_names)}</select>
       <input id="sxo-c-${esc(d.doc_num)}" style="${fSt}" placeholder="ลูกค้า (ถ้ารู้)" value="">
       <button class="btn btn-sm btn-p" onclick="sxSaveOwner(${esc(JSON.stringify(d.doc_num))})">บันทึก</button></div></td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--TX3)">ไม่มีใบที่รอระบุ 🎉</td></tr>'}
   </tbody></table></div>
   <div style="font-weight:600;margin:16px 0 6px">ผู้เบิกใบ LA (ม.ค.–มิ.ย.) → เซลส์ <span style="font-weight:400;font-size:12px;color:var(--TX3)">ยังไม่จับคู่ ${unmapped.length} คน · ทุกใบของผู้เบิกจะเป็นของเซลส์ที่เลือก</span></div>
   <div style="overflow:auto;max-height:360px;border:1px solid var(--BD);border-radius:8px">
-  <table class="tbl" style="width:100%;font-size:12.5px"><thead><tr><th>รหัส</th><th>ผู้เบิก</th><th style="text-align:right">ใบ</th><th style="text-align:right">มูลค่าทุน</th><th>เซลส์</th></tr></thead><tbody>
-  ${U.people.map(p => `<tr><td>${esc(p.people_code)}</td><td>${esc(String(p.name).replace(/^\(ผู้เบิก\)\s*/, ''))}</td><td style="text-align:right">${p.docs}</td><td style="text-align:right">${_sxBaht(p.cost_value)}</td>
+  <table class="tbl" style="width:100%;font-size:12.5px"><thead><tr><th>รหัส</th><th>ผู้เบิก</th><th style="text-align:right">ใบ</th><th style="text-align:right">มูลค่า (ราคาขาย)</th><th>เซลส์</th></tr></thead><tbody>
+  ${U.people.map(p => `<tr><td>${esc(p.people_code)}</td><td>${esc(String(p.name).replace(/^\(ผู้เบิก\)\s*/, ''))}</td><td style="text-align:right">${p.docs}</td><td style="text-align:right">${_sxBaht(p.sell_value)}</td>
     <td><select style="${fSt}" onchange="sxSavePerson(${esc(JSON.stringify(p.people_code))},this.value)">${_sxSlmOptions(U.slm_names, p.slm_code || '').replace('— เลือกเซลส์ —', '— ไม่ระบุ —')}</select></td></tr>`).join('')}
   </tbody></table></div>`;
 }

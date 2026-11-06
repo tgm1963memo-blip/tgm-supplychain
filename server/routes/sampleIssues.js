@@ -69,11 +69,11 @@ module.exports = function sampleIssuesRoutes(db) {
   router.get('/unresolved', requireRole(...MANAGE_ROLES), requireManage, (req, res) => {
     const docs = db.prepare(`SELECT doc_num, prefix, MIN(doc_date) AS doc_date, MAX(remark) AS remark, MAX(owner_cust_name) AS cust_name,
         MAX(owner_from) AS owner_from, COUNT(*) AS items, ROUND(SUM(cost_value), 2) AS cost_value, ROUND(SUM(COALESCE(sell_value, 0)), 2) AS sell_value
-      FROM v_sample_issue_lines WHERE owner_slm = '' AND prefix <> 'LA' GROUP BY doc_num, prefix ORDER BY cost_value DESC`).all();
+      FROM v_sample_issue_lines WHERE owner_slm = '' AND prefix <> 'LA' GROUP BY doc_num, prefix ORDER BY sell_value DESC`).all();
     const people = db.prepare(`SELECT l.cust_code AS people_code, COALESCE((SELECT name FROM customers WHERE code = l.cust_code LIMIT 1), l.cust_code) AS name, COUNT(DISTINCT l.doc_num) AS docs,
-        ROUND(SUM(l.cost_value), 2) AS cost_value, pm.slm_code
+        ROUND(SUM(l.cost_value), 2) AS cost_value, ROUND(SUM(COALESCE(l.sell_value, 0)), 2) AS sell_value, pm.slm_code
       FROM sample_issue_lines l LEFT JOIN sample_person_slm_map pm ON pm.people_code = l.cust_code
-      WHERE l.prefix = 'LA' GROUP BY l.cust_code ORDER BY (pm.slm_code IS NULL) DESC, cost_value DESC`).all();
+      WHERE l.prefix = 'LA' GROUP BY l.cust_code ORDER BY (pm.slm_code IS NULL) DESC, sell_value DESC`).all();
     res.json({ docs, people, slm_names: slmNames() });
   });
 
