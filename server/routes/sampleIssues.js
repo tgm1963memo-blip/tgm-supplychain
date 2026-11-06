@@ -13,6 +13,9 @@ const COST_ROLES = ['superadmin', 'admin', 'manager', 'sales_manager'];
 const MANAGE_ROLES = COST_ROLES;
 const SLM_RE = /^[0-9A-Za-z][0-9A-Za-z-]{0,9}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// มูลค่าที่แสดง = ราคาขาย ถ้าสินค้าไม่มีราคาขายใน Express ใช้ราคาทุนไปก่อน (ผู้ใช้ขอ 2026-11-06)
+// คำนวณตอนอ่าน ไม่เขียนทับ sell_value — ใส่ราคาขายใน Express แล้วยอดจะเปลี่ยนเป็นราคาขายเองในรอบ sync ถัดไป
+const VALUE_SQL = alias => `COALESCE(NULLIF(${alias}sell_value, 0), ${alias}cost_value)`;
 const T = s => String(s ?? '').trim();
 
 module.exports = function sampleIssuesRoutes(db) {
@@ -45,7 +48,8 @@ module.exports = function sampleIssuesRoutes(db) {
   const requireManage = (req, res, next) => canManage(req.user) ? next() : res.status(403).json({ error: 'เฉพาะผู้ดูแลที่เห็นภาพรวมทั้งบริษัท' });
 
   // GET /lines?from=YYYY-MM-DD&to=YYYY-MM-DD — บรรทัดเบิกทั้งหมดในช่วง (หน้าเว็บทำ pivot เอง)
-  // แถว: [วันที่, เลขที่, เล่ม, ประเภท, รหัสสินค้า, ชื่อสินค้า, จำนวน, หน่วย, ราคาขาย, ทุน|null, เจ้าของ, รหัสลูกค้า, ชื่อลูกค้า, ที่มาเจ้าของ]
+  // แถว: [วันที่, เลขที่, เล่ม, ประเภท, รหัสสินค้า, ชื่อสินค้า, จำนวน, หน่วย, มูลค่า (ราคาขาย หรือทุนเมื่อไม่มีราคาขาย), ทุน|null, เจ้าของ, รหัสลูกค้า, ชื่อลูกค้า, ที่มาเจ้าของ,
+  //       ใช้ทุนแทนราคาขาย|null] — คอลัมน์สุดท้ายส่งเฉพาะ COST_ROLES เซลส์จึงแยกไม่ออกว่าแถวไหนเป็นทุน
   router.get('/lines', (req, res) => {
     const from = DATE_RE.test(req.query.from) ? req.query.from : '2026-01-01';
     const to = DATE_RE.test(req.query.to) ? req.query.to : '2026-12-31';
@@ -59,8 +63,8 @@ module.exports = function sampleIssuesRoutes(db) {
       .all(...params)
       // รหัสลูกค้า (คอลัมน์ที่หน้าเว็บใช้จัดกลุ่ม): ผู้จัดการพิมพ์ชื่อเอง = จัดกลุ่มตามชื่อนั้น · จับลูกค้าในระบบได้ = รหัสนั้น · อื่นๆ = รหัสในใบ
       // ใบ LA รหัสในใบเป็นรหัสพนักงาน ไม่ใช่ลูกค้า — ส่งว่างให้จัดกลุ่มตามชื่อ ไม่งั้นลูกค้าทุกรายของผู้เบิกคนเดียวถูกรวมเป็นแถวเดียว
-      .map(r => [r.doc_date, r.doc_num, r.prefix, r.kind, r.sku, r.sku_name, r.qty, r.unit, r.sell_value, cost ? r.cost_value : null,
-        r.owner_slm, r.owner_cust_name !== r.cust_name ? '' : (r.cust_match || (r.prefix === 'LA' ? '' : r.cust_code)), r.owner_cust_name, r.owner_from]);
+      .map(r => [r.doc_date, r.doc_num, r.prefix, r.kind, r.sku, r.sku_name, r.qty, r.unit, r.sell_value || r.cost_value, cost ? r.cost_value : null,
+        r.owner_slm, r.owner_cust_name !== r.cust_name ? '' : (r.cust_match || (r.prefix === 'LA' ? '' : r.cust_code)), r.owner_cust_name, r.owner_from, cost ? !r.sell_value : null]);
     const sync = db.prepare("SELECT MAX(synced_at) AS at FROM sync_file_state WHERE source LIKE '%#sample_issues'").get();
     res.json({ from, to, can_cost: cost, can_manage: canManage(req.user), synced_at: sync?.at || null, slm_names: slmNames(), rows });
   });
@@ -68,10 +72,10 @@ module.exports = function sampleIssuesRoutes(db) {
   // GET /unresolved — ใบที่ยังไม่มีเจ้าของ + ผู้เบิกใบ LA ที่ยังไม่จับคู่ (ผู้จัดการ)
   router.get('/unresolved', requireRole(...MANAGE_ROLES), requireManage, (req, res) => {
     const docs = db.prepare(`SELECT doc_num, prefix, MIN(doc_date) AS doc_date, MAX(remark) AS remark, MAX(owner_cust_name) AS cust_name,
-        MAX(owner_from) AS owner_from, COUNT(*) AS items, ROUND(SUM(cost_value), 2) AS cost_value, ROUND(SUM(COALESCE(sell_value, 0)), 2) AS sell_value
+        MAX(owner_from) AS owner_from, COUNT(*) AS items, ROUND(SUM(cost_value), 2) AS cost_value, ROUND(SUM(${VALUE_SQL('')}), 2) AS sell_value
       FROM v_sample_issue_lines WHERE owner_slm = '' AND prefix <> 'LA' GROUP BY doc_num, prefix ORDER BY sell_value DESC`).all();
     const people = db.prepare(`SELECT l.cust_code AS people_code, COALESCE((SELECT name FROM customers WHERE code = l.cust_code LIMIT 1), l.cust_code) AS name, COUNT(DISTINCT l.doc_num) AS docs,
-        ROUND(SUM(l.cost_value), 2) AS cost_value, ROUND(SUM(COALESCE(l.sell_value, 0)), 2) AS sell_value, pm.slm_code
+        ROUND(SUM(l.cost_value), 2) AS cost_value, ROUND(SUM(${VALUE_SQL('l.')}), 2) AS sell_value, pm.slm_code
       FROM sample_issue_lines l LEFT JOIN sample_person_slm_map pm ON pm.people_code = l.cust_code
       WHERE l.prefix = 'LA' GROUP BY l.cust_code ORDER BY (pm.slm_code IS NULL) DESC, sell_value DESC`).all();
     res.json({ docs, people, slm_names: slmNames() });

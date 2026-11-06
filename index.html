@@ -22181,7 +22181,7 @@ async function _sxLoad(force) {
   _sx.loading = false;
   if (sessionStorage.getItem('_pg') === 'sample' && _sr.type === 'express') pgSample();
 }
-function _sxVal(r) { return r[8] || 0; } // แสดงมูลค่าตามราคาขายอย่างเดียวทุกสิทธิ์ (ผู้ใช้ขอ 2026-11-06)
+function _sxVal(r) { return r[8] || 0; } // มูลค่าตามราคาขาย ไม่มีราคาขายใช้ทุนแทน — server คำนวณให้ (routes/sampleIssues.js)
 function _sxLines() {
   const rows = _sx.data?.rows || [], q = _sx.q.trim().toLowerCase();
   return rows.filter(r => {
@@ -22276,7 +22276,7 @@ function _sxRender(typeBar) {
     </div>
   </div>
   <div class="krow">
-    ${kpi('b', 'มูลค่าเบิก (ราคาขาย)', _sxBaht(A.v), ls.some(r => !r[8]) ? `ไม่รวม ${ls.filter(r => !r[8]).length.toLocaleString('th-TH')} รายการที่ไม่มีราคาขาย` : 'ช่วงที่เลือก')}
+    ${kpi('b', 'มูลค่าเบิก (ราคาขาย)', _sxBaht(A.v), ls.some(r => r[14]) ? `ใช้ราคาทุนแทน ${ls.filter(r => r[14]).length.toLocaleString('th-TH')} รายการที่ไม่มีราคาขาย` : 'ช่วงที่เลือก')}
     ${kpi('g', 'ลูกค้า / ปลายทาง', custN.toLocaleString('th-TH'), 'ราย')}
     ${kpi('t', 'ใบเบิก', A.docs.size.toLocaleString('th-TH'), ls.length.toLocaleString('th-TH') + ' รายการสินค้า')}
     ${D.can_manage ? kpi('a', 'ยังไม่รู้เจ้าของ', _sxBaht(unresV), 'ในช่วงที่เลือก') : kpi('a', 'จำนวนที่เบิก', _sxFmt(A.q), 'รวมทุกหน่วย')}

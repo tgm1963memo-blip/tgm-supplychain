@@ -110,6 +110,8 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
   assert.deepEqual(r.data.rows.map(x => x[1]), ['KA6907001', 'KA6907001'], 'สองคลัง = สองแถว');
   assert.equal(r.data.rows[0][9], null, 'เซลส์ไม่ได้รับมูลค่าทุน');
   assert.equal(r.data.rows[0][8], 150);
+  assert.equal(r.data.rows[1][8], 40, 'ไม่มีราคาขาย = ใช้ทุน');
+  assert.equal(r.data.rows[1][14], null, 'เซลส์ไม่ได้รับธงว่าแถวไหนเป็นทุน');
   assert.equal(r.data.can_cost, false);
   assert.equal(r.data.slm_names['213'], 'S', 'รหัสลูกทีมของ sales_manager ไม่ทับชื่อเจ้าของรหัส');
   assert.equal(r.data.slm_names['207'], 'S2');
@@ -145,6 +147,9 @@ test('sample issues API: sales see own rows without cost, manager sees all + cos
   assert.deepEqual(r.data.rows.map(x => [x[1], x[12], x[13]]), [['KB6907002', 'Makro มหาชัย', 'manual']]);
   await call('/owner/KB6907002', 'A', 'PUT', { slm_code: '' });
   assert.deepEqual((await call('/lines', 'S2')).data.rows, []);
+
+  const adminRows = (await call('/lines?from=2026-01-01&to=2026-12-31', 'A')).data.rows.filter(x => x[1] === 'KA6907001');
+  assert.deepEqual(adminRows.map(x => x[14]), [false, true], 'ผู้จัดการเห็นว่าแถวไหนใช้ทุนแทน');
 
   // จับคู่ผู้เบิก LA
   assert.equal((await call('/person/01-IH-0999', 'A', 'PUT', { slm_code: '207' })).status, 200);
