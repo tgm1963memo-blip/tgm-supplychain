@@ -131,7 +131,11 @@ function resolveScope(db, user) {
 // — นับให้เจ้าของเฉพาะแฟ้ม Express ฝั่ง TSS (TSS / TSS-NV / TSS-68 / TSSN-68 …) · ไม่ส่ง = ตารางนั้นเป็นของ TSS ล้วน (v_invoice_heads)
 function factSql(scope, { cust = 'cust_code', slm = 'slm_code', blankToOwner = false, company = null } = {}) {
   if (!scope || scope.all) return null;
-  const base = `${slm} IN (SELECT value FROM json_each(?)) OR ${cust} IN (SELECT value FROM json_each(?))`;
+  // allMt (2026-11-06, ผู้ใช้ขอ "เซลล์ที่ไม่ได้ผูก ไม่ต้องเอายอดขายมาแสดง" — แทนกติกา 2026-10-22 ที่ให้ยอดห้างเท่าภาพรวมบริษัท):
+  // ยังเห็นลูกค้าห้างทุกราย แต่ยอดนับเฉพาะรหัสในทีม · ใบที่ไม่มีเซลส์ / ยอดโรงงาน Bplus (BP-*) ไม่ใช่ของเซลส์นอกทีม จึงยังนับ
+  const noSeller = `${blankSlm(slm)} OR ${slm} = '(ไม่ระบุ)' OR ${slm} LIKE 'BP-%'`;
+  const custCond = `${cust} IN (SELECT value FROM json_each(?))`;
+  const base = `${slm} IN (SELECT value FROM json_each(?)) OR ${scope.allMt ? `(${custCond} AND (${noSeller}))` : custCond}`;
   const params = [JSON.stringify(scope.slmCodes), JSON.stringify(scope.mtCodes)];
   if (!blankToOwner) return { sql: `(${base})`, params };
   return { sql: `(${base} OR (${blankOwnerCond({ slm, company })} AND ${cust} IN (SELECT value FROM json_each(?))))`,

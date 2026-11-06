@@ -40,7 +40,7 @@ test('remaining sales categories come from existing system groups', () => {
   db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
   runMigrations(db);
   const get = code => db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?').get(code)?.sales_category;
-  assert.equal(get('30-PN-1001'), 'Retail');
+  assert.equal(get('30-PN-1001'), 'Modern Trade');
   assert.equal(get('TOA-01-QC'), 'Export');
   assert.equal(get('01-ON-0001'), 'Online');
   assert.equal(get('CNC-01-QC'), 'Direct Domestic');

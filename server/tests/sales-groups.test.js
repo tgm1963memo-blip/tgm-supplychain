@@ -76,7 +76,7 @@ test('sales category fill only fills empty values', () => {
   const get = code => db.prepare('SELECT sales_category FROM customer_profiles WHERE code = ?').get(code)?.sales_category;
   // หลังรันครบ: ร้านค้าทั่วไปที่ไฟล์ไม่มี Group → เดาจากประเภทธุรกิจที่แม่น · ห้าง → Retail
   assert.equal(get('NSL-01-KK'), 'Food Industry'); // business_type food_processor (autofill)
-  assert.equal(get('BD-LF-0134'), 'Retail');
+  assert.equal(get('BD-LF-0134'), 'Modern Trade');
   db.prepare("UPDATE customer_profiles SET sales_category = 'ตั้งเอง' WHERE code = 'NSL-01-KK'").run();
   db.prepare("UPDATE customer_profiles SET sales_category = NULL WHERE code = 'MI-LA-0001'").run();
   db.prepare("DELETE FROM app_migrations WHERE id = '20261014_sales_category_fill_v1'").run();

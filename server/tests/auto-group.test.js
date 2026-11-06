@@ -13,7 +13,7 @@ test('new customers get the corporate of their code prefix or their own company 
   runMigrations(db);
   const prof = db.prepare(`INSERT INTO customer_profiles (code, corporate, sales_category) VALUES (?, ?, ?)
     ON CONFLICT(code) DO UPDATE SET corporate = excluded.corporate, sales_category = excluded.sales_category`);
-  for (const c of ['ZP-PL-0001', 'ZP-PL-0002', 'ZP-PL-0003', 'ZP-PL-0004']) prof.run(c, 'เซ็นทรัล ฟุ้ด กรุ๊ป', 'Retail');
+  for (const c of ['ZP-PL-0001', 'ZP-PL-0002', 'ZP-PL-0003', 'ZP-PL-0004']) prof.run(c, 'เซ็นทรัล ฟุ้ด กรุ๊ป', 'Modern Trade');
   const cust = db.prepare('INSERT INTO customers (code, name) VALUES (?, ?)');
   cust.run('ZP-PL-0021', 'เซ็นทรัล ฟู้ด รีเทล จำกัด สาขานวมินทร์');
   cust.run('ZP-LD-0295', 'บริษัท ร็อคส์ ไวบส์ จำกัด');
@@ -26,7 +26,7 @@ test('new customers get the corporate of their code prefix or their own company 
   const r = autoGroupNewCustomers(db);
   const get = code => db.prepare('SELECT corporate, sales_category, corp_source FROM customer_profiles WHERE code = ?').get(code);
   assert.equal(get('ZP-PL-0021').corporate, 'เซ็นทรัล ฟุ้ด กรุ๊ป');
-  assert.equal(get('ZP-PL-0021').sales_category, 'Retail');
+  assert.equal(get('ZP-PL-0021').sales_category, 'Modern Trade');
   assert.equal(get('ZP-PL-0021').corp_source, 'auto');
   assert.equal(get('ZP-LD-0295').corporate, 'ร็อคส์ ไวบส์');
   assert.equal(get('ZP-LD-0296').corporate, 'ตั้งเอง');

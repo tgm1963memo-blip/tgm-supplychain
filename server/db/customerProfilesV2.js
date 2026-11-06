@@ -492,4 +492,33 @@ function applySalesGroupsPoo20261105(db) {
   console.log(`[migrations] sales groups poo 2026-11-05: ${n}/${items.length} customers`);
 }
 
-module.exports = { migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014, applySalesGroupsFix20261019, applyMeatSupplyCounted20261104, applySalesCategoryFix20261105, applySalesGroupsPoo20261105 };
+// Category "Retail" เปลี่ยนชื่อเป็น "Modern Trade" ทั้งหมด และสยามแม็คโครคือซีพี แอ็กซ์ตร้า (2026-11-06, ผู้ใช้สั่ง)
+// รหัสชื่อสยามแม็คโคร/ซีพี แอ็กซ์ตร้าที่ยังไม่มี Category ให้เป็น Modern Trade ด้วย · ไม่รวมงานออกบูธ (แม็คโคร HORECA) · ไม่แตะ corporate ของผู้บริหาร
+const CP_AXTRA_RE = /^(?:บมจ\.?\s*)?(?:สยาม\s*แม็คโคร|แม็คโคร|แมคโคร|แม็กโคร|ซีพี\s*แอ็กซ์ตร้า)(?!.*horeca)/i;
+function applyModernTrade20261106(db) {
+  const id = '20261106_modern_trade_cp_axtra';
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;
+  const by = 'modern-trade-2026-11-06';
+  const fill = db.prepare(`INSERT INTO customer_profiles (code, name, sales_category, edited_by, updated_at)
+    VALUES (?, ?, 'Modern Trade', '${by}', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(code) DO UPDATE SET sales_category = excluded.sales_category, edited_by = excluded.edited_by, updated_at = excluded.updated_at,
+      name = COALESCE(NULLIF(customer_profiles.name, ''), excluded.name)
+    WHERE COALESCE(TRIM(customer_profiles.sales_category), '') = ''`);
+  let renamed = 0, filled = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    renamed = Number(db.prepare(`UPDATE customer_profiles SET sales_category = 'Modern Trade', edited_by = '${by}', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      WHERE TRIM(sales_category) = 'Retail'`).run().changes);
+    for (const c of db.prepare('SELECT code, name FROM customers').all()) {
+      if (CP_AXTRA_RE.test(String(c.name || '').trim())) filled += Number(fill.run(c.code, c.name).changes);
+    }
+    db.prepare('INSERT INTO app_migrations(id) VALUES (?)').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[migrations] modern trade 2026-11-06: Retail ${renamed}, CP Axtra filled ${filled}`);
+}
+
+module.exports = { applyModernTrade20261106, migrateCustomerProfilesV2, applySalesGroups20261012, applySalesGroupsFix20261014, applyMinorGroup20261014, applySalesCategoryFill20261014, applyMinorSalesGroup20261014, applySalesCategoryGroup20261014, applySalesCategoryManual20261014, applySalesCategoryFill2_20261014, applySalesGroupsFix20261019, applyMeatSupplyCounted20261104, applySalesCategoryFix20261105, applySalesGroupsPoo20261105 };

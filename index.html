@@ -9973,7 +9973,8 @@ function _sdRegroupCat2(custs){
   const profs=customerProfiles(),remote=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),x]));
   const m=new Map();
   custs.forEach(c=>(c.branches||[]).forEach(b=>{
-    const p=profs[b.c]||{},cat=String(p.sales_category||'').trim()||'ยังไม่ระบุ Category',grp=String(p.sales_group||'').trim();
+    const p=profs[b.c]||{},grp=String(p.sales_group||'').trim();
+    const cat=String(p.sales_category||'').trim()||(_SD_CP_RE.test(String(p.name||remote[b.c]?.name||b.n||'').trim())?'Modern Trade':'ยังไม่ระบุ Category');
     const nm=_sdCustDisplayName(b.c,b.n,remote,p);
     // ไม่มีกลุ่ม (Sales) → รวมลูกค้าชื่อเดียวกัน (2026-10-19, ผู้ใช้แจ้ง "บีเอ็นเอ็นไม่รวมกัน" — 7 สาขาชื่อเดียวกันขึ้น 7 แถว
     // เพราะเดิมใช้รหัสลูกค้าเป็น key) · key = ชื่อบริษัทที่ตัดวรรค/จำกัด/เลขสาขา/วงเล็บสาขาออก (_sdCorpNameKey) · ไม่มีชื่อ = รหัส
@@ -9994,7 +9995,10 @@ function _sdRegroupCat2(custs){
 // ชื่อจาก Express บางรหัสใช้ nbsp (U+00A0) แทนวรรค เช่น MI-LA-0016 "เอ็มเอฟ คาเฟ่ …" หน้าตาเหมือนกันแต่แยกเป็นคนละแถว
 // key รวมลูกค้าชื่อเดียวกัน (2026-10-19) — กติกาเดียวกับ company_name() ใน scripts/build-sales-groups.py:
 // ยุบช่องว่าง (รวม nbsp) · ตัดเลขลำดับนำหน้า "1." · ตัดวงเล็บ (สาขา/ชื่อผู้ติดต่อ) · ตัด บริษัท/บจ./จำกัด/มหาชน · ตัดเลขสาขาท้ายชื่อ
+// สยามแม็คโครคือซีพี แอ็กซ์ตร้า (2026-11-06, ผู้ใช้สั่ง) — รวมเป็นกลุ่มเดียวทุกสาขา · ไม่รวมงานออกบูธ (แม็คโคร HORECA)
+const _SD_CP_RE=/^(?:บมจ\.?\s*)?(?:สยาม\s*แม็คโคร|แม็คโคร|แมคโคร|แม็กโคร|ซีพี\s*แอ็กซ์ตร้า)(?!.*horeca)/i,_SD_CP_NAME='ซีพี แอ็กซ์ตร้า';
 function _sdCorpNameKey(name){
+  if(_SD_CP_RE.test(String(name||'').trim()))return _SD_CP_NAME;
   const tidy=v=>String(v||'').replace(/[\s ]+/g,' ').trim();
   let s=tidy(name).replace(/^\d+\s*\.\s*/,'').replace(/\([^)]*\)/g,' ').replace(/บริษัท|บจ\.|จำกัด|มหาชน/g,' ');
   s=tidy(s).replace(/(\s+\d+)+$/,'');
@@ -10003,6 +10007,7 @@ function _sdCorpNameKey(name){
 // ชื่อกลุ่มของลูกค้าชื่อเดียวกัน: ชื่อเต็มของรายที่ยอดสูงสุด (ไม่มีวงเล็บสาขา/เลขสาขาท้ายชื่อ)
 function _sdCorpNameLabel(remote,profs,branches){
   const b=branches[0]||{},p=profs[b.c]||{};
+  if(_SD_CP_RE.test(String(p.name||remote[b.c]?.name||b.n||'').trim()))return _SD_CP_NAME;
   const raw=String(p.name||remote[b.c]?.name||b.n||b.c||'').replace(/[\s ]+/g,' ').replace(/\([^)]*\)/g,' ').trim();
   return raw.replace(/(\s+\d+)+$/,'').replace(/\s+/g,' ').trim()||String(b.c||'');
 }
