@@ -141,6 +141,9 @@ async function readTable(company, baseName) {
 // ARTRNRM.DBF ถูกอ่าน 3 จุดต่อรอบ sync (syncSales / buildInvoiceLineComponents / syncInvoices) — อ่านครั้งเดียวต่อบริษัทต่อรอบ
 // (2026-10-28, code review) · cache มีเฉพาะระหว่าง runImport (ล้างใน finally) ไม่ค้างหน่วยความจำข้ามรอบ · ผู้เรียกต้องไม่แก้ array ที่ได้
 let remarkCycleCache = null;
+// บรรทัดใบรับสินค้า (RH) จาก STCRD.DBF ของ TSS — syncStockMovements อ่านไฟล์นี้ (~265MB) อยู่แล้วทุกรอบ
+// จึงเก็บเฉพาะแถว RH ไว้ให้ syncExpressPoLines ใช้ต่อ ไม่ต้องอ่านไฟล์ซ้ำ · ล้างทิ้งตอนจบรอบ (2026-11-05)
+let receiptLinesCycle = null;
 async function readRemarks(company) {
   if (!remarkCycleCache) return readTable(company, 'ARTRNRM.DBF');
   if (!remarkCycleCache.has(company)) remarkCycleCache.set(company, readTable(company, 'ARTRNRM.DBF'));
@@ -893,6 +896,7 @@ function buildStockMovements(rows, company) {
 
 async function syncStockMovements(db) {
   const rows = await readTable(STOCK_COMPANY, 'STCRD.DBF');
+  if (STOCK_COMPANY === PO_COMPANY) receiptLinesCycle = rows.filter((r) => String(r.DOCNUM || '').startsWith('RH'));
   const { daily, wmsDaily, invoiceLines, conversionLines } = buildStockMovements(rows, STOCK_COMPANY);
   for (const company of INVOICE_LINE_COMPANIES) {
     if (company === STOCK_COMPANY) continue;
@@ -1571,6 +1575,56 @@ const REAL_PRODUCT_GROUPS_SQL = REAL_PRODUCT_GROUPS.map((g) => `'${g}'`).join(',
 // ย้อนหลังแค่ PO_LINE_WINDOW_DAYS วัน — ใบค้างเก่าถึงปี 2006 ยังมีอยู่ใน Express แต่ไม่ใช่ของที่จะมาส่งแล้ว
 const PO_COMPANY = 'TSS';
 const PO_LINE_WINDOW_DAYS = 45;
+
+// แปลงใบรับสินค้า RH (หัว APTRN + บรรทัด STCRD) เป็นแถวรูปแบบเดียวกับ express_po_lines — po_no = เลข RH,
+// due_date = วันที่ใบ, doc_status = 'RH' · ข้ามใบยกเลิก (DOCSTAT 'C') และใบที่อ้างอิง PP แล้ว
+// จำนวนใช้ XTRNQTY (หน่วยฐาน) เหมือน buildStockMovements — TRNQTY ของรหัสย่อยที่ TFACTOR≠1 ต่ำกว่าจริง
+// แถวยอดติดลบ (แก้ยอด) หักออกจากบรรทัดสินค้าเดียวกันในใบเดียวกัน · id ของบรรทัดบวกไม่เปลี่ยน (code review 2026-11-07)
+function buildReceiptDocLines(apHeaders, stcrdRows, { cutoff, productOf, unitNames, supplierName }) {
+  const headerByDoc = new Map();
+  for (const h of apHeaders) {
+    const doc = (h.DOCNUM || '').trim();
+    if (!doc.startsWith('RH') || h.DOCSTAT === 'C' || (h.PONUM || '').trim()) continue;
+    const docDate = toIsoDate(h.DOCDAT);
+    if (!docDate || docDate < cutoff) continue;
+    headerByDoc.set(doc, { ...h, docDate });
+  }
+  const positives = [];
+  const negatives = new Map(); // `${doc}|${sku}` -> ยอดที่ต้องหัก
+  for (const l of stcrdRows) {
+    const doc = (l.DOCNUM || '').trim();
+    const header = headerByDoc.get(doc);
+    const sku = (l.STKCOD || '').trim();
+    if (!header || !sku) continue;
+    const product = productOf.get(sku);
+    if (!product || !REAL_PRODUCT_GROUPS.includes(String(product.group_name || '').slice(0, 3))) continue;
+    const qty = Number(l.XTRNQTY) || Number(l.TRNQTY) || 0;
+    if (qty < 0) negatives.set(`${doc}|${sku}`, (negatives.get(`${doc}|${sku}`) || 0) - qty);
+    else if (qty > 0) positives.push({ l, doc, sku, header, product, qty });
+  }
+  positives.sort((a, b) => a.doc.localeCompare(b.doc) || (Number(a.l.SEQNUM) || 0) - (Number(b.l.SEQNUM) || 0));
+  const rows = [];
+  for (const { l, doc, sku, header, product, qty: raw } of positives) {
+    const key = `${doc}|${sku}`;
+    const take = Math.min(raw, negatives.get(key) || 0);
+    if (take) negatives.set(key, negatives.get(key) - take);
+    const qty = Math.round((raw - take) * 1e6) / 1e6;
+    if (qty <= 0) continue;
+    const seq = (l.SEQNUM || '').trim();
+    const supplierCode = (header.SUPCOD || l.PEOPLE || '').trim();
+    const unitCode = (l.TQUCOD || '').trim();
+    // XTRNQTY เป็นหน่วยฐานเมื่อ TFACTOR≠1 จึงแสดงหน่วยฐานของสินค้าแทนหน่วยในบรรทัด
+    const converted = (Number(l.TFACTOR) || 1) !== 1;
+    const unit = converted ? product.unit || unitNames.get(unitCode) || unitCode : unitNames.get(unitCode) || product.unit || unitCode;
+    rows.push([
+      `${PO_COMPANY}:${doc}:${seq}`, PO_COMPANY, doc, seq, header.docDate, header.docDate,
+      supplierCode, supplierName.get(supplierCode) || null, sku, cleanText(l.STKDES) || null,
+      unit || null, (l.LOCCOD || '').trim() || null,
+      qty, 0, qty, 'RH',
+    ]);
+  }
+  return rows;
+}
 async function syncExpressPoLines(db) {
   const headers = await readTable(PO_COMPANY, 'POPR.DBF');
   // อ่านไฟล์ไม่ได้/ไม่พบไฟล์ — คงข้อมูลรอบก่อนไว้ ดีกว่าล้างจนหน้ารับเข้าว่างเปล่า
@@ -1616,6 +1670,26 @@ async function syncExpressPoLines(db) {
     ]);
   }
 
+  // ใบรับสินค้า (RH) ที่ไม่ได้อ้างอิงใบ PP — ตั้งแต่ 2026-11-04 TGM ส่งของโดยบัญชีคีย์ RH ตรงไม่ผ่าน PP
+  // ตามที่ผู้ใช้ระบุ "สามารถดึงจาก RH มารับได้ ถ้าไม่มี PP" · RH ที่อ้าง PP แล้วไม่เอา (ใบ PP แสดงอยู่แล้ว)
+  // อ่าน APTRN/STCRD ไม่ได้หรือได้ว่าง = คงแถว RH รอบก่อนไว้ (ใบ PP ยังอัปเดตตามปกติ) — ถ้าลบทิ้ง RH จะหายจากหน้ารับ
+  // แล้วของที่รับระหว่างนั้นถูกบันทึกเป็นไม่มีใบ พอ RH กลับมาจะค้างเต็มจำนวนและรับซ้ำได้ (code review 2026-11-07)
+  let receiptOk = false;
+  try {
+    const apHeaders = await readTable(PO_COMPANY, 'APTRN.DBF');
+    const stcrd = apHeaders.length
+      ? receiptLinesCycle || (await readTable(PO_COMPANY, 'STCRD.DBF')).filter((r) => String(r.DOCNUM || '').startsWith('RH'))
+      : [];
+    if (apHeaders.length && stcrd.length) {
+      rows.push(...buildReceiptDocLines(apHeaders, stcrd, { cutoff, productOf, unitNames, supplierName }));
+      receiptOk = true;
+    } else {
+      console.warn('[importFromExpress] receipt (RH) source empty — keeping previous RH lines');
+    }
+  } catch (e) {
+    console.warn('[importFromExpress] receipt (RH) lines failed — keeping previous RH lines:', e.message);
+  }
+
   const insert = db.prepare(`
     INSERT OR REPLACE INTO express_po_lines (id, company, po_no, seq, po_date, due_date, supplier_code, supplier_name,
       sku, sku_name, unit, loc_code, ordered_qty, cancelled_qty, remain_qty, doc_status)
@@ -1623,7 +1697,8 @@ async function syncExpressPoLines(db) {
   `);
   db.exec('BEGIN');
   try {
-    db.prepare('DELETE FROM express_po_lines WHERE company = ?').run(PO_COMPANY);
+    if (receiptOk) db.prepare('DELETE FROM express_po_lines WHERE company = ?').run(PO_COMPANY);
+    else db.prepare("DELETE FROM express_po_lines WHERE company = ? AND COALESCE(doc_status, '') <> 'RH'").run(PO_COMPANY);
     for (const r of rows) insert.run(...r);
     db.exec('COMMIT');
   } catch (e) {
@@ -1882,6 +1957,7 @@ async function runImport(db) {
   const logId = info.lastInsertRowid;
   let rowsProcessed = 0;
   remarkCycleCache = new Map();
+  receiptLinesCycle = null;
 
   try {
     // ADDED (2026-08-20): confirmed live via service-stdout-20260820T005006 log that Z:\ExpressI can go
@@ -1943,7 +2019,8 @@ async function runImport(db) {
       .run(e.message, rowsProcessed, logId);
   } finally {
     remarkCycleCache = null;
+    receiptLinesCycle = null;
   }
 }
 
-module.exports = { branchFromArmas, normalizeSlmCode, readTable, readRemarks, findFile, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncExpressPoLines, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { branchFromArmas, normalizeSlmCode, readTable, readRemarks, findFile, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncExpressPoLines, buildReceiptDocLines, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
