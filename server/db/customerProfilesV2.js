@@ -494,7 +494,7 @@ function applySalesGroupsPoo20261105(db) {
 
 // Category "Retail" เปลี่ยนชื่อเป็น "Modern Trade" ทั้งหมด และสยามแม็คโครคือซีพี แอ็กซ์ตร้า (2026-11-06, ผู้ใช้สั่ง)
 // รหัสชื่อสยามแม็คโคร/ซีพี แอ็กซ์ตร้าที่ยังไม่มี Category ให้เป็น Modern Trade ด้วย · ไม่รวมงานออกบูธ (แม็คโคร HORECA) · ไม่แตะ corporate ของผู้บริหาร
-const CP_AXTRA_RE = /^(?:บมจ\.?\s*)?(?:สยาม\s*แม็คโคร|แม็คโคร|แมคโคร|แม็กโคร|ซีพี\s*แอ็กซ์ตร้า)(?!.*horeca)/i;
+const CP_AXTRA_RE = /^(?:บมจ\.?\s*)?(?:สยาม\s*)?(?:(?:แ|เเ)ม็?[คก]โคร|ซีพี\s*(?:แ|เเ)อ็กซ์ตร้า)(?!.*horeca)/i;
 function applyModernTrade20261106(db) {
   const id = '20261106_modern_trade_cp_axtra';
   if (db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(id)) return;

@@ -92,7 +92,8 @@ module.exports = function chainSalesRoutes(db) {
     if (!scope.all) { const ok = new Set(scope.slmCodes); rows = rows.filter(r => ok.has(r.slm_code)); }
     // ชื่อสาขา/เครือ — รหัสสาขาห้อง SKU ไม่มีในรายชื่อลูกค้าฝั่งหน้าเว็บ
     const CORP = { TOPS: 'Tops', MAKRO: 'Makro', GO: 'GO Wholesale' };
-    const names = new Map(db.prepare('SELECT code, name FROM chain_customers').all().map(r => [r.code, r.name]));
+    // แถวเติมจากใบกำกับ DC (ห้องยังไม่คีย์เดือนนั้น) ใช้รหัสห้อง VAT ชื่อจึงอยู่ใน customers
+    const names = new Map([...db.prepare('SELECT code, name FROM customers').all(), ...db.prepare('SELECT code, name FROM chain_customers').all()].map(r => [r.code, r.name]));
     res.json({ ranges: ch.replacedRanges(map), rows: rows.map(r => ({ ...r, cust_name: names.get(r.cust_code) || r.cust_code, corp: CORP[r.chain] || r.chain })) });
   });
   return router;

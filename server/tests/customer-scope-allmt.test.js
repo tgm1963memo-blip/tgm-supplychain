@@ -13,13 +13,14 @@ test('modern trade migration: Retail renamed, CP Axtra names filled, booth stays
   db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
   runMigrations(db);
   db.prepare("DELETE FROM app_migrations WHERE id = '20261106_modern_trade_cp_axtra'").run();
-  for (const [code, name] of [['A1', 'สยามแม็คโคร สาขาพัทยา'], ['A2', 'แม็คโคร HORECA 2026 (เมืองทองธานี)'], ['A3', 'ร้านป้าแดง']]) {
+  for (const [code, name] of [['A1', 'สยามแม็คโคร สาขาพัทยา'], ['A6', 'สยามเเม็คโคร สาขาภูเก็ต'], ['A2', 'แม็คโคร HORECA 2026 (เมืองทองธานี)'], ['A3', 'ร้านป้าแดง']]) {
     db.prepare('INSERT INTO customers(code,name,is_active) VALUES(?,?,1)').run(code, name);
   }
   db.prepare("INSERT INTO customer_profiles(code,name,sales_category) VALUES('A4','บิ๊กซี','Retail'),('A5','ร้านอาหาร','Restaurant')").run();
   require('../db/customerProfilesV2').applyModernTrade20261106(db);
   const cat = c => db.prepare('SELECT sales_category s FROM customer_profiles WHERE code = ?').get(c)?.s ?? null;
   assert.equal(cat('A1'), 'Modern Trade');
+  assert.equal(cat('A6'), 'Modern Trade', 'ห้อง MAKRO สะกดด้วยสระเอสองตัว');
   assert.equal(cat('A2'), null);
   assert.equal(cat('A3'), null);
   assert.equal(cat('A4'), 'Modern Trade');

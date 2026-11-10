@@ -90,6 +90,50 @@ test('chain sales: keep_skus keeps the DC invoice for that SKU room and drops it
   assert.ok((await req('/chain_sales/map/TOPS', 'A', { method: 'PUT', body: JSON.stringify({ keep_skus: 'KK' }) })).error, 'keep_skus ต้องเป็นรายการ');
 });
 
+test('chain facts: future-dated room docs wait for their date, DC invoices stand in for a month the room has not keyed', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));
+  runMigrations(db);
+  const map = { chains: {
+    TOPS: { replace: true, keep_skus: [], cust: { '30-PG-0001': '207' }, groups: [{ skus: ['PG'], vat: [{ prefix: '30-PL-', from: 1, to: 999999 }], company: 'TSS' }] },
+    MAKRO: { replace: true, keep_skus: [], cust: { '01-NB-0001': '201' }, groups: [{ skus: ['NB'], vat: [{ prefix: '30-PN-', from: 1001, to: 1102 }], company: 'TSS' }] },
+    GO: { replace: false, keep_skus: [], cust: {}, groups: [] },
+  } };
+  const room = (chain, d, code, amount) => {
+    db.prepare('INSERT INTO chain_sales_daily(chain,d,cust_code,raw_slm,amount,invoice_count) VALUES(?,?,?,?,?,1)').run(chain, d, code, '', amount);
+    db.prepare(`INSERT INTO chain_sales_monthly(chain,ym,cust_code,raw_slm,amount,invoice_count) VALUES(?,?,?,?,?,1)
+      ON CONFLICT DO UPDATE SET amount = amount + excluded.amount, invoice_count = invoice_count + 1`).run(chain, d.slice(0, 7), code, '', amount);
+  };
+  room('MAKRO', '2026-11-03', '01-NB-0001', 100);
+  room('MAKRO', '2026-11-10', '01-NB-0001', 900);
+  room('TOPS', '2026-10-31', '30-PG-0001', 70);
+  const inv = db.prepare("INSERT INTO invoice_sales_monthly(company,ym,cust_code,slm_code,amount,invoice_count,vat_amount,gross_amount) VALUES(?,?,?,?,?,1,?,?)");
+  inv.run('TSS', '2026-11', '30-PL-0001', '207', 50, 3.5, 53.5);
+  inv.run('TSS', '2026-11', '30-PN-1001', '201', 80, 5.6, 85.6);
+  inv.run('TSS', '2026-10', '30-PL-0001', '207', 60, 4.2, 64.2);
+  inv.run('TSS-68', '2026-11', '30-PL-0001', '207', 999, 0, 999);
+
+  const nov = ch.chainFacts(db, map, '2026-11', '2026-11', '2026-11-06');
+  const mk = nov.filter(r => r.chain === 'MAKRO'), tp = nov.filter(r => r.chain === 'TOPS');
+  assert.deepEqual(mk.map(r => [r.cust_code, r.amount]), [['01-NB-0001', 100]], 'ไม่นับเอกสารลงวันที่ 10 พ.ย. และไม่เติม DC เพราะห้องมีข้อมูลแล้ว');
+  assert.deepEqual(tp.map(r => [r.cust_code, r.slm_code, r.amount, r.vat_amount, r.dc_fill]), [['30-PL-0001', '207', 50, 3.5, true]], 'ห้องยังไม่คีย์ = ใช้ยอด DC แฟ้ม TSS เท่านั้น');
+
+  const oct = ch.chainFacts(db, map, '2026-10', '2026-10', '2026-11-06').filter(r => r.chain === 'TOPS');
+  assert.deepEqual(oct.map(r => [r.cust_code, r.amount, !!r.dc_fill]), [['30-PG-0001', 70, false]], 'ห้องมีข้อมูลแล้วไม่เติม DC ซ้ำ');
+  assert.equal(ch.chainFacts(db, map, '2026-11', '2026-11', '2026-11-10').filter(r => r.chain === 'MAKRO')[0].amount, 1000, 'ถึงวันในเอกสารแล้วนับ');
+
+  // ห้อง TOPS คีย์ พ.ย. ถึงวันที่ 3 → เติมใบ DC หลังวันที่ 3 ถึงวันนี้ ส่วนต้นเดือนใช้ยอดห้อง
+  room('TOPS', '2026-11-03', '30-PG-0001', 30);
+  const day = db.prepare('INSERT INTO invoice_sales_daily(company,d,cust_code,slm_code,amount,invoice_count) VALUES(?,?,?,?,?,1)');
+  day.run('TSS', '2026-11-02', '30-PL-0001', '207', 20);
+  day.run('TSS', '2026-11-05', '30-PL-0001', '207', 25);
+  day.run('TSS', '2026-11-08', '30-PL-0001', '207', 5);
+  const tp2 = ch.chainFacts(db, map, '2026-11', '2026-11', '2026-11-06').filter(r => r.chain === 'TOPS');
+  assert.deepEqual(tp2.map(r => [r.cust_code, r.amount, !!r.dc_fill, r.vat_amount]), [['30-PG-0001', 30, false, undefined], ['30-PL-0001', 25, true, undefined]], 'เติมเฉพาะ 4–6 พ.ย.');
+  assert.deepEqual(ch.chainFacts(db, map, '2026-11-04', '2026-11-30', '2026-11-08').filter(r => r.chain === 'TOPS').map(r => [r.period, r.amount]), [['2026-11-05', 25], ['2026-11-08', 5]], 'รายวันเติมหลังวันที่ห้องคีย์');
+  assert.deepEqual(ch.chainFacts(db, map, '2026-10', '2026-10', '2026-11-06').filter(r => r.dc_fill), [], 'เดือนก่อนไม่เติมบางส่วน');
+});
+
 test('chain sales migration: TOPS keep_skus defaults to KK/AA once, never overwrites an explicit value', () => {
   const db = new DatabaseSync(':memory:');
   db.exec(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'));

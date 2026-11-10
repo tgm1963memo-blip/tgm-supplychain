@@ -8105,7 +8105,10 @@ function _chainSwapInvRows(invRows,swap,cos){
   for(const r of swap.rows||[]){
     const company=r.company==='TGM'?tgmTag:tssTag;
     if(!company) continue;
-    out.push({company,ym:String(r.period||'').slice(0,7),cust_code:r.cust_code,slm_code:r.slm_code||'',amount:r.amount,invoice_count:r.invoice_count,_chain:r.chain,_name:r.cust_name,_corp:r.corp});
+    // ห้อง SKU ไม่มี VAT ในข้อมูล คิด 7% แบบประมาณ (ยอด DC ที่ถูกแทนมี VAT 7.0%) · แถวเติมจากใบกำกับ DC ใช้ VAT จริง · แถวรายวันไม่มี VAT ทั้งหน้า
+    const a=Number(r.amount)||0,mon=String(r.period||'').length===7,est=mon&&r.vat_amount==null,vat=est?a*0.07:Number(r.vat_amount)||0;
+    out.push({company,ym:String(r.period||'').slice(0,7),cust_code:r.cust_code,slm_code:r.slm_code||'',amount:r.amount,invoice_count:r.invoice_count,_chain:r.chain,_name:r.cust_name,_corp:r.corp,
+      ...(mon?{vat_amount:vat,gross_amount:est?a+vat:Number(r.gross_amount)||0,cn_count:Number(r.cn_count)||0,cn_amount:Number(r.cn_amount)||0,cn_vat:Number(r.cn_vat)||0,_vatEst:est}:{})});
   }
   return out;
 }
@@ -8181,6 +8184,7 @@ function sdSetCo(c){
 function _sdUseSwapAll(swapRows,rows,bpRows){
   const tot=swapRows.reduce((a,r)=>a+(Number(r.amount)||0),0);
   _sdApi.total=tot;_sdApi._invRows=swapRows;
+  const ic=swapRows.reduce((a,r)=>a+(Number(r.invoice_count)||0),0);if(ic)_sdApi.invoices=ic; // จำนวนใบต้องมาจากชุดเดียวกับยอด ไม่งั้นค่าเฉลี่ยต่อใบเพี้ยน
   _sdApi.extras=_sdInvExtras(swapRows);_sdApi.x=_sdXOf(swapRows);
   const c=_sdBuildCustsFromInvoice(swapRows);_sdApi.custs=c;_sdApi._buildCache.custs=c;
   const p=_sdProdsInv(rows,swapRows,bpRows,tot);_sdApi.prods=p;_sdApi._buildCache.prods=p;
@@ -9146,7 +9150,7 @@ function _sdInvExtras(inv){
   // แถวรายวัน (/api/invoice_sales_daily_rows — โหมดกำหนดเอง) ไม่มี CN/VAT แยก → null = การ์ดแสดง "—" แทน ฿0
   if(!Array.isArray(inv)||!inv.some(r=>r.vat_amount!=null)) return null;
   const sum=k=>inv.reduce((a,r)=>a+(Number(r[k])||0),0);
-  return {vat:sum('vat_amount'),gross:sum('gross_amount'),cnCount:sum('cn_count'),cnAmount:sum('cn_amount')};
+  return {vat:sum('vat_amount'),gross:sum('gross_amount'),cnCount:sum('cn_count'),cnAmount:sum('cn_amount'),est:inv.some(r=>r._vatEst)};
 }
 // ขายได้ / CN × ก่อน VAT / รวม VAT (2026-09-30, ผู้ใช้ขอ) — จากแถว invoice_sales_monthly
 // amount = สุทธิหลังหัก CN (ก่อน VAT), gross_amount = สุทธิรวม VAT, cn_amount/cn_vat = ลดหนี้ (ค่าบวก)
@@ -9687,7 +9691,7 @@ function sdKPI(){
     ${(()=>{const x=(F||_sdApi).extras;
       return x?`<div class="kpi r"><div class="kl">VAT / ลดหนี้ (CN)</div>
         <div class="kv" style="font-size:18px">VAT ${_sdF(_sdV(x.vat))}</div>
-        <div class="kh">รวม VAT ${_sdF(_sdV(x.gross))}</div>
+        <div class="kh">รวม VAT ${_sdF(_sdV(x.gross))}${x.est?' <span style="color:var(--TX3)">(ประมาณ: ยอดสาขาห้างคิด VAT 7%)</span>':''}</div>
         <div class="kh" style="color:var(--R)">CN ${Math.round(_sdV(x.cnCount)).toLocaleString()} ใบ · ${_sdF(_sdV(x.cnAmount))} <span style="color:var(--TX3)">(หักแล้วในยอดขาย)</span></div></div>`
       :`<div class="kpi r"><div class="kl">VAT / ลดหนี้ (CN)</div><div class="kv" style="font-size:18px">—</div><div class="kh">มีเฉพาะยอดแบบใบกำกับ (ทุก Sales / เดือน / ปี)</div></div>`;})()}`;
 }
@@ -9996,7 +10000,7 @@ function _sdRegroupCat2(custs){
 // key รวมลูกค้าชื่อเดียวกัน (2026-10-19) — กติกาเดียวกับ company_name() ใน scripts/build-sales-groups.py:
 // ยุบช่องว่าง (รวม nbsp) · ตัดเลขลำดับนำหน้า "1." · ตัดวงเล็บ (สาขา/ชื่อผู้ติดต่อ) · ตัด บริษัท/บจ./จำกัด/มหาชน · ตัดเลขสาขาท้ายชื่อ
 // สยามแม็คโครคือซีพี แอ็กซ์ตร้า (2026-11-06, ผู้ใช้สั่ง) — รวมเป็นกลุ่มเดียวทุกสาขา · ไม่รวมงานออกบูธ (แม็คโคร HORECA)
-const _SD_CP_RE=/^(?:บมจ\.?\s*)?(?:สยาม\s*แม็คโคร|แม็คโคร|แมคโคร|แม็กโคร|ซีพี\s*แอ็กซ์ตร้า)(?!.*horeca)/i,_SD_CP_NAME='ซีพี แอ็กซ์ตร้า';
+const _SD_CP_RE=/^(?:บมจ\.?\s*)?(?:สยาม\s*)?(?:(?:แ|เเ)ม็?[คก]โคร|ซีพี\s*(?:แ|เเ)อ็กซ์ตร้า)(?!.*horeca)/i,_SD_CP_NAME='ซีพี แอ็กซ์ตร้า';
 function _sdCorpNameKey(name){
   if(_SD_CP_RE.test(String(name||'').trim()))return _SD_CP_NAME;
   const tidy=v=>String(v||'').replace(/[\s ]+/g,' ').trim();
