@@ -113,6 +113,31 @@ test('resolveCost: SKU without its own cost takes the source cost from the FF co
   db.close();
 });
 
+test('resolveCost: 1แถม1 / แพ็คคู่ without own cost = single pack of the same weight × 2, flagged promo2x', () => {
+  const db = freshDb();
+  db.prepare(`INSERT INTO products(code,name,unit) VALUES
+    ('20284-107','ไส้กรอกอาราบิกิ 100 กรัม แช่แข็ง','แพค'),('20284-11','ไส้กรอกอาราบิกิ 300 กรัม','แพค'),('20284-A','ไส้กรอกอาราบิกิ 100กรัม (1แถม1)','แพค'),
+    ('10270-1','แฮมหมูผสมไก่ 1000 ก. TSS','กิโลกรัม'),('10270-B','แฮมหมูผสมไก่300กรัม (1แถม1)','แพค'),
+    ('10140','คอทเทจเบค่อน(แผ่น)','กิโลกรัม'),('10140-B1','สโมคเบคอนเพลส130ก. 1แถม1','แพค'),('10140-A1','คอทเทจเบค่อน 1แถม1 TGM','แพค'),
+    ('20258-232','ไส้กรอกจัมโบ้ชีส150ก.x2 แพ็คคู่','กล่อง')`).run();
+  const cost = db.prepare('INSERT INTO sku_cost_rounds (sku, eff_date, cost_base, cost_depr, cost_total, unit, unit_grams) VALUES (?,?,?,?,?,?,?)');
+  cost.run('20284-107', '2026-11-02', 15, 16, 18.24, 'แพ็ค', 100);
+  cost.run('20284-11', '2026-11-02', 40, 41, 42.4, 'แพ็ค', 300);
+  cost.run('10270-1', '2026-11-02', 100, 105, 110, 'กก.', 1000);
+  cost.run('10140', '2026-11-02', 140, 142, 145.8, 'กก.', 1000);
+  cost.run('20258', '2026-11-02', 100, 100, 100, 'กก.', 1000);
+  const ctx = costContext(db);
+  const a = resolveCost(ctx, '20284-A', '2026-11-05');
+  assert.deepEqual([a.cost, a.source, a.from, a.unit], [36.48, 'promo2x', ['20284-107'], 'แพ็ค']);
+  assert.equal(resolveCost(ctx, '20284-A', '2026-11-05', 'base').cost, 30);
+  const b = resolveCost(ctx, '10270-B', '2026-11-05'); // ไม่มีแพ็ค 300 ก. → ทุนต่อกก. ของชื่อเดียวกัน × 0.3 × 2
+  assert.deepEqual([b.cost, b.from], [66, ['10270-1']]);
+  assert.equal(resolveCost(ctx, '10140-B1', '2026-11-05'), null, 'ชื่อไม่ตรงกับทุนต่อกก. ของรหัสขึ้นต้นเดียวกัน = ไม่เดา');
+  assert.equal(resolveCost(ctx, '10140-A1', '2026-11-05'), null, 'ชื่อไม่บอกน้ำหนัก = ไม่เดา');
+  assert.equal(resolveCost(ctx, '20258-232', '2026-11-05'), null, 'หน่วยกล่อง = ไม่เดา');
+  assert.equal(resolveCost(ctx, '20284-107', '2026-11-05').source, 'own');
+});
+
 test('lineCost multiplies by quantity in the cost unit and refuses when units cannot be matched', () => {
   const perPack = { cost: 53.1, unit: 'แพ็ค', grams: 500 }, perKg = { cost: 104, unit: 'กก.', grams: 1000 }, perPiece = { cost: 5, unit: 'ชิ้น', grams: null };
   // หน่วยฐานตรงกับหน่วยทุน → ใช้ qty_base (ชุดโปร TFACTOR 2: ขาย 3 ชุด = 6 แพ็ค)
@@ -214,7 +239,7 @@ test('dashboard exec: gross margin block only for users allowed to see cost, cos
     db.prepare('INSERT INTO sc_users(uid,name,role,pwd_hash,can_see_cost) VALUES(?,?,?,?,?)').run(uid, 'User ' + uid, role, 'x', see);
     tokens[uid] = createSession(db, uid).token;
   }
-  db.prepare("INSERT INTO products(code,name,unit) VALUES('P1','ไส้กรอก กก.','กิโลกรัม'),('P2','ไส้กรอก 500 กรัม','แพค'),('P3','ไม่มีทุน','แพค'),('SRC','ต้นทาง','กิโลกรัม'),('CV','แปลงมา','แพค')").run();
+  db.prepare("INSERT INTO products(code,name,unit,group_name) VALUES('P1','ไส้กรอก กก.','กิโลกรัม','003'),('P2','ไส้กรอก 500 กรัม','แพค','003'),('P3','ไม่มีทุน','แพค','002'),('SRC','ต้นทาง','กิโลกรัม','003'),('CV','แปลงมา','แพค','003')").run();
   const cost = db.prepare('INSERT INTO sku_cost_rounds (sku, eff_date, cost_base, cost_depr, cost_total, unit, unit_grams) VALUES (?,?,?,?,?,?,?)');
   cost.run('P1', '2026-11-02', 80, 90, 100, 'กก.', 1000);
   cost.run('P1', '2026-11-09', 90, 100, 110, 'กก.', 1000);
@@ -259,6 +284,12 @@ test('dashboard exec: gross margin block only for users allowed to see cost, cos
   assert.deepEqual(det.below_cost.map(x => [x.cust, x.sku, x.slm, x.covered - x.cogs.total]), [['C2', 'P2', '102', -100]]);
   assert.deepEqual(det.cost_changes.map(x => [x.sku, x.prev, x.cur, x.avg_price]), [['P1', 100, 110, 150]]);
   assert.equal(det.by_sku.find(x => x.sku === 'CV').source, 'converted');
+  // กลุ่มสินค้า = รหัสกลุ่ม Express · ลูกค้าต่อสินค้า · รายการที่ไม่ใช่สินค้า (ค่าเช่า) ไม่นับ
+  assert.deepEqual(det.by_group.map(g => [g.name, g.lines]), [['003', 5200], ['002', 300]]);
+  assert.deepEqual(det.sku_custs.P2.map(c => [c.code, c.lines, c.covered - c.cogs.total]), [['C1', 1200, 200], ['C2', 400, -100]]);
+  db.prepare("INSERT INTO products(code,name,unit,group_name) VALUES('99-7','รายได้เบ็ดเตล็ด - ให้เช่าที่ดิน','ครั้ง','')").run();
+  db.prepare("INSERT INTO sales_lines_daily (company, d, cust_code, slm_code, sku, unit_code, qty, qty_base, amount) VALUES ('TSS', '2026-11-13', 'C1', '101', '99-7', 'ครั้ง', 1, 1, 9999)").run();
+  assert.equal((await mg('SA', 'from=2026-11-01&to=2026-11-29')).data.totals.lines, 5500);
   assert.equal((await mg('SA', 'from=2026-11&to=2027-01')).status, 400);
 
   // รายงาน LINE (user = null, scopeAll) ต้องไม่มีกำไร

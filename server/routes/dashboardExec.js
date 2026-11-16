@@ -688,17 +688,32 @@ module.exports = function dashboardExecRoutes(db) {
       a.cogs.total += cg.total; a.cogs.depr += cg.depr; a.cogs.base += cg.base;
     };
     const bump = (map, key) => { let v = map.get(key); if (!v) { v = zero(); map.set(key, v); } return v; };
-    // กลุ่มผลิตภัณฑ์จากไฟล์ Master SKU (แถวทุนล่าสุดของรหัสนั้น) · รหัสที่ไม่มีแถวทุนของตัวเอง = ไม่ระบุกลุ่ม
-    const groupOf = new Map(db.prepare(`SELECT c.sku, c.product_group FROM sku_cost_rounds c
-      JOIN (SELECT sku, MAX(eff_date) AS d FROM sku_cost_rounds GROUP BY sku) l ON l.sku = c.sku AND l.d = c.eff_date`).all().map((r) => [r.sku, r.product_group]));
+    // กลุ่มสินค้า = กลุ่ม Express 001–006 แบบเดียวกับหมวดสินค้าใน Sales Overview (2026-11-16, ผู้ใช้ขอ — เดิมใช้กลุ่มจากไฟล์ Master SKU)
+    // รหัสกลุ่มนอก 001–006 → หาจากรหัส/ชื่อ (lib/productGroupMatch.js) · หาไม่ได้ = ไม่ใช่สินค้า (ค่าเช่า/เงินมัดจำ ฯลฯ) → ไม่นับในหน้านี้
+    // กติกาเดียวกับ /api/invoice_detail/pivot (x = 1)
+    const PG_RE = /^00[1-6]$/;
+    const pgResolve = productGroupResolver(db).resolve;
+    const pgOfProducts = new Map(db.prepare('SELECT code, group_name FROM products').all().map((r) => [r.code, r.group_name]));
+    const groupMemo = new Map();
+    const groupOf = { get: (sku) => {
+      if (!groupMemo.has(sku)) {
+        const g0 = String(pgOfProducts.get(sku) || '');
+        let g = PG_RE.test(g0) ? g0 : null;
+        if (!g) { const g2 = String(pgResolve(sku, skuNames().get(sku) || '', '') || ''); g = PG_RE.test(g2) ? g2 : null; }
+        groupMemo.set(sku, g);
+      }
+      return groupMemo.get(sku);
+    } };
     const NO_GROUP = 'ไม่ระบุกลุ่ม';
     const totals = zero();
     const byCust = new Map(), bySlm = new Map(), bySku = new Map(), byGroup = new Map(), pair = new Map();
+    const skuCust = new Map(); // sku → Map(cust → {lines, covered, cogs, qc}) — "ขายใคร" ต่อสินค้า
     const skuInfo = new Map();
     const costMemo = new Map();
     let weights = null;
     for (const r of rows) {
       if (!r.sku) continue;
+      if (r.sku !== TG_LUMP_SKU && !groupOf.get(r.sku)) continue; // ไม่ใช่สินค้า
       const amt = Number(r.amount) || 0;
       let cg = null, cost = null, q = null;
       if (r.sku !== TG_LUMP_SKU) {
@@ -723,6 +738,11 @@ module.exports = function dashboardExecRoutes(db) {
       if (r.sku === TG_LUMP_SKU) continue;
       add(bump(bySku, r.sku), amt, cg);
       add(bump(byGroup, groupOf.get(r.sku) || NO_GROUP), amt, cg);
+      let sc = skuCust.get(r.sku);
+      if (!sc) { sc = new Map(); skuCust.set(r.sku, sc); }
+      let scr = sc.get(r.cust_code);
+      if (!scr) { scr = { ...zero(), qc: 0 }; sc.set(r.cust_code, scr); }
+      add(scr, amt, cg); if (cg) scr.qc += q;
       let info = skuInfo.get(r.sku);
       if (!info) { info = { qc: 0, unit: null, source: null, from: [], suspect: false, estimated: false }; skuInfo.set(r.sku, info); }
       if (cg) {
@@ -760,6 +780,11 @@ module.exports = function dashboardExecRoutes(db) {
       by_slm: top(bySlm, 200, (c) => ({ code: c, name: slmName.get(c) || '' })),
       by_sku: top(bySku, 600, skuShape),
       by_group: top(byGroup, 200, (g) => ({ name: g })),
+      // ลูกค้าที่ซื้อแต่ละสินค้า (เฉพาะสินค้าใน by_sku · 30 รายแรกตามยอด) — แสดงเมื่อกดที่สินค้าในหน้าวิเคราะห์กำไร
+      sku_custs: Object.fromEntries([...bySku.entries()].filter(([, v]) => Math.abs(v.lines) > 0.005)
+        .sort((a, b) => b[1].lines - a[1].lines).slice(0, 600)
+        .map(([sku]) => [sku, [...(skuCust.get(sku) || new Map()).entries()].sort((a, b) => b[1].lines - a[1].lines).slice(0, 30)
+          .map(([c, v]) => ({ code: c, name: custName(c), lines: v.lines, covered: v.covered, cogs: v.cogs, qc: v.qc }))])),
       below_cost: [...pair.entries()].filter(([, p]) => p.covered - p.cogs.total < -0.005)
         .sort((a, b) => (a[1].covered - a[1].cogs.total) - (b[1].covered - b[1].cogs.total)).slice(0, 100)
         .map(([k, p]) => { const [cust, sku, slm] = k.split('\u0001'); return { cust, cust_name: custName(cust), sku, name: names.get(sku) || sku, slm, unit: (skuInfo.get(sku) || {}).unit, qc: p.qc, covered: p.covered, cogs: p.cogs }; }),

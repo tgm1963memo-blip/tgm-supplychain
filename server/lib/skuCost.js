@@ -12,6 +12,10 @@
 //      ใช้ทุนของสินค้าต้นทาง: Σ(จำนวนต้นทาง × ทุนต้นทาง) ÷ จำนวนผลลัพธ์ (อัตราส่วนจากเอกสารแปลงล่าสุด) แล้วติด source = 'converted' + รหัสต้นทาง
 //      (ผู้ใช้สั่ง 2026-11-13 "ให้ใส่ว่าเป็นราคาจากการแปลง") · มีทุนของตัวเองเมื่อไร ใช้ทุนจริงก่อนเสมอ
 // ข้อมูลไม่พอ → ไม่เดา: หน่วยของทุนต้นทางเทียบกับหน่วยในเอกสารแปลงไม่ได้ / เอกสารมีผลลัพธ์หลายรหัส = คืน null
+//   4. ชุดโปร "1 แถม 1" / "แพ็คคู่" ที่ไม่มีทุนและไม่มีเอกสารแปลง (ผู้ใช้สั่ง 2026-11-16 "เอาทุนมาคูณ 2 และแสดงเป็นทุนประมาณการ")
+//      → ทุนต่อชุด = ทุนแพ็คเดี่ยว × 2 แล้วติด source = 'promo2x' + รหัสที่ใช้ · แพ็คเดี่ยวหาจากรหัสขึ้นต้นเดียวกัน (20284-A → 20284-*)
+//      ที่น้ำหนักต่อแพ็คเท่ากับน้ำหนักในชื่อชุดโปร (เช่น "100กรัม (1แถม1)" → 20284-107 แพ็คx100) หลายรหัส = เฉลี่ย
+//      ไม่เจอ → ทุนต่อกก. ของรหัสขึ้นต้นเดียวกันที่ชื่อสินค้าขึ้นต้นเหมือนกัน × น้ำหนัก · ชื่อไม่บอกน้ำหนัก / หน่วยขายเป็นกล่อง-ลัง = ไม่เดา
 
 const { unitLabel } = require('./productGroupMatch');
 
@@ -89,6 +93,13 @@ function loadConversions(db) {
   return byOut;
 }
 
+function loadNames(db) {
+  const m = new Map();
+  try { for (const r of db.prepare('SELECT code, name FROM bplus_skus').all()) if (r.name) m.set(r.code, r.name); } catch (_) { /* ไม่มีตาราง Bplus */ }
+  for (const r of db.prepare('SELECT code, name FROM products').all()) if (r.name) m.set(r.code, r.name);
+  return m;
+}
+
 function loadBaseUnits(db) {
   return new Map(db.prepare('SELECT code, unit FROM products').all().map(r => [r.code, normUnit(r.unit)]));
 }
@@ -101,7 +112,7 @@ function costContext(db) {
     (SELECT COUNT(*) FROM products) AS v`).get().v;
   const hit = ctxCache.get(db);
   if (hit && hit.version === v) return hit;
-  const ctx = { version: v, idx: loadCostIndex(db), conv: loadConversions(db), baseUnits: loadBaseUnits(db) };
+  const ctx = { version: v, idx: loadCostIndex(db), conv: loadConversions(db), baseUnits: loadBaseUnits(db), names: loadNames(db) };
   ctxCache.set(db, ctx);
   return ctx;
 }
@@ -135,8 +146,7 @@ function resolveAll(ctx, sku, date) {
       unit: own.row.unit, grams: own.row.unit_grams ?? null, source: 'own', from: [],
       doc: null, eff_date: own.row.eff_date, estimated: own.estimated, suspect: !!own.row.suspect };
   }
-  const docs = ctx.conv.get(sku);
-  if (!docs) return null;
+  const docs = ctx.conv.get(sku) || [];
   for (const d of docs) {
     const sum = { total: 0, depr: 0, base: 0 };
     let estimated = false, suspect = false, ok = true;
@@ -153,7 +163,60 @@ function resolveAll(ctx, sku, date) {
       unit: ctx.baseUnits.get(sku) || null, grams: null, source: 'converted',
       from: d.sources.map(s => s.sku), doc: d.doc, eff_date: null, estimated, suspect };
   }
-  return null;
+  return promoPairCost(ctx, sku, day);
+}
+
+// ── ชุดโปร 1 แถม 1 / แพ็คคู่ (กติกาข้อ 4) ──────────────────────────────
+const PROMO_PAIR_RE = /1\s*แถม\s*1|แพ[็]?[คก]\s*คู่/;
+const BOXY_UNIT_RE = /^(กล่อง|ลัง|กล|ลง)/;
+// น้ำหนักต่อแพ็คเดี่ยวจากชื่อ: "100กรัม", "90 กรัม", "75g", "130ก.", "(155g.*2)" — ตัวเลขแรกที่ตามด้วยหน่วยกรัม
+function gramsFromName(name) {
+  const m = String(name || '').match(/(\d+(?:\.\d+)?)\s*(กรัม|g\b|g\.|ก\.|ก(?=[\s(]|$))/i);
+  const g = m ? Number(m[1]) : NaN;
+  return g > 0 && g < 5000 ? g : null;
+}
+const namePrefix = s => String(s || '').replace(/\s+/g, '').split(/\d/)[0].replace(/[()]/g, '');
+function promoPairCost(ctx, sku, day) {
+  const name = ctx.names && ctx.names.get(sku);
+  if (!name || !PROMO_PAIR_RE.test(name)) return null;
+  const unit = ctx.baseUnits.get(sku) || null;
+  if (unit && BOXY_UNIT_RE.test(unit)) return null;
+  const grams = gramsFromName(name);
+  const head = String(sku).split('-')[0];
+  if (!grams || !head || head === sku) return null;
+  if (!ctx.byHead) {
+    ctx.byHead = new Map();
+    for (const s of ctx.idx.keys()) { const h = String(s).split('-')[0]; if (!ctx.byHead.has(h)) ctx.byHead.set(h, []); ctx.byHead.get(h).push(s); }
+  }
+  const cands = (ctx.byHead.get(head) || []).filter(s => s !== sku);
+  const findHits = (want) => {
+    const hits = [];
+    for (const s of cands) {
+      const own = ownRowAt(ctx.idx, s, day);
+      if (!own || !want(s, own.row)) continue;
+      hits.push({ sku: s, own });
+    }
+    return hits;
+  };
+  // แพ็คเดี่ยวน้ำหนักเท่ากัน (ไม่ใช่หน่วยกล่อง/ลัง/คู่)
+  let hits = findHits((s, r) => r.unit && r.unit !== KG && !/^(กล่อง|ลัง|คู่)/.test(r.unit) && Number(r.unit_grams) === grams);
+  let per = r => 1;
+  if (!hits.length) {
+    // ทุนต่อกก. ของสินค้าชื่อขึ้นต้นเดียวกัน × น้ำหนักแพ็ค
+    const p = namePrefix(name);
+    // ชื่อตรงกันทั้งท่อนก่อน (10270-1 "แฮมหมูผสมไก่ 1000 ก.") ไม่งั้นค่อยรับชื่อที่ขึ้นต้นเหมือน — กันเอาทุนของ (หัว)/(สไลซ์) มาเฉลี่ยปน
+    if (p.length >= 4) {
+      hits = findHits((s, r) => r.unit === KG && namePrefix(ctx.names.get(s)) === p);
+      if (!hits.length) hits = findHits((s, r) => r.unit === KG && namePrefix(ctx.names.get(s)).startsWith(p));
+    }
+    per = () => grams / 1000;
+  }
+  if (!hits.length) return null;
+  const costs = { total: 0, depr: 0, base: 0 };
+  for (const h of hits) for (const b of Object.keys(costs)) costs[b] += pick(h.own.row, b) * per(h.own.row) * 2 / hits.length;
+  return { costs: { total: round4(costs.total), depr: round4(costs.depr), base: round4(costs.base) },
+    unit, grams: grams * 2, source: 'promo2x', from: hits.map(h => h.sku), doc: null, eff_date: null,
+    estimated: hits.some(h => h.own.estimated), suspect: hits.some(h => !!h.own.row.suspect) };
 }
 
 // ฐานเดียว → { cost, unit, grams, source, from, doc, eff_date, estimated, suspect } หรือ null

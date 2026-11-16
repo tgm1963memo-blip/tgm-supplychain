@@ -26,7 +26,7 @@ const SALES_ONLY = [
   '_sdKpiFromRows', '_sdSalesListFromRows', '_sdBuildKey', '_sdEnsureBuilt', '_applySalesRowsToSd',
   '_loadSalesFromSupabase', '_loadSalesSummaryFromSupabase', '_sdFmtTotal', '_sdUseLatestMonthIfEmpty',
   '_sdApiMonth', '_loadSalesFromAllHist', '_sdApiYear', '_sdWeekFactor', '_sdV', '_sdPeriodLabel',
-  'sdLoad', 'sdLoadYear', '_STKGRP_LABELS', 'expressGroupLabel',
+  'sdLoad', 'sdLoadYear', // _STKGRP_LABELS / expressGroupLabel ใช้ร่วม (หน้าวิเคราะห์กำไรของทั้ง 2 แอปจัดกลุ่ม 001–006, 2026-11-16)
   '_sdBuildCusts', '_sdBuildProds', '_sdBuildSlms',
   // Dashboard's Top 10 สินค้า/ลูกค้า (2026-09-16) — defined in the Dashboard section of the file, not
   // Sales Overview, but its body calls _sdBuildProds/_sdBuildCusts/_sdFmtTotal/_sdBar directly so it

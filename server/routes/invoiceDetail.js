@@ -259,7 +259,7 @@ function invoiceDetailRoutes(db) {
   // ทุนขาย = ทุนต่อหน่วยตาม Master SKU × จำนวนในหน่วยเดียวกับทุน (lib/skuCost.costQty) — หน่วยไม่ตรงแต่รู้น้ำหนัก
   // (lib/lineWeight.js) → เทียบผ่านกก. แบบเดียวกับ Dashboard · เทียบไม่ได้ / ไม่มีทุน = ไม่นับในทุน (ไม่ประมาณ) · ฟิลด์ที่เพิ่มต่อแถว:
   //   cc = ยอดขายส่วนที่คิดทุนได้ · ct / cd / cb = ทุนขายฐาน ทุนรวม / รวมค่าเสื่อม / ขั้นต้น DL+OH · cq = จำนวนในหน่วยของทุน
-  // costInfo.skus[sku] = { u: หน่วยของทุน, src: 'converted' (ทุนจากการแปลง), fr: รหัสต้นทาง, sus: ทุนต่ำผิดปกติ, est: ใช้ทุนรอบแรกย้อนหลัง }
+  // costInfo.skus[sku] = { u: หน่วยของทุน, src: 'converted' (ทุนจากการแปลง) | 'promo2x' (ชุดโปร 1แถม1 = ทุนแพ็คเดี่ยว × 2), fr: รหัสที่ใช้ทุน, sus: ทุนต่ำผิดปกติ, est: ใช้ทุนรอบแรกย้อนหลัง }
   function addCost(ctx, rows) {
     const { lineKg } = lineWeights(db);
     let weights = null;
@@ -288,7 +288,7 @@ function invoiceDetailRoutes(db) {
       m.cc += Number(r.a) || 0; m.cq += q;
       m.ct += cost.costs.total * q; m.cd += cost.costs.depr * q; m.cb += cost.costs.base * q;
       const info = skus[r.k] || (skus[r.k] = { u: cost.unit });
-      if (cost.source === 'converted') { info.src = 'converted'; info.fr = cost.from; }
+      if (cost.source !== 'own') { info.src = cost.source; info.fr = cost.from; } // converted | promo2x
       if (cost.suspect) info.sus = 1;
       if (cost.estimated) info.est = 1;
     }
