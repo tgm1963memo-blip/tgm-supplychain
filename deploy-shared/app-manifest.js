@@ -45,6 +45,7 @@ const SALES_ONLY = [
   '_dateToYm', 'sdSetDateRange', 'sdApplyCustomRange', 'sdSetDatePreset', 'sdLoadCustom',
   'pgMySales', 'sdRender', 'sdUpdateLabel', 'sdKPI', '_xa', '_custsByItemGrouped',
   '_sdMarginRange', 'sdMarginPanel', // แผงกำไรใน Sales Overview (2026-11-16) — หน้าวิเคราะห์กำไร (pgMargin) ใช้ร่วมทั้ง 2 แอป
+  'sdCostToggle', '_sdCostOn', '_sdCg', '_sdCostAdd', '_sdCostBar', '_SD_CH', '_SD_COST_NOTE', '_sdCostHead', '_sdCostCells', '_sdCostTag', // คอลัมน์ทุน/กำไรในตารางรายสินค้า (2026-11-16)
   'sdCust', 'sdProd', 'sdSlm', 'sdSetPT', 'sdNav', 'sdGoNow', 'sdTab', 'sdTogView', 'sdSort',
   'sdSetYear', 'sdSetQ', 'sdClear', 'sdExport',
   // Export Business Review .pptx (2026-10-20)

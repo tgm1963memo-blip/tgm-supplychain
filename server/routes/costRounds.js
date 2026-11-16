@@ -207,3 +207,6 @@ module.exports = function costRoundsRoutes(db, roles) {
 
 module.exports.parseMoney = parseMoney;
 module.exports.buildPlan = buildPlan;
+module.exports.summarize = summarize;
+module.exports.applyItem = applyItem;
+module.exports.tx = tx;

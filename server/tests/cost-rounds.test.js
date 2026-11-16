@@ -265,3 +265,48 @@ test('dashboard exec: gross margin block only for users allowed to see cost, cos
   const payload = require('../routes/dashboardExec')(db).execPayload({ from: '2026-11', to: '2026-11' }, null, { scopeAll: true });
   assert.equal('margin' in payload, false);
 });
+
+test('invoice_detail pivot: cost columns per row by sale date, only for users allowed to see cost', async t => {
+  const db = freshDb();
+  const tokens = {};
+  for (const [uid, role, see] of [['A', 'admin', 0], ['A2', 'admin', 1]]) {
+    db.prepare('INSERT INTO sc_users(uid,name,role,pwd_hash,can_see_cost) VALUES(?,?,?,?,?)').run(uid, 'User ' + uid, role, 'x', see);
+    tokens[uid] = createSession(db, uid).token;
+  }
+  db.prepare("INSERT INTO products(code,name,unit,group_name) VALUES('P1','ไส้กรอก กก.','กิโลกรัม','003'),('P2','ไส้กรอก 500 กรัม','แพค','003'),('P3','ไม่มีทุน','แพค','003'),('CV','แปลงมา','แพค','002')").run();
+  const cost = db.prepare('INSERT INTO sku_cost_rounds (sku, eff_date, cost_base, cost_depr, cost_total, unit, unit_grams) VALUES (?,?,?,?,?,?,?)');
+  cost.run('P1', '2026-11-02', 80, 90, 100, 'กก.', 1000);
+  cost.run('P1', '2026-11-09', 90, 100, 110, 'กก.', 1000);
+  cost.run('P2', '2026-11-02', 40, 45, 50, 'แพ็ค', 500);
+  cost.run('SRC', '2026-11-02', 60, 70, 80, 'กก.', 1000);
+  db.prepare("INSERT INTO products(code,name,unit) VALUES('SRC','ต้นทาง','กิโลกรัม')").run();
+  const ff = db.prepare('INSERT INTO conversion_doc_lines (doc_num, seq_num, doc_date, sku, direction, qty) VALUES (?,?,?,?,?,?)');
+  ff.run('FF1', '1', '2026-10-01', 'SRC', 'out', 10); ff.run('FF1', '2', '2026-10-01', 'CV', 'in', 20); // 40 ต่อแพ็ค
+  const head = db.prepare("INSERT INTO invoices(doc_num,doc_date,cust_code,slm_code,rectyp) VALUES(?,?,'C1','101','0')");
+  const line = db.prepare("INSERT INTO invoice_lines(company,doc_num,seq_num,doc_date,sku,sku_name,qty,unit_code,unit_factor,line_value) VALUES('TSS',?,?,?,?,?,?,?,?,?)");
+  head.run('IA1', '2026-11-05'); head.run('IA2', '2026-11-10');
+  line.run('IA1', '1', '2026-11-05', 'P1', 'ไส้กรอก กก.', 10, 'กก', 1, 1500);   // ทุน 100 → 1,000
+  line.run('IA2', '1', '2026-11-10', 'P1', 'ไส้กรอก กก.', 10, 'กก', 1, 1500);   // ทุนรอบใหม่ 110 → 1,100
+  line.run('IA1', '2', '2026-11-05', 'P2', 'ไส้กรอก 500 กรัม', 10, 'แพ', 2, 1200); // 10 × 2 = 20 แพ็ค × 50 = 1,000
+  line.run('IA1', '3', '2026-11-05', 'P3', 'ไม่มีทุน', 5, 'แพ', 1, 300);
+  line.run('IA1', '4', '2026-11-05', 'CV', 'แปลงมา', 10, 'แพ', 1, 600);           // 40 × 10 = 400
+  const server = buildApp(db).listen(0, '127.0.0.1');
+  await new Promise(r => server.once('listening', r));
+  t.after(async () => { await new Promise(r => server.close(r)); db.close(); });
+  const pivot = async uid => (await (await fetch(`http://127.0.0.1:${server.address().port}/api/invoice_detail/pivot`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tokens[uid]}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: '2026-11-01', to: '2026-11-30' }) })).json());
+
+  const plain = await pivot('A');
+  assert.equal('cost' in plain, false);
+  assert.ok(plain.rows.every(r => !('ct' in r) && !('cc' in r) && !('bk' in r)));
+  const withCost = await pivot('A2');
+  const by = Object.fromEntries(withCost.rows.map(r => [r.k, r]));
+  // P1 สองช่วงทุนรวมกลับเป็นแถวเดียว
+  assert.equal(withCost.rows.filter(r => r.k === 'P1').length, 1);
+  assert.deepEqual([by.P1.q, by.P1.a, by.P1.cc, by.P1.ct, by.P1.cd, by.P1.cb, by.P1.cq], [20, 3000, 3000, 2100, 1900, 1700, 20]);
+  assert.deepEqual([by.P2.cc, by.P2.ct, by.P2.cq], [1200, 1000, 20]);
+  assert.equal('cc' in by.P3, false);
+  assert.deepEqual([by.CV.ct, withCost.cost.skus.CV.src, withCost.cost.skus.CV.fr], [400, 'converted', ['SRC']]);
+  assert.equal(withCost.cost.skus.P1.u, 'กก.');
+  assert.deepEqual(plain.rows.map(r => [r.k, r.a]).sort(), withCost.rows.map(r => [r.k, r.a]).sort());
+});

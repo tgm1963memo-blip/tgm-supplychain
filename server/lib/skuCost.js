@@ -179,6 +179,14 @@ function costQty(cost, line) {
   }
   return null;
 }
+// เทียบหน่วยผ่านน้ำหนัก (หน่วยขาย ≠ หน่วยทุน) ใช้น้ำหนักต่อหน่วยจาก WMS / ชื่อสินค้า ซึ่งบางรหัสผิดหน่วย — ตรวจกับข้อมูลจริง
+// 2026-11-16: TS0198 ขายเป็น "แพ" แต่ WMS บอก 10 กก./หน่วย → ทุนขาย 9.4 ล้าน จากยอดขาย 1.2 ล้าน (GP −681%) ดึงกำไรรวมทั้งเดือนลง
+// ~8 จุด · ทุนที่ได้จากทางนี้เกิน 3 เท่าของยอดขาย = ถือว่าเทียบหน่วยไม่ได้ (ไม่นับ) แทนที่จะโชว์ขาดทุนปลอม
+// ใช้เฉพาะทางน้ำหนัก — หน่วยตรงกันโดยตรงยังใช้ตามจริงเสมอ
+const KG_PATH_MAX_COST_RATIO = 3;
+function kgPathOk(cost, q, amount) {
+  return q != null && cost.costs.total * q <= KG_PATH_MAX_COST_RATIO * Math.max(Number(amount) || 0, 0);
+}
 // ต้นทุนขายของบรรทัดขายหนึ่งบรรทัด = ทุนต่อหน่วย × จำนวนในหน่วยเดียวกับทุน
 function lineCost(cost, line) {
   if (!cost || !(cost.cost > 0)) return null;
@@ -191,4 +199,5 @@ const round4 = n => Math.round(n * 10000) / 10000;
 module.exports = {
   BASIS_COL, isBasis, KG, normUnit, parseUnit, canSeeCost,
   loadCostIndex, loadConversions, loadBaseUnits, costContext, resolveAll, resolveCost, costQty, lineCost, round4,
+  kgPathOk, KG_PATH_MAX_COST_RATIO,
 };

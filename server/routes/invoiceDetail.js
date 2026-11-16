@@ -1,6 +1,8 @@
 const express = require('express');
 const { productGroupResolver, unitLabel } = require('../lib/productGroupMatch');
 const { salesDocSql } = require('../lib/salesDocs');
+const skuCost = require('../lib/skuCost');
+const { loadWeights, lineWeights } = require('../lib/lineWeight');
 
 // รายละเอียดใบกำกับของลูกค้า (2026-09-28) — Sales Overview แบบยอดใบกำกับ (invoice_sales_monthly) ไม่มีมิติสินค้า
 // จึงดึงรายการสินค้าจาก invoice_lines (STCRD) ผูกกับหัวใบกำกับ v_invoice_heads (ARTRN: cust_code/slm_code) ด้วย doc_num
@@ -11,6 +13,7 @@ const { salesDocSql } = require('../lib/salesDocs');
 // lines=1 = ส่งบรรทัดสินค้าของทุกใบในช่วงด้วย (มุมมอง "รายสินค้า → ใบกำกับ" ในหน้าต่างดูใบกำกับ)
 const COMPANY = 'TSS'; // ตรงกับ invoice_sales_monthly ที่ Sales Overview ใช้
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PRODUCT_GROUP_RE = /^00[1-6]$/; // กลุ่มสินค้าจริงของ Express (STKGRP) — อื่นๆ เป็นรหัสค่าใช้จ่าย/ของใช้
 const MAX_CUSTS = 2000;
 const list = v => [...new Set((Array.isArray(v) ? v : String(v ?? '').split(',')).map(s => String(s).trim()).filter(Boolean))];
 
@@ -23,7 +26,13 @@ function invoiceDetailRoutes(db) {
   // เติม group_name ที่ว่างด้วยตัวหากลุ่มจากรหัส/ชื่อ (lib/productGroupMatch.js) — ใช้ใน detail / lines
   function fillGroups(list) {
     const { resolve } = productGroupResolver(db);
-    for (const r of list || []) if (!r.group_name && r.sku) r.group_name = resolve(r.sku, r.sku_name, '') || null;
+    for (const r of list || []) {
+      if (!r.sku || PRODUCT_GROUP_RE.test(String(r.group_name || ''))) continue;
+      const g = resolve(r.sku, r.sku_name, '');
+      // รหัสกลุ่มนอก 001–006 (เช่น 'TSS') ที่หากลุ่มสินค้าจริงได้ → ใช้กลุ่มนั้น (2026-11-16) · ไม่ได้ = คงเดิม
+      if (PRODUCT_GROUP_RE.test(String(g || ''))) r.group_name = g;
+      else if (!r.group_name) r.group_name = g || null;
+    }
     return list;
   }
   function detail(q, res, user) {
@@ -195,36 +204,102 @@ function invoiceDetailRoutes(db) {
         return { sql: w.length ? ' AND ' + w.join(' AND ') : '', params: p };
       };
       const fi = filt('i', true);
+      // ทุน/กำไรต่อแถว (2026-11-16, ผู้ใช้ขอ "ขึ้นในตารางรายการสินค้าด้านล่างเลย เพิ่มเป็น column") — เฉพาะผู้มีสิทธิ์เห็นทุน
+      // แยกแถวตาม "ช่วงทุน" bk (จำนวนรอบทุนที่มีผลแล้ว ณ วันขาย — แบบเดียวกับ /api/dashboard/margin) คิดทุนแล้วรวมกลับเป็นแถวเดิม
+      // คนไม่มีสิทธิ์ได้ SQL / ผลลัพธ์แบบเดิมทุกตัวอักษร ไม่มีฟิลด์ทุนหลุดไป
+      const ctx = skuCost.canSeeCost(req.user) ? skuCost.costContext(db) : null;
+      const effDates = ctx ? [...new Set([...ctx.idx.values()].flatMap(l => l.map(r => r.eff_date)))].sort() : [];
+      const withCost = effDates.length > 0;
+      const bkSql = col => withCost ? `, (${effDates.map(() => `(${col} >= ?)`).join(' + ')}) AS bk, MIN(${col}) AS d0` : '';
+      const bkGrp = withCost ? ', bk' : '';
       // u = หน่วยขาย (2026-10-14, ผู้ใช้ขอ) — แยกแถวตามหน่วย ไม่บวกจำนวนต่างหน่วยรวมกัน (กก. + แพ็ค)
       // s = เจ้าของยอด (ใบไม่มีรหัส Sales → รหัสที่ master ผูกกับลูกค้า · ไม่มี = "(ไม่ระบุ)" รวม "(none)" ด้วย) — ตรงกับแท็บรายเซลส์ / ตัวกรอง Sales
       // + เจ้าของยอดรายสินค้า (2026-10-27, sales_slm_sku_override — lib/slmOverride.js) ชนะเจ้าของหัวใบ
       const sExpr = `COALESCE((SELECT o.slm_code FROM sales_slm_sku_override o WHERE o.cust_code = i.cust_code AND o.sku = l.sku), ${cs.ownerSlmExpr({ cust: 'i.cust_code', slm: 'i.slm_code' })})`;
-      const rows = db.prepare(`SELECT i.cust_code AS c, ${sExpr} AS s, l.sku AS k, MAX(l.sku_name) AS n,
+      let rows = db.prepare(`SELECT i.cust_code AS c, ${sExpr} AS s, l.sku AS k, MAX(l.sku_name) AS n,
           MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.line_value) AS a
+          ${withCost ? ', SUM(l.qty * COALESCE(NULLIF(l.unit_factor, 0), 1)) AS qb' : ''}${bkSql('i.doc_date')}
         FROM v_invoice_heads i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
         LEFT JOIN products p ON p.code = l.sku
         WHERE i.doc_date >= ? AND i.doc_date <= ? AND COALESCE(i.rectyp, '') <> '5' AND ${salesDocSql('i.doc_num')}${fi.sql}
-        GROUP BY i.cust_code, s, l.sku, u`).all(COMPANY, from, to, ...fi.params);
+        GROUP BY i.cust_code, s, l.sku, u${bkGrp}`).all(...(withCost ? effDates : []), COMPANY, from, to, ...fi.params);
       try {
         const fb = filt('b', false);
         rows.push(...db.prepare(`SELECT b.cust_code AS c, COALESCE(NULLIF(NULLIF(TRIM(b.slm_code), ''), '(none)'), '(ไม่ระบุ)') AS s, l.sku AS k, MAX(COALESCE(sk.name, p.name, l.sku)) AS n,
             MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.amount) AS a
+            ${withCost ? ', SUM(l.qty) AS qb' : ''}${bkSql('b.doc_date')}
           FROM bplus_invoices b JOIN bplus_invoice_lines l ON l.doc_key = b.doc_key
           LEFT JOIN bplus_skus sk ON sk.code = l.sku LEFT JOIN products p ON p.code = l.sku
           WHERE b.company = 'BP-TGM' AND b.is_cn = 0 AND b.doc_date >= ? AND b.doc_date <= ?${fb.sql}
-          GROUP BY b.cust_code, s, l.sku, u`).all(from, to, ...fb.params));
+          GROUP BY b.cust_code, s, l.sku, u${bkGrp}`).all(...(withCost ? effDates : []), from, to, ...fb.params));
       } catch (e) { /* ยังไม่มีตาราง Bplus */ }
+      let costInfo = null;
+      if (withCost) ({ rows, costInfo } = addCost(ctx, rows));
       // สินค้าที่ไม่มีกลุ่มใน products (รหัสโรงงาน/บาร์โค้ด) → หากลุ่มจากรหัสขึ้นต้น/ชื่อ แบบเดียวกับแท็บรายสินค้า
       // (2026-10-14, ผู้ใช้แจ้ง "สินค้าบางรายการไม่ถูกจัดกลุ่ม" เช่น 20018-227 โทสต์แฮม) · หน่วยแปลงเป็นชื่อเดียวกัน
       // ทั้ง Express (รหัสย่อ กก/แพ) และ Bplus (ชื่อเต็ม กิโลกรัม/แพ็ค)
+      // + (2026-11-16, ผู้ใช้ขอ "ค่าเช่าเอาออก เน้นตัวสินค้า · ไส้กรอกเข้ากลุ่มไส้กรอก"):
+      //   รหัสกลุ่ม Express ที่ไม่ใช่ 001–006 (เช่น 'TSS' ของ 10004 ค็อกเทลไก่ / ชุดโปร 1แถม1) → หากลุ่มใหม่จากรหัสขึ้นต้น/ชื่อ
+      //   ยังไม่ได้ 001–006 (ค่าเช่า 99-7 / เงินมัดจำ 99-8 / ของใช้สิ้นเปลือง) = ไม่ใช่สินค้า → x = 1 ให้ client ซ่อนจากมุมมองสินค้า
+      //   (ยังส่งแถวมาเพื่อให้ส่วนต่างกับยอดหัวใบคำนวณเฉพาะลดหนี้ ไม่ดูดยอดค่าเช่าไปอยู่แถว CN)
       const { resolve } = productGroupResolver(db);
       for (const r of rows) {
-        if (!r.g && r.k) r.g = resolve(r.k, r.n, '') || null;
+        if (r.k && !PRODUCT_GROUP_RE.test(String(r.g || ''))) {
+          const g2 = resolve(r.k, r.n, '');
+          if (PRODUCT_GROUP_RE.test(String(g2 || ''))) r.g = g2;
+          else { r.g = r.g || g2 || null; r.x = 1; }
+        }
         r.u = unitLabel(r.u);
       }
-      res.json({ from, to, rows });
+      res.json(costInfo ? { from, to, rows, cost: costInfo } : { from, to, rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
+
+  // คิดทุนของแถว pivot ที่แยกตามช่วงทุน (bk) แล้วรวมกลับเป็นแถวเดิม (ลูกค้า × เซลส์ × สินค้า × หน่วย)
+  // ทุนขาย = ทุนต่อหน่วยตาม Master SKU × จำนวนในหน่วยเดียวกับทุน (lib/skuCost.costQty) — หน่วยไม่ตรงแต่รู้น้ำหนัก
+  // (lib/lineWeight.js) → เทียบผ่านกก. แบบเดียวกับ Dashboard · เทียบไม่ได้ / ไม่มีทุน = ไม่นับในทุน (ไม่ประมาณ) · ฟิลด์ที่เพิ่มต่อแถว:
+  //   cc = ยอดขายส่วนที่คิดทุนได้ · ct / cd / cb = ทุนขายฐาน ทุนรวม / รวมค่าเสื่อม / ขั้นต้น DL+OH · cq = จำนวนในหน่วยของทุน
+  // costInfo.skus[sku] = { u: หน่วยของทุน, src: 'converted' (ทุนจากการแปลง), fr: รหัสต้นทาง, sus: ทุนต่ำผิดปกติ, est: ใช้ทุนรอบแรกย้อนหลัง }
+  function addCost(ctx, rows) {
+    const { lineKg } = lineWeights(db);
+    let weights = null;
+    const memo = new Map(), merged = new Map(), skus = {};
+    for (const r of rows) {
+      const key = `${r.c}\u0001${r.s}\u0001${r.k}\u0001${r.u}`;
+      let m = merged.get(key);
+      if (!m) { m = { c: r.c, s: r.s, k: r.k, n: r.n, g: r.g, u: r.u, q: 0, a: 0, cc: 0, ct: 0, cd: 0, cb: 0, cq: 0 }; merged.set(key, m); }
+      m.q += Number(r.q) || 0; m.a += Number(r.a) || 0;
+      if (!m.n && r.n) m.n = r.n;
+      if (!m.g && r.g) m.g = r.g;
+      if (!r.k) continue;
+      const ck = `${r.k}|${r.bk}`;
+      if (!memo.has(ck)) memo.set(ck, skuCost.resolveAll(ctx, r.k, r.d0));
+      const cost = memo.get(ck);
+      if (!cost) continue;
+      const line = { sku: r.k, qty: r.q, qty_base: r.qb, unit_code: r.u, base_unit: ctx.baseUnits.get(r.k) };
+      let q = skuCost.costQty(cost, line);
+      if (q == null) {
+        weights = weights || loadWeights();
+        const kg = lineKg(line, weights);
+        if (kg != null) q = skuCost.costQty(cost, { ...line, kg });
+        if (!skuCost.kgPathOk(cost, q, r.a)) q = null;
+      }
+      if (q == null) continue;
+      m.cc += Number(r.a) || 0; m.cq += q;
+      m.ct += cost.costs.total * q; m.cd += cost.costs.depr * q; m.cb += cost.costs.base * q;
+      const info = skus[r.k] || (skus[r.k] = { u: cost.unit });
+      if (cost.source === 'converted') { info.src = 'converted'; info.fr = cost.from; }
+      if (cost.suspect) info.sus = 1;
+      if (cost.estimated) info.est = 1;
+    }
+    const r2 = n => Math.round(n * 100) / 100;
+    const out = [...merged.values()].map(m => {
+      if (!m.cc && !m.ct) { delete m.cc; delete m.ct; delete m.cd; delete m.cb; delete m.cq; return m; }
+      m.ct = r2(m.ct); m.cd = r2(m.cd); m.cb = r2(m.cb); m.cq = r2(m.cq);
+      return m;
+    });
+    return { rows: out, costInfo: { skus } };
+  }
 
   router.get('/', (req, res) => detail(req.query, res, req.user));
   router.post('/', (req, res) => detail(req.body || {}, res, req.user));

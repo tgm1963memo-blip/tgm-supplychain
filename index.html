@@ -7680,7 +7680,7 @@ function sdMarginPanel(){
   _dxEnsureCss();
   const rg=_sdMarginRange();
   const card=inner=>`<div class="dx-card dx-margin">${inner}</div>`;
-  const title=sub=>`<div class="dx-ch"><div><div class="t">กำไรขั้นต้น <span class="dx-lock" title="ส่วนนี้เห็นเฉพาะผู้ที่ได้รับสิทธิ์เห็นทุน">เฉพาะผู้มีสิทธิ์เห็นทุน</span></div><div class="s">${sub}</div></div><div class="r"><span style="font-size:12.5px;color:var(--dx-mut)">คิดจากทุน</span><div class="dx-seg" role="group" aria-label="ฐานทุน">${_mgBasisSeg('sdMarginPanel()')}</div><button class="dx-btn" type="button" onclick="nav('margin')">วิเคราะห์กำไร →</button></div></div>`;
+  const title=sub=>`<div class="dx-ch"><div><div class="t">กำไรขั้นต้น <span class="dx-lock" title="ส่วนนี้เห็นเฉพาะผู้ที่ได้รับสิทธิ์เห็นทุน">เฉพาะผู้มีสิทธิ์เห็นทุน</span></div><div class="s">${sub}</div></div><div class="r"><span style="font-size:12.5px;color:var(--dx-mut)">คิดจากทุน</span><div class="dx-seg" role="group" aria-label="ฐานทุน">${_mgBasisSeg('sdRender()')}</div><button class="dx-btn" type="button" onclick="nav('margin')">วิเคราะห์กำไร →</button></div></div>`;
   if(!rg){box.innerHTML='';return;}
   if(rg.err){box.innerHTML=card(title(esc(rg.err)));return;}
   const qs=new URLSearchParams({from:rg.from,to:rg.to,co:_sdCo()});
@@ -7695,25 +7695,16 @@ function sdMarginPanel(){
   }
   const m=hit.res.data,b=_mgBasis();
   if(!m.has_cost){box.innerHTML=card(title('ยังไม่มีข้อมูลทุนในระบบ — นำเข้าไฟล์ Master SKU ทุน 3 ช่องที่เมนู ทุน & ราคาหมู'));return;}
-  const T=_dxGp(m.totals,b),tab=_sd.at==='cust'?'cust':_sd.at==='prod'?'prod':'slm',N=15;
+  // ตาราง 15 อันดับเอาออก (2026-11-16, ผู้ใช้ขอ "ไม่ต้องขึ้นแยก ให้ขึ้นในตารางรายการสินค้าด้านล่างเลย") — เหลือแถบสรุป
+  // ทุน/กำไรรายสินค้าเป็นคอลัมน์ในตารางแท็บรายสินค้า (_sdCostCells) · แถบนี้คิดจาก /api/dashboard/margin ตามวันที่จริงของช่วง
+  const T=_dxGp(m.totals,b);
   const strip=`<div class="dx-mstrip" style="grid-template-columns:repeat(4,minmax(0,1fr))">
     <div><div class="k">กำไรขั้นต้น</div><div class="v">${_dxB(T.gp)}<small>บาท</small></div><div class="s">จากยอดขายที่คิดทุนได้ ${_dxB(T.covered)}</div></div>
     <div><div class="k">อัตรากำไรขั้นต้น</div><div class="v">${_dxGpPct(T.pc)}</div><div class="s">คิดจาก${DX_BASIS.find(x=>x[0]===b)[1]}</div></div>
     <div><div class="k">ยอดขายที่คิดทุนได้</div><div class="v">${T.cov==null?'—':(T.cov*100).toFixed(1)+'%'}</div><div class="dx-cov"><i style="width:${(T.cov||0)*100}%"></i></div><div class="s">ของยอดรายสินค้า ${_dxB(T.lines)}</div></div>
     <div><div class="k">ขายต่ำกว่าทุน</div><div class="v">${(m.below_cost||[]).filter(x=>x.covered-x.cogs[b]<0).length}<small>คู่ลูกค้า×สินค้า</small></div><div class="s">ดูรายการในหน้าวิเคราะห์กำไร</div></div></div>`;
-  let head,rows;
-  if(tab==='prod'){
-    head='<tr><th>สินค้า</th><th class="dx-n">ยอดขาย (บาท)</th><th class="dx-n">ราคาขายเฉลี่ย</th><th class="dx-n">ทุน/หน่วย</th><th class="dx-n">กำไร (บาท)</th><th class="dx-n">อัตรากำไร</th><th>หมายเหตุ</th></tr>';
-    rows=(m.by_sku||[]).slice(0,N).map(x=>{const g=_dxGp(x,b);return `<tr><td><div class="dx-cust"><b title="${esc(x.sku+' '+x.name)}">${esc(x.name)}</b><span><span class="mono">${esc(x.sku)}</span>${x.unit?' · ต่อ'+esc(x.unit):''}</span></div></td><td class="dx-n">${_dxB(x.lines)}</td><td class="dx-n mut">${x.qc>0?_mg2(g.covered/x.qc):'—'}</td><td class="dx-n mut">${x.qc>0?_mg2(g.cogs/x.qc):'—'}</td><td class="dx-n">${_mgMoney(g.gp,g.pc)}</td><td class="dx-n">${_dxGpCell(g.pc)}</td><td>${_dxCostTag(x)}</td></tr>`;});
-  }else{
-    const src=tab==='cust'?(m.by_customer||[]):(m.by_slm||[]);
-    head=`<tr><th>${tab==='cust'?'ลูกค้า':'เซลส์'}</th><th class="dx-n">ยอดรายสินค้า (บาท)</th><th class="dx-n">ต้นทุนขาย</th><th class="dx-n">กำไร (บาท)</th><th class="dx-n">อัตรากำไร</th><th class="dx-n">คิดทุนได้</th></tr>`;
-    rows=src.slice(0,N).map(x=>{const g=_dxGp(x,b);return `<tr><td><div class="dx-cust"><b>${esc(x.name||x.code||'(ไม่ระบุ)')}</b><span class="mono">${esc(x.code||'')}</span></div></td><td class="dx-n">${_dxB(x.lines)}</td><td class="dx-n mut">${g.pc==null?'—':_dxB(g.cogs)}</td><td class="dx-n">${_mgMoney(g.gp,g.pc)}</td><td class="dx-n">${_dxGpCell(g.pc)}</td><td class="dx-n">${g.cov==null?'—':Math.round(g.cov*100)+'%'}</td></tr>`;});
-  }
-  const total=tab==='prod'?(m.by_sku||[]).length:tab==='cust'?(m.by_customer||[]).length:(m.by_slm||[]).length;
   box.innerHTML=card(title(`${_mgDate(rg.from)}${rg.to!==rg.from?' – '+_mgDate(rg.to):''} · ${_sdCoLabel()} · เฉพาะลูกค้าและเซลส์ที่คุณดูยอดขายได้`)+strip
-    +(rows.length?`<div class="dx-tw"><table class="dx-t"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table></div>`:'<div class="dx-empty">ไม่มีรายการขายรายสินค้าในช่วงนี้</div>')
-    +`<div class="dx-foot">${total>N?`แสดง ${N} อันดับแรกตามยอดขายจาก ${total.toLocaleString()} รายการ · `:''}ตารางเปลี่ยนตามแท็บด้านล่าง (ลูกค้า / สินค้า / เซลส์) · กำไรคิดจากรายการขายรายสินค้าที่มีทุน จึงอาจไม่เท่ายอดขายรวมด้านบน${_sd.pt==='week'?' · โหมดสัปดาห์ใช้วันที่จริงของสัปดาห์':''}</div>`);
+    +`<div class="dx-foot">ทุน / กำไรรายสินค้าดูในตารางแท็บ "รายสินค้า" ด้านล่าง (คอลัมน์สีเขียว) · กำไรคิดจากรายการขายรายสินค้าที่มีทุน จึงอาจไม่เท่ายอดขายรวมด้านบน${_sd.pt==='week'?' · โหมดสัปดาห์ใช้วันที่จริงของสัปดาห์':''}</div>`);
 }
 
 // หน้า "วิเคราะห์กำไร" — เปิดได้เฉพาะผู้มีสิทธิ์เห็นทุน
@@ -10492,6 +10483,52 @@ function sdCollapseAll(){
   sdRender();
 }
 function sdPvReset(tab){delete _sdPv[tab];_sd.op={};_sdPvSave();sdRender();}
+// ── ทุน / กำไรเป็นคอลัมน์ในตารางรายสินค้า (2026-11-16, ผู้ใช้ขอแทนตาราง 15 อันดับในแผงกำไร) ─────────────────────
+// ข้อมูลทุนมากับ /api/invoice_detail/pivot เฉพาะผู้มีสิทธิ์เห็นทุน: แถวละ cc (ยอดส่วนที่คิดทุนได้) ct/cd/cb (ทุนขาย 3 ฐาน)
+// กำไร = cc − ทุนขาย (ยอดจากบรรทัดใบกำกับจริง ไม่ใช่ยอดประมาณที่ปรับสัดส่วนในมุมมองมาตรฐาน) · %GP = กำไร ÷ cc
+// ปุ่ม "ทุน / กำไร" ซ่อน/แสดง 3 คอลัมน์ (จำในเครื่อง) · ฐานทุนใช้ค่าเดียวกับ Dashboard/หน้าวิเคราะห์กำไร (_mgBasis)
+const _sdCostOn=()=>{if(!canSeeCost())return false;try{return localStorage.getItem('sd_cost_cols')!=='0';}catch(e){return true;}};
+function sdCostToggle(){try{localStorage.setItem('sd_cost_cols',_sdCostOn()?'0':'1');}catch(e){}sdRender();}
+const _sdCg=r=>{const b=_mgBasis();return Number(b==='depr'?r.cd:b==='base'?r.cb:r.ct)||0;};
+// สะสมทุนลงโหนด: o = {a, cc, cg} (a = ยอดของแถวสินค้าทั้งหมด ไว้คิด "คิดทุนได้ xx%")
+function _sdCostAdd(o,r){if(r.k==='(none)'||r.x)return;o.ca=(o.ca||0)+(Number(r.a)||0);if(r.cc!=null||r.ct!=null){o.cc=(o.cc||0)+(Number(r.cc)||0);o.cg=(o.cg||0)+_sdCg(r);o.cq=(o.cq||0)+(Number(r.cq)||0);}}
+function _sdCostBar(){
+  if(!canSeeCost())return '';
+  _dxEnsureCss();
+  const on=_sdCostOn();
+  return `<span class="dx-scope" style="display:inline-flex;align-items:center;gap:6px"><label style="display:inline-flex;align-items:center;gap:4px;border:1px solid ${on?'#16A34A':'var(--BD)'};background:${on?'#F0FDF4':'transparent'};color:${on?'#15803D':'inherit'};border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;cursor:pointer" title="แสดงคอลัมน์ทุนขาย / กำไรขั้นต้น / %GP (เห็นเฉพาะผู้มีสิทธิ์เห็นทุน)"><input type="checkbox" ${on?'checked':''} onchange="sdCostToggle()" style="margin:0"> ทุน / กำไร</label>${on?`<div class="dx-seg" role="group" aria-label="ฐานทุน">${_mgBasisSeg('sdRender()')}</div>`:''}</span>`;
+}
+const _SD_CH='background:#ECFDF5;color:#15803D';
+const _SD_COST_NOTE='ทุน / กำไรคิดจากยอดในบรรทัดใบกำกับจริงของสินค้าที่มีทุนและเทียบหน่วยได้ (ไม่ใช่ยอดประมาณที่ปรับสัดส่วน) · %GP = กำไร ÷ ยอดส่วนที่คิดทุนได้ · เห็นเฉพาะผู้มีสิทธิ์เห็นทุน';
+function _sdCostHead(){
+  if(!_sdCostOn())return '';
+  if(!document.getElementById('sd-cost-css')){const st=document.createElement('style');st.id='sd-cost-css';st.textContent='tr.sd-loss>td{background:#FFF5F5}tr.sd-loss>td:first-child{box-shadow:inset 3px 0 0 #C3161B}';document.head.appendChild(st);}
+  return `<th class="r" style="${_SD_CH};border-left:2px solid #86EFAC" title="จำนวนขาย × ทุนต่อหน่วยตาม Master SKU ที่มีผล ณ วันขาย">ทุนขาย</th><th class="r" style="${_SD_CH}" title="ยอดขายในบรรทัดใบกำกับที่มีทุน − ทุนขาย">กำไรขั้นต้น</th><th class="r" style="${_SD_CH}" title="กำไร ÷ ยอดขายส่วนที่คิดทุนได้">%GP</th>`;
+}
+// o = โหนดที่ผ่าน _sdCostAdd · info = ข้อมูลทุนของ SKU (แถวสินค้า) · loading = ยังโหลดข้อมูลรายสินค้าไม่เสร็จ
+function _sdCostCells(o,opt={}){
+  if(!_sdCostOn())return '';
+  const td=(v,x='')=>`<td class="r" style="background:#F7FDF9;${x}${opt.fs?'font-size:12px;':''}white-space:nowrap">${v}</td>`;
+  const first='border-left:2px solid #BBF7D0;';
+  if(opt.loading)return td('<span style="color:var(--TX3);font-size:11px">⏳</span>',first)+td('')+td('');
+  if(!o||!(o.cc>0))return td('<span style="color:var(--TX3)">—</span>',first)+td(o&&o.ca>0&&opt.leaf?'<span style="font-size:11px;color:var(--TX3)">ไม่มีทุน</span>':'<span style="color:var(--TX3)">—</span>')+td('<span style="color:var(--TX3)">—</span>');
+  const gp=o.cc-o.cg,pc=gp/o.cc,cov=o.ca>0?o.cc/o.ca:1,n=v=>Math.round(v).toLocaleString('en-US');
+  const col=gp<0?'#C3161B':pc<0.10?'#B45309':'#15803D';
+  const covTxt=cov<0.97?`<div style="font-size:11px;color:#B45309;font-weight:400" title="ยอดขายบางส่วนในแถวนี้ไม่มีทุน หรือหน่วยขายเทียบกับหน่วยทุนไม่ได้">คิดทุนได้ ${Math.round(cov*100)}%</div>`:'';
+  const bar=`<span style="display:inline-block;width:40px;height:5px;border-radius:3px;background:#E5E7EB;position:relative;overflow:hidden;vertical-align:middle;margin-left:6px"><i style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(0,Math.min(1,pc/0.5))*100}%;background:${col}"></i></span>`;
+  return td(n(o.cg),first)+td(`<span style="color:${gp<0?'#C3161B':'inherit'};font-weight:${gp<0?700:600}">${gp<0?'−':''}${n(Math.abs(gp))}</span>${covTxt}`)+td(`<span style="color:${col};font-weight:600">${(pc*100).toFixed(1)}%</span>${bar}`);
+}
+// ป้ายทุนของแถวสินค้า: ทุน/หน่วย · ทุนจากการแปลง ← ต้นทาง · ทุนต่ำผิดปกติ · ทุนประมาณ · ขายต่ำกว่าทุน
+function _sdCostTag(o,info){
+  if(!_sdCostOn()||!info)return '';
+  const t=[],s='display:inline-block;font-size:11px;border-radius:5px;padding:0 6px;margin-left:6px;font-weight:500;vertical-align:1px';
+  if(o&&o.cc>0&&o.cq>0)t.push(`<span style="font-size:11px;color:var(--TX3);margin-left:6px" title="ทุนเฉลี่ยต่อหน่วยของทุน · ราคาขายเฉลี่ยต่อหน่วยเดียวกัน">ทุน ${_mg2(o.cg/o.cq)}${info.u?'/'+esc(info.u):''} · ขาย ${_mg2(o.cc/o.cq)}</span>`);
+  if(info.src==='converted')t.push(`<span style="${s};background:#E0E7FF;color:#1D4ED8" title="ไม่มีทุนในไฟล์ Master SKU ใช้ทุนของสินค้าต้นทางตามเอกสารแปลงสินค้า">ทุนจากการแปลง ← ${esc((info.fr||[]).join(', '))}</span>`);
+  if(info.sus)t.push(`<span style="${s};background:#FEF3C7;color:#B45309" title="ทุนรวมต่ำกว่าครึ่งของทุนเก่า รอฝ่ายต้นทุนยืนยัน">ทุนต่ำผิดปกติ</span>`);
+  if(info.est)t.push(`<span style="${s};background:#FEF3C7;color:#B45309" title="ยอดขายก่อนวันที่ทุนรอบแรกมีผล ใช้ทุนรอบแรกย้อนหลัง">ทุนประมาณ</span>`);
+  if(o&&o.cc>0&&o.cc-o.cg<0)t.push(`<span style="${s};background:#FEE2E2;color:#C3161B">ขายต่ำกว่าทุน</span>`);
+  return t.join('');
+}
 function _sdPivotBar(tab){
   const custom=!!_sdPv[tab],cur=_sdPv[tab]||SD_PV_DEFAULT[tab];
   const chip=k=>{
@@ -10501,7 +10538,7 @@ function _sdPivotBar(tab){
   };
   const order=[...cur,...Object.keys(SD_DIMS).filter(k=>!cur.includes(k))];
   return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px"><span style="font-size:12px;color:var(--TX2)">แสดงตาม</span>${order.map(chip).join('')}
-    <span style="display:inline-flex;gap:4px;margin-left:auto"><button type="button" class="btn btn-xs" onclick="sdExpandAll()" title="เปิดทุกระดับ (ข้อมูลมากจะเปิดเท่าที่ไหว)">⊞ ขยายทั้งหมด</button><button type="button" class="btn btn-xs" onclick="sdCollapseAll()" title="ปิดทุกระดับ">⊟ ย่อทั้งหมด</button></span>
+    <span style="display:inline-flex;gap:4px;margin-left:auto;align-items:center;flex-wrap:wrap">${_sdCostBar()}<button type="button" class="btn btn-xs" onclick="sdExpandAll()" title="เปิดทุกระดับ (ข้อมูลมากจะเปิดเท่าที่ไหว)">⊞ ขยายทั้งหมด</button><button type="button" class="btn btn-xs" onclick="sdCollapseAll()" title="ปิดทุกระดับ">⊟ ย่อทั้งหมด</button></span>
     ${custom?`<button type="button" class="btn btn-xs" onclick="sdPvReset('${tab}')" title="กลับไปมุมมองมาตรฐาน (มียอด CN / NET / เทียบปีก่อน)">↺ มุมมองมาตรฐาน</button>`:'<span style="font-size:11px;color:var(--TX3)">ติ๊ก / ลากเรียงลำดับ เพื่อกำหนดเอง</span>'}</div>`;
 }
 let _sdPvData={};
@@ -10510,7 +10547,7 @@ function _sdPvLoad(slm){
   const e=_sdPvData[key];if(e)return e;
   const n=_sdPvData[key]={loading:true};
   apiFetch('/api/invoice_detail/pivot',{method:'POST',body:JSON.stringify({from:p.from,to:p.to,...(slm?{slm}:{})})})
-    .then(r=>{if(r.error)throw new Error(r.error.message);n.rows=r.data.rows||[];}).catch(e=>{n.error=e.message||String(e);})
+    .then(r=>{if(r.error)throw new Error(r.error.message);n.rows=r.data.rows||[];n.cost=r.data.cost||null;}).catch(e=>{n.error=e.message||String(e);})
     .finally(()=>{n.loading=false;if(document.getElementById('sd-ta'))sdRender();});
   return n;
 }
@@ -10550,12 +10587,14 @@ function _sdPivotHtml(tab,custs,slm){
     rows=byCust.length?byCust:rows.filter(r=>dims.some(k=>_SD_PROD_DIMS.has(k)&&String(SD_DIMS[k].key(r)).toLowerCase().includes(q)));
   }
   // จำนวนแยกตามหน่วย (2026-10-14, ผู้ใช้ขอ) — r.u จาก server (กก. / แพ็ค / ซอง …) · ไม่บวกต่างหน่วยรวมกัน
+  // ทุน/กำไร (2026-11-16): ทุกระดับของ pivot · แถวที่เป็นสินค้าเดียว (มิติ prod อยู่ในเส้นทาง) ติดป้ายทุนของ SKU นั้น
+  const costOn=_sdCostOn(),costSkus=(d.cost&&d.cost.skus)||{};
   const root={a:0,qu:{},ch:new Map()};
   rows.forEach(r=>{
     let n=root;const a=Number(r.a)||0,qq=Number(r.q)||0,u=String(r.u||'').trim();
-    const add=x=>{x.a+=a;if(qq)x.qu[u]=(x.qu[u]||0)+qq;};
+    const add=x=>{x.a+=a;if(qq)x.qu[u]=(x.qu[u]||0)+qq;if(costOn)_sdCostAdd(x,r);};
     add(n);
-    dims.forEach(k=>{const v=String(SD_DIMS[k].key(r));if(!n.ch.has(v))n.ch.set(v,{a:0,qu:{},ch:new Map()});n=n.ch.get(v);add(n);});
+    dims.forEach(k=>{const v=String(SD_DIMS[k].key(r));if(!n.ch.has(v))n.ch.set(v,{a:0,qu:{},ch:new Map()});n=n.ch.get(v);if(k==='prod'&&r.k!=='(none)')n.sku=r.k;add(n);});
   });
   const showQ=dims.includes('prod');
   // ทุกแถวหน่วยเดียวกัน (เช่น กก. ทั้งหมด) → บอกหน่วยที่หัวตาราง · หลายหน่วย → ต่อหน่วยท้ายตัวเลขทุกช่อง
@@ -10565,21 +10604,22 @@ function _sdPivotHtml(tab,custs,slm){
     if(oneUnit!=null) return e.length?Math.round(e[0][1]).toLocaleString('en-US'):'';
     return e.map(([u,v])=>`${Math.round(v).toLocaleString('en-US')}${u?' '+esc(u):''}`).join(' · ');
   };
-  let h=`<div class="tw" style="margin-top:8px"><table><thead><tr><th style="width:52%">${dims.map(k=>SD_DIMS[k].l).join(' › ')}</th><th class="r">ยอดขาย (บาท)</th>${showQ?`<th class="r">จำนวน${oneUnit?` (${esc(oneUnit)})`:''}</th>`:''}<th class="r" style="width:120px">สัดส่วน</th></tr></thead><tbody>`;
-  h+=`<tr style="background:var(--LN);font-weight:700"><td>รวมทั้งหมด</td><td class="r">${_sdFmtTotal(root.a)}</td>${showQ?'<td></td>':''}<td class="r">100%</td></tr>`;
+  let h=`<div class="tw" style="margin-top:8px"><table><thead><tr><th style="width:${costOn?40:52}%">${dims.map(k=>SD_DIMS[k].l).join(' › ')}</th><th class="r">ยอดขาย (บาท)</th>${showQ?`<th class="r">จำนวน${oneUnit?` (${esc(oneUnit)})`:''}</th>`:''}${_sdCostHead()}<th class="r" style="width:120px">สัดส่วน</th></tr></thead><tbody>`;
+  h+=`<tr style="background:var(--LN);font-weight:700"><td>รวมทั้งหมด</td><td class="r">${_sdFmtTotal(root.a)}</td>${showQ?'<td></td>':''}${_sdCostCells(root)}<td class="r">100%</td></tr>`;
   const walk=(node,depth,path)=>{
     [...node.ch.entries()].sort((a,b)=>b[1].a-a[1].a).forEach(([v,c])=>{
       const key='pv:'+tab+':'+path+'/'+v,leaf=depth===dims.length-1,open=!leaf&&_sd.op[key];
       const hasProd=dims.slice(0,depth+1).includes('prod');
-      h+=`<tr ${leaf?'':`onclick="sdTogOp('${_promoJsKey(key)}')" style="cursor:pointer${depth===0?';background:var(--bg2)':''}"`}>
-        <td style="padding-left:${12+depth*20}px${depth===0?';font-weight:700':''}">${leaf?'':_xa(open)}${esc(v)}${!leaf?` <span style="font-size:11px;color:var(--TX3)">${c.ch.size.toLocaleString()} ${SD_DIMS[dims[depth+1]].l}</span>`:''}</td>
+      const isProdRow=dims[depth]==='prod'&&c.sku;
+      h+=`<tr ${leaf?'':`onclick="sdTogOp('${_promoJsKey(key)}')" style="cursor:pointer${depth===0?';background:var(--bg2)':''}"`}${costOn&&c.cc>0&&c.cc-c.cg<0?' class="sd-loss"':''}>
+        <td style="padding-left:${12+depth*20}px${depth===0?';font-weight:700':''}">${leaf?'':_xa(open)}${esc(v)}${isProdRow?_sdCostTag(c,costSkus[c.sku]):''}${!leaf?` <span style="font-size:11px;color:var(--TX3)">${c.ch.size.toLocaleString()} ${SD_DIMS[dims[depth+1]].l}</span>`:''}</td>
         <td class="r"${depth===0?' style="font-weight:700"':''}>${_sdFmtTotal(c.a)}</td>${showQ?`<td class="r" style="font-size:12px;color:var(--TX2)">${hasProd?qtyCell(c.qu):''}</td>`:''}
-        <td class="r">${_sdBar(c.a,node.a||1)}</td></tr>`;
+        ${_sdCostCells(c,{leaf:isProdRow,fs:depth>0})}<td class="r">${_sdBar(c.a,node.a||1)}</td></tr>`;
       if(open)walk(c,depth+1,path+'/'+v);
     });
   };
   walk(root,0,'');
-  return h+`</tbody></table></div><div style="font-size:11px;color:var(--TX3);margin-top:6px">ยอดขายจากบรรทัดใบกำกับ TSS + โรงงาน TGM · ส่วนต่างกับยอดหัวใบ (ลดหนี้ / ใบที่ไม่มีรายการสินค้า) แสดงเป็น "(ไม่มีรายการสินค้า / ลดหนี้)" ยอดรวมจึงเท่ายอด NET ด้านบน · สัดส่วน = เทียบชั้นแม่</div>`;
+  return h+`</tbody></table></div><div style="font-size:11px;color:var(--TX3);margin-top:6px">ยอดขายจากบรรทัดใบกำกับ TSS + โรงงาน TGM · ส่วนต่างกับยอดหัวใบ (ลดหนี้ / ใบที่ไม่มีรายการสินค้า) แสดงเป็น "(ไม่มีรายการสินค้า / ลดหนี้)" ยอดรวมจึงเท่ายอด NET ด้านบน · สัดส่วน = เทียบชั้นแม่${costOn?` · ${_SD_COST_NOTE}`:''}</div>`;
 }
 // ระดับการแสดงผลแท็บรายลูกค้า (2026-10-12, ผู้ใช้ขอเลือกการจัดกลุ่มได้)
 const SD_LEVELS=[['full','บริษัท › สาขา › กลุ่มสินค้า › สินค้า'],['noprodgrp','บริษัท › สาขา › สินค้า'],['corp_prod','บริษัท › สินค้า'],['branch_prod','สาขา › สินค้า (ไม่จัดกลุ่ม)']];
@@ -10773,7 +10813,7 @@ function sdProd(){
   const hHdr=`${_sdApi.loaded&&_sdApi.invoiceBased?_sdPivotBar('prod'):''}<div class="tw" style="margin-top:8px"><table>
     <thead><tr>
       <th style="width:42%">กลุ่มสินค้า / สินค้า / ประเภทลูกค้า / ลูกค้า</th>
-      ${_sdValHead(sDn)}${_sdApi.loaded&&_sdApi.invoiceBased?'<th class="r">จำนวน</th>':''}
+      ${_sdValHead(sDn)}${_sdApi.loaded&&_sdApi.invoiceBased?'<th class="r">จำนวน</th>'+_sdCostHead():''}
       <th class="r" style="width:110px">สัดส่วน</th>${_sdYoYHead()}<th class="r">${vsHdr}</th>
     </tr></thead><tbody>`;
   const q=(_sd.q||'').toLowerCase();
@@ -10800,19 +10840,30 @@ function sdProd(){
       :'';
     // จำนวน (2026-10-14, ผู้ใช้ขอ — มุมมองมาตรฐานไม่มีคอลัมน์จำนวน มีแต่ใน pivot): จำนวนจริงจากบรรทัดใบกำกับ
     // (/api/invoice_detail/pivot ชุดเดียวกับ pivot) แยกตามหน่วย ไม่บวกต่างหน่วยรวมกัน · ยอดเงินยังเป็นแบบประมาณเหมือนเดิม
-    let QC=()=>'';
+    let QC=()=>'',MC=()=>'',MT=()=>'',ML=()=>false;
     if(_sdApi.invoiceBased){
       const isAllQ=isManager()&&_sd.mgrView,meQ=mySlmKey();
       const pv=_sdPvLoad(F?F.slm:'');
-      if(pv.loading) QC=()=>'<td class="r" style="color:var(--TX3);font-size:11px">⏳</td>';
+      if(pv.loading){QC=()=>'<td class="r" style="color:var(--TX3);font-size:11px">⏳</td>';MC=()=>_sdCostCells(null,{loading:1});}
       else{
         const okC=F||isAllQ?null:new Set(_sdApi.custs.filter(c=>custHasSlm(c,meQ)).flatMap(c=>(c.branches||[]).map(b=>b.c)));
         const M=new Map(),add=(k,u,v)=>{const o=M.get(k)||{};o[u]=(o[u]||0)+v;M.set(k,o);};
+        // ทุน/กำไร (2026-11-16) — key ชุดเดียวกับจำนวน: g|กลุ่ม · i|สินค้า · c|สินค้า|ลูกค้า
+        const costOn=_sdCostOn(),CM=new Map(),cadd=(k,r)=>{let o=CM.get(k);if(!o){o={};CM.set(k,o);}_sdCostAdd(o,r);};
+        const costSkus=(pv.cost&&pv.cost.skus)||{};
         (pv.rows||[]).forEach(r=>{
-          const v=Number(r.q)||0;if(!v||r.x||r.k==='(none)'||(okC&&!okC.has(r.c)))return;
+          if(r.x||r.k==='(none)'||(okC&&!okC.has(r.c)))return;
+          if(costOn){cadd('g|'+(expressGroupLabel(r.g)||'อื่นๆ'),r);cadd('i|'+r.k,r);cadd('c|'+r.k+'|'+r.c,r);}
+          const v=Number(r.q)||0;if(!v)return;
           const u=String(r.u||'').trim();
           add('g|'+(expressGroupLabel(r.g)||'อื่นๆ'),u,v);add('i|'+r.k,u,v);add('c|'+r.k+'|'+r.c,u,v);
         });
+        if(costOn){
+          const csum=keys=>{const o={};keys.forEach(k=>{const x=CM.get(k);if(!x)return;o.ca=(o.ca||0)+(x.ca||0);if(x.cc!=null){o.cc=(o.cc||0)+x.cc;o.cg=(o.cg||0)+x.cg;o.cq=(o.cq||0)+(x.cq||0);}});return o;};
+          MC=(key,keys,fs,leaf)=>_sdCostCells(keys?csum(keys):CM.get(key),{fs,leaf});
+          MT=sku=>_sdCostTag(CM.get('i|'+sku),costSkus[sku]);
+          ML=sku=>{const o=CM.get('i|'+sku);return !!(o&&o.cc>0&&o.cc-o.cg<0);};
+        }
         const fmt=o=>Object.entries(o||{}).filter(([,v])=>Math.round(v)).sort((x,y)=>y[1]-x[1]).map(([u,v])=>`${Math.round(v).toLocaleString('en-US')}${u?' '+esc(u):''}`).join(' · ');
         const sumOf=keys=>{const o={};keys.forEach(k=>Object.entries(M.get(k)||{}).forEach(([u,v])=>{o[u]=(o[u]||0)+v;}));return o;};
         // แถวรวมกลุ่มสินค้า (2026-10-20, ผู้ใช้ขอ): มีหลายหน่วย → ไม่แสดง (ดูจำนวนที่รายการสินค้าย่อยแทน) · หน่วยเดียวยังแสดง
@@ -10828,21 +10879,21 @@ function sdProd(){
       const ok='p'+p.n;const oo=_sd.op[ok];
       h+=`<tr onclick="sdTogOp('${ok}')" style="cursor:pointer">
         <td>${_xa(oo)}<strong>${p.n}</strong></td>
-        ${_sdVT(p._tot,_sdProdX(p._tot),null,{b:1})}${QC('g|'+p.n,null,0,1)}<td class="r">${_sdBar(p._tot,T)}</td>${_sdYoYCell(yoyM.grp[p.n]||0)}<td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
+        ${_sdVT(p._tot,_sdProdX(p._tot),null,{b:1})}${QC('g|'+p.n,null,0,1)}${MC('g|'+p.n)}<td class="r">${_sdBar(p._tot,T)}</td>${_sdYoYCell(yoyM.grp[p.n]||0)}<td class="r">${_vc(p._tot,yoyM.grp[p.n]||0)}</td></tr>`;
       if(oo) p.it.forEach(it=>{
         const ik='pi'+it.c;const oi=_sd.op[ik];
-        h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)">
-          <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}</td>
-          ${_sdVT(it._tot,_sdProdX(it._tot))}${QC('i|'+it.c)}<td class="r">${_sdBar(it._tot,p._tot)}</td>${_sdYoYCell(yoyM.prod[it.c]||0)}<td class="r">${_vc(it._tot,yoyM.prod[it.c]||0)}</td></tr>`;
+        h+=`<tr onclick="sdTogOp('${ik}')" style="cursor:pointer;background:var(--bg2)"${ML(it.c)?' class="sd-loss"':''}>
+          <td style="padding-left:22px">${_xa(oi)}<span class="mono" style="font-size:11px">${it.c}</span> ${it.n}${MT(it.c)}</td>
+          ${_sdVT(it._tot,_sdProdX(it._tot))}${QC('i|'+it.c)}${MC('i|'+it.c,null,0,1)}<td class="r">${_sdBar(it._tot,p._tot)}</td>${_sdYoYCell(yoyM.prod[it.c]||0)}<td class="r">${_vc(it._tot,yoyM.prod[it.c]||0)}</td></tr>`;
         if(oi) it.custs.forEach(ty=>{
           const tyk='pit'+it.c+'_'+ty.n;const ot=_sd.op[tyk];
           h+=`<tr onclick="sdTogOp('${tyk}')" style="cursor:pointer;background:var(--LN)">
             <td style="padding-left:44px;font-size:12px">${_xa(ot)}<span class="badge bbl" style="font-size:10px">${ty.n}</span></td>
-            ${_sdVT(ty._tot,_sdProdX(ty._tot),null,{fs:1})}${QC('',(ty.cs||[]).map(cu=>'c|'+it.c+'|'+cu.c),1)}<td class="r">${_sdBar(ty._tot,it._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+            ${_sdVT(ty._tot,_sdProdX(ty._tot),null,{fs:1})}${QC('',(ty.cs||[]).map(cu=>'c|'+it.c+'|'+cu.c),1)}${MC('',(ty.cs||[]).map(cu=>'c|'+it.c+'|'+cu.c),1)}<td class="r">${_sdBar(ty._tot,it._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
           if(ot) ty.cs.forEach(cu=>{
             h+=`<tr style="background:var(--bg);font-size:12px">
               <td style="padding-left:64px">${String(cu.c||'').startsWith('SLM-')?`<span style="color:var(--TX3)">เซลส์:</span> ${cu.n}`:`<span class="badge bbgr" style="font-size:10px">${cu.c}</span> ${cu.n}`}</td>
-              ${_sdVT(cu._tot,_sdProdX(cu._tot))}${QC('c|'+it.c+'|'+cu.c,null,1)}<td class="r">${_sdBar(cu._tot,ty._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+              ${_sdVT(cu._tot,_sdProdX(cu._tot))}${QC('c|'+it.c+'|'+cu.c,null,1)}${MC('c|'+it.c+'|'+cu.c,null,1)}<td class="r">${_sdBar(cu._tot,ty._tot)}</td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
           });
         });
       });
@@ -10850,9 +10901,9 @@ function sdProd(){
     if(_sdSplitOn()){
       // ลดหนี้ไม่มีรหัสสินค้าใน Express (ARTRN ไม่มี SKU) — แสดงเป็นแถวรวมแยกท้ายตาราง
       const X=F?F.x:_sdApi.x;
-      if(X&&Math.round(X.cb)) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td>↩️ ลดหนี้ (CN) — ไม่ผูกกับสินค้า</td>${_sdVT(0,{sb:null,sg:null,cb:X.cb,cg:X.cg})}<td class="r"></td><td class="r"></td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
+      if(X&&Math.round(X.cb)) h+=`<tr style="background:var(--bg);font-size:12px;color:var(--TX2)"><td>↩️ ลดหนี้ (CN) — ไม่ผูกกับสินค้า</td>${_sdVT(0,{sb:null,sg:null,cb:X.cb,cg:X.cg})}<td class="r"></td>${_sdApi.invoiceBased&&_sdCostOn()?'<td></td><td></td><td></td>':''}<td class="r"></td>${_sdYoYCell(0)}<td class="r">—</td></tr>`;
     }
-    document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
+    document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>'+(_sdApi.invoiceBased&&_sdCostOn()?`<div style="font-size:11px;color:var(--TX3);margin-top:6px">${_SD_COST_NOTE}</div>`:'');
     return;
   }
   // ─── Mock fallback ───
