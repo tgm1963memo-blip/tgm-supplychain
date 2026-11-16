@@ -418,6 +418,7 @@ module.exports = function dashboardExecRoutes(db) {
             const kg = lineKg(r, weights);
             if (kg != null) q = skuCost.costQty(cost, { ...line, kg });
             if (!skuCost.kgPathOk(cost, q, r.amount)) q = null; // น้ำหนักผิดหน่วย — ดู lib/skuCost.js kgPathOk
+            if (q == null) q = skuCost.packQty(cost, line); // แพ ↔ ซอง ↔ ถุง ↔ ถาด
           }
           if (q == null) reason = 'unit';
           else cg = { total: cost.costs.total * q, depr: cost.costs.depr * q, base: cost.costs.base * q };
@@ -728,6 +729,7 @@ module.exports = function dashboardExecRoutes(db) {
             const kg = lineKg(r, weights);
             if (kg != null) q = skuCost.costQty(cost, { ...line, kg });
             if (!skuCost.kgPathOk(cost, q, r.amount)) q = null; // น้ำหนักผิดหน่วย — ดู lib/skuCost.js kgPathOk
+            if (q == null) q = skuCost.packQty(cost, line); // แพ ↔ ซอง ↔ ถุง ↔ ถาด
           }
           if (q != null) cg = { total: cost.costs.total * q, depr: cost.costs.depr * q, base: cost.costs.base * q };
         }

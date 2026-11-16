@@ -650,6 +650,26 @@ function stcrdRules(company) {
 
 const INVOICE_LINE_COMPANIES = ['TSS', 'CONSI'];
 
+// บรรทัดสินค้าลูกของชุดโปร (2026-11-16, ผู้ใช้ให้ตรวจหน่วยทุน → พบยอดซ้ำ): ขายชุด 1แถม1 (เช่น 10274-A) STCRD มีบรรทัดหัวชุด
+// + บรรทัดสินค้าลูก (PSTKCOD = รหัสชุด, เช่น 10274-90 จำนวน ×2) ที่ TRNVAL เท่ากับหัวชุดเต็มจำนวน → ยอดรายสินค้าซ้ำ ~35 ล้าน/ปี
+// (ปี 2569 ถึง พ.ย.: 16,184 คู่ค่าเท่ากัน) · ยอดขายรายสินค้าเก็บเฉพาะบรรทัดหัวชุด (ราคาที่ขายจริง) — ทุนชุดใช้กติกา promo2x
+// ใน lib/skuCost.js · สต็อกยังเคลื่อนที่บรรทัดลูกตามเดิม (buildStockMovements) · ไม่มีบรรทัดหัวชุดในเอกสาร = เก็บบรรทัดลูกไว้
+function bundleComponentTest(rows) {
+  const parents = new Set(), present = new Set();
+  for (const r of rows) {
+    const doc = cleanText(r.DOCNUM);
+    const p = cleanText(r.PSTKCOD);
+    if (p) parents.add(`${doc}|${p}`);
+    present.add(`${doc}|${cleanText(r.STKCOD)}`);
+  }
+  return (r) => {
+    const p = cleanText(r.PSTKCOD);
+    if (!p || p === cleanText(r.STKCOD)) return false;
+    const doc = cleanText(r.DOCNUM);
+    return parents.has(`${doc}|${p}`) && present.has(`${doc}|${p}`);
+  };
+}
+
 function addInvoiceLine(invoiceLines, company, r, day) {
   const prefix = (r.DOCNUM || '').slice(0, 2);
   if (!WMS_GENERAL_SALE_PREFIXES.has(prefix)) return;
@@ -684,7 +704,8 @@ function addInvoiceLine(invoiceLines, company, r, day) {
 
 async function addCompanyInvoiceLines(invoiceLines, company) {
   const rows = await readTable(company, 'STCRD.DBF');
-  for (const r of rows) addInvoiceLine(invoiceLines, company, r, toIsoDate(r.DOCDAT));
+  const isComp = bundleComponentTest(rows);
+  for (const r of rows) if (!isComp(r)) addInvoiceLine(invoiceLines, company, r, toIsoDate(r.DOCDAT));
   return rows.length;
 }
 
@@ -793,6 +814,7 @@ function buildStockMovements(rows, company) {
     if (!bundleParentsByDoc.has(doc)) bundleParentsByDoc.set(doc, new Set());
     bundleParentsByDoc.get(doc).add(parent);
   }
+  const isBundleComponent = bundleComponentTest(rows);
   for (const r of rows) {
     if (!r.STKCOD || !r.LOCCOD) continue;
     const day = toIsoDate(r.DOCDAT);
@@ -816,7 +838,7 @@ function buildStockMovements(rows, company) {
     const qty = Number(r.XTRNQTY) || 0;
     const val = Number(r.TRNVAL) || 0;
 
-    addInvoiceLine(invoiceLines, company, r, day);
+    if (!isBundleComponent(r)) addInvoiceLine(invoiceLines, company, r, day);
 
     // FIXED (2026-09-23, verified against Express's own "สินค้าคงเหลือ แยกตามคลังสินค้า" report for
     // 2026-09-22: report + these movements now reproduces live STLOC for all but 10 of ~3,255 SKUs, down
@@ -1822,11 +1844,14 @@ async function syncTgmDetailLines(db) {
     const cust = cleanText(r.PEOPLE);
     if (!d || !sku || !cust) continue;
     const unit = cleanText(r.TQUCOD);
-    const qty = Math.abs(Number(r.XTRNQTY) || Number(r.TRNQTY) || 0);
+    // XTRNQTY อยู่ในหน่วยฐานแล้ว — ไม่คูณ TFACTOR ซ้ำ (2026-11-16, ดู syncSalesLinesMonthly)
+    const factor = Number(r.TFACTOR) || 1;
+    const qtyBase = Math.abs(Number(r.XTRNQTY) || (Number(r.TRNQTY) || 0) * factor);
+    const qty = Math.abs(Number(r.TRNQTY) || qtyBase / factor);
     const key = [d, cust, sku, unit].join('\u0001');
     const cur = agg.get(key) || { qty: 0, qtyBase: 0, amount: 0 };
     cur.qty += qty;
-    cur.qtyBase += qty * (Number(r.TFACTOR) || 1);
+    cur.qtyBase += qtyBase;
     cur.amount += Number(r.TRNVAL) || 0;
     agg.set(key, cur);
   }
@@ -1878,7 +1903,8 @@ async function syncSalesLinesMonthly(db) {
     // + รหัส Sales ย่อยที่เก็บแยก (2026-10-27, KEEP_SUB_SLM_CODES) — เปลี่ยนแล้วต้องสร้างใหม่ทุกแฟ้มเช่นกัน
     // + เจ้าของยอดรายสินค้า (2026-10-27)
     const skuSig = [...skuOv].map(([c, m]) => [c, [...m].sort()]).sort();
-    const s = JSON.stringify([require('../lib/salesDocs').NON_SALES_DOC_PREFIXES, [...slmOv].sort(), [...KEEP_SUB_SLM_CODES].sort(), skuSig]);
+    // + 'qty-bundle-2026-11-16' = สร้างใหม่ครั้งเดียวหลังแก้ qty_base / ตัดบรรทัดลูกของชุดโปร (ข้างล่าง)
+    const s = JSON.stringify([require('../lib/salesDocs').NON_SALES_DOC_PREFIXES, [...slmOv].sort(), [...KEEP_SUB_SLM_CODES].sort(), skuSig, 'qty-bundle-2026-11-16']);
     let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
     return h;
   })();
@@ -1899,10 +1925,12 @@ async function syncSalesLinesMonthly(db) {
     if (!rows.length) { allOk = false; continue; }
     const monthly = new Map();
     const daily = new Map();
+    const isBundleComponent = bundleComponentTest(rows); // ยอดซ้ำกับบรรทัดหัวชุด — ดู bundleComponentTest
     for (const r of rows) {
       const docNum = cleanText(r.DOCNUM);
       if (!WMS_GENERAL_SALE_PREFIXES.has(docNum.slice(0, 2))) continue;
       if (isNonSalesDocNum(docNum)) continue;
+      if (isBundleComponent(r)) continue;
       if (!passesCompanyDateCutoff(company, r.DOCDAT)) continue;
       const period = ym(r.DOCDAT);
       const sku = cleanText(r.STKCOD);
@@ -1910,18 +1938,23 @@ async function syncSalesLinesMonthly(db) {
       const cust = cleanText(r.PEOPLE) || '(none)';
       const slm = effectiveSlmSku(slmOv, skuOv, cust, sku, normalizeSlmCode(r.SLMCOD) || '(none)'); // เจ้าของยอดรายสินค้า/รายลูกค้า (lib/slmOverride.js)
       const unit = cleanText(r.TQUCOD);
-      const qty = Math.abs(Number(r.XTRNQTY) || Number(r.TRNQTY) || 0);
+      // FIXED (2026-11-16): XTRNQTY = จำนวนในหน่วยฐานแล้ว (= TRNQTY × TFACTOR, ดูคอมเมนต์ 2026-08-21 ใน buildStockMovements)
+      // เดิม qty = XTRNQTY (หน่วยฐาน แต่ติดชื่อหน่วยขาย TQUCOD) และ qty_base = XTRNQTY × TFACTOR = คูณ factor ซ้ำ
+      // → แถว TFACTOR ≠ 1 ทุนขาย/KG สูงเกินจริง (เช่น 20099 หมูอบน้ำผึ้ง แพ×2.4: GP −50% แทน +40%)
+      // ตอนนี้ qty = จำนวนในหน่วยขาย (TRNQTY) · qty_base = จำนวนในหน่วยฐาน (XTRNQTY)
       const factor = Number(r.TFACTOR) || 1;
+      const qtyBase = Math.abs(Number(r.XTRNQTY) || (Number(r.TRNQTY) || 0) * factor);
+      const qty = Math.abs(Number(r.TRNQTY) || qtyBase / factor);
       const key = [period, cust, slm, sku, unit].join('\u0001');
       const cur = monthly.get(key) || { qty: 0, qtyBase: 0, amount: 0 };
       cur.qty += qty;
-      cur.qtyBase += qty * factor;
+      cur.qtyBase += qtyBase;
       cur.amount += Number(r.TRNVAL) || 0;
       monthly.set(key, cur);
       const dk = [toIsoDate(r.DOCDAT), cust, slm, sku, unit].join('\u0001');
       const dc = daily.get(dk) || { qty: 0, qtyBase: 0, amount: 0 };
       dc.qty += qty;
-      dc.qtyBase += qty * factor;
+      dc.qtyBase += qtyBase;
       dc.amount += Number(r.TRNVAL) || 0;
       daily.set(dk, dc);
     }

@@ -138,6 +138,15 @@ test('resolveCost: 1แถม1 / แพ็คคู่ without own cost = single
   assert.equal(resolveCost(ctx, '20284-107', '2026-11-05').source, 'own');
 });
 
+test('packQty: retail pack units (แพ / ซอง / ถุง / ถาด) match each other as a last resort, cartons never do', () => {
+  const { packQty } = require('../lib/skuCost');
+  const perSachet = { unit: 'ซอง', grams: 1000 };
+  assert.equal(packQty(perSachet, { qty: 3543, qty_base: 3543, unit_code: 'แพ', base_unit: 'แพค' }), 3543);
+  assert.equal(packQty(perSachet, { qty: 5, qty_base: 5, unit_code: 'ถง', base_unit: 'ถุง' }), 5);
+  assert.equal(packQty(perSachet, { qty: 2, qty_base: 2, unit_code: 'ลง', base_unit: 'ลัง' }), null);
+  assert.equal(packQty({ unit: 'ลัง', grams: 4500 }, { qty: 2, qty_base: 2, unit_code: 'แพ', base_unit: 'แพค' }), null);
+});
+
 test('lineCost multiplies by quantity in the cost unit and refuses when units cannot be matched', () => {
   const perPack = { cost: 53.1, unit: 'แพ็ค', grams: 500 }, perKg = { cost: 104, unit: 'กก.', grams: 1000 }, perPiece = { cost: 5, unit: 'ชิ้น', grams: null };
   // หน่วยฐานตรงกับหน่วยทุน → ใช้ qty_base (ชุดโปร TFACTOR 2: ขาย 3 ชุด = 6 แพ็ค)
@@ -297,6 +306,22 @@ test('dashboard exec: gross margin block only for users allowed to see cost, cos
   assert.equal('margin' in payload, false);
 });
 
+test('Express import: bundle component lines are not stored as invoice lines (their value duplicates the bundle header)', () => {
+  const { buildStockMovements } = require('../jobs/importFromExpress');
+  const d = new Date('2026-11-05T00:00:00Z');
+  const base = { DOCNUM: 'AB6900472', DOCDAT: d, LOCCOD: '01', POSOPR: '9', TQUCOD: 'แพ' };
+  const rows = [
+    { ...base, SEQNUM: '1', STKCOD: '10274-A', STKDES: 'ชุด 1แถม1', TRNQTY: 1590, XTRNQTY: 1590, TFACTOR: 1, TRNVAL: 45553.5, PSTKCOD: '' },
+    { ...base, SEQNUM: '1', STKCOD: '10274-90', STKDES: 'แพ็คเดี่ยว', TRNQTY: 1590, XTRNQTY: 3180, TFACTOR: 2, TRNVAL: 45553.5, PSTKCOD: '10274-A' },
+    { ...base, SEQNUM: '2', STKCOD: '10236-100', STKDES: 'ขายปกติ', TRNQTY: 5, XTRNQTY: 5, TFACTOR: 1, TRNVAL: 100, PSTKCOD: '' },
+    // บรรทัดลูกที่ไม่มีหัวชุดในเอกสาร = เก็บไว้
+    { ...base, DOCNUM: 'AB6900999', SEQNUM: '1', STKCOD: '20284-5', STKDES: 'ลูกไม่มีหัว', TRNQTY: 2, XTRNQTY: 2, TFACTOR: 1, TRNVAL: 50, PSTKCOD: '20284-A' },
+  ];
+  const { invoiceLines } = buildStockMovements(rows, 'TSS');
+  const got = [...invoiceLines.values()].map(l => [l.docNum, l.sku, l.qty, l.lineValue]).sort();
+  assert.deepEqual(got, [['AB6900472', '10236-100', 5, 100], ['AB6900472', '10274-A', 1590, 45553.5], ['AB6900999', '20284-5', 2, 50]]);
+});
+
 test('invoice_detail pivot: cost columns per row by sale date, only for users allowed to see cost', async t => {
   const db = freshDb();
   const tokens = {};
@@ -318,7 +343,7 @@ test('invoice_detail pivot: cost columns per row by sale date, only for users al
   head.run('IA1', '2026-11-05'); head.run('IA2', '2026-11-10');
   line.run('IA1', '1', '2026-11-05', 'P1', 'ไส้กรอก กก.', 10, 'กก', 1, 1500);   // ทุน 100 → 1,000
   line.run('IA2', '1', '2026-11-10', 'P1', 'ไส้กรอก กก.', 10, 'กก', 1, 1500);   // ทุนรอบใหม่ 110 → 1,100
-  line.run('IA1', '2', '2026-11-05', 'P2', 'ไส้กรอก 500 กรัม', 10, 'แพ', 2, 1200); // 10 × 2 = 20 แพ็ค × 50 = 1,000
+  line.run('IA1', '2', '2026-11-05', 'P2', 'ไส้กรอก 500 กรัม', 20, 'แพ', 2, 1200); // qty = XTRNQTY หน่วยฐานแล้ว: 20 แพ็ค (ขาย 10 หน่วย×2) × 50 = 1,000
   line.run('IA1', '3', '2026-11-05', 'P3', 'ไม่มีทุน', 5, 'แพ', 1, 300);
   line.run('IA1', '4', '2026-11-05', 'CV', 'แปลงมา', 10, 'แพ', 1, 600);           // 40 × 10 = 400
   const server = buildApp(db).listen(0, '127.0.0.1');

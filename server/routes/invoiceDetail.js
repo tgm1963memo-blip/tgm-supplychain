@@ -216,9 +216,12 @@ function invoiceDetailRoutes(db) {
       // s = เจ้าของยอด (ใบไม่มีรหัส Sales → รหัสที่ master ผูกกับลูกค้า · ไม่มี = "(ไม่ระบุ)" รวม "(none)" ด้วย) — ตรงกับแท็บรายเซลส์ / ตัวกรอง Sales
       // + เจ้าของยอดรายสินค้า (2026-10-27, sales_slm_sku_override — lib/slmOverride.js) ชนะเจ้าของหัวใบ
       const sExpr = `COALESCE((SELECT o.slm_code FROM sales_slm_sku_override o WHERE o.cust_code = i.cust_code AND o.sku = l.sku), ${cs.ownerSlmExpr({ cust: 'i.cust_code', slm: 'i.slm_code' })})`;
+      // FIXED (2026-11-16): invoice_lines.qty = XTRNQTY ของ Express = จำนวนในหน่วยฐานแล้ว (แต่ unit_code เป็นหน่วยขาย)
+      // q (จำนวนที่แสดงคู่กับหน่วย u) = qty ÷ unit_factor · qb (หน่วยฐาน ใช้คิดทุน) = qty — เดิม qb = qty × factor คูณซ้ำ
+      // แถว factor ≠ 1 (หมูอบน้ำผึ้ง แพ×2.4, ชุดโปร แพ×2) ทุนขายสูงเกินจริงเท่าตัว และจำนวนแสดงเป็นกก. ใต้ป้ายหน่วย "แพ"
       let rows = db.prepare(`SELECT i.cust_code AS c, ${sExpr} AS s, l.sku AS k, MAX(l.sku_name) AS n,
-          MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty) AS q, SUM(l.line_value) AS a
-          ${withCost ? ', SUM(l.qty * COALESCE(NULLIF(l.unit_factor, 0), 1)) AS qb' : ''}${bkSql('i.doc_date')}
+          MAX(p.group_name) AS g, TRIM(COALESCE(l.unit_code, '')) AS u, SUM(l.qty / COALESCE(NULLIF(l.unit_factor, 0), 1)) AS q, SUM(l.line_value) AS a
+          ${withCost ? ', SUM(l.qty) AS qb' : ''}${bkSql('i.doc_date')}
         FROM v_invoice_heads i JOIN invoice_lines l ON l.doc_num = i.doc_num AND l.company = ?
         LEFT JOIN products p ON p.code = l.sku
         WHERE i.doc_date >= ? AND i.doc_date <= ? AND COALESCE(i.rectyp, '') <> '5' AND ${salesDocSql('i.doc_num')}${fi.sql}
@@ -283,6 +286,7 @@ function invoiceDetailRoutes(db) {
         const kg = lineKg(line, weights);
         if (kg != null) q = skuCost.costQty(cost, { ...line, kg });
         if (!skuCost.kgPathOk(cost, q, r.a)) q = null;
+        if (q == null) q = skuCost.packQty(cost, line); // แพ ↔ ซอง ↔ ถุง ↔ ถาด — ดู lib/skuCost.js
       }
       if (q == null) continue;
       m.cc += Number(r.a) || 0; m.cq += q;

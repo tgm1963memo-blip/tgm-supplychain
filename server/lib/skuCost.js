@@ -247,6 +247,16 @@ function costQty(cost, line) {
 // ~8 จุด · ทุนที่ได้จากทางนี้เกิน 3 เท่าของยอดขาย = ถือว่าเทียบหน่วยไม่ได้ (ไม่นับ) แทนที่จะโชว์ขาดทุนปลอม
 // ใช้เฉพาะทางน้ำหนัก — หน่วยตรงกันโดยตรงยังใช้ตามจริงเสมอ
 const KG_PATH_MAX_COST_RATIO = 3;
+// ทางสุดท้าย (2026-11-16, ตรวจหน่วยทั้งปี): หน่วยขายปลีก "ห่อเดียว" คนละชื่อ — Express ขาย "แพ" แต่ Master SKU ตั้งทุนต่อ "ซอง"
+// (TS0198 เบค่อน เอโร่ ยอด 22.9 ล้าน: ขาย 339/แพ ทุน 264.91/ซองx1000 = GP 22% · ทางน้ำหนักใช้ไม่ได้เพราะ WMS บอก 10 กก./หน่วย)
+// ใช้เฉพาะเมื่อหน่วยตรง/หน่วยฐาน/ทางน้ำหนัก ไม่ได้ทั้งหมด · ไม่รวมกล่อง/ลัง/ชุด (บรรจุหลายห่อ จำนวนต่อหน่วยไม่แน่นอน)
+const PACK_UNITS = new Set(['แพ็ค', 'ซอง', 'ถุง', 'ถาด']);
+function packQty(cost, line) {
+  if (!cost || !PACK_UNITS.has(cost.unit)) return null;
+  if (PACK_UNITS.has(normUnit(line.base_unit)) && Number.isFinite(Number(line.qty_base))) return Number(line.qty_base);
+  if (PACK_UNITS.has(normUnit(line.unit_code)) && Number.isFinite(Number(line.qty))) return Number(line.qty);
+  return null;
+}
 function kgPathOk(cost, q, amount) {
   return q != null && cost.costs.total * q <= KG_PATH_MAX_COST_RATIO * Math.max(Number(amount) || 0, 0);
 }
@@ -262,5 +272,5 @@ const round4 = n => Math.round(n * 10000) / 10000;
 module.exports = {
   BASIS_COL, isBasis, KG, normUnit, parseUnit, canSeeCost,
   loadCostIndex, loadConversions, loadBaseUnits, costContext, resolveAll, resolveCost, costQty, lineCost, round4,
-  kgPathOk, KG_PATH_MAX_COST_RATIO,
+  kgPathOk, KG_PATH_MAX_COST_RATIO, packQty,
 };
