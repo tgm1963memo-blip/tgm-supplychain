@@ -13,7 +13,9 @@ function dataVersion(db) {
       one('SELECT MAX(synced_at) AS v FROM sync_file_state'),
       one('SELECT MAX(updated_at) AS v FROM customer_profiles'),
       one('SELECT MAX(updated_at) AS v FROM sc_users'),
-      one('SELECT MAX(updated_at) AS v FROM approval_workflow_templates')].join('|');
+      one('SELECT MAX(updated_at) AS v FROM approval_workflow_templates'),
+      // ทุนสินค้า (2026-11-16): /api/dashboard/exec มีก้อนกำไรของผู้มีสิทธิ์เห็นทุน — นำเข้าทุนรอบใหม่แล้วแคชต้องหมดอายุ
+      one("SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') AS v FROM sku_cost_rounds")].join('|');
   } catch {
     return null; // อ่าน version ไม่ได้ = ไม่ใช้แคช
   }
@@ -28,7 +30,7 @@ function cacheJson(db, { ttlMs = 15 * 60 * 1000, max = 200, versioned = true, pe
     if (version === null) return next();
     const u = req.user || {};
     const key = perUser
-      ? JSON.stringify([req.originalUrl, u.uid, u.role, u.slm_codes || '', u.bplus_codes || '', u.department || ''])
+      ? JSON.stringify([req.originalUrl, u.uid, u.role, u.slm_codes || '', u.bplus_codes || '', u.department || '', u.can_see_cost || 0])
       : req.originalUrl;
     const hit = store.get(key);
     if (hit && hit.version === version && Date.now() - hit.at < ttlMs) {

@@ -1,0 +1,194 @@
+'use strict';
+
+// ทุน 3 ช่องจากไฟล์ Master SKU → ทุนที่มีผล ณ วันที่ขาย + ทุนจากการแปลงรหัส (2026-11-16)
+// ตาราง sku_cost_rounds (db/migrations.js) · นำเข้า: routes/costRounds.js
+//
+// กติกา (ผู้ใช้ยืนยัน 2026-11-13):
+//   1. ทุนของ SKU ณ วันที่ d = แถวที่ eff_date ล่าสุดที่ ≤ d · ถ้า d อยู่ก่อนทุนรอบแรก ใช้ทุนรอบแรกย้อนหลัง
+//      แล้วติด estimated (ค่าประมาณ) — ไม่ซ่อนกำไรของเดือนก่อนมีทุน
+//   2. ฐานทุน 3 แบบ: total (ช่อง H ทุนรวม, ค่าหลัก) / depr (ช่อง G รวมค่าเสื่อม) / base (ช่อง F ขั้นต้น DL+OH)
+//      ช่อง F/G ว่างในไฟล์ → ใช้ทุนรวมแทน
+//   3. SKU ที่ไม่มีทุนของตัวเองแต่เกิดจากการแปลงรหัส (เอกสาร FF ใน conversion_doc_lines: out = ต้นทาง, in = ผลลัพธ์)
+//      ใช้ทุนของสินค้าต้นทาง: Σ(จำนวนต้นทาง × ทุนต้นทาง) ÷ จำนวนผลลัพธ์ (อัตราส่วนจากเอกสารแปลงล่าสุด) แล้วติด source = 'converted' + รหัสต้นทาง
+//      (ผู้ใช้สั่ง 2026-11-13 "ให้ใส่ว่าเป็นราคาจากการแปลง") · มีทุนของตัวเองเมื่อไร ใช้ทุนจริงก่อนเสมอ
+// ข้อมูลไม่พอ → ไม่เดา: หน่วยของทุนต้นทางเทียบกับหน่วยในเอกสารแปลงไม่ได้ / เอกสารมีผลลัพธ์หลายรหัส = คืน null
+
+const { unitLabel } = require('./productGroupMatch');
+
+const BASIS_COL = { total: 'cost_total', depr: 'cost_depr', base: 'cost_base' };
+const isBasis = b => Object.prototype.hasOwnProperty.call(BASIS_COL, b);
+const KG = 'กก.';
+const KG_RE = /^(กิโลกรัม|กก\.?|kgs?\.?)$/i;
+// ไฟล์ Master SKU สะกดหน่วยหลายแบบ (แพ็ค/แพค/Pack/pack, PCS, Box) และ Bplus ใช้ชื่อเต็ม — รวมให้เป็นคำเดียวกับ unitLabel
+const UNIT_ALIAS = {
+  'แพค': 'แพ็ค', 'แพ็ค': 'แพ็ค', 'pack': 'แพ็ค', 'packs': 'แพ็ค', 'pcs': 'ชิ้น', 'pc': 'ชิ้น', 'pcs.': 'ชิ้น',
+  'box': 'กล่อง', 'ctn': 'ลัง', 'carton': 'ลัง', 'set': 'เซ็ต', 'เซต': 'เซ็ต', 'ชุด': 'ชุด',
+};
+
+function normUnit(u) {
+  const s = String(u ?? '').replace(/\s+/g, ' ').trim();
+  if (!s || s === '0') return null;
+  if (KG_RE.test(s)) return KG;
+  const l = unitLabel(s);
+  return UNIT_ALIAS[l.toLowerCase()] || UNIT_ALIAS[s.toLowerCase()] || l;
+}
+
+// ช่อง D ของไฟล์: "กิโลกรัม" / "KG." = ต่อกก. · "แพ็คx500" = ต่อแพ็ค หนัก 500 กรัม · "ชิ้น" = ต่อชิ้น ไม่รู้น้ำหนัก
+function parseUnit(v) {
+  const raw = String(v ?? '').replace(/\s+/g, ' ').trim();
+  if (!raw || raw === '0') return { unit: null, grams: null, raw: null };
+  if (KG_RE.test(raw)) return { unit: KG, grams: 1000, raw };
+  // ตัวเลขหลัง x = กรัมต่อหน่วย ("แพ็คx500", "กล่องx200กรัม") · ถ้าตามด้วยหน่วยนับอื่น ("แพ็คx5ชิ้น", "ถุงx5แผ่น")
+  // เป็นจำนวนชิ้นในหน่วย ไม่ใช่น้ำหนัก → รู้หน่วยแต่ไม่รู้น้ำหนัก (พบในไฟล์จริงรอบ 2–7 พ.ย. 69)
+  const m = raw.match(/^(.+?)\s*[xX×]\s*([\d,]+(?:\.\d+)?)\s*(.*)$/);
+  if (m) {
+    const g = Number(m[2].replace(/,/g, ''));
+    const isGram = !m[3] || /^(กรัม|ก\.?|g\.?|grams?)$/i.test(m[3]);
+    return { unit: normUnit(m[1]), grams: isGram && g > 0 ? g : null, raw };
+  }
+  return { unit: normUnit(raw), grams: null, raw };
+}
+
+// superadmin เห็นเสมอ · คนอื่นต้องถูกติ๊ก sc_users.can_see_cost (รวม admin — หน้านำเข้าทุนของ admin เป็นอีกสิทธิ์หนึ่ง)
+const canSeeCost = user => !!user && (user.role === 'superadmin' || Number(user.can_see_cost) === 1);
+
+// ── ดัชนีในหน่วยความจำ ────────────────────────────────────────────────
+function loadCostIndex(db) {
+  const idx = new Map();
+  const rows = db.prepare('SELECT sku, eff_date, cost_base, cost_depr, cost_total, unit, unit_grams, suspect FROM sku_cost_rounds ORDER BY sku, eff_date').all();
+  for (const r of rows) {
+    if (!idx.has(r.sku)) idx.set(r.sku, []);
+    idx.get(r.sku).push(r);
+  }
+  return idx;
+}
+
+// เอกสารแปลงที่ใช้หาทุนได้: มีผลลัพธ์รหัสเดียว (หลายรหัส = แบ่งทุนไม่ได้โดยไม่เดา) → Map ผลลัพธ์ → [{ doc, date, qty, sources }]
+// qty ใน conversion_doc_lines เป็นหน่วยฐานของสินค้า (XTRNQTY ดู jobs/importFromExpress.js buildStockMovements)
+function loadConversions(db) {
+  const docs = new Map();
+  const rows = db.prepare(`SELECT doc_num, MAX(doc_date) AS doc_date, sku, direction, SUM(qty) AS qty
+    FROM conversion_doc_lines GROUP BY doc_num, sku, direction`).all();
+  for (const r of rows) {
+    if (!(r.qty > 0)) continue;
+    if (!docs.has(r.doc_num)) docs.set(r.doc_num, { doc: r.doc_num, date: r.doc_date || '', in: new Map(), out: new Map() });
+    const d = docs.get(r.doc_num);
+    if (r.direction === 'in') d.in.set(r.sku, r.qty);
+    else if (r.direction === 'out') d.out.set(r.sku, r.qty);
+    if ((r.doc_date || '') > d.date) d.date = r.doc_date;
+  }
+  const byOut = new Map();
+  for (const d of docs.values()) {
+    if (d.in.size !== 1 || !d.out.size) continue;
+    const [sku, qty] = [...d.in][0];
+    if (d.out.has(sku)) continue; // รหัสเดียวกันทั้งเข้าและออก = ย้าย/ปรับ ไม่ใช่การแปลงรหัส
+    if (!byOut.has(sku)) byOut.set(sku, []);
+    byOut.get(sku).push({ doc: d.doc, date: d.date, qty, sources: [...d.out].map(([s, q]) => ({ sku: s, qty: q })) });
+  }
+  for (const list of byOut.values()) list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return byOut;
+}
+
+function loadBaseUnits(db) {
+  return new Map(db.prepare('SELECT code, unit FROM products').all().map(r => [r.code, normUnit(r.unit)]));
+}
+
+// ctx ต่อ db — สร้างใหม่เมื่อข้อมูลทุน/เอกสารแปลง/สินค้าเปลี่ยน (conversion_doc_lines เขียนใหม่ทุกรอบ sync ~5 นาที)
+const ctxCache = new WeakMap();
+function costContext(db) {
+  const v = db.prepare(`SELECT (SELECT COUNT(*) || '|' || COALESCE(MAX(updated_at), '') FROM sku_cost_rounds) || '#' ||
+    (SELECT COUNT(*) || '|' || COALESCE(MAX(updated_at), '') FROM conversion_doc_lines) || '#' ||
+    (SELECT COUNT(*) FROM products) AS v`).get().v;
+  const hit = ctxCache.get(db);
+  if (hit && hit.version === v) return hit;
+  const ctx = { version: v, idx: loadCostIndex(db), conv: loadConversions(db), baseUnits: loadBaseUnits(db) };
+  ctxCache.set(db, ctx);
+  return ctx;
+}
+
+// ── คำนวณ (ฟังก์ชันบริสุทธิ์ รับ ctx — ทดสอบได้โดยไม่ต้องมี db) ───────────────
+function ownRowAt(idx, sku, date) {
+  const list = idx.get(sku);
+  if (!list || !list.length) return null;
+  let hit = null;
+  for (const r of list) { if (r.eff_date <= date) hit = r; else break; }
+  return hit ? { row: hit, estimated: false } : { row: list[0], estimated: true };
+}
+const pick = (row, basis) => row[BASIS_COL[basis]] ?? row.cost_total;
+
+// ทุนต่อหน่วย target จากทุนที่ตั้งไว้ต่อ row.unit — หน่วยเดียวกันใช้ตรงๆ · ขอเป็นกก. และรู้น้ำหนักต่อหน่วย = หารน้ำหนัก
+function costPer(row, value, target) {
+  if (!row.unit || !target) return null;
+  if (row.unit === target) return value;
+  if (target === KG && row.unit_grams > 0) return value / (row.unit_grams / 1000);
+  return null;
+}
+
+// ทุนทั้ง 3 ฐานของ SKU ณ วันที่ → { costs: { total, depr, base }, unit, grams, source: 'own'|'converted', from, doc, eff_date, estimated, suspect }
+// หรือ null (ไม่มีทุน) · ทุนจากการแปลงใช้อัตราส่วนจากเอกสารแปลงล่าสุดที่หาทุนต้นทางได้ครบ (ไม่ขึ้นกับวันขาย — ผลเดียวกันทั้งช่วง)
+// ส่วนทุนของต้นทางใช้รอบที่มีผล ณ วันขายเหมือนทุนของตัวเอง
+function resolveAll(ctx, sku, date) {
+  const day = String(date || '').slice(0, 10);
+  const own = ownRowAt(ctx.idx, sku, day);
+  if (own) {
+    return { costs: { total: pick(own.row, 'total'), depr: pick(own.row, 'depr'), base: pick(own.row, 'base') },
+      unit: own.row.unit, grams: own.row.unit_grams ?? null, source: 'own', from: [],
+      doc: null, eff_date: own.row.eff_date, estimated: own.estimated, suspect: !!own.row.suspect };
+  }
+  const docs = ctx.conv.get(sku);
+  if (!docs) return null;
+  for (const d of docs) {
+    const sum = { total: 0, depr: 0, base: 0 };
+    let estimated = false, suspect = false, ok = true;
+    for (const s of d.sources) {
+      const src = ownRowAt(ctx.idx, s.sku, day);
+      const unit = ctx.baseUnits.get(s.sku);
+      if (!src || costPer(src.row, 1, unit) == null) { ok = false; break; }
+      for (const b of Object.keys(sum)) sum[b] += costPer(src.row, pick(src.row, b), unit) * s.qty;
+      estimated = estimated || src.estimated;
+      suspect = suspect || !!src.row.suspect;
+    }
+    if (!ok) continue;
+    return { costs: { total: round4(sum.total / d.qty), depr: round4(sum.depr / d.qty), base: round4(sum.base / d.qty) },
+      unit: ctx.baseUnits.get(sku) || null, grams: null, source: 'converted',
+      from: d.sources.map(s => s.sku), doc: d.doc, eff_date: null, estimated, suspect };
+  }
+  return null;
+}
+
+// ฐานเดียว → { cost, unit, grams, source, from, doc, eff_date, estimated, suspect } หรือ null
+function resolveCost(ctx, sku, date, basis = 'total') {
+  if (!isBasis(basis)) throw new Error('basis ไม่ถูกต้อง');
+  const all = resolveAll(ctx, sku, date);
+  if (!all) return null;
+  const { costs, ...rest } = all;
+  return { cost: costs[basis], ...rest };
+}
+
+// จำนวนของบรรทัดขายในหน่วยเดียวกับทุน — เทียบหน่วยไม่ได้ = null (ไม่ประมาณ)
+// cost: { unit, grams } · line: { qty, qty_base, unit_code, base_unit, kg } — qty_base = จำนวนในหน่วยฐาน (qty × TFACTOR), kg = น้ำหนักรวมของบรรทัด (ถ้ารู้)
+// ลำดับ: หน่วยฐานก่อนหน่วยขาย เพราะรหัสชุดโปร (TFACTOR ≠ 1) ใช้ชื่อหน่วยขายเดียวกับหน่วยฐานแต่จำนวนจริงคือ qty_base
+function costQty(cost, line) {
+  if (!cost || !cost.unit) return null;
+  const qty = Number(line.qty), qtyBase = Number(line.qty_base), kg = line.kg == null ? null : Number(line.kg);
+  if (normUnit(line.base_unit) === cost.unit && Number.isFinite(qtyBase)) return qtyBase;
+  if (normUnit(line.unit_code) === cost.unit && Number.isFinite(qty)) return qty;
+  if (kg != null && Number.isFinite(kg)) {
+    if (cost.unit === KG) return kg;
+    if (cost.grams > 0) return kg / (cost.grams / 1000);
+  }
+  return null;
+}
+// ต้นทุนขายของบรรทัดขายหนึ่งบรรทัด = ทุนต่อหน่วย × จำนวนในหน่วยเดียวกับทุน
+function lineCost(cost, line) {
+  if (!cost || !(cost.cost > 0)) return null;
+  const q = costQty(cost, line);
+  return q == null ? null : cost.cost * q;
+}
+
+const round4 = n => Math.round(n * 10000) / 10000;
+
+module.exports = {
+  BASIS_COL, isBasis, KG, normUnit, parseUnit, canSeeCost,
+  loadCostIndex, loadConversions, loadBaseUnits, costContext, resolveAll, resolveCost, costQty, lineCost, round4,
+};

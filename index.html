@@ -5167,6 +5167,11 @@ function _userBpName(codes){
 function _userMinTierField(cur){
   return `<div class="field"><label>ฐานราคาต่ำสุดที่เสนอเองได้ (ใบเสนอราคา)</label><select id="u-mintier">${['A','B','C','D','E','F','G'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>ฐาน ${t}${t==='E'?' (ค่าเริ่มต้น)':''} — ใช้ ${t}–G ได้เอง</option>`).join('')}</select></div>`;
 }
+// สิทธิ์เห็นทุน/อัตรากำไร (2026-11-16, ผู้ใช้ยืนยัน: ติ๊กรายคน) — เฉพาะ Super Admin ตั้งได้ (server ตรวจซ้ำ) · Super Admin เห็นเสมอ
+function _userSeeCostField(cur,role){
+  if(ROLE!=='superadmin')return '';
+  return `<div class="field"><label>สิทธิ์เห็นทุนและอัตรากำไร</label><label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="u-seecost" ${Number(cur)===1?'checked':''} style="width:auto"> เห็นทุนสินค้าและกำไรขั้นต้นบนหน้ายอดขาย${role==='superadmin'?' <span style="color:var(--TX3);font-size:12px">(Super Admin เห็นเสมอ)</span>':''}</label></div>`;
+}
 function _userBplusField(cur){
   const sel=new Set(String(cur||'').split(',').map(x=>x.trim()).filter(Boolean));
   const list=[...(_userBpList||[])];
@@ -5527,7 +5532,7 @@ const RNAV={
   warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['sample','🧪','ของตัวอย่าง']],
   manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
-const PTITLES={dash:'Dashboard',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',promocosts:'ทุนสินค้า & ราคาหมู',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
+const PTITLES={dash:'Dashboard',margin:'วิเคราะห์กำไร',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',promocosts:'ทุนสินค้า & ราคาหมู',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
 
 // แยกแอป Sales/Planning (2026-09-15) — role ไหน "เป็นของแผนกเดียวเท่านั้น" คืนค่า 'sales'/'planning',
@@ -5551,7 +5556,7 @@ function _clearUserScopedCaches(){
     ['remote_customers_cache','remote_customers_cache_ts','remote_consi_customers_cache','remote_consi_customers_cache_ts','customer_profiles','customer_profiles_ts',
      'sample_requests','remote_salesmen_cache'].forEach(k=>{localStorage.removeItem('tgm3_'+k);if(typeof _dbMem!=='undefined')_dbMem.delete(k);});
     _customerProfilesMemo=null;_myScope=null;
-    ['_dxCache','_dxData','_dashSalesRows','_dashSalesHistCache','_dashCustRows','_dashInvoiceSummary','_dashSummary','_dashSlmF','_salesRows2Y','_dashSlmCodes']
+    ['_dxCache','_mgCache','_dxData','_dashSalesRows','_dashSalesHistCache','_dashCustRows','_dashInvoiceSummary','_dashSummary','_dashSlmF','_salesRows2Y','_dashSlmCodes']
       .forEach(k=>{try{delete window[k];}catch(_){window[k]=undefined;}});
     if(typeof _sdResetBuildCache==='function')_sdResetBuildCache();
     if(typeof _sdApi!=='undefined'){_sdApi.loaded=false;_sdApi._rows=null;_sdApi._invRows=null;_sdApi._invRowsSlm=null;_sdApi._filt=null;}
@@ -5725,7 +5730,7 @@ function _permGroupKey(u){return `${u?.department||'Unassigned department'}|${u?
 // Redesign 2026-10 (DESIGN.md): กลุ่มเมนู + ไอคอนเส้น 16px ชุดเดียวกับต้นแบบ — หน้าใหม่ที่ไม่อยู่ในกลุ่มจะไปอยู่ "อื่นๆ"
 const _NAV_GROUPS = [
   ['ภาพรวม', ['dash']],
-  ['การขาย', ['mysales', 'consi', 'forecast']],
+  ['การขาย', ['mysales', 'margin', 'consi', 'forecast']],
   ['โปรโมชัน & ราคา', ['promo_history', 'pricetiers', 'promocosts', 'quotation']],
   ['วางแผน & ผลิต', ['planstock', 'po', 'planbook', 'booksummary', 'prodplan', 'prodsummary', 'forecastdoc', 'stock', 'expiry', 'wms']],
   ['ลูกค้า & ตัวอย่าง', ['custreg', 'sample']],
@@ -5739,6 +5744,7 @@ const _NAV_ICONS = {
   promo_history: '<path d="M4 2h5l3 3v9H4zM9 2v3h3M6 9h4M6 11.5h4"/>',
   pricetiers: '<path d="M2 2h6l6 6-6 6-6-6zM5.5 5.5h.01"/>',
   promocosts: '<path d="M2 14h12M3 11l3-3 2.5 2L13 5M10 5h3v3"/>',
+  margin: '<path d="M2 14h12M4 14V9M8 14V5M12 14V7"/>',
   quotation: '<path d="M3 2h10v12l-2-1.5L9 14l-1-1-1 1-2-1.5L3 14zM6 6h4M6 9h4"/>',
   planstock: '<path d="M1.5 6L8 2.5 14.5 6v8h-13zM4.5 14V8.5h7V14M4.5 11h7"/>',
   po: '<path d="M5.5 2.5h5v2h-5zM5.5 3.5H3.5v10.5h9V3.5h-2M6 8l1.5 1.5L10.5 6.5"/>',
@@ -5889,6 +5895,10 @@ function buildSB(){
     if(rolePages.length) navItems=rolePages.map(id=>lookup2[id]).filter(Boolean);
   }
 
+  // หน้าวิเคราะห์กำไร (2026-11-16): ผูกกับสิทธิ์เห็นทุนรายคน ไม่ใช่ role/แผนก — มีสิทธิ์ = เพิ่มเมนูต่อจาก Sales Overview · ไม่มี = ตัดออกเสมอ
+  navItems=navItems.filter(([id])=>id!=='margin');
+  if(canSeeCost()){const at=navItems.findIndex(([id])=>id==='mysales');navItems=[...navItems];navItems.splice(at<0?Math.min(1,navItems.length):at+1,0,['margin','📊','วิเคราะห์กำไร']);}
+
   // เก็บรายการหน้าที่ user คนนี้มีสิทธิ์เห็นไว้ระดับ global ให้ nav() เช็คก่อน dispatch จริง
   // (เดิม buildSB() แค่ซ่อนเมนูใน sidebar แต่ nav() ไม่เคยเช็คซ้ำ — เปิดจาก devtools เรียก nav('users') ได้เลยแม้ถูกซ่อน)
   window._allowedPageIds = new Set(navItems.map(([id]) => id));
@@ -5982,6 +5992,7 @@ function nav(page){
     switch(page){
       case 'dash': pgDash(); break;
       case 'mysales': pgMySales(); break;
+      case 'margin': pgMargin(); break;
       case 'consi': pgConsignment(); break;
       case 'promo_history': pgPromoHistory(); break;
       case 'pricetiers': pgPriceTiers(); break;
@@ -6961,10 +6972,12 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
   ${overdue?`<div class="al ald">⚠️ มี ${overdue} PO เลยกำหนดส่ง</div>`:''}
   ${expiring?`<div class="al alw">⚠️ มี ${expiring} Lot ใกล้หมดอายุ ≤30 วัน</div>`:''}
   ${_aiCard('ai-dash-box','AI Executive Summary','สรุปภาพรวมธุรกิจและแนะนำแนวทางบริหาร','aiDashInsight')}
+  <div id="line-report-card"></div>
   `;
   dashRemoveQtySummaryCard();
   dashExecRender();
   dashRenderTargets();
+  lineReportRender();
   // extract.js's safety net (deploy-shared/extract.js) only recognizes a guard when the `if` TEST
   // itself is a literal `typeof <name> === 'function'` chain (walked via && on both sides) — an
   // indirection variable like `if(_dashHasSalesCluster)` does NOT satisfy it, even though it's
@@ -6977,6 +6990,80 @@ function dashRenderBody(rPo, rStk, rFc, rSs, rHist, confidence){
       dashFillSlmSelect();
     }
   }
+}
+// ── รายงาน LINE รายสัปดาห์ (2026-11-13) — การ์ดท้าย Dashboard เฉพาะ superadmin/admin ────────────────────────
+// server/routes/lineReport.js: ดูตัวอย่าง / ส่งทดสอบ / เปิด-ปิดกลุ่มไลน์ที่บอทอยู่ / ประวัติการส่ง
+async function lineReportRender(){
+  const box=document.getElementById('line-report-card');if(!box)return;
+  if(!['superadmin','admin'].includes(ROLE)){box.innerHTML='';return;}
+  const [st,tg,rn]=await Promise.all([apiFetch('/api/line_report/status'),apiFetch('/api/line_report/targets'),apiFetch('/api/line_report/runs')]);
+  if(st.error){box.innerHTML='';return;}
+  const s=st.data,targets=tg.data?.rows||[],runs=rn.data?.rows||[];
+  const nr=s.next_range||{};
+  // ปัญหาที่ทำให้ส่งไม่ได้ = แถบเตือน · PUBLIC_API_URL ไม่ตั้งยังส่งได้ปกติ = หมายเหตุตัวเล็ก (ผู้ใช้ทักว่าแถบส้มดูเหมือนเสีย 2026-11-16)
+  const warn=[!s.configured&&'ยังส่งไม่ได้ — ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN / LINE_CHANNEL_SECRET ใน server/.env'].filter(Boolean);
+  const notes=[!s.enabled&&'ปิดการส่งอัตโนมัติอยู่ (ส่งทดสอบด้วยปุ่มด้านล่างได้)',
+    !s.public_url_set&&'รูปรายงานใช้ที่อยู่ tunnel ชั่วคราว ถ้าที่อยู่เปลี่ยน รูปในข้อความเก่าจะเปิดไม่ได้ (รายงานใหม่ไม่กระทบ)'].filter(Boolean);
+  const live=targets.filter(t=>!t.left_at);
+  const stTxt={sent:'ส่งแล้ว',partial:'ส่งได้บางกลุ่ม',failed:'ไม่สำเร็จ'};
+  const cm=String(s.cron||'').trim().split(/\s+/);
+  const DOW=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+  const when=cm.length===5&&/^\d+$/.test(cm[0])&&/^\d+$/.test(cm[1])&&/^[0-6]$/.test(cm[4])&&cm[2]==='*'&&cm[3]==='*'
+    ?`ทุกวัน${DOW[+cm[4]]} ${String(cm[1]).padStart(2,'0')}:${String(cm[0]).padStart(2,'0')} น.`:`ตามเวลา ${s.cron}`;
+  const thD=d=>d?new Date(d+'T00:00:00').toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'}):'';
+  box.innerHTML=`<div class="card" style="margin-top:12px"><div class="ch"><div class="ct2">รายงานยอดขายส่ง LINE</div>
+    <div style="font-size:12px;color:var(--TX2)">${s.enabled?'ส่งอัตโนมัติ'+esc(when):'ยังไม่เปิดส่งอัตโนมัติ'} · ส่งวันนี้จะได้ยอด ${esc(thD(nr.from))} – ${esc(thD(nr.to))}</div></div>
+    ${warn.map(w=>`<div class="al ald" style="margin:6px 0">${esc(w)}</div>`).join('')}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0;font-size:12.5px">
+      <span>ช่วงวันที่</span>
+      <input type="date" id="lr-from" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px;font-family:var(--font);color:var(--TX)" value="${esc(nr.from||'')}">
+      <span>ถึง</span>
+      <input type="date" id="lr-to" style="padding:5px 10px;border:1px solid var(--BD);border-radius:7px;font-size:13px;height:34px;font-family:var(--font);color:var(--TX)" value="${esc(nr.to||'')}">
+      <button class="btn btn-sm" onclick="lineReportPreview()">ดูตัวอย่าง</button>
+    </div>
+    ${notes.length?`<div style="font-size:11.5px;color:var(--TX3);margin-bottom:8px">${notes.map(esc).join(' · ')}</div>`:''}
+    <div class="tw"><table><thead><tr><th>กลุ่มไลน์</th><th>ส่งรายงาน</th><th>บอทเข้ากลุ่มเมื่อ</th><th></th></tr></thead><tbody>
+    ${live.map(t=>`<tr><td>${esc(t.name||'(ไม่มีชื่อ)')}<div class="mono" style="font-size:11px;color:var(--TX3)">${esc(t.target_id)}</div></td>
+      <td><input type="checkbox" ${t.active?'checked':''} onchange="lineReportToggle('${esc(t.target_id)}',this.checked)" style="width:16px;height:16px"></td>
+      <td>${esc(new Date(t.joined_at).toLocaleString('th-TH'))}</td>
+      <td><button class="btn btn-xs btn-t" ${s.configured?'':'disabled'} onclick="lineReportSend('${esc(t.target_id)}',this)">ส่งทดสอบตอนนี้</button></td></tr>`).join('')
+      ||'<tr><td colspan="4" style="text-align:center;color:var(--TX3);padding:14px">ยังไม่มีกลุ่ม — เชิญบอท LINE Official Account เข้ากลุ่มไลน์ แล้วกลับมาเปิด "ส่งรายงาน" ที่นี่</td></tr>'}
+    </tbody></table></div>
+    ${runs.length?`<div style="font-size:12px;color:var(--TX2);margin-top:10px;font-weight:600">ประวัติการส่งล่าสุด</div>
+    <div class="tw"><table><thead><tr><th>เมื่อ</th><th>ช่วงยอด</th><th>วิธี</th><th>ผล</th></tr></thead><tbody>
+    ${runs.slice(0,8).map(r=>`<tr><td>${esc(new Date(r.created_at).toLocaleString('th-TH'))}</td><td>${esc(r.period_from)} – ${esc(r.period_to)}</td>
+      <td>${r.trigger==='cron'?'อัตโนมัติ':'ส่งเอง '+esc(r.created_by||'')}</td>
+      <td style="color:${r.status==='sent'?'var(--G)':'var(--R)'}" title="${esc(r.error||'')}">${esc(stTxt[r.status]||r.status)}</td></tr>`).join('')}
+    </tbody></table></div>`:''}
+  </div>`;
+}
+function _lrRange(){
+  const from=document.getElementById('lr-from')?.value||'',to=document.getElementById('lr-to')?.value||'';
+  return {from,to};
+}
+// ตัวอย่างเปิดในแท็บใหม่ — route ต้องมี token จึงดึง HTML มาเปิดเป็น blob
+async function lineReportPreview(){
+  const {from,to}=_lrRange();
+  const w=window.open('','_blank');
+  try{
+    const res=await fetch(`${API_BASE}/api/line_report/preview?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,{headers:{Authorization:'Bearer '+_sessionToken,'ngrok-skip-browser-warning':'true'}});
+    const html=await res.text();
+    if(!res.ok){let m=html;try{m=JSON.parse(html).error;}catch(e){}if(w)w.close();toast('ดูตัวอย่างไม่ได้: '+m);return;}
+    const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));
+    if(w)w.location.href=url;else window.open(url,'_blank');
+  }catch(e){if(w)w.close();toast('ดูตัวอย่างไม่ได้: '+e.message);}
+}
+async function lineReportToggle(id,on){
+  const {error}=await apiFetch('/api/line_report/targets/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({active:on})});
+  toast(error?'บันทึกไม่สำเร็จ: '+error.message:(on?'เปิดส่งรายงานเข้ากลุ่มนี้แล้ว':'ปิดส่งรายงานเข้ากลุ่มนี้แล้ว'));
+  lineReportRender();
+}
+async function lineReportSend(id,btn){
+  const {from,to}=_lrRange();
+  if(btn){btn.disabled=true;btn.textContent='กำลังส่ง…';}
+  const {error}=await apiFetch('/api/line_report/send',{method:'POST',body:JSON.stringify({from,to,target_id:id})});
+  toast(error?'ส่งไม่สำเร็จ: '+error.message:'ส่งรายงานเข้ากลุ่มแล้ว');
+  lineReportRender();
 }
 // ── Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") ─────────────────────────────
 // ข้อมูลทั้งหมดของส่วนนี้มาจาก GET /api/dashboard/exec (server/routes/dashboardExec.js) ครั้งเดียวต่อช่วงเวลา
@@ -7078,7 +7165,7 @@ async function dxSet(k,v){
   else if(k==='mode'||k==='year'||k==='month'||k==='q') s[k]=(k==='mode')?v:Number(v);
   else if(k==='consi'||k==='makro'||k==='noNv'||k==='noBakery'){s[k]=!!v;_dxSavePrefs();}
   else if(k==='co'){s.co=['tss','tgm'].includes(v)?v:'all';_dxSavePrefs();}
-  else if(k==='by'||k==='top'||k==='pm'){s[k]=v;if(k==='by')_dxSavePrefs();dashExecRender();return;}
+  else if(k==='by'||k==='top'||k==='pm'||k==='basis'||k==='mtab'){s[k]=v;if(k==='by')_dxSavePrefs();dashExecRender();return;}
   // ไม่ให้เลือกเดือน/ไตรมาสที่ยังไม่ถึงของปีปัจจุบัน
   const n=new Date();
   if(s.year>=n.getFullYear()){s.year=n.getFullYear();s.month=Math.min(s.month,n.getMonth()+1);s.q=Math.min(s.q,Math.floor(n.getMonth()/3)+1);}
@@ -7231,6 +7318,39 @@ function _dxEnsureCss(){
   .dx-btn{height:32px;padding:0 12px;border:1px solid var(--dx-line);border-radius:8px;background:#fff;font:inherit;font-size:12.5px;color:var(--dx-ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .dx-btn:hover{background:var(--dx-soft)}
   .dx-empty{padding:30px;text-align:center;color:var(--dx-mut);font-size:13px}
+  /* กำไรขั้นต้น (2026-11-16) — แถบตัวเลขแบบ compact stat strip (DESIGN.md: หน้านี้มีแถว lot label แล้ว 1 แถว) */
+  .dx-scope{--dx-ink:#14163A;--dx-mut:#646887;--dx-line:#D9DCE8;--dx-soft:#F3F4F8}.dx-scope *{box-sizing:border-box}
+  .dx-msh{padding:8px 0;border-bottom:1px solid #ECEEF4;font-size:13px}.dx-msh:last-child{border-bottom:0}
+  .dx-msh .nm{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}.dx-msh .nm>b{font-weight:500}.dx-msh .nm span{color:var(--dx-mut);font-size:12px;white-space:nowrap}
+  .dx-msh .t2{height:7px;background:#ECEEF4;border-radius:1px;margin-top:3px}.dx-msh .t2 i{display:block;height:100%;border-radius:1px;background:#B9BDE0}.dx-msh .t2.p i{background:var(--N)}
+  table.dx-t tr.dx-grp td{cursor:pointer}table.dx-t tr.dx-sub td{background:#FAFAFD;font-size:12px}
+  .dx-lock{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:4px;background:#EEF0F8;color:var(--N);font-size:11.5px;font-weight:500;margin-left:6px;vertical-align:middle}
+  .dx-mstrip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid var(--dx-line);border-radius:10px;margin-bottom:14px}
+  .dx-mstrip>div{padding:12px 16px;border-left:1px solid #ECEEF4;min-width:0}.dx-mstrip>div:first-child{border-left:0}
+  .dx-mstrip .k{font-size:12.5px;color:var(--dx-mut)}
+  .dx-mstrip .v{font-size:22px;line-height:30px;font-weight:700;color:var(--N);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .dx-mstrip .v small{font-size:13px;font-weight:600;color:var(--TX2);margin-left:4px}
+  .dx-mstrip .s{font-size:12px;color:var(--dx-mut);line-height:18px}
+  .dx-cov{height:4px;border-radius:2px;background:#ECEEF4;margin:4px 0;overflow:hidden}.dx-cov i{display:block;height:100%;background:var(--N)}
+  @media (max-width:1100px){.dx-mstrip{grid-template-columns:repeat(2,minmax(0,1fr))}.dx-mstrip>div{border-left:0;border-top:1px solid #ECEEF4}.dx-mstrip>div:nth-child(-n+2){border-top:0}.dx-mstrip>div:nth-child(even){border-left:1px solid #ECEEF4}}
+  @media (max-width:560px){.dx-mstrip{grid-template-columns:1fr}.dx-mstrip>div{border-left:0!important}.dx-mstrip>div:nth-child(2){border-top:1px solid #ECEEF4}}
+  .dx-mgrid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:24px;align-items:start}
+  @media (max-width:980px){.dx-mgrid{grid-template-columns:1fr}}
+  .dx-mt{font-size:13.5px;font-weight:600;color:var(--N);margin-bottom:8px}.dx-mt span{font-weight:400;color:var(--dx-mut);font-size:12px;margin-left:6px}
+  .dx-mch{display:grid;grid-template-columns:minmax(0,1fr) 58px;gap:4px 12px;align-items:center;padding:7px 0;border-bottom:1px solid #ECEEF4;font-size:13px}.dx-mch:last-child{border-bottom:0}
+  .dx-mch .nm{display:flex;justify-content:space-between;gap:8px;min-width:0}.dx-mch .nm b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dx-mch .nm span{color:var(--dx-mut);font-size:12px;white-space:nowrap}
+  .dx-mch .tr{grid-column:1;height:8px;background:#ECEEF4;border-radius:1px;position:relative}
+  .dx-mch .tr i{position:absolute;left:0;top:0;bottom:0;border-radius:1px;background:var(--N)}
+  .dx-mch .tr u{position:absolute;top:-3px;bottom:-3px;width:1.5px;background:var(--TX2)}
+  .dx-mch .pv{grid-row:1/3;grid-column:2;text-align:right;font-weight:700;color:var(--N);font-size:15px;font-variant-numeric:tabular-nums}
+  .dx-gpc{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end;min-width:112px}
+  .dx-gpc .b{width:52px;height:6px;border-radius:1px;background:#ECEEF4;overflow:hidden;flex:none}.dx-gpc .b i{display:block;height:100%;background:var(--N)}
+  .dx-gpc.low .b i{background:#9A5200}.dx-gpc.neg{color:var(--R);font-weight:600}.dx-gpc.neg .b{background:transparent;box-shadow:inset 0 0 0 1.5px var(--R)}
+  .dx-mk{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
+  .dx-mk i{width:11px;height:11px;border-radius:50%;flex:none}
+  .dx-mk.cv{color:var(--N)}.dx-mk.cv i{box-shadow:inset 0 0 0 2px #6A70B8;background:linear-gradient(90deg,#6A70B8 50%,transparent 50%)}
+  .dx-mk.sus,.dx-mk.low{color:#9A5200}.dx-mk.sus i{background:repeating-linear-gradient(45deg,#9A5200 0 2px,transparent 2px 4px);box-shadow:inset 0 0 0 1.5px #9A5200}.dx-mk.low i{background:#9A5200}
+  .dx-mk.none{color:var(--dx-mut)}.dx-mk.none i{background:repeating-linear-gradient(45deg,#A3A7C2 0 2px,transparent 2px 4px);box-shadow:inset 0 0 0 1.5px #A3A7C2}
   details.dx-det summary{cursor:pointer;font-size:12.5px;color:var(--BL);margin-top:6px;width:max-content}
   #dx-tip{position:fixed;pointer-events:none;background:#14233A;color:#fff;font-size:12px;padding:8px 10px;border-radius:8px;z-index:9999;min-width:180px;max-width:300px;line-height:1.55;box-shadow:0 6px 18px rgba(0,0,0,.2)}
   #dx-tip .r{display:flex;justify-content:space-between;gap:14px}
@@ -7426,6 +7546,282 @@ function _dxChannels(d){
     <div class="dx-grid2"><div class="dx-chl"><div class="dx-chr hd"><div>หมวด</div><div></div><div class="dx-n" title="${esc(_dxLabel(r))} (ล้านบาท)">ปี ${(r.y+543)%100}</div><div class="dx-n" title="${esc(_dxLabel(r,-1))} (ล้านบาท)">ปี ${(r.y+542)%100}</div><div class="dx-n p">สัดส่วน</div><div class="dx-n" title="ยอดปีนี้ − ปีก่อน (ล้านบาท)">ต่าง (ล.)</div><div class="dx-n">เทียบปีก่อน</div></div>${list}</div>
       <div class="dx-donut">${_dxDonut(rows,tot)}<div class="cap">สัดส่วนยอดขาย ${_dxLabel(r)}</div></div></div></div>`;
 }
+// ── กำไรขั้นต้น (2026-11-16) — server ส่ง d.margin เฉพาะผู้มีสิทธิ์เห็นทุน (sc_users.can_see_cost / Super Admin) ──────────
+// ไม่มี d.margin = ไม่แสดงอะไรเลย (หน้าเหมือนเดิมทุกอย่าง) · ฐานทุนสลับได้ 3 แบบโดยไม่โหลดใหม่ (server ส่งต้นทุนขายมาครบ 3 ฐาน)
+// กำไรคิดจากบรรทัดขายที่มีรหัสสินค้า + มีทุน + เทียบหน่วยได้ เท่านั้น (covered) — อัตรากำไร = (covered − ต้นทุนขาย) ÷ covered
+const DX_BASIS=[['total','ทุนรวม','ช่อง H ของไฟล์ Master SKU: รวมต้นทุนตามราคาวัตถุดิบรอบล่าสุด'],['depr','รวมค่าเสื่อม','ช่อง G: รวมค่าเสื่อมอาคารและเครื่องจักร'],['base','ขั้นต้น DL+OH','ช่อง F: ต้นทุนขั้นต้น']];
+function _dxGp(a,b){const c=a?.covered||0,g=c-(a?.cogs?.[b]||0);return{lines:a?.lines||0,covered:c,cogs:a?.cogs?.[b]||0,gp:g,pc:c>0?g/c:null,cov:a&&a.lines>0?c/a.lines:null};}
+function _dxGpPct(p){return p==null?'—':(p<0?'−':'')+Math.abs(p*100).toFixed(1)+'%';}
+function _dxGpCell(p){
+  if(p==null)return '<span class="mut">ยังคิดไม่ได้</span>';
+  const cls=p<0?' neg':p<0.10?' low':'';
+  return `<span class="dx-gpc${cls}">${p<0?'▼ ':''}${_dxGpPct(p)}<span class="b"><i style="width:${Math.max(0,Math.min(1,p/0.4))*100}%"></i></span></span>`;
+}
+function _dxCostTag(x){
+  const t=[];
+  if(x.source==='converted')t.push(`<span class="dx-mk cv" title="ไม่มีทุนในไฟล์ Master SKU ใช้ทุนของสินค้าต้นทางตามเอกสารแปลงสินค้า (FF)"><i></i>ทุนจากการแปลง ← <span class="mono">${esc((x.from||[]).join(', '))}</span></span>`);
+  if(x.suspect)t.push('<span class="dx-mk sus" title="ทุนรวมต่ำกว่าครึ่งของทุนเก่าในไฟล์ น่าจะยังไม่รวมวัตถุดิบ รอฝ่ายต้นทุนยืนยัน"><i></i>ทุนต่ำผิดปกติ รอยืนยัน</span>');
+  return t.join(' ');
+}
+function _dxMargin(d){
+  const m=d.margin;if(!m)return '';
+  const s=_dxState(),r=_dxRange(),b=['total','depr','base'].includes(s.basis)?s.basis:'total',bn=DX_BASIS.find(x=>x[0]===b)[1];
+  const lock='<span class="dx-lock" title="ส่วนนี้เห็นเฉพาะผู้ที่ได้รับสิทธิ์เห็นทุน">เฉพาะผู้มีสิทธิ์เห็นทุน</span>';
+  if(!m.has_cost)return `<div class="dx-card"><div class="dx-ch"><div><div class="t">กำไรขั้นต้นจากการขาย ${lock}</div><div class="s">${m.error?'คำนวณกำไรไม่สำเร็จ: '+esc(m.error):'ยังไม่มีข้อมูลทุนในระบบ — นำเข้าไฟล์ Master SKU ทุน 3 ช่องที่เมนู ต้นทุนและราคาหมู'}</div></div></div></div>`;
+  const T=_dxGp(m.totals,b);
+  const seg=DX_BASIS.map(([k,l,tip])=>`<button type="button" class="${b===k?'on':''}" aria-pressed="${b===k}" title="${esc(tip)}" onclick="dxSet('basis','${k}')">${l}</button>`).join('');
+  const dt=x=>{const [y,mo,dd]=String(x||'').split('-').map(Number);return dd?`${dd} ${DX_MONTHS[mo-1]} ${String((y+543)%100)}`:'';};
+  const watch=(m.watch||[]).map(x=>({...x,..._dxGp(x,b)})).filter(x=>x.pc!=null&&x.pc<0.10).sort((a,c)=>a.gp-c.gp);
+  const neg=watch.filter(x=>x.gp<0);
+  const strip=`<div class="dx-mstrip">
+    <div><div class="k">กำไรขั้นต้น</div><div class="v">${_dxMil(T.gp)}<small>ล้านบาท</small></div><div class="s">จากยอดขายที่คิดทุนได้ ${_dxMil(T.covered)} ล้าน</div></div>
+    <div><div class="k">อัตรากำไรขั้นต้น</div><div class="v">${_dxGpPct(T.pc)}</div><div class="s">คิดจาก${bn}</div></div>
+    <div><div class="k">ต้นทุนขาย</div><div class="v">${_dxMil(T.cogs)}<small>ล้านบาท</small></div><div class="s">ทุนต่อหน่วย × จำนวนขาย</div></div>
+    <div><div class="k">ยอดขายที่คิดทุนได้</div><div class="v">${T.cov==null?'—':(T.cov*100).toFixed(1)+'%'}</div><div class="dx-cov"><i style="width:${(T.cov||0)*100}%"></i></div><div class="s">ของยอดรายสินค้า ${_dxMil(T.lines)} ล้าน</div></div>
+    <div><div class="k">ขายต่ำกว่าทุน</div><div class="v">${neg.length}<small>รายการ</small></div><div class="s">${neg.length?`ส่วนต่างรวม <span style="color:var(--R);font-weight:600">−${_dxB(Math.abs(neg.reduce((a,x)=>a+x.gp,0)))} บาท</span>`:'ไม่มีในช่วงนี้'}</div></div></div>`;
+  // รายเดือน: แท่งอ่อน = ยอดขายที่คิดทุนได้ · แท่งเข้ม = กำไรขั้นต้น · ตัวเลข = อัตรากำไร · เดือนก่อนทุนรอบแรก = ค่าประมาณ (แท่งลาย)
+  const W=Math.max(520,Math.min(window._dxW||900,1100)*0.6),H=230,pl=40,pr=6,pt=22,pb=24,iw=(W-pl-pr)/12,bw=iw*0.56;
+  const mo=DX_MONTHS.map((_,i)=>{const ym=`${r.y}-${String(i+1).padStart(2,'0')}`;return{ym,..._dxGp(m.monthly[ym],b)};});
+  const step=_dxNice(Math.max(...mo.map(x=>x.covered),1)),mx=step*4,y=v=>pt+(H-pt-pb)*(1-Math.max(v,0)/mx);
+  const first=(m.first_date||'').slice(0,7);
+  let g='';
+  for(let i=0;i<=4;i++)g+=`<line class="gl" x1="${pl}" x2="${W-pr}" y1="${y(step*i)}" y2="${y(step*i)}"/><text x="${pl-6}" y="${y(step*i)+4}" text-anchor="end">${_dxAxis(step*i)}</text>`;
+  mo.forEach((x,i)=>{const cx=pl+i*iw+iw/2,x0=cx-bw/2,est=x.ym<first;
+    g+=`<text x="${cx}" y="${H-7}" text-anchor="middle">${DX_MONTHS[i]}</text>`;
+    if(!(x.covered>0))return;
+    g+=`<g data-dxtip="${esc(`<b>${DX_MONTHS[i]} ${r.y+543}${est?' (ค่าประมาณ)':''}</b><div class="r"><span>ยอดขายที่คิดทุนได้</span><b>${_dxB(x.covered)}</b></div><div class="r"><span>ต้นทุนขาย</span><span>${_dxB(x.cogs)}</span></div><div class="r"><span>กำไรขั้นต้น</span><b>${_dxB(x.gp)}</b></div><div class="r"><span>อัตรากำไร</span><b>${_dxGpPct(x.pc)}</b></div>`)}">
+      <rect x="${x0}" y="${y(x.covered)}" width="${bw}" height="${y(0)-y(x.covered)}" fill="#DDE0F0" rx="1"/>
+      <rect x="${x0}" y="${y(x.gp)}" width="${bw}" height="${y(0)-y(x.gp)}" fill="${est?'url(#dx-est)':'#1B2064'}" rx="1"/>
+      <text class="ink" x="${cx}" y="${y(x.covered)-6}" text-anchor="middle" style="font-size:11px;font-weight:600${x.pc<0?';fill:#C3161B':''}">${(x.pc*100).toFixed(1)}%</text></g>`;});
+  const chart=`<svg class="dx-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="ยอดขายและกำไรขั้นต้นรายเดือน"><defs><pattern id="dx-est" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#B9BDE0"/><rect width="2.5" height="5" fill="#1B2064"/></pattern></defs>${g}</svg>`;
+  // ช่องทาง: เรียงจากอัตรากำไรสูงสุด · ขีดตั้ง = อัตรากำไรรวม
+  const chs=d.channels.map(c=>({n:c.label,..._dxGp(m.channels[c.key],b)})).filter(x=>x.lines>0).sort((a,c)=>(c.pc??-9)-(a.pc??-9));
+  const cmx=Math.max(0.3,...chs.map(x=>x.pc||0),T.pc||0)*1.1;
+  const chHtml=chs.map(x=>`<div class="dx-mch"><div class="nm"><b>${esc(x.n)}</b><span>กำไร ${_dxMil(x.gp)} ล.${x.cov!=null&&x.cov<0.9?` · <span class="dx-warn" title="คิดทุนได้ ${Math.round(x.cov*100)}% ของยอดรายสินค้าในช่องทางนี้">คิดได้ ${Math.round(x.cov*100)}%</span>`:''}</span></div><div class="pv">${_dxGpPct(x.pc)}</div>
+    <div class="tr">${x.pc>0?`<i style="width:${Math.min(1,x.pc/cmx)*100}%"></i>`:''}${T.pc>0?`<u style="left:${Math.min(1,T.pc/cmx)*100}%" title="รวมทั้งหมด ${_dxGpPct(T.pc)}"></u>`:''}</div></div>`).join('')||'<div class="dx-empty">ไม่มีรายการขายรายสินค้าในช่วงนี้</div>';
+  // ตาราง: ลูกค้า (Top 20 เดียวกับตารางด้านล่าง) / สินค้า (Top 20 ตามยอดขาย) / ควรตรวจราคา
+  const tab=['cust','prod','watch'].includes(s.mtab)?s.mtab:'cust';
+  const tabs=[['cust','ลูกค้า Top 20'],['prod','สินค้า Top 20'],['watch',`ควรตรวจราคา${watch.length?` (${watch.length})`:''}`]].map(([k,l])=>`<button type="button" class="${tab===k?'on':''}" aria-pressed="${tab===k}" onclick="dxSet('mtab','${k}')">${l}</button>`).join('');
+  const prodRow=(x,i)=>{const unitCost=x.qc>0?x.cogs/x.qc:null,avg=x.qc>0?x.covered/x.qc:null;
+    return `<tr><td><span class="dx-rk">${i+1}</span></td><td><div class="dx-cust"><b title="${esc(x.sku+' '+x.name)}">${esc(x.name)}</b><span><span class="mono">${esc(x.sku)}</span>${x.unit?' · ต่อ'+esc(x.unit):''}</span></div></td>
+      <td class="dx-n">${_dxB(x.lines)}</td><td class="dx-n mut">${avg==null?'—':avg.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td class="dx-n mut">${unitCost==null?'—':unitCost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td class="dx-n"${x.gp<0?' style="color:var(--R);font-weight:600"':''}>${x.pc==null?'—':(x.gp<0?'−':'')+_dxB(Math.abs(x.gp))}</td><td class="dx-n">${_dxGpCell(x.pc)}</td><td>${_dxCostTag(x)}${x.cov!=null&&x.cov<0.99&&x.pc!=null?` <span class="dx-warn" title="บางหน่วยขายเทียบกับหน่วยของทุนไม่ได้">คิดได้ ${Math.round(x.cov*100)}%</span>`:''}</td></tr>`;};
+  const prodHead='<tr><th style="width:36px"></th><th>สินค้า</th><th class="dx-n">ยอดขาย (บาท)</th><th class="dx-n">ราคาขายเฉลี่ย</th><th class="dx-n">ทุน/หน่วย</th><th class="dx-n">กำไร (บาท)</th><th class="dx-n">อัตรากำไร</th><th>หมายเหตุ</th></tr>';
+  let table;
+  if(tab==='cust'){
+    const rows=(d.top.all||[]).map(x=>({name:x.name,..._dxGp(m.groups[x.name],b)}));
+    table=rows.length?`<table class="dx-t"><thead><tr><th style="width:36px"></th><th>ลูกค้า</th><th class="dx-n">ยอดรายสินค้า (บาท)</th><th class="dx-n">ต้นทุนขาย</th><th class="dx-n">กำไร (บาท)</th><th class="dx-n">อัตรากำไร</th><th class="dx-n" title="สัดส่วนยอดรายสินค้าที่มีทุนให้คิด">คิดทุนได้</th></tr></thead><tbody>${rows.map((x,i)=>`<tr><td><span class="dx-rk">${i+1}</span></td><td><b>${esc(x.name)}</b></td><td class="dx-n">${x.lines?_dxB(x.lines):'<span class="mut" title="ลูกค้านี้ไม่มีรายการขายรายสินค้า (เช่น ยอดห้อง/DC)">ไม่มีรายสินค้า</span>'}</td><td class="dx-n mut">${x.pc==null?'—':_dxB(x.cogs)}</td><td class="dx-n"${x.gp<0?' style="color:var(--R);font-weight:600"':''}>${x.pc==null?'—':(x.gp<0?'−':'')+_dxB(Math.abs(x.gp))}</td><td class="dx-n">${_dxGpCell(x.pc)}</td><td class="dx-n${x.cov!=null&&x.cov<0.8?'" style="color:#9A5200':''}">${x.cov==null?'—':Math.round(x.cov*100)+'%'}</td></tr>`).join('')}</tbody></table>`:'';
+  }else if(tab==='prod'){
+    const rows=(d.top_products?.by_amount||[]).map(x=>m.products[x.sku]?{...m.products[x.sku],..._dxGp(m.products[x.sku],b)}:{sku:x.sku,name:x.name,lines:x.amount,pc:null,gp:0,qc:0});
+    table=rows.length?`<table class="dx-t"><thead>${prodHead}</thead><tbody>${rows.map(prodRow).join('')}</tbody></table>`:'';
+  }else{
+    table=watch.length?`<table class="dx-t"><thead>${prodHead}</thead><tbody>${watch.map(prodRow).join('')}</tbody></table>`:'';
+  }
+  const G=m.gaps,gapRow=(mk,l,c,a,how)=>a>0.5||c?`<tr><td><span class="dx-mk ${mk}"><i></i>${l}</span></td><td class="dx-n">${c==null?'—':c}</td><td class="dx-n">${_dxB(a)}</td><td class="mut" style="white-space:normal">${how}</td></tr>`:'';
+  const noCostTop=(G.no_cost.top||[]).slice(0,8).map(x=>`<span class="mono">${esc(x.sku)}</span> ${_dxMil(x.amount)} ล.`).join(' · ');
+  const gapsHtml=gapRow('none','บิลสรุปไม่มีรหัสสินค้า',null,G.lump,'ใบสรุป Makro/EA ของโรงงาน (รหัส 0000) คิดกำไรไม่ได้')
+    +gapRow('none','มียอดขายแต่ไม่มีทุน',G.no_cost.count,G.no_cost.amount,`ขอทุนจากฝ่ายต้นทุนแล้วนำเข้าเพิ่ม${noCostTop?' · มากสุด: '+noCostTop:''}`)
+    +gapRow('low','หน่วยขายเทียบกับหน่วยทุนไม่ได้',G.unit.count,G.unit.amount,'ทุนเป็นหน่วยหนึ่งแต่ขายอีกหน่วย และไม่รู้น้ำหนักให้แปลง')
+    +gapRow('cv','ใช้ทุนจากการแปลงรหัส',G.converted.count,G.converted.amount,'ไม่มีทุนในไฟล์ ใช้ทุนสินค้าต้นทางตามเอกสารแปลง นับรวมในกำไรแล้ว')
+    +gapRow('sus','ทุนต่ำผิดปกติ รอยืนยัน',G.suspect.count,G.suspect.amount,'นับรวมในกำไรแล้ว กำไรส่วนนี้อาจสูงเกินจริง');
+  return `<div class="dx-card dx-margin">
+    <div class="dx-ch"><div><div class="t">กำไรขั้นต้นจากการขาย ${lock}</div><div class="s">${_dxLabel(r)} · ทุนรอบล่าสุดมีผล ${dt(m.last_date)}${m.rm_label?` (RM ${esc(m.rm_label)})`:''} · ${s.consi?'ขายจริง + ฝากขาย':'ขายจริง (Net)'}</div></div>
+      <div class="r"><span style="font-size:12.5px;color:var(--dx-mut)">คิดจากทุน</span><div class="dx-seg" role="group" aria-label="ฐานทุน">${seg}</div></div></div>
+    ${strip}
+    <div class="dx-mgrid"><div><div class="dx-mt">ยอดขายและกำไรขั้นต้นรายเดือน ${r.y+543}</div>
+        <div class="dx-lg"><span><i style="background:#DDE0F0"></i>ยอดขายที่คิดทุนได้</span><span><i style="background:#1B2064"></i>กำไรขั้นต้น</span>${first>`${r.y}-01`?'<span><i style="background:repeating-linear-gradient(45deg,#1B2064 0 2px,#B9BDE0 2px 4px)"></i>ค่าประมาณ (ก่อนทุนรอบแรก)</span>':''}</div>${chart}</div>
+      <div><div class="dx-mt">อัตรากำไรตามหมวดลูกค้า <span>ขีดตั้ง = รวมทั้งหมด ${_dxGpPct(T.pc)}</span></div>${chHtml}</div></div>
+    <div class="dx-ch" style="margin-top:14px"><div class="dx-mt" style="margin:0">รายละเอียดกำไร</div><div class="r"><div class="dx-seg" role="group" aria-label="มุมมองกำไร">${tabs}</div></div></div>
+    ${table?`<div class="dx-tw">${table}</div>`:`<div class="dx-empty">${tab==='watch'?'ไม่มีสินค้าที่อัตรากำไรต่ำกว่า 10% ในช่วงนี้':'ไม่มีข้อมูลในช่วงนี้'}</div>`}
+    ${gapsHtml?`<details class="dx-det"${T.cov!=null&&T.cov<0.85?' open':''}><summary>ความครบถ้วนของข้อมูลทุน</summary><div class="dx-tw" style="margin-top:6px"><table class="dx-t"><thead><tr><th>ประเภท</th><th class="dx-n">รายการ</th><th class="dx-n">ยอดขาย (บาท)</th><th>หมายเหตุ</th></tr></thead><tbody>${gapsHtml}</tbody></table></div></details>`:''}
+    <div class="dx-foot">กำไรคิดจากรายการขายรายสินค้าที่มีทุนและเทียบหน่วยได้ ยอดห้อง/DC ของห้างและบิลสรุปที่ไม่มีรหัสสินค้าไม่อยู่ในกำไรนี้ จึงไม่เท่ากับยอดขายสุทธิด้านบน${m.first_date&&`${r.y}-01-01`<m.first_date?` · ยอดขายก่อน ${dt(m.first_date)} คิดด้วยทุนรอบแรกย้อนหลัง เป็นค่าประมาณ (${_dxMil(G.est_covered)} ล้านในช่วงนี้)`:''}</div>
+  </div>`;
+}
+// ── กำไรแบบเจาะลึก (2026-11-16): /api/dashboard/margin — ใช้ทั้งแผงกำไรใน Sales Overview และหน้า "วิเคราะห์กำไร" ──────────
+// สิทธิ์: Super Admin หรือผู้ใช้ที่ถูกติ๊ก can_see_cost (server ตอบ 403 ให้คนอื่น — ตรงนี้แค่ซ่อนเมนู/แผง)
+const canSeeCost=()=>ROLE==='superadmin'||Number(CURRENT_USER?.can_see_cost)===1;
+const _MG_SCOPE='class="dx-scope"';
+async function _mgLoad(q){
+  window._mgCache=window._mgCache||{};
+  const hit=window._mgCache[q];
+  if(hit&&Date.now()-hit.at<5*60*1000)return hit.res;
+  const res=await apiFetch('/api/dashboard/margin?'+q);
+  if(!res.error)window._mgCache[q]={at:Date.now(),res};
+  return res;
+}
+const _mgBasis=()=>{const b=_dxState().basis;return ['total','depr','base'].includes(b)?b:'total';};
+const _mgBasisSeg=fn=>DX_BASIS.map(([k,l,tip])=>`<button type="button" class="${_mgBasis()===k?'on':''}" aria-pressed="${_mgBasis()===k}" title="${esc(tip)}" onclick="_dxState().basis='${k}';${fn}">${l}</button>`).join('');
+const _mgMoney=(g,pc)=>pc==null?'—':`<span${g<0?' style="color:var(--R);font-weight:600"':''}>${g<0?'−':''}${_dxB(Math.abs(g))}</span>`;
+const _mg2=v=>v==null?'—':v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const _mgDate=x=>{const [y,mo,dd]=String(x||'').split('-').map(Number);return dd?`${dd} ${DX_MONTHS[mo-1]} ${String((y+543)%100)}`:mo?`${DX_MONTHS[mo-1]} ${String((y+543)%100)}`:'';};
+
+// แผงกำไรใน Sales Overview — ช่วงเวลา/บริษัท/Sales ตามที่เลือกในหน้า · ตารางตามแท็บที่เปิดอยู่ (ลูกค้า / สินค้า / เซลส์)
+// โหมดสัปดาห์: ยอดขายของหน้านี้เป็นค่าประมาณจากทั้งเดือน แต่กำไรใช้วันที่จริงของสัปดาห์ (สัปดาห์ 4 = วันที่ 22 ถึงสิ้นเดือน)
+function _sdMarginRange(){
+  const p2=n=>String(n).padStart(2,'0'),iso=/^\d{4}-\d{2}-\d{2}$/;
+  if(_sd.pt==='custom'){
+    if(!iso.test(_sd.dateFrom||'')||!iso.test(_sd.dateTo||''))return null;
+    if(_sd.dateFrom.slice(0,4)!==_sd.dateTo.slice(0,4))return {err:'กำไรคิดได้ทีละปี — เลือกช่วงวันที่ในปีเดียวกัน'};
+    return {from:_sd.dateFrom,to:_sd.dateTo};
+  }
+  if(_sd.pt==='year'){const y=_sdApiYear();return {from:`${y}-01`,to:`${y}-12`};}
+  const ym=_sdApiMonth();
+  if(_sd.pt==='week'){
+    const [y,m]=ym.split('-').map(Number),last=new Date(y,m,0).getDate();
+    return {from:`${ym}-${p2((_sd.cw-1)*7+1)}`,to:`${ym}-${p2(_sd.cw>=4?last:_sd.cw*7)}`};
+  }
+  return {from:ym,to:ym};
+}
+function sdMarginPanel(){
+  if(!canSeeCost())return;
+  const kr=document.getElementById('sd-krow');if(!kr)return;
+  let box=document.getElementById('sd-margin');
+  if(!box){box=document.createElement('div');box.id='sd-margin';box.className='dx-scope';kr.insertAdjacentElement('afterend',box);}
+  _dxEnsureCss();
+  const rg=_sdMarginRange();
+  const card=inner=>`<div class="dx-card dx-margin">${inner}</div>`;
+  const title=sub=>`<div class="dx-ch"><div><div class="t">กำไรขั้นต้น <span class="dx-lock" title="ส่วนนี้เห็นเฉพาะผู้ที่ได้รับสิทธิ์เห็นทุน">เฉพาะผู้มีสิทธิ์เห็นทุน</span></div><div class="s">${sub}</div></div><div class="r"><span style="font-size:12.5px;color:var(--dx-mut)">คิดจากทุน</span><div class="dx-seg" role="group" aria-label="ฐานทุน">${_mgBasisSeg('sdMarginPanel()')}</div><button class="dx-btn" type="button" onclick="nav('margin')">วิเคราะห์กำไร →</button></div></div>`;
+  if(!rg){box.innerHTML='';return;}
+  if(rg.err){box.innerHTML=card(title(esc(rg.err)));return;}
+  const qs=new URLSearchParams({from:rg.from,to:rg.to,co:_sdCo()});
+  const k=_sdEffSlm();if(k)qs.set('slm',[...slmKeySet(k)].join(','));
+  const q=qs.toString();
+  box.dataset.q=q;
+  const hit=(window._mgCache||{})[q];
+  if(!hit){
+    box.innerHTML=card(title(`${_mgDate(rg.from)}${rg.to!==rg.from?' – '+_mgDate(rg.to):''} · กำลังคำนวณ…`));
+    _mgLoad(q).then(res=>{const b=document.getElementById('sd-margin');if(!b||b.dataset.q!==q)return;if(res.error){b.innerHTML=card(title('โหลดกำไรไม่สำเร็จ: '+esc(res.error.message)));return;}sdMarginPanel();});
+    return;
+  }
+  const m=hit.res.data,b=_mgBasis();
+  if(!m.has_cost){box.innerHTML=card(title('ยังไม่มีข้อมูลทุนในระบบ — นำเข้าไฟล์ Master SKU ทุน 3 ช่องที่เมนู ทุน & ราคาหมู'));return;}
+  const T=_dxGp(m.totals,b),tab=_sd.at==='cust'?'cust':_sd.at==='prod'?'prod':'slm',N=15;
+  const strip=`<div class="dx-mstrip" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+    <div><div class="k">กำไรขั้นต้น</div><div class="v">${_dxB(T.gp)}<small>บาท</small></div><div class="s">จากยอดขายที่คิดทุนได้ ${_dxB(T.covered)}</div></div>
+    <div><div class="k">อัตรากำไรขั้นต้น</div><div class="v">${_dxGpPct(T.pc)}</div><div class="s">คิดจาก${DX_BASIS.find(x=>x[0]===b)[1]}</div></div>
+    <div><div class="k">ยอดขายที่คิดทุนได้</div><div class="v">${T.cov==null?'—':(T.cov*100).toFixed(1)+'%'}</div><div class="dx-cov"><i style="width:${(T.cov||0)*100}%"></i></div><div class="s">ของยอดรายสินค้า ${_dxB(T.lines)}</div></div>
+    <div><div class="k">ขายต่ำกว่าทุน</div><div class="v">${(m.below_cost||[]).filter(x=>x.covered-x.cogs[b]<0).length}<small>คู่ลูกค้า×สินค้า</small></div><div class="s">ดูรายการในหน้าวิเคราะห์กำไร</div></div></div>`;
+  let head,rows;
+  if(tab==='prod'){
+    head='<tr><th>สินค้า</th><th class="dx-n">ยอดขาย (บาท)</th><th class="dx-n">ราคาขายเฉลี่ย</th><th class="dx-n">ทุน/หน่วย</th><th class="dx-n">กำไร (บาท)</th><th class="dx-n">อัตรากำไร</th><th>หมายเหตุ</th></tr>';
+    rows=(m.by_sku||[]).slice(0,N).map(x=>{const g=_dxGp(x,b);return `<tr><td><div class="dx-cust"><b title="${esc(x.sku+' '+x.name)}">${esc(x.name)}</b><span><span class="mono">${esc(x.sku)}</span>${x.unit?' · ต่อ'+esc(x.unit):''}</span></div></td><td class="dx-n">${_dxB(x.lines)}</td><td class="dx-n mut">${x.qc>0?_mg2(g.covered/x.qc):'—'}</td><td class="dx-n mut">${x.qc>0?_mg2(g.cogs/x.qc):'—'}</td><td class="dx-n">${_mgMoney(g.gp,g.pc)}</td><td class="dx-n">${_dxGpCell(g.pc)}</td><td>${_dxCostTag(x)}</td></tr>`;});
+  }else{
+    const src=tab==='cust'?(m.by_customer||[]):(m.by_slm||[]);
+    head=`<tr><th>${tab==='cust'?'ลูกค้า':'เซลส์'}</th><th class="dx-n">ยอดรายสินค้า (บาท)</th><th class="dx-n">ต้นทุนขาย</th><th class="dx-n">กำไร (บาท)</th><th class="dx-n">อัตรากำไร</th><th class="dx-n">คิดทุนได้</th></tr>`;
+    rows=src.slice(0,N).map(x=>{const g=_dxGp(x,b);return `<tr><td><div class="dx-cust"><b>${esc(x.name||x.code||'(ไม่ระบุ)')}</b><span class="mono">${esc(x.code||'')}</span></div></td><td class="dx-n">${_dxB(x.lines)}</td><td class="dx-n mut">${g.pc==null?'—':_dxB(g.cogs)}</td><td class="dx-n">${_mgMoney(g.gp,g.pc)}</td><td class="dx-n">${_dxGpCell(g.pc)}</td><td class="dx-n">${g.cov==null?'—':Math.round(g.cov*100)+'%'}</td></tr>`;});
+  }
+  const total=tab==='prod'?(m.by_sku||[]).length:tab==='cust'?(m.by_customer||[]).length:(m.by_slm||[]).length;
+  box.innerHTML=card(title(`${_mgDate(rg.from)}${rg.to!==rg.from?' – '+_mgDate(rg.to):''} · ${_sdCoLabel()} · เฉพาะลูกค้าและเซลส์ที่คุณดูยอดขายได้`)+strip
+    +(rows.length?`<div class="dx-tw"><table class="dx-t"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table></div>`:'<div class="dx-empty">ไม่มีรายการขายรายสินค้าในช่วงนี้</div>')
+    +`<div class="dx-foot">${total>N?`แสดง ${N} อันดับแรกตามยอดขายจาก ${total.toLocaleString()} รายการ · `:''}ตารางเปลี่ยนตามแท็บด้านล่าง (ลูกค้า / สินค้า / เซลส์) · กำไรคิดจากรายการขายรายสินค้าที่มีทุน จึงอาจไม่เท่ายอดขายรวมด้านบน${_sd.pt==='week'?' · โหมดสัปดาห์ใช้วันที่จริงของสัปดาห์':''}</div>`);
+}
+
+// หน้า "วิเคราะห์กำไร" — เปิดได้เฉพาะผู้มีสิทธิ์เห็นทุน
+function _mgState(){
+  if(!window._mg){const n=new Date(),iso=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+    window._mg={mode:'ytd',co:'all',by:'group',open:{},q:'',dFrom:iso(new Date(n.getFullYear(),n.getMonth(),1)),dTo:iso(n)};}
+  return window._mg;
+}
+function _mgRange(){
+  const s=_mgState(),n=new Date(),y=n.getFullYear(),p2=x=>String(x).padStart(2,'0'),m=n.getMonth()+1;
+  if(s.mode==='month')return {from:`${y}-${p2(m)}`,to:`${y}-${p2(m)}`};
+  if(s.mode==='prev'){const d=new Date(y,m-2,1);return {from:`${d.getFullYear()}-${p2(d.getMonth()+1)}`,to:`${d.getFullYear()}-${p2(d.getMonth()+1)}`};}
+  if(s.mode==='range')return {from:s.dFrom,to:s.dTo};
+  return {from:`${y}-01`,to:`${y}-${p2(m)}`};
+}
+function mgSet(k,v){
+  const s=_mgState();
+  if(k==='open'){s.open[v]=!s.open[v];}
+  else if(k==='dFrom'||k==='dTo'){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||'')))return;
+    s[k]=v;
+    if(s.dFrom.slice(0,4)!==s.dTo.slice(0,4)){if(k==='dFrom')s.dTo=`${s.dFrom.slice(0,4)}-12-31`;else s.dFrom=`${s.dTo.slice(0,4)}-01-01`;toast('ช่วงวันที่ต้องอยู่ในปีเดียวกัน — ปรับให้แล้ว');}
+    if(s.dFrom>s.dTo){const x=s.dFrom;s.dFrom=s.dTo;s.dTo=x;}
+  }else{s[k]=v;if(k==='by')s.open={};}
+  pgMargin();
+}
+async function pgMargin(){
+  const ct=document.getElementById('ct');if(!ct)return;
+  if(!canSeeCost()){ct.innerHTML='<div class="al alw">หน้านี้เปิดได้เฉพาะผู้ที่ได้รับสิทธิ์เห็นทุนและกำไร (ให้ Super Admin ติ๊กสิทธิ์ในหน้าจัดการผู้ใช้)</div>';return;}
+  _dxEnsureCss();
+  const s=_mgState(),rg=_mgRange(),b=_mgBasis(),bn=DX_BASIS.find(x=>x[0]===b)[1];
+  const seg=(key,opts,cur)=>opts.map(([k,l])=>`<button type="button" class="${cur===k?'on':''}" aria-pressed="${cur===k}" onclick="mgSet('${key}','${k}')">${l}</button>`).join('');
+  const today=new Date().toISOString().slice(0,10);
+  const head=`<div class="dx-head"><div><div class="dx-title">วิเคราะห์กำไรขั้นต้น <span class="dx-lock">เฉพาะผู้มีสิทธิ์เห็นทุน</span></div>
+      <div class="dx-sub"><b>${_mgDate(rg.from)}${rg.to!==rg.from?' – '+_mgDate(rg.to):''}</b> · รายการขายรายสินค้าก่อน VAT · เฉพาะลูกค้าและเซลส์ที่คุณดูยอดขายได้</div></div>
+    <div class="dx-ctl"><div class="dx-seg" role="group" aria-label="บริษัท">${seg('co',[['all','ทุกบริษัท'],['tss','TSS'],['tgm','TGM']],s.co)}</div>
+      <div class="dx-seg" role="group" aria-label="ช่วงเวลา">${seg('mode',[['ytd','YTD'],['month','เดือนนี้'],['prev','เดือนก่อน'],['range','ช่วงวันที่']],s.mode)}</div>
+      ${s.mode==='range'?`<span class="dx-range"><input type="date" aria-label="ตั้งแต่วันที่" value="${s.dFrom}" max="${today}" onchange="mgSet('dFrom',this.value)"><span>–</span><input type="date" aria-label="ถึงวันที่" value="${s.dTo}" max="${today}" onchange="mgSet('dTo',this.value)"></span>`:''}
+      <span style="font-size:12.5px;color:var(--dx-mut)">คิดจากทุน</span><div class="dx-seg" role="group" aria-label="ฐานทุน">${_mgBasisSeg('pgMargin()')}</div></div></div>`;
+  const q=new URLSearchParams({from:rg.from,to:rg.to,co:s.co}).toString();
+  const wrap=inner=>`<div ${_MG_SCOPE}>${head}${inner}</div>`;
+  let hit=(window._mgCache||{})[q];
+  if(!hit){
+    ct.innerHTML=wrap('<div class="dx-card dx-empty">กำลังคำนวณกำไร…</div>');
+    const res=await _mgLoad(q);
+    if(!_isActivePage('margin'))return;
+    if(res.error){ct.innerHTML=wrap(`<div class="al ald">โหลดกำไรไม่สำเร็จ: ${esc(res.error.message)}</div>`);return;}
+    if(new URLSearchParams({from:_mgRange().from,to:_mgRange().to,co:_mgState().co}).toString()!==q)return pgMargin();
+    hit=window._mgCache[q];
+  }
+  const m=hit.res.data;
+  if(!m.has_cost){ct.innerHTML=wrap('<div class="dx-card dx-empty">ยังไม่มีข้อมูลทุนในระบบ — นำเข้าไฟล์ Master SKU ทุน 3 ช่องที่เมนู ทุน & ราคาหมู</div>');return;}
+  const T=_dxGp(m.totals,b);
+  const groups=(m.by_group||[]).map(x=>({...x,..._dxGp(x,b)}));
+  const gOk=groups.filter(x=>x.pc!=null&&x.covered>T.covered*0.01),best=[...gOk].sort((a,c)=>c.pc-a.pc)[0],worst=[...gOk].sort((a,c)=>a.pc-c.pc)[0];
+  const skus=(m.by_sku||[]).map(x=>({...x,..._dxGp(x,b)}));
+  const low=skus.filter(x=>x.pc!=null&&x.pc<0.10);
+  const strip=`<div class="dx-mstrip" style="background:#fff">
+    <div><div class="k">กำไรขั้นต้น</div><div class="v">${_dxMil(T.gp)}<small>ล้านบาท</small></div><div class="s">จากยอดขายที่คิดทุนได้ ${_dxMil(T.covered)} ล้าน (${T.cov==null?'—':(T.cov*100).toFixed(0)+'%'} ของยอดรายสินค้า)</div></div>
+    <div><div class="k">อัตรากำไรขั้นต้น</div><div class="v">${_dxGpPct(T.pc)}</div><div class="s">คิดจาก${bn}</div></div>
+    <div><div class="k">กลุ่มกำไรดีสุด</div><div class="v">${best?_dxGpPct(best.pc):'—'}</div><div class="s">${best?esc(best.name):''}</div></div>
+    <div><div class="k">กลุ่มกำไรบางสุด</div><div class="v">${worst?_dxGpPct(worst.pc):'—'}</div><div class="s">${worst?esc(worst.name):''}</div></div>
+    <div><div class="k">สินค้ากำไรต่ำกว่า 10%</div><div class="v">${low.length}<small>รายการ</small></div><div class="s">ยอดขาย ${_dxMil(low.reduce((a,x)=>a+x.covered,0))} ล้าน</div></div></div>`;
+  // ส่วนแบ่งยอดขายเทียบส่วนแบ่งกำไร ตามกลุ่มผลิตภัณฑ์ (10 กลุ่มใหญ่สุด)
+  const gs=groups.filter(x=>x.covered>0).sort((a,c)=>c.covered-a.covered).slice(0,10);
+  const mxs=Math.max(...gs.map(x=>Math.max(x.covered/(T.covered||1),T.gp>0?x.gp/T.gp:0)),0.0001);
+  const share=gs.map(x=>{const a=x.covered/(T.covered||1),p=T.gp>0?x.gp/T.gp:0,d=(p-a)*100;
+    return `<div class="dx-msh"><div class="nm"><b>${esc(x.name)}</b><span>ขาย ${(a*100).toFixed(0)}% · กำไร ${(p*100).toFixed(0)}% <b style="color:${d>=0?'var(--G)':'var(--R)'}">${d>=0?'▲':'▼'}${Math.abs(d).toFixed(1)}</b></span></div><div class="t2"><i style="width:${Math.max(0,a/mxs)*100}%"></i></div><div class="t2 p"><i style="width:${Math.max(0,p/mxs)*100}%"></i></div></div>`;}).join('')||'<div class="dx-empty">ไม่มีข้อมูล</div>';
+  // ตารางเจาะลึก
+  const by=['group','cust','slm','sku'].includes(s.by)?s.by:'group';
+  const skuRow=(x,sub)=>`<tr${sub?' class="dx-sub"':''}><td></td><td><div class="dx-cust"${sub?' style="padding-left:16px"':''}><b title="${esc(x.sku+' '+x.name)}">${esc(x.name)}</b><span><span class="mono">${esc(x.sku)}</span>${x.unit?` · ต่อ${esc(x.unit)}`:''}${x.qc>0?` · ขายเฉลี่ย ${_mg2(x.covered/x.qc)} · ทุน ${_mg2(x.cogs/x.qc)}`:''}</span></div></td>
+    <td class="dx-n">${_dxB(x.lines)}</td><td class="dx-n mut">${x.pc==null?'—':_dxB(x.cogs)}</td><td class="dx-n">${_mgMoney(x.gp,x.pc)}</td><td class="dx-n">${_dxGpCell(x.pc)}</td><td class="dx-n">${x.pc==null||!(T.gp>0)?'—':(x.gp/T.gp*100).toFixed(1)+'%'}</td><td>${_dxCostTag(x)}</td></tr>`;
+  const ql=(s.q||'').trim().toLowerCase(),match=x=>!ql||[x.name,x.code,x.sku].some(v=>String(v||'').toLowerCase().includes(ql));
+  let body;
+  if(by==='sku')body=skus.filter(match).slice(0,200).map(x=>skuRow(x,false)).join('');
+  else{
+    const src=(by==='group'?groups:(by==='cust'?m.by_customer:m.by_slm).map(x=>({...x,..._dxGp(x,b)}))).filter(match).slice(0,200);
+    body=src.map(x=>{const key=x.name,op=by==='group'&&s.open[key],kids=op?skus.filter(k=>k.group===key).slice(0,40):[];
+      return `<tr${by==='group'?` class="dx-grp" onclick="mgSet('open','${esc(String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'"))}')" title="กดเพื่อดูสินค้าในกลุ่ม"`:''}><td style="width:28px;color:var(--N)">${by==='group'?(op?'▾':'▸'):''}</td><td><b>${esc(x.name||x.code||'(ไม่ระบุ)')}</b>${by!=='group'&&x.code?` <span class="mono mut">${esc(x.code)}</span>`:''}</td>
+        <td class="dx-n">${_dxB(x.lines)}</td><td class="dx-n mut">${x.pc==null?'—':_dxB(x.cogs)}</td><td class="dx-n">${_mgMoney(x.gp,x.pc)}</td><td class="dx-n">${_dxGpCell(x.pc)}</td><td class="dx-n">${x.pc==null||!(T.gp>0)?'—':(x.gp/T.gp*100).toFixed(1)+'%'}</td><td class="mut">${x.cov!=null&&x.cov<0.9?`คิดทุนได้ ${Math.round(x.cov*100)}%`:''}</td></tr>`
+        +kids.map(k=>skuRow(k,true)).join('');}).join('');
+  }
+  const drill=`<div class="dx-card"><div class="dx-ch"><div><div class="t">กำไรตาม${{group:'กลุ่มผลิตภัณฑ์',cust:'ลูกค้า',slm:'เซลส์',sku:'สินค้า'}[by]}</div><div class="s">เรียงตามยอดขาย${by==='group'?' · กดที่กลุ่มเพื่อดูสินค้าในกลุ่ม':''} · ส่วนแบ่งกำไรเทียบกำไรรวมของช่วงนี้</div></div>
+      <div class="r"><input type="text" placeholder="ค้นหา" value="${esc(s.q||'')}" onchange="mgSet('q',this.value)" style="height:32px;width:160px;padding:0 10px;border:1px solid var(--dx-line);border-radius:8px;font:inherit;font-size:12.5px"><div class="dx-seg" role="group" aria-label="มุมมอง">${seg('by',[['group','กลุ่มผลิตภัณฑ์'],['cust','ลูกค้า'],['slm','เซลส์'],['sku','สินค้า']],by)}</div><button class="dx-btn" type="button" onclick="mgExport()">⬇ Excel</button></div></div>
+    ${body?`<div class="dx-tw"><table class="dx-t"><thead><tr><th></th><th>${{group:'กลุ่มผลิตภัณฑ์ / สินค้า',cust:'ลูกค้า',slm:'เซลส์',sku:'สินค้า'}[by]}</th><th class="dx-n">ยอดรายสินค้า (บาท)</th><th class="dx-n">ต้นทุนขาย</th><th class="dx-n">กำไร (บาท)</th><th class="dx-n">อัตรากำไร</th><th class="dx-n">ส่วนแบ่งกำไร</th><th>หมายเหตุ</th></tr></thead><tbody>${body}</tbody></table></div>`:'<div class="dx-empty">ไม่มีข้อมูล</div>'}</div>`;
+  // ทุนเปลี่ยนระหว่างสองรอบล่าสุด (คูณสัดส่วนของฐานทุนที่เลือกไม่ได้ — แสดงเป็นทุนรวมเสมอ)
+  const chg=(m.cost_changes||[]).map(x=>{const d=x.cur/x.prev-1,g0=x.avg_price?(x.avg_price-x.prev)/x.avg_price:null,g1=x.avg_price?(x.avg_price-x.cur)/x.avg_price:null;
+    return `<tr><td><div class="dx-cust"><b>${esc(x.name)}</b><span class="mono">${esc(x.sku)}</span></div></td><td class="dx-n mut">${_mg2(x.prev)}</td><td class="dx-n">${_mg2(x.cur)} <span style="font-size:11px;color:${d>0?'var(--R)':'var(--G)'}">${d>0?'▲':'▼'}${Math.abs(d*100).toFixed(1)}%</span></td><td class="dx-n">${_mg2(x.avg_price)}</td><td class="dx-n"><span class="mut">${_dxGpPct(g0)} →</span> <b style="color:${g1!=null&&g1<0?'var(--R)':g1!=null&&g1<0.10?'#9A5200':'var(--N)'}">${_dxGpPct(g1)}</b></td></tr>`;}).join('');
+  const chgCard=`<div class="dx-card"><div class="dx-ch"><div><div class="t">ทุนเปลี่ยน เทียบราคาขายที่ใช้อยู่</div><div class="s">${m.rounds>=2?`ทุนรวมรอบล่าสุดเทียบรอบก่อน · ราคาขายเฉลี่ยของช่วงที่เลือก · เรียงตามผลกระทบ`:'ใช้ได้เมื่อนำเข้าทุนตั้งแต่ 2 รอบขึ้นไป'}</div></div></div>
+    ${chg?`<div class="dx-tw"><table class="dx-t"><thead><tr><th>สินค้า</th><th class="dx-n">ทุนรอบก่อน</th><th class="dx-n">ทุนรอบล่าสุด</th><th class="dx-n">ราคาขายเฉลี่ย</th><th class="dx-n">อัตรากำไร ก่อน → หลัง</th></tr></thead><tbody>${chg}</tbody></table></div>`:`<div class="dx-empty">${m.rounds>=2?'ไม่มีสินค้าที่ทุนเปลี่ยนและมียอดขายในช่วงนี้':`ตอนนี้มีทุน ${m.rounds} รอบ (มีผล ${_mgDate(m.last_date)})`}</div>`}</div>`;
+  const neg=(m.below_cost||[]).map(x=>({...x,g:x.covered-x.cogs[b],c:x.cogs[b]})).filter(x=>x.g<0).sort((a,c)=>a.g-c.g);
+  const negCard=`<div class="dx-card"><div class="dx-ch"><div><div class="t">ขายต่ำกว่าทุน</div><div class="s">ระดับลูกค้า × สินค้า ของช่วงที่เลือก · เรียงจากส่วนต่างมากสุด${neg.length?` · ${neg.length} รายการ`:''}</div></div></div>
+    ${neg.length?`<div class="dx-tw" style="max-height:420px;overflow:auto"><table class="dx-t"><thead><tr><th>ลูกค้า / เซลส์</th><th>สินค้า</th><th class="dx-n">ราคาขายเฉลี่ย</th><th class="dx-n">ทุน/หน่วย</th><th class="dx-n">ส่วนต่าง (บาท)</th></tr></thead><tbody>${neg.map(x=>`<tr><td><div class="dx-cust"><b>${esc(x.cust_name)}</b><span><span class="mono">${esc(x.cust)}</span>${x.slm?` · เซลส์ <span class="mono">${esc(x.slm)}</span>`:''}</span></div></td><td><div class="dx-cust"><b>${esc(x.name)}</b><span class="mono">${esc(x.sku)}</span></div></td><td class="dx-n">${x.qc>0?_mg2(x.covered/x.qc):'—'}</td><td class="dx-n mut">${x.qc>0?_mg2(x.c/x.qc):'—'}</td><td class="dx-n" style="color:var(--R);font-weight:600">−${_dxB(Math.abs(x.g))}</td></tr>`).join('')}</tbody></table></div>`:'<div class="dx-empty">ไม่มีรายการขายต่ำกว่าทุนในช่วงนี้</div>'}</div>`;
+  ct.innerHTML=wrap(strip+`<div class="dx-card"><div class="dx-ch"><div><div class="t">ส่วนแบ่งกำไรเทียบส่วนแบ่งยอดขาย</div><div class="s">ตามกลุ่มผลิตภัณฑ์ 10 กลุ่มใหญ่สุด · แท่งบน = ยอดขาย · แท่งล่าง = กำไร</div></div></div>${share}</div>`
+    +drill+`<div class="dx-mgrid" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px">${chgCard}${negCard}</div>
+    <div class="dx-foot">กำไรคิดจากรายการขายรายสินค้าที่มีทุนและเทียบหน่วยได้ · ทุนรอบล่าสุดมีผล ${_mgDate(m.last_date)}${m.first_date>`${rg.from.slice(0,4)}-01-01`?` · ยอดขายก่อน ${_mgDate(m.first_date)} คิดด้วยทุนรอบแรกย้อนหลัง เป็นค่าประมาณ`:''} · กลุ่มผลิตภัณฑ์มาจากไฟล์ Master SKU</div>`);
+}
+async function mgExport(){
+  const rg=_mgRange(),s=_mgState(),hit=(window._mgCache||{})[new URLSearchParams({from:rg.from,to:rg.to,co:s.co}).toString()];if(!hit)return;
+  const m=hit.res.data,b=_mgBasis(),R=x=>Math.round((x||0)*100)/100,P=p=>p==null?'':Math.round(p*1000)/10;
+  const cols=['ยอดรายสินค้า','ยอดที่คิดทุนได้','ต้นทุนขาย','กำไร','อัตรากำไร %'],val=x=>{const g=_dxGp(x,b);return [R(g.lines),R(g.covered),R(g.cogs),R(g.gp),P(g.pc)];};
+  await toXLSX([
+    ['กลุ่มผลิตภัณฑ์',['กลุ่ม',...cols],(m.by_group||[]).map(x=>[x.name,...val(x)])],
+    ['สินค้า',['รหัส','ชื่อ','กลุ่ม','หน่วยทุน','ที่มาของทุน',...cols],(m.by_sku||[]).map(x=>[x.sku,x.name,x.group,x.unit||'',x.source==='converted'?'จากการแปลง ← '+(x.from||[]).join(','):x.suspect?'รอยืนยัน':'',...val(x)])],
+    ['ลูกค้า',['รหัส','ชื่อ',...cols],(m.by_customer||[]).map(x=>[x.code,x.name,...val(x)])],
+    ['เซลส์',['รหัส','ชื่อ',...cols],(m.by_slm||[]).map(x=>[x.code,x.name,...val(x)])],
+  ],`วิเคราะห์กำไร_${rg.from}_${rg.to}.xlsx`);
+}
 function _dxKg(v,cov){
   if(v==null)return '—';
   // ไม่มีบรรทัดสินค้าเลย (ลูกค้าที่ขายผ่าน TSS-NV/TGM ซึ่ง STCRD ไม่มีรายการขาย) — บอกเหตุผลแทนการโชว์ 0
@@ -7547,7 +7943,7 @@ function dashExecRender(){
   }
   const d=window._dxData,r=_dxRange();
   let html=_dxHead();
-  if(d&&d.from===r.from&&d.to===r.to&&(d.co||'all')===(_dxState().co||'all')) html+=_dxKpis(d)+_dxMonthly(d)+_dxChannels(d)+_dxTop(d)+_dxTopProd(d);
+  if(d&&d.from===r.from&&d.to===r.to&&(d.co||'all')===(_dxState().co||'all')) html+=_dxKpis(d)+_dxMargin(d)+_dxMonthly(d)+_dxChannels(d)+_dxTop(d)+_dxTopProd(d);
   else if(window._dxErr&&!window._dxLoading) html+=`<div class="al ald">โหลดข้อมูล Dashboard ไม่สำเร็จ: ${esc(window._dxErr)} <button class="btn btn-sm" onclick="dxSet('mode',_dxState().mode)">ลองใหม่</button></div>`;
   else html+=`<div class="dx-card dx-empty">กำลังโหลดยอดขาย ${_dxLabel(r)}…</div>`;
   box.innerHTML=html;
@@ -9605,6 +10001,7 @@ function sdRender(){
     return;
   }
   sdKPI();
+  sdMarginPanel(); // กำไรขั้นต้น (2026-11-16) — ไม่ทำอะไรถ้าผู้ใช้ไม่มีสิทธิ์เห็นทุน
   // คงตำแหน่ง scroll ของตาราง (2026-10-14, ผู้ใช้แจ้ง): กด expand / โหลด Top 10 เสร็จ → sdRender วาดตารางใหม่ทั้งก้อน
   // กล่อง .tw (scroll ในตัว, max-height) ตัวใหม่เริ่มที่บนสุด ตารางเลยเด้งกลับรายการแรก — จำไว้แล้วคืนค่า เฉพาะแท็บเดิม
   const tw0=document.querySelector('#sd-ta .tw'),keep=tw0&&_sdLastTab===_sd.at?{t:tw0.scrollTop,l:tw0.scrollLeft,y:window.scrollY}:null;
@@ -10123,7 +10520,9 @@ function _sdPvRows(custs,raw){
   const info=new Map();
   custs.forEach(c=>(c.branches||[]).forEach(b=>info.set(b.c,{corp:c.n,bname:_sdCustDisplayName(b.c,b.n,remote,profs[b.c]||{}),tot:b._tot||0})));
   const lineSum=new Map(),rows=[];
-  raw.forEach(r=>{const i=info.get(r.c);if(!i)return;lineSum.set(r.c,(lineSum.get(r.c)||0)+(Number(r.a)||0));rows.push({...r,_corp:i.corp,_bname:i.bname});});
+  // r.x = บรรทัดที่ไม่ใช่สินค้า (ค่าเช่า/เงินมัดจำ ฯลฯ — server จัดให้, 2026-11-16 ผู้ใช้ขอเน้นตัวสินค้า): ไม่แสดง
+  // แต่ยังนับใน lineSum เพื่อไม่ให้ยอดค่าเช่าไหลไปอยู่แถว "(ไม่มีรายการสินค้า / ลดหนี้)"
+  raw.forEach(r=>{const i=info.get(r.c);if(!i)return;lineSum.set(r.c,(lineSum.get(r.c)||0)+(Number(r.a)||0));if(!r.x)rows.push({...r,_corp:i.corp,_bname:i.bname});});
   info.forEach((i,c)=>{const rem=i.tot-(lineSum.get(c)||0);if(Math.abs(rem)>=1)rows.push({c,s:'',k:'(none)',n:'',g:'',q:0,a:rem,_corp:i.corp,_bname:i.bname});});
   return rows;
 }
@@ -10410,7 +10809,7 @@ function sdProd(){
         const okC=F||isAllQ?null:new Set(_sdApi.custs.filter(c=>custHasSlm(c,meQ)).flatMap(c=>(c.branches||[]).map(b=>b.c)));
         const M=new Map(),add=(k,u,v)=>{const o=M.get(k)||{};o[u]=(o[u]||0)+v;M.set(k,o);};
         (pv.rows||[]).forEach(r=>{
-          const v=Number(r.q)||0;if(!v||r.k==='(none)'||(okC&&!okC.has(r.c)))return;
+          const v=Number(r.q)||0;if(!v||r.x||r.k==='(none)'||(okC&&!okC.has(r.c)))return;
           const u=String(r.u||'').trim();
           add('g|'+(expressGroupLabel(r.g)||'อื่นๆ'),u,v);add('i|'+r.k,u,v);add('c|'+r.k+'|'+r.c,u,v);
         });
@@ -10727,7 +11126,7 @@ async function sdExport(){
       if(_sd.sort.col==='val') custs=_sdByValue(custs);
       // บรรทัดสินค้าต่อสาขาจากใบกำกับ (ชุดเดียวกับ Pivot) — ยอดตามบรรทัดสินค้า (ก่อนหักลดหนี้ระดับใบ) + ปริมาณตามหน่วย
       const pvRows=QI?(_sdPvLoad(QSLM).rows||[]):[];
-      const pvByC=new Map();pvRows.forEach(r=>{if(!r.k||r.k==='(none)')return;(pvByC.get(r.c)||pvByC.set(r.c,[]).get(r.c)).push(r);});
+      const pvByC=new Map();pvRows.forEach(r=>{if(!r.k||r.x||r.k==='(none)')return;(pvByC.get(r.c)||pvByC.set(r.c,[]).get(r.c)).push(r);});
       const qC=()=>null; // แถวบริษัท / สาขา ไม่แสดงปริมาณ — เหมือนหน้าจอ (2026-10-21)
       custs.forEach(c=>{
         rows.push([c.n,c.c,c.category||c.ty||'',_sdV(c._tot),Math.round((c._tot||0)/T2*100),..._sdQtyRow(QU,qC((c.branches||[]).map(b=>b.c)))]);
@@ -12280,6 +12679,7 @@ function showAddUser(){
     ${_userSlmCodesField('')}
     ${_userBplusField('')}
     ${_userMinTierField('E')}
+    ${_userSeeCostField(0,'')}
     <div class="field"><label>รหัสผ่าน</label><input type="password" id="u-pwd" value="1234"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email"></div>
   </div>
@@ -12314,6 +12714,7 @@ function showEditUser(i){
     ${_userSlmCodesField(u.slm_codes||'')}
     ${_userBplusField(u.bplus_codes||'')}
     ${_userMinTierField(u.min_price_tier||'E')}
+    ${_userSeeCostField(u.can_see_cost,u.role)}
     <div class="field"><label>รหัสผ่านใหม่ (ว่าง=ไม่เปลี่ยน)</label><input type="password" id="u-pwd" placeholder="(ว่าง=ไม่เปลี่ยน)"></div>
     <div class="field"><label>อีเมล</label><input type="email" id="u-email" value="${u.email||''}"></div>
   </div>
@@ -12344,6 +12745,8 @@ async function saveUser(idx){
   const slmCodes=[...document.querySelectorAll('.u-slmc:checked')].map(x=>x.value).join(',');
   const bpCodes=[...document.querySelectorAll('.u-bpc:checked')].map(x=>x.value).join(',');
   const payload={uid,name,role,department:department||null,position:position||null,slm_id:slm||null,slm_codes:slmCodes||null,bplus_codes:bpCodes||null,min_price_tier:document.getElementById('u-mintier')?.value||'E',email:email||null};
+  // ส่งเฉพาะเมื่อฟอร์มมีช่องนี้ (= ผู้แก้เป็น Super Admin) — admin ส่งไป server จะตอบ 403
+  const seeCost=document.getElementById('u-seecost'); if(seeCost) payload.can_see_cost=seeCost.checked?1:0;
   if(pwd) payload.pwd=pwd; // ว่าง = ไม่เปลี่ยนรหัสผ่าน (เฉพาะตอนแก้ไข); SB.upsertUser map เป็น pwd_hash ให้ server ไป hash เอง
   try{
     await SB.upsertUser(payload);
@@ -20057,7 +20460,8 @@ function ptExport() {
 // ทุนผลิตเป็นข้อมูลอ่อนไหว: ผู้ใช้สั่ง 2026-10-27 ให้เห็นเฉพาะ superadmin/admin (ทั้งเมนูและ API — server ตรวจซ้ำใน app.js)
 // ทุนคาดการณ์ c(m) = ทุน × (1 + %เนื้อหมู × (ราคาหมูเดือน m ÷ ราคาหมูเดือนของทุน − 1)) — ข้อมูลขาดแสดง "—" ไม่เดา
 // ═══════════════════════════════════════════════════════════════════
-let _pc = { tab: 'cost', costs: null, months: null, pig: null, settings: null, q: '', draft: null, err: '' };
+// rounds/rmeta/rq/rdraft = ทุน 3 ช่องจากไฟล์ Master SKU (2026-11-16, /api/cost_rounds) — แท็บแรก เพราะเป็นทุนที่ใช้คิดกำไรบนหน้ายอดขาย
+let _pc = { tab: 'rounds', costs: null, months: null, pig: null, settings: null, q: '', draft: null, err: '', rounds: null, rmeta: null, rq: '', rdraft: null };
 const _pcCanWrite = () => ['superadmin', 'admin'].includes(ROLE);
 const _pcCanSettings = () => ['superadmin', 'admin'].includes(ROLE);
 const _pcYm = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -20084,9 +20488,10 @@ async function pgPromoCosts(reload) {
   if (!_pcCanWrite()) { document.getElementById('ct').innerHTML = '<div class="al alw">หน้านี้เปิดได้เฉพาะ Admin / Super Admin (ข้อมูลทุนผลิต)</div>'; return; }
   if (_pc.costs === null || reload) {
     document.getElementById('ct').innerHTML = '<div style="padding:30px;text-align:center;color:var(--TX3)">กำลังโหลดทุนสินค้าและราคาหมู…</div>';
-    const [c, m, p, s] = await Promise.all(['/sku', '/sku/months', '/pig', '/settings'].map(u => apiFetch('/api/promo_costs' + u)));
+    const [c, m, p, s, rc, ru] = await Promise.all([...['/sku', '/sku/months', '/pig', '/settings'].map(u => apiFetch('/api/promo_costs' + u)), apiFetch('/api/cost_rounds'), apiFetch('/api/cost_rounds/uploads')]);
     if (!_isActivePage('promocosts')) return;
-    const err = [c, m, p, s].find(r => r.error);
+    const err = [c, m, p, s, rc, ru].find(r => r.error);
+    _pc.rounds = rc.data || []; _pc.rmeta = ru.data || { uploads: [], rounds: [] };
     _pc.err = err ? err.error.message : '';
     _pc.costs = c.data || []; _pc.months = m.data || { months: [], uploads: [] }; _pc.pig = p.data || []; _pc.settings = s.data || null;
   }
@@ -20100,10 +20505,10 @@ function pcRender() {
     ${w ? `<button class="btn btn-sm btn-p" onclick="document.getElementById('pc-file').click()">⬆ นำเข้าทุน Excel</button><input type="file" id="pc-file" accept=".xlsx,.xls" style="display:none" onchange="pcImport(this)">` : ''}`;
   const tab = (id, lbl) => `<button class="btn btn-sm" onclick="_pc.tab='${id}';pcRender()" style="${_pc.tab === id ? 'background:var(--N);color:#fff;border-color:var(--N);font-weight:600' : ''}">${lbl}</button>`;
   ct.innerHTML = `${_pc.err ? `<div class="al alw">โหลดข้อมูลไม่สำเร็จ: ${esc(_pc.err)}</div>` : ''}
-    <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${tab('cost', 'ทุนสินค้า')}${tab('pig', 'ราคาหมูหน้าฟาร์ม')}${tab('rules', 'เกณฑ์พิจารณาโปร')}</div>
-    <div id="pc-draft">${_pcDraftHtml()}</div>
+    <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${tab('rounds', 'ทุน 3 ช่อง (Master SKU)')}${tab('cost', 'ทุนสำหรับพิจารณาโปร')}${tab('pig', 'ราคาหมูหน้าฟาร์ม')}${tab('rules', 'เกณฑ์พิจารณาโปร')}</div>
+    <div id="pc-draft">${_pcDraftHtml()}${_pcRoundDraftHtml()}</div>
     <div id="pc-body"></div>`;
-  ({ cost: pcRenderCost, pig: pcRenderPig, rules: pcRenderRules })[_pc.tab]();
+  ({ rounds: pcRenderRounds, cost: pcRenderCost, pig: pcRenderPig, rules: pcRenderRules })[_pc.tab]();
 }
 
 // แถบตัวเลขสรุป (compact stat strip ตาม DESIGN.md) — [[ชื่อ, ค่า, บรรทัดรอง]]
@@ -20224,6 +20629,17 @@ function pcImport(input) {
     try {
       await ensureXLSX();
       const wb = XLSX.read(e.target.result, { type: 'array' });
+      // ไฟล์ Master SKU ทุน 3 ช่อง (มีคอลัมน์ ขั้นต้น + ค่าเสื่อม + รวมต้นทุน) → เข้าตารางทุนรายรอบ ไม่ใช่ทุนรายเดือนของงานโปร
+      // ต้องตรวจก่อน _pcParseSheet เพราะตัวอ่านเดิมจะหยิบคอลัมน์ "ทุน" ช่องแรก ซึ่งในไฟล์นี้คือทุนเก่าปี 65
+      const masters = wb.SheetNames.map(n => ({ name: n, parsed: _pcParseMaster(wb.Sheets[n]) })).filter(s => s.parsed && s.parsed.rows.length);
+      if (masters.length) {
+        const m = masters[0];
+        _pc.draft = null;
+        _pc.rdraft = { file: file.name, sheet: m.name, parsed: m.parsed, eff: m.parsed.effGuess || today(), suspect: 'hold', preview: null, error: '' };
+        _pc.tab = 'rounds'; pcRender();
+        await pcRoundPreview();
+        return;
+      }
       const sheets = wb.SheetNames.map(n => ({ name: n, parsed: _pcParseSheet(wb.Sheets[n]) })).filter(s => s.parsed && s.parsed.rows.length);
       if (!sheets.length) { toast('ไม่พบชีตที่มีคอลัมน์ "รหัส" และ "ทุน" ในไฟล์'); return; }
       _pc.draft = { file: file.name, sheets, sheet: sheets[0].name, month: _pcYm(), preview: null, error: '' };
@@ -20282,6 +20698,157 @@ async function pcImportSave(btn) {
   _pc.draft = null;
   toast(`นำเข้าทุน ${_pcMon(r.data.month)} แล้ว — ใหม่ ${r.data.created} · แก้ ${r.data.updated}`);
   pgPromoCosts(true);
+}
+
+// ── ทุน 3 ช่องจากไฟล์ Master SKU ของฝ่ายต้นทุน (2026-11-16) — server: routes/costRounds.js ──────────────
+// อ่านทีละช่องจาก worksheet ตรงๆ (ไม่ใช้ sheet_to_json): ช่อง error ของ Excel (#N/A, #VALUE!) มี v เป็นรหัสตัวเลข
+// (42 = #N/A) ถ้าอ่านแบบ raw จะกลายเป็น "ทุน 42 บาท" — ส่งเป็นข้อความขึ้นต้น # ให้ server รายงานเป็นค่าผิดพลาด
+// หัวคอลัมน์จับจากข้อความ ไม่ผูกตำแหน่ง: "รวมต้นทุน…" มี 2 ช่อง (RM รอบเก่าทางซ้าย / รอบล่าสุดทางขวา) ใช้ช่องขวาสุดเป็นทุนรวม
+function _pcParseMaster(ws) {
+  if (!ws || !ws['!ref']) return null;
+  const rg = XLSX.utils.decode_range(ws['!ref']);
+  const val = (r, c) => { const x = ws[XLSX.utils.encode_cell({ r, c })]; return !x ? null : x.t === 'e' ? String(x.w || '#ERR') : x.v; };
+  const txt = (r, c) => String(val(r, c) ?? '').replace(/\s+/g, ' ').trim();
+  let h = -1;
+  for (let r = rg.s.r; r <= Math.min(rg.e.r, rg.s.r + 20) && h < 0; r++) for (let c = rg.s.c; c <= rg.e.c; c++) if (/^รหัสสินค้า/.test(txt(r, c))) { h = r; break; }
+  if (h < 0) return null;
+  const head = []; for (let c = rg.s.c; c <= rg.e.c; c++) head[c] = txt(h, c);
+  const find = re => head.findIndex(x => x && re.test(x));
+  const cCode = find(/^รหัสสินค้า/), cName = find(/^ชื่อสินค้า/), cUnit = find(/^หน่วย/), cBase = find(/ขั้นต้น/), cDepr = find(/ค่าเสื่อม/);
+  const tot = head.map((x, i) => (x && /^รวมต้นทุน/.test(x) ? i : -1)).filter(i => i >= 0);
+  if (cCode < 0 || cBase < 0 || cDepr < 0 || !tot.length) return null;
+  const cTotal = tot[tot.length - 1], cOld = tot.length > 1 ? tot[0] : -1;
+  const cGroup = find(/^กลุ่มผลิตภัณฑ์/), cStd = find(/standard\s*cost/i), cStatus = find(/^ผลิตภัณฑ์/);
+  const rows = [];
+  for (let r = h + 1; r <= rg.e.r; r++) {
+    const code = val(r, cCode);
+    if (code === null || String(code).trim() === '') continue;
+    const g = c => (c >= 0 ? val(r, c) : null);
+    rows.push({ row: r + 1, code, name: g(cName), unit: g(cUnit), old: g(cOld), base: g(cBase), depr: g(cDepr), total: g(cTotal), group: g(cGroup), std_group: g(cStd), status: g(cStatus) });
+  }
+  // รอบ RM จากหัวคอลัมน์ทุนรวม เช่น "…ต่อกก.RM 2-7.11.69" → ป้าย "2-7.11.69" + เดาวันเริ่มมีผล 2026-11-02 (ผู้ใช้แก้ได้ก่อนนำเข้า)
+  const rm = (head[cTotal].match(/RM\s*(.+)$/i) || [])[1] || '';
+  const dm = rm.match(/(\d{1,2})\s*-\s*\d{1,2}\s*[./]\s*(\d{1,2})\s*[./]\s*(\d{2,4})/);
+  let effGuess = '';
+  if (dm) {
+    let y = Number(dm[3]); if (y < 100) y += 2500; if (y > 2400) y -= 543;
+    const mo = Number(dm[2]), d = Number(dm[1]);
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) effGuess = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  const col = c => (c >= 0 ? `${XLSX.utils.encode_col(c)} · ${head[c]}` : '');
+  return { rows, rm: rm.trim(), effGuess, cols: { total: col(cTotal), old: col(cOld), base: col(cBase), depr: col(cDepr), unit: col(cUnit) } };
+}
+const _pcDate = d => { const [y, m, dd] = String(d || '').split('-').map(Number); return dd ? `${dd} ${_PC_MON[m - 1]} ${String((y + 543) % 100).padStart(2, '0')}` : '—'; };
+
+async function pcRoundPreview() {
+  const d = _pc.rdraft; if (!d) return;
+  d.preview = null; d.error = '';
+  const box = () => document.getElementById('pc-draft');
+  if (box()) box().innerHTML = _pcRoundDraftHtml();
+  const r = await apiFetch('/api/cost_rounds/import/preview', { method: 'POST', body: JSON.stringify({ eff_date: d.eff, suspect: d.suspect, rows: d.parsed.rows }) });
+  if (_pc.rdraft !== d) return;
+  if (r.error) d.error = r.error.message; else d.preview = r.data;
+  if (box()) box().innerHTML = _pcRoundDraftHtml();
+}
+function _pcRoundDraftHtml() {
+  const d = _pc.rdraft; if (!d) return '';
+  const pv = d.preview, p = d.parsed;
+  const list = (arr, max = 80) => arr.slice(0, max).map(esc).join(', ') + (arr.length > max ? ` … (+${arr.length - max})` : '');
+  const chg = x => { const k = x.prev_total ? x.total / x.prev_total - 1 : 0; return `<span style="color:${k > 0 ? 'var(--R)' : 'var(--G)'}">${k > 0 ? '▲' : '▼'}${Math.abs(k * 100).toFixed(1)}%</span>`; };
+  const will = pv ? pv.new_count + pv.changed_count : 0;
+  return `<div class="card" style="border:2px solid var(--N)">
+    <div class="ch"><div class="ct2">ตรวจไฟล์ Master SKU ก่อนนำเข้า: ${esc(d.file)}</div>
+      <span style="font-size:12px;color:var(--TX3)">ชีต ${esc(d.sheet)} · ${p.rows.length.toLocaleString()} แถว${p.rm ? ` · รอบ RM ${esc(p.rm)}` : ''}</span></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px">
+      <div class="field" style="max-width:220px;margin:0"><label for="pc-reff">ทุนนี้เริ่มมีผลวันที่ <span style="color:var(--R)">*</span></label>
+        <input type="date" id="pc-reff" value="${esc(d.eff)}" onchange="_pc.rdraft.eff=this.value;pcRoundPreview()"></div>
+      <div class="field" style="max-width:360px;margin:0"><label for="pc-rsus">ทุนต่ำผิดปกติ (ต่ำกว่าครึ่งของทุนเก่าในไฟล์)</label>
+        <select id="pc-rsus" onchange="_pc.rdraft.suspect=this.value;pcRoundPreview()"><option value="hold" ${d.suspect === 'hold' ? 'selected' : ''}>พักไว้ ยังไม่นำเข้า</option><option value="import" ${d.suspect === 'import' ? 'selected' : ''}>นำเข้า และติดป้ายรอยืนยัน</option></select></div>
+    </div>
+    <div style="font-size:12px;color:var(--TX2);margin-bottom:8px;line-height:1.7">คอลัมน์ที่ใช้ —
+      ทุนรวม (คิดกำไรหลัก): <b>${esc(p.cols.total)}</b> · รวมค่าเสื่อม: ${esc(p.cols.depr)} · ขั้นต้น: ${esc(p.cols.base)}${p.cols.old ? ` · <span style="color:var(--TX3)">ไม่นำเข้า (ใช้ตรวจทุนต่ำผิดปกติ): ${esc(p.cols.old)}</span>` : ''}
+      <br>ค่าในไฟล์เป็นทุนต่อหน่วยในคอลัมน์ ${esc(p.cols.unit || 'หน่วยนับ')} (เช่น แพ็คx500 = ทุนต่อแพ็ค) ระบบเก็บตามนั้น</div>
+    ${d.error ? `<div class="al alw">${esc(d.error)}</div>` : !pv ? '<div style="color:var(--TX3);padding:8px">กำลังตรวจ…</div>' : `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <span class="badge bbg">ใหม่ ${pv.new_count.toLocaleString()}</span><span class="badge bbl">เปลี่ยน ${pv.changed_count.toLocaleString()}</span><span class="badge bbgr">ไม่เปลี่ยน ${pv.unchanged_count.toLocaleString()}</span>
+      ${pv.suspect_count ? `<span class="badge bba">ทุนต่ำผิดปกติ ${pv.suspect_count.toLocaleString()} (${pv.suspect_mode === 'hold' ? 'พักไว้' : 'นำเข้าพร้อมป้าย'})</span>` : ''}
+      <span class="badge bbgr">ไม่เคลื่อนไหว / ทุน 0 ข้าม ${pv.skipped.inactive.toLocaleString()}</span>
+      ${pv.skipped.separator ? `<span class="badge bbgr">แถวคั่นหัวข้อ ${pv.skipped.separator}</span>` : ''}
+      ${pv.error_count ? `<span class="badge bba">ค่าผิดพลาดในไฟล์ ${pv.error_count}</span>` : ''}
+      ${pv.invalid_count ? `<span class="badge bba">อ่านค่าไม่ได้ ${pv.invalid_count}</span>` : ''}
+      ${pv.dup_count ? `<span class="badge bba">รหัสซ้ำ ${pv.dup_count}</span>` : ''}
+      ${pv.unknown_count ? `<span class="badge bba">ไม่พบรหัสในระบบ ${pv.unknown_count.toLocaleString()}</span>` : ''}
+      ${pv.no_unit_count ? `<span class="badge bba">ไม่มีหน่วย ${pv.no_unit_count}</span>` : ''}
+    </div>
+    ${pv.suspects.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">ทุนต่ำผิดปกติ ${pv.suspect_count.toLocaleString()} รายการ — ทุนรวมต่ำกว่าครึ่งของทุนเก่า น่าจะยังไม่รวมวัตถุดิบ ควรให้ฝ่ายต้นทุนยืนยัน</summary>
+      <div class="tw" style="max-height:240px;overflow:auto;margin-top:4px"><table><thead><tr><th>แถว</th><th>รหัส</th><th>สินค้า</th><th>หน่วย</th><th class="r">ทุนเก่าในไฟล์</th><th class="r">ทุนรวมรอบนี้</th></tr></thead><tbody>${pv.suspects.map(x => `<tr><td>${x.row}</td><td class="mono">${esc(x.code)}</td><td>${esc(x.name || '')}</td><td>${esc(x.unit || '')}</td><td class="r">${_pcNum(x.old_cost)}</td><td class="r">${_pcNum(x.total)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    ${pv.errors.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">ค่าผิดพลาดในไฟล์ (ข้าม) ${pv.error_count} แถว</summary><div style="margin:4px 0 0 16px">${pv.errors.map(x => `แถว ${x.row} ${esc(x.code)}: ${esc(x.value)}`).join('<br>')}</div></details>` : ''}
+    ${pv.invalid.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">อ่านค่าไม่ได้ (ข้าม) ${pv.invalid_count} แถว</summary><div style="margin:4px 0 0 16px">${pv.invalid.map(x => `แถว ${x.row} ${esc(x.code)}: ${esc(x.reason)}`).join('<br>')}</div></details>` : ''}
+    ${pv.dup.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">รหัสซ้ำในไฟล์ ${pv.dup_count} แถว — ใช้แถวแรกที่มีทุน</summary><div style="margin:4px 0 0 16px">${pv.dup.map(x => `${esc(x.code)}: ใช้แถว ${x.kept_row} ข้ามแถว ${x.row}`).join('<br>')}</div></details>` : ''}
+    ${pv.unknown.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">รหัสที่ไม่พบในสินค้า Express / Bplus ${pv.unknown_count.toLocaleString()} รหัส — นำเข้าได้ แต่จะไม่ถูกใช้จนกว่าจะมียอดขายรหัสนี้</summary><div style="margin:4px 0 0 16px">${list(pv.unknown, 200)}</div></details>` : ''}
+    ${pv.no_unit.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">ไม่มีหน่วยในไฟล์ ${pv.no_unit_count} รหัส — เก็บทุนไว้ แต่คิดต้นทุนขายไม่ได้จนกว่าจะรู้หน่วย</summary><div style="margin:4px 0 0 16px">${list(pv.no_unit)}</div></details>` : ''}
+    ${pv.changed.length ? `<details ${pv.changed_count <= 50 ? 'open' : ''} style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer">ทุนที่เปลี่ยนจากรอบก่อน ${pv.changed_count.toLocaleString()} รายการ (เรียงจากเปลี่ยนมากสุด${pv.changed_count > pv.changed.length ? ` แสดง ${pv.changed.length} แรก` : ''})</summary>
+      <div class="tw" style="max-height:260px;overflow:auto;margin-top:4px"><table><thead><tr><th>รหัส</th><th>สินค้า</th><th>หน่วย</th><th class="r">ทุนรวมเดิม</th><th class="r">ทุนรวมใหม่</th><th class="r">เปลี่ยน</th></tr></thead><tbody>${pv.changed.map(x => `<tr><td class="mono">${esc(x.code)}</td><td>${esc(x.name || '')}</td><td>${esc(x.unit || '')}</td><td class="r">${_pcNum(x.prev_total)} <span style="color:var(--TX3);font-size:11px">${_pcDate(x.prev_date)}</span></td><td class="r"><b>${_pcNum(x.total)}</b></td><td class="r">${chg(x)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`}
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-sm" onclick="_pc.rdraft=null;pcRender()">ยกเลิก</button>
+      ${pv && will ? `<button class="btn btn-sm btn-p" style="margin-left:auto" onclick="pcRoundSave(this)">นำเข้า ${will.toLocaleString()} รายการ มีผล ${_pcDate(d.eff)}</button>` : pv ? '<span style="margin-left:auto;font-size:12.5px;color:var(--G)">ทุนในไฟล์ตรงกับระบบแล้ว</span>' : ''}</div>
+  </div>`;
+}
+async function pcRoundSave(btn) {
+  const d = _pc.rdraft; if (!d) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+  const r = await apiFetch('/api/cost_rounds/import', { method: 'POST', body: JSON.stringify({ eff_date: d.eff, suspect: d.suspect, rows: d.parsed.rows, file: `${d.file} · ชีต ${d.sheet}`, rm_label: d.parsed.rm || null }) });
+  if (r.error) { toast('นำเข้าไม่สำเร็จ: ' + r.error.message); btn.disabled = false; btn.textContent = label; return; }
+  _pc.rdraft = null;
+  toast(`นำเข้าทุนมีผล ${_pcDate(r.data.eff_date)} แล้ว — ใหม่ ${r.data.created} · แก้ ${r.data.updated}${r.data.held ? ` · พักไว้ ${r.data.held}` : ''}`);
+  pgPromoCosts(true);
+}
+
+function pcRenderRounds() {
+  const box = document.getElementById('pc-body'); if (!box) return;
+  const all = _pc.rounds || [], meta = _pc.rmeta || { uploads: [], rounds: [] };
+  const last = meta.rounds[0], up = meta.uploads[0];
+  const sus = all.filter(r => r.suspect).length, noUnit = all.filter(r => !r.unit).length;
+  box.innerHTML = _pcStrip([
+    ['ทุนรอบล่าสุด', last ? _pcDate(last.eff_date) : '—', up ? `${esc(up.rm_label ? 'RM ' + up.rm_label : up.file_name || '')}` : 'ยังไม่ได้นำเข้าไฟล์ Master SKU'],
+    ['SKU ที่มีทุน', all.length.toLocaleString(), `${meta.rounds.length} รอบในระบบ`],
+    ['ทุนต่ำผิดปกติ รอยืนยัน', sus.toLocaleString(), sus ? 'นำเข้าแล้วแต่ติดป้ายไว้' : 'ไม่มี'],
+    ['ไม่มีหน่วย', noUnit.toLocaleString(), noUnit ? 'คิดต้นทุนขายไม่ได้' : 'ครบทุก SKU'],
+  ]) + `<div class="card">
+    <div class="ch"><div class="ct2">ทุนต่อหน่วยนับ (ไม่รวม VAT) — ทุนที่มีผลล่าสุดของแต่ละ SKU</div>
+      <span style="font-size:12px;color:var(--TX3)">ใช้คิดกำไรขั้นต้นบนหน้ายอดขาย · นำเข้าด้วยปุ่ม "นำเข้าทุน Excel" แล้วเลือกไฟล์ Master SKU ทุน 3 ช่อง</span></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <input type="text" placeholder="ค้นหารหัส / ชื่อสินค้า / กลุ่ม" value="${esc(_pc.rq)}" oninput="_pc.rq=this.value;pcRenderRoundRows()" style="width:280px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px">
+      <span id="pc-rcount" style="font-size:12px;color:var(--TX3)"></span>
+    </div>
+    <div class="tw" style="max-height:calc(100vh - 380px);overflow:auto"><table><thead><tr>
+      <th>รหัส</th><th>สินค้า</th><th>หน่วย</th><th>มีผลตั้งแต่</th><th class="r">ขั้นต้น DL+OH</th><th class="r">รวมค่าเสื่อม</th><th class="r">ทุนรวม</th><th>กลุ่มผลิตภัณฑ์</th><th></th></tr></thead><tbody id="pc-rrows"></tbody></table></div>
+  </div>`;
+  pcRenderRoundRows();
+}
+// ตารางทุนมีหลายพันรายการ — แสดง 300 แรกของผลค้นหา
+function pcRenderRoundRows() {
+  const body = document.getElementById('pc-rrows'); if (!body) return;
+  const q = _pc.rq.trim().toLowerCase(), MAX = 300;
+  const rows = (_pc.rounds || []).filter(r => !q || [r.sku, r.name, r.product_group].some(x => String(x || '').toLowerCase().includes(q)));
+  const cnt = document.getElementById('pc-rcount'); if (cnt) cnt.textContent = rows.length > MAX ? `แสดง ${MAX} จาก ${rows.length.toLocaleString()} รายการ — พิมพ์ค้นหาเพื่อกรอง` : `แสดง ${rows.length.toLocaleString()} รายการ`;
+  body.innerHTML = rows.slice(0, MAX).map(r => `<tr>
+    <td class="mono">${esc(r.sku)}</td><td>${esc(r.name || '')}${r.name ? '' : '<span style="color:var(--TX3)">ไม่พบใน Express</span>'}</td>
+    <td style="font-size:12px">${esc(r.unit_raw || r.unit || '')}${r.unit ? '' : '<span class="badge bba">ไม่มีหน่วย</span>'}</td><td>${_pcDate(r.eff_date)}</td>
+    <td class="r">${_pcNum(r.cost_base)}</td><td class="r">${_pcNum(r.cost_depr)}</td><td class="r"><b>${_pcNum(r.cost_total)}</b>${r.suspect ? ' <span class="badge bba">รอยืนยัน</span>' : ''}</td>
+    <td style="font-size:12px">${esc(r.product_group || '')}</td>
+    <td><button class="btn btn-xs" onclick="pcRoundLogs('${esc(r.sku)}')" title="ประวัติทุน">ประวัติ</button></td></tr>`).join('')
+    || `<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--TX3)">${(_pc.rounds || []).length ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีทุน — กด "นำเข้าทุน Excel" แล้วเลือกไฟล์ Master SKU ทุน 3 ช่องจากฝ่ายต้นทุน'}</td></tr>`;
+}
+async function pcRoundLogs(sku) {
+  openMod(`<div class="mh"><div class="mt2">ประวัติทุน ${esc(sku)}</div><span class="mx" onclick="closeM()">✕</span></div><div id="pc-rlogs" style="font-size:12px;color:var(--TX3)">กำลังโหลด…</div>`);
+  const r = await apiFetch('/api/cost_rounds/logs?sku=' + encodeURIComponent(sku));
+  const box = document.getElementById('pc-rlogs'); if (!box) return;
+  const lbl = f => ({ '*': 'เริ่มมีทุน', cost_total: 'ทุนรวม', cost_depr: 'รวมค่าเสื่อม', cost_base: 'ขั้นต้น DL+OH', unit: 'หน่วย', unit_grams: 'กรัม/หน่วย', suspect: 'ป้ายรอยืนยัน' }[f] || f);
+  const val = (f, v) => v == null ? '—' : /^cost_/.test(f) ? _pcNum(v) : f === 'suspect' ? (v === '1' ? 'ติด' : 'ไม่ติด') : esc(v);
+  box.innerHTML = r.error ? esc(r.error.message) : (r.data || []).length ? `<div class="tw" style="max-height:360px;overflow:auto"><table><thead><tr><th>เวลา</th><th>ผู้นำเข้า</th><th>มีผลตั้งแต่</th><th>รายการ</th><th class="r">เดิม</th><th class="r">ใหม่</th></tr></thead><tbody>${r.data.map(l => `<tr>
+    <td>${esc(new Date(l.at).toLocaleString('th-TH'))}</td><td>${esc(uidToName(l.by_uid) || l.by_uid || '')}</td><td>${_pcDate(l.eff_date)}</td><td>${lbl(l.field)}</td>
+    <td class="r">${l.field === '*' ? '' : val(l.field, l.old_value)}</td><td class="r">${l.field === '*' ? '' : val(l.field, l.new_value)}</td></tr>`).join('')}</tbody></table></div>` : 'ยังไม่มีประวัติ';
 }
 
 // ราคาหมูหน้าฟาร์ม: 12 เดือนก่อน – 6 เดือนหน้า · คลิกช่องเพื่อแก้ · ว่าง = ลบ · เดือนที่มีราคาจริงใช้ราคาจริงคำนวณ

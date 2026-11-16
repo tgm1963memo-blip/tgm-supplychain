@@ -612,6 +612,8 @@ function buildApp(db, opts = {}) {
   // จาก makeCrudRouter แล้วต่อ POST เองทีหลัง): uid ต้อง derive จาก session เท่านั้น ห้ามเชื่อค่าที่ client
   // ส่งมา (คนละเหตุผลกับ draft_no/doc_no ของ header ข้างบน แต่หลักการเดียวกัน — กัน forge ตัวตนผู้เขียน
   // comment) ไม่มี PATCH/DELETE เหมือน audit_log (comment ที่เขียนแล้วไม่ควรแก้/ลบทีหลัง)
+  // ทุน 3 ช่องจากไฟล์ Master SKU (2026-11-16) — นำเข้า/ดูตารางทุนใช้สิทธิ์เดียวกับหน้าทุนเดิม · การเห็นกำไรบนหน้ายอดขายใช้ can_see_cost แยกต่างหาก
+  app.use('/api/cost_rounds', require('./routes/costRounds')(db, PROMO_COST_ROLES));
   const promoDraftLineCommentsRouter = makeCrudRouter(db, 'promo_draft_line_comments', {
     pk: 'id',
     fields: ['draft_no', 'sku', 'anchor', 'uid', 'text'],

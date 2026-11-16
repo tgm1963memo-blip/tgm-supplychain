@@ -830,6 +830,60 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_promo_eval_snapshots_draft ON promo_eval_snapshots(draft_no, id);
   `);
 
+  // ทุน 3 ช่องจากไฟล์ Master SKU + สิทธิ์เห็นทุน/กำไรรายคน (2026-11-16) — routes/costRounds.js · lib/skuCost.js
+  // sku_cost_rounds: ทุน "ต่อหน่วยนับในไฟล์" (ช่อง D เช่น แพ็คx500 = ต่อแพ็ค ไม่ใช่ต่อกก. แม้หัวคอลัมน์จะเขียนว่าต่อกก.)
+  //   cost_base = ช่อง F ขั้นต้น DL+OH · cost_depr = ช่อง G รวมค่าเสื่อม · cost_total = ช่อง H ทุนรวม (ใช้คิดกำไรหลัก)
+  //   eff_date = วันที่เริ่มมีผล (ผู้ใช้ยืนยัน 2026-11-13: ไฟล์มาเป็นรอบสัปดาห์ ยอดขายแต่ละวันใช้ทุนล่าสุดที่มีผล ณ วันนั้น)
+  //   เก็บเฉพาะแถวที่ค่าเปลี่ยนจากรอบที่มีผลอยู่ — SKU ที่ไม่อยู่ในไฟล์รอบใหม่ใช้ทุนรอบก่อนต่อไป
+  //   suspect = 1: ทุนรวมต่ำกว่าครึ่งของทุนเก่า (ช่อง E) น่าจะยังไม่รวมวัตถุดิบ — นำเข้าได้แต่ติดป้ายรอยืนยัน
+  // แยกจาก sku_costs (ทุนรายเดือนของงานพิจารณาโปร) โดยตั้งใจ — งานโปรยังอ่าน sku_costs ตามเดิม ไม่ถูกกระทบ
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sku_cost_rounds (
+      sku           TEXT NOT NULL,
+      eff_date      TEXT NOT NULL,
+      cost_base     REAL,
+      cost_depr     REAL,
+      cost_total    REAL NOT NULL,
+      unit          TEXT,
+      unit_raw      TEXT,
+      unit_grams    REAL,
+      product_group TEXT,
+      std_group     TEXT,
+      status        TEXT,
+      suspect       INTEGER NOT NULL DEFAULT 0,
+      upload_id     TEXT,
+      updated_by    TEXT,
+      updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (sku, eff_date)
+    );
+    CREATE TABLE IF NOT EXISTS sku_cost_round_uploads (
+      id          TEXT PRIMARY KEY,
+      file_name   TEXT,
+      eff_date    TEXT NOT NULL,
+      rm_label    TEXT,
+      created     INTEGER NOT NULL DEFAULT 0,
+      updated     INTEGER NOT NULL DEFAULT 0,
+      unchanged   INTEGER NOT NULL DEFAULT 0,
+      held        INTEGER NOT NULL DEFAULT 0,
+      uploaded_by TEXT,
+      uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS sku_cost_round_logs (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      sku       TEXT NOT NULL,
+      eff_date  TEXT NOT NULL,
+      field     TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      upload_id TEXT,
+      by_uid    TEXT,
+      at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sku_cost_round_logs_sku ON sku_cost_round_logs(sku, eff_date);
+  `);
+  // สิทธิ์เห็นทุน/อัตรากำไร (ผู้ใช้ยืนยัน 2026-11-13: ติ๊กรายคนในหน้าจัดการผู้ใช้ · superadmin เห็นเสมอ) — ดู lib/skuCost.js canSeeCost
+  addColumnIfMissing(db, 'sc_users', 'can_see_cost', 'can_see_cost INTEGER NOT NULL DEFAULT 0');
+
   // กำหนด Sales เจ้าของยอดรายลูกค้า (2026-10-20, lib/slmOverride.js) — ตั้งต้น: Tops เซ็นทรัล ฟู้ด รีเทล 30-LC-0013/0014
   // ใบออกในชื่อคุณปู (106) แต่ผู้ใช้สั่งย้ายไปเป็นของ 207 (ห้าง-เมย์) · INSERT OR IGNORE = ไม่ทับค่าที่แก้ภายหลัง
   // (ตารางสร้างไว้แล้วก่อน v_invoice_heads ด้านบน)

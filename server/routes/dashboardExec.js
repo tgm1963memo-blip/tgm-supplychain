@@ -13,6 +13,7 @@ const chainSales = require('../lib/chainSales');
 const { productGroupResolver } = require('../lib/productGroupMatch');
 const { weightFromName } = require('../lib/weightFromName');
 const nonSales = require('../lib/nonSales');
+const skuCost = require('../lib/skuCost');
 
 // Dashboard ผู้บริหาร (2026-10-03, ผู้ใช้ขอ "ออกแบบ Dashboard ใหม่ทั้งหน้า") — endpoint เดียวคืนทุกส่วนของหน้า
 // ตามช่วงเวลาที่เลือก (YTD / เดือน / ไตรมาส / ทั้งปี) เทียบช่วงเดียวกันของปีก่อน:
@@ -436,23 +437,138 @@ module.exports = function dashboardExecRoutes(db) {
     };
   }
 
+  // ── กำไรขั้นต้น (2026-11-16, ทุน 3 ช่องจากไฟล์ Master SKU — lib/skuCost.js) ───────────────────────────
+  // ส่งเฉพาะผู้มีสิทธิ์เห็นทุน (skuCost.canSeeCost) — execPayload ไม่ใส่ก้อน margin ให้คนอื่นเลย · รายงาน LINE เรียก execPayload
+  // ด้วย user = null จึงไม่มีกำไรติดไป
+  // แหล่งข้อมูล: sales_lines_daily ทั้งปีของช่วงที่เลือก (ต้องรู้วันขายเพื่อใช้ทุนที่มีผล ณ วันนั้น) ตัวกรองชุดเดียวกับ perProduct
+  //   รวมกลุ่มตาม "ช่วงทุน" bk = จำนวนรอบทุนที่เริ่มมีผลแล้ว ณ วันขาย → ทุกวันในกลุ่มเดียวกันใช้ทุนรอบเดียวกัน คิดทุนครั้งเดียวต่อ SKU×ช่วงทุน
+  // กำไรคิดได้เฉพาะบรรทัดที่มีรหัสสินค้า + มีทุน + เทียบหน่วยได้ (covered) — ส่วนที่เหลือรายงานใน gaps ไม่ประมาณ:
+  //   ยอดห้อง SKU/DC และบิลสรุป Bplus รหัส 0000 ไม่มีรหัสสินค้า · ยอด KPI มาจากใบกำกับ (ARTRN) จึงไม่เท่ากับผลรวมบรรทัดสินค้าพอดี
+  // cogs เก็บครบ 3 ฐาน (total/depr/base) ให้หน้าจอสลับได้โดยไม่ต้องโหลดใหม่
+  function marginData(year, from, to, slmCodes, withConsi, meta, consiCodes, codeGroup, wantGroups, wantSkus) {
+    const ctx = skuCost.costContext(db);
+    const effDates = [...new Set([...ctx.idx.values()].flatMap((l) => l.map((r) => r.eff_date)))].sort();
+    if (!effDates.length) return { has_cost: false };
+    const { src, raw } = companyFilter(year);
+    const cos = withConsi ? raw : raw.filter((c) => src[c] !== 'CONSI');
+    const lo = from.length === 10 ? from : `${from}-01`;
+    const hi = to.length === 10 ? to : `${to}-31`;
+    const skip = JSON.stringify([...reqNonSales.ic, ...reqNonSales.staff]);
+    const rows = cos.length ? db.prepare(`SELECT company, cust_code, sku, unit_code, substr(d, 1, 7) AS ym,
+        (${effDates.map(() => '(d >= ?)').join(' + ')}) AS bk, (d >= ? AND d <= ?) AS inr, MIN(d) AS d0,
+        SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
+      FROM sales_lines_daily
+      WHERE company IN (${inList(cos.length)}) AND d >= ? AND d <= ?
+        AND cust_code NOT IN (SELECT value FROM json_each(?))
+      ${slmCodes.sql}
+      GROUP BY company, cust_code, sku, unit_code, ym, bk, inr`)
+      .all(...effDates, lo, hi, ...cos, `${year}-01-01`, `${year}-12-31`, skip, ...slmCodes.params) : [];
+
+    const zero = () => ({ lines: 0, covered: 0, cogs: { total: 0, depr: 0, base: 0 } });
+    const add = (a, amt, cg) => {
+      a.lines += amt;
+      if (!cg) return;
+      a.covered += amt;
+      a.cogs.total += cg.total; a.cogs.depr += cg.depr; a.cogs.base += cg.base;
+    };
+    const totals = zero();
+    const monthlyAgg = {};
+    const channels = Object.fromEntries(EXEC_CHANNELS.map((c) => [c.key, zero()]));
+    const groupAgg = new Map();
+    const products = new Map();
+    const gaps = { lump: 0, no_cost: new Map(), unit: new Map(), est_covered: 0 };
+    const costMemo = new Map();
+    const chMemo = new Map();
+    let weights = null;
+    for (const r of rows) {
+      if (!r.sku) continue;
+      const amt = Number(r.amount) || 0;
+      let cg = null, cost = null, q = null, reason = null;
+      if (r.sku === TG_LUMP_SKU) reason = 'lump';
+      else {
+        const ck = `${r.sku}|${r.bk}`;
+        if (!costMemo.has(ck)) costMemo.set(ck, skuCost.resolveAll(ctx, r.sku, r.d0));
+        cost = costMemo.get(ck);
+        if (!cost) reason = 'no_cost';
+        else {
+          const line = { qty: r.qty, qty_base: r.qty_base, unit_code: r.unit_code, base_unit: ctx.baseUnits.get(r.sku) };
+          q = skuCost.costQty(cost, line);
+          if (q == null) {
+            weights = weights || loadWeights();
+            const kg = lineKg(r, weights);
+            if (kg != null) q = skuCost.costQty(cost, { ...line, kg });
+          }
+          if (q == null) reason = 'unit';
+          else cg = { total: cost.costs.total * q, depr: cost.costs.depr * q, base: cost.costs.base * q };
+        }
+      }
+      add((monthlyAgg[r.ym] = monthlyAgg[r.ym] || zero()), amt, cg);
+      if (!r.inr) continue;
+      add(totals, amt, cg);
+      let ch = chMemo.get(r.cust_code);
+      if (!ch) { ch = channelOf(meta, r.cust_code, consiCodes.has(r.cust_code)); chMemo.set(r.cust_code, ch); }
+      add(channels[ch], amt, cg);
+      const gname = codeGroup.get(r.cust_code);
+      if (gname && wantGroups.has(gname)) { if (!groupAgg.has(gname)) groupAgg.set(gname, zero()); add(groupAgg.get(gname), amt, cg); }
+      if (reason === 'lump') { gaps.lump += amt; continue; }
+      if (reason) gaps[reason].set(r.sku, (gaps[reason].get(r.sku) || 0) + amt);
+      let p = products.get(r.sku);
+      if (!p) { p = { ...zero(), qc: 0, unit: null, source: null, from: [], suspect: false, estimated: false }; products.set(r.sku, p); }
+      add(p, amt, cg);
+      if (cg) {
+        p.qc += q; p.unit = cost.unit; p.source = cost.source; p.from = cost.from;
+        p.suspect = p.suspect || cost.suspect; p.estimated = p.estimated || cost.estimated;
+        if (cost.estimated) gaps.est_covered += amt;
+      }
+    }
+
+    const names = skuNames();
+    const outProduct = (sku, p) => ({ sku, name: names.get(sku) || sku, lines: p.lines, covered: p.covered, cogs: p.cogs, qc: p.qc,
+      unit: p.unit, source: p.source, from: p.from, suspect: p.suspect, estimated: p.estimated });
+    const covered = [...products.entries()].filter(([, p]) => p.covered > 0);
+    const flagSum = (f) => covered.filter(([, p]) => f(p)).reduce((a, [, p]) => ({ count: a.count + 1, amount: a.amount + p.covered }), { count: 0, amount: 0 });
+    const gapList = (m) => {
+      const list = [...m.entries()].filter(([, a]) => a > 0.005).sort((a, b) => b[1] - a[1]);
+      return { count: list.length, amount: list.reduce((a, x) => a + x[1], 0), top: list.slice(0, 15).map(([sku, amount]) => ({ sku, name: names.get(sku) || sku, amount })) };
+    };
+    const up = db.prepare('SELECT rm_label, file_name, eff_date FROM sku_cost_round_uploads ORDER BY eff_date DESC, uploaded_at DESC LIMIT 1').get() || {};
+    return {
+      has_cost: true, first_date: effDates[0], last_date: effDates[effDates.length - 1], rm_label: up.rm_label || null,
+      totals, monthly: monthlyAgg, channels,
+      groups: Object.fromEntries(groupAgg),
+      products: Object.fromEntries(wantSkus.filter((s) => products.has(s)).map((s) => [s, outProduct(s, products.get(s))])),
+      // รายการควรตรวจราคา: อัตรากำไรจากทุนรวม < 10% (ทุนรวมสูงสุดใน 3 ฐาน จึงครอบทุกฐาน) เรียงจากกำไรน้อยสุด — หน้าจอกรองซ้ำตามฐานที่เลือก
+      watch: covered.filter(([, p]) => p.covered - p.cogs.total < p.covered * 0.10)
+        .sort((a, b) => (a[1].covered - a[1].cogs.total) - (b[1].covered - b[1].cogs.total)).slice(0, 40).map(([sku, p]) => outProduct(sku, p)),
+      gaps: {
+        lump: gaps.lump, no_cost: gapList(gaps.no_cost), unit: gapList(gaps.unit), est_covered: gaps.est_covered,
+        converted: flagSum((p) => p.source === 'converted'), suspect: flagSum((p) => p.suspect),
+      },
+    };
+  }
+
   // GET /api/dashboard/exec?from=YYYY-MM&to=YYYY-MM&slm=101,110-1&consi=1&makro_in_mall=0
   // แคชผลลัพธ์ /exec (2026-10-09, ผู้ใช้ขอให้ระบบเร็วขึ้น — วัดจริง 0.6–1.5 วิ/ครั้ง) — ดู lib/responseCache.js
   router.get('/exec', cacheJson(db));
-  router.get('/exec', (req, res) => {
-    try {
+  // คำนวณข้อมูลหน้า Dashboard ผู้บริหาร — แยกจาก route (2026-11-13) ให้รายงาน LINE รายสัปดาห์ (lib/weeklySalesReport.js)
+  // ใช้ตัวเลขชุดเดียวกับหน้าเว็บ · opts.scopeAll = ข้ามการจำกัดสิทธิ์ (งานระบบ) · opts.allGroups = คืนทุกเครือลูกค้า (ไม่ใช่แค่ Top 20)
+  const badReq = (msg) => Object.assign(new Error(msg), { status: 400 });
+  // อ่านตัวกรอง + สิทธิ์ของคำขอ แล้วตั้งค่าตัวแปร req* ของ route (แยกจาก execPayload 2026-11-16 ให้ /margin ใช้ตัวกรองชุดเดียวกัน)
+  function setupReq(query, user, opts = {}) {
+    {
+      const req = { query: query || {}, user };
       const from = String(req.query.from || '');
       const to = String(req.query.to || '');
       const daily = YMD_RE.test(from) && YMD_RE.test(to);
-      if (!daily && !(YM_RE.test(from) && YM_RE.test(to))) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM หรือ YYYY-MM-DD (ทั้งคู่แบบเดียวกัน)' });
-      if (daily && [from, to].some((x) => Number.isNaN(Date.parse(x + 'T00:00:00Z')) || new Date(x + 'T00:00:00Z').toISOString().slice(0, 10) !== x)) return res.status(400).json({ error: 'วันที่ไม่ถูกต้อง' });
-      if (from.slice(0, 4) !== to.slice(0, 4) || from > to) return res.status(400).json({ error: 'from/to ต้องอยู่ในปีเดียวกัน และ from ≤ to' });
+      if (!daily && !(YM_RE.test(from) && YM_RE.test(to))) throw badReq('from/to ต้องเป็น YYYY-MM หรือ YYYY-MM-DD (ทั้งคู่แบบเดียวกัน)');
+      if (daily && [from, to].some((x) => Number.isNaN(Date.parse(x + 'T00:00:00Z')) || new Date(x + 'T00:00:00Z').toISOString().slice(0, 10) !== x)) throw badReq('วันที่ไม่ถูกต้อง');
+      if (from.slice(0, 4) !== to.slice(0, 4) || from > to) throw badReq('from/to ต้องอยู่ในปีเดียวกัน และ from ≤ to');
       const year = Number(from.slice(0, 4));
-      if (year < 2020 || year > 2100) return res.status(400).json({ error: 'ปีไม่ถูกต้อง' });
+      if (year < 2020 || year > 2100) throw badReq('ปีไม่ถูกต้อง');
       // ตัวกรอง Sales + สิทธิ์ (2026-10-06, lib/customerScope.js): slmCodes เป็น {sql, params} ที่ต่อท้าย WHERE ได้เลย
       //   · ไม่จำกัด: เลือก Sales มา = slm_code IN (…) · ไม่เลือก = ทั้งหมด
       //   · ถูกจำกัด: เลือก Sales มา = ตัดให้เหลือเฉพาะรหัสที่ดูได้ (ไม่เหลือ = ว่าง) · ไม่เลือก = รหัสที่ดูได้ + ลูกค้าเจ้า MT
-      const scope = resolveScope(db, req.user);
+      const scope = opts.scopeAll ? { all: true, restricted: false } : resolveScope(db, req.user);
       let wantSlm = [...new Set(String(req.query.slm || '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 50);
       if (!scope.all && wantSlm.length) wantSlm = wantSlm.filter((c) => scope.slmCodes.includes(c));
       const slmCodes = req.query.slm && (scope.all || wantSlm.length || String(req.query.slm).trim())
@@ -462,7 +578,7 @@ module.exports = function dashboardExecRoutes(db) {
       const withConsi = req.query.consi !== '0';
       const makroInMall = req.query.makro_in_mall === '1';
       const co = String(req.query.co || 'all');
-      if (!['all', 'tss', 'tgm'].includes(co)) return res.status(400).json({ error: 'co ต้องเป็น all, tss หรือ tgm' });
+      if (!['all', 'tss', 'tgm'].includes(co)) throw badReq('co ต้องเป็น all, tss หรือ tgm');
       reqCo = co;
       const noNv = req.query.no_nv === '1';
       const noBakery = req.query.no_bakery === '1';
@@ -487,6 +603,12 @@ module.exports = function dashboardExecRoutes(db) {
       reqNonSales = nonSalesCodes();
       const lyFrom = shiftYear(from, -1);
       const lyTo = shiftYear(to, -1);
+      return { req, from, to, daily, year, slmCodes, withConsi, makroInMall, co, noNv, noBakery, lyFrom, lyTo };
+    }
+  }
+  function execPayload(query, user, opts = {}) {
+    {
+      const { req, from, to, daily, year, slmCodes, withConsi, makroInMall, co, noNv, noBakery, lyFrom, lyTo } = setupReq(query, user, opts);
 
       const ty = perCustomer(from, to, slmCodes);
       const ly = perCustomer(lyFrom, lyTo, slmCodes);
@@ -566,25 +688,169 @@ module.exports = function dashboardExecRoutes(db) {
         };
       };
 
+      const topProd = topProducts(from, to, lyFrom, lyTo, slmCodes, withConsi);
+      // กำไรขั้นต้น (2026-11-16) — เฉพาะผู้มีสิทธิ์เห็นทุน · คำนวณพลาดไม่ทำให้ทั้งหน้าล่ม (ส่ง error ให้หน้าจอแจ้งในแถบกำไร)
+      let margin;
+      if (skuCost.canSeeCost(req.user)) {
+        try {
+          const codeGroup = new Map(allGroups.flatMap((g) => g.codes.map((c) => [c, g.name])));
+          const wantGroups = new Set([...top.all, ...top.mall, ...top.shop].map((g) => g.name));
+          const wantSkus = [...new Set([...topProd.by_amount, ...topProd.by_kg].map((x) => x.sku))];
+          margin = marginData(year, from, to, slmCodes, withConsi, meta, consiCodes, codeGroup, wantGroups, wantSkus);
+        } catch (e) {
+          console.error('[dashboardExec] margin failed:', e);
+          margin = { has_cost: false, error: e.message };
+        }
+      }
+
       const freshness = db.prepare(`SELECT MAX(ym) AS last_ym FROM invoice_sales_monthly WHERE company IN ('TSS','CONSI')`).get();
       const lastDay = daily ? db.prepare(`SELECT MAX(d) AS d FROM invoice_sales_daily WHERE company IN ('TSS','CONSI')`).get() : null;
       const linesSync = db.prepare(`SELECT MAX(synced_at) AS at FROM sync_file_state WHERE source LIKE '%/STCRD.DBF'`).get();
 
-      res.json({
+      return {
         from, to, ly_from: lyFrom, ly_to: lyTo, with_consi: withConsi, makro_in_mall: makroInMall, co, no_nv: noNv, no_bakery: noBakery,
         monthly: { ty: monthly(year, slmCodes, meta, consiCodes), ly: monthly(year - 1, slmCodes, meta, consiCodes) },
         kpi,
         channels: EXEC_CHANNELS.map((c) => ({ key: c.key, label: c.label, ...channelAgg[c.key] })),
         top: { all: top.all.map(shape), mall: top.mall.map(shape), shop: top.shop.map(shape) },
-        top_products: topProducts(from, to, lyFrom, lyTo, slmCodes, withConsi),
+        top_products: topProd,
+        ...(margin ? { margin } : {}),
         top_excluded: offTop.map((g) => ({ name: g.name, channel: g.channel, ty: g.ty_net + (withConsi ? g.ty_consi : 0) }))
           .filter((x) => Math.abs(x.ty) > 0.5).sort((a, b) => b.ty - a.ty),
         last_ym: freshness?.last_ym || null,
         daily, last_d: lastDay?.d || null, tgm_daily_missing: reqBpDailyMissing,
         kg_synced_at: linesSync?.at || null,
-      });
+        ...(opts.allGroups ? { groups: allGroups.map((g) => ({ name: g.name, channel: g.channel, codes: g.codes,
+          ty_net: g.ty_net, ty_consi: g.ty_consi, ly_net: g.ly_net, ly_consi: g.ly_consi })) } : {}),
+      };
+    }
+  }
+  router.execPayload = execPayload;
+  router.get('/exec', (req, res) => {
+    try {
+      res.json(execPayload(req.query, req.user));
     } catch (e) {
+      if (e.status === 400) return res.status(400).json({ error: e.message });
       console.error('[dashboardExec] /exec failed:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/dashboard/margin?from&to&slm&co&consi — กำไรขั้นต้นแบบเจาะลึก (2026-11-16) สำหรับ Sales Overview และหน้าวิเคราะห์กำไร
+  // เฉพาะผู้มีสิทธิ์เห็นทุน (403) · ตัวกรอง/ขอบเขตลูกค้าชุดเดียวกับ /exec (setupReq) — สิทธิ์เห็นทุนไม่ขยายขอบเขตข้อมูล
+  // คืนกำไรตาม ลูกค้า / สินค้า / เซลส์ / กลุ่มผลิตภัณฑ์ + คู่ลูกค้า×สินค้าที่ขายต่ำกว่าทุน + ทุนที่เปลี่ยนระหว่างสองรอบล่าสุด
+  // ระดับใบกำกับไม่มีในตารางนี้ (sales_lines_daily รวมรายวันแล้ว) — รายการขายต่ำกว่าทุนจึงเป็นระดับ ลูกค้า × สินค้า ของช่วงที่เลือก
+  function marginDetail(query, user) {
+    const { from, to, year, slmCodes, withConsi } = setupReq(query, user);
+    const ctx = skuCost.costContext(db);
+    const effDates = [...new Set([...ctx.idx.values()].flatMap((l) => l.map((r) => r.eff_date)))].sort();
+    if (!effDates.length) return { has_cost: false, from, to };
+    const { src, raw } = companyFilter(year);
+    const cos = withConsi ? raw : raw.filter((c) => src[c] !== 'CONSI');
+    const lo = from.length === 10 ? from : `${from}-01`;
+    const hi = to.length === 10 ? to : `${to}-31`;
+    const skip = JSON.stringify([...reqNonSales.ic, ...reqNonSales.staff]);
+    const rows = cos.length ? db.prepare(`SELECT cust_code, slm_code, sku, unit_code,
+        (${effDates.map(() => '(d >= ?)').join(' + ')}) AS bk, MIN(d) AS d0,
+        SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
+      FROM sales_lines_daily
+      WHERE company IN (${inList(cos.length)}) AND d >= ? AND d <= ?
+        AND cust_code NOT IN (SELECT value FROM json_each(?))
+      ${slmCodes.sql}
+      GROUP BY cust_code, slm_code, sku, unit_code, bk`).all(...effDates, ...cos, lo, hi, skip, ...slmCodes.params) : [];
+
+    const zero = () => ({ lines: 0, covered: 0, cogs: { total: 0, depr: 0, base: 0 } });
+    const add = (a, amt, cg) => {
+      a.lines += amt;
+      if (!cg) return;
+      a.covered += amt;
+      a.cogs.total += cg.total; a.cogs.depr += cg.depr; a.cogs.base += cg.base;
+    };
+    const bump = (map, key) => { let v = map.get(key); if (!v) { v = zero(); map.set(key, v); } return v; };
+    // กลุ่มผลิตภัณฑ์จากไฟล์ Master SKU (แถวทุนล่าสุดของรหัสนั้น) · รหัสที่ไม่มีแถวทุนของตัวเอง = ไม่ระบุกลุ่ม
+    const groupOf = new Map(db.prepare(`SELECT c.sku, c.product_group FROM sku_cost_rounds c
+      JOIN (SELECT sku, MAX(eff_date) AS d FROM sku_cost_rounds GROUP BY sku) l ON l.sku = c.sku AND l.d = c.eff_date`).all().map((r) => [r.sku, r.product_group]));
+    const NO_GROUP = 'ไม่ระบุกลุ่ม';
+    const totals = zero();
+    const byCust = new Map(), bySlm = new Map(), bySku = new Map(), byGroup = new Map(), pair = new Map();
+    const skuInfo = new Map();
+    const costMemo = new Map();
+    let weights = null;
+    for (const r of rows) {
+      if (!r.sku) continue;
+      const amt = Number(r.amount) || 0;
+      let cg = null, cost = null, q = null;
+      if (r.sku !== TG_LUMP_SKU) {
+        const ck = `${r.sku}|${r.bk}`;
+        if (!costMemo.has(ck)) costMemo.set(ck, skuCost.resolveAll(ctx, r.sku, r.d0));
+        cost = costMemo.get(ck);
+        if (cost) {
+          const line = { qty: r.qty, qty_base: r.qty_base, unit_code: r.unit_code, base_unit: ctx.baseUnits.get(r.sku) };
+          q = skuCost.costQty(cost, line);
+          if (q == null) {
+            weights = weights || loadWeights();
+            const kg = lineKg(r, weights);
+            if (kg != null) q = skuCost.costQty(cost, { ...line, kg });
+          }
+          if (q != null) cg = { total: cost.costs.total * q, depr: cost.costs.depr * q, base: cost.costs.base * q };
+        }
+      }
+      add(totals, amt, cg);
+      add(bump(byCust, r.cust_code), amt, cg);
+      add(bump(bySlm, r.slm_code || ''), amt, cg);
+      if (r.sku === TG_LUMP_SKU) continue;
+      add(bump(bySku, r.sku), amt, cg);
+      add(bump(byGroup, groupOf.get(r.sku) || NO_GROUP), amt, cg);
+      let info = skuInfo.get(r.sku);
+      if (!info) { info = { qc: 0, unit: null, source: null, from: [], suspect: false, estimated: false }; skuInfo.set(r.sku, info); }
+      if (cg) {
+        info.qc += q; info.unit = cost.unit; info.source = cost.source; info.from = cost.from;
+        info.suspect = info.suspect || cost.suspect; info.estimated = info.estimated || cost.estimated;
+        const pk = `${r.cust_code}\u0001${r.sku}\u0001${r.slm_code || ''}`;
+        let p = pair.get(pk);
+        if (!p) { p = { ...zero(), qc: 0 }; pair.set(pk, p); }
+        add(p, amt, cg); p.qc += q;
+      }
+    }
+
+    const names = skuNames();
+    const meta = customerMeta();
+    const custName = (c) => { const m = meta.get(c) || {}; return m.pname || m.name || c; };
+    const slmName = new Map(db.prepare("SELECT slm_id, name FROM sc_users WHERE slm_id IS NOT NULL AND slm_id <> ''").all().map((r) => [r.slm_id, r.name]));
+    const top = (map, n, shape) => [...map.entries()].filter(([, v]) => Math.abs(v.lines) > 0.005)
+      .sort((a, b) => b[1].lines - a[1].lines).slice(0, n).map(([k, v]) => ({ ...shape(k), lines: v.lines, covered: v.covered, cogs: v.cogs }));
+    const skuShape = (sku) => ({ sku, name: names.get(sku) || sku, group: groupOf.get(sku) || NO_GROUP, ...(skuInfo.get(sku) || {}) });
+    // ทุนเปลี่ยนระหว่างสองรอบล่าสุดของรหัสที่มียอดขายในช่วงนี้ (มีทุนตั้งแต่ 2 รอบขึ้นไป)
+    const changes = [];
+    for (const [sku, v] of bySku) {
+      const list = ctx.idx.get(sku);
+      if (!list || list.length < 2 || !(v.covered > 0)) continue;
+      const a = list[list.length - 2], b = list[list.length - 1];
+      if (!(a.cost_total > 0) || a.cost_total === b.cost_total) continue;
+      const info = skuInfo.get(sku) || {};
+      changes.push({ sku, name: names.get(sku) || sku, unit: b.unit, prev: a.cost_total, cur: b.cost_total, prev_date: a.eff_date, cur_date: b.eff_date,
+        avg_price: info.qc > 0 ? v.covered / info.qc : null, covered: v.covered });
+    }
+    return {
+      has_cost: true, from, to, first_date: effDates[0], last_date: effDates[effDates.length - 1], rounds: effDates.length,
+      totals,
+      by_customer: top(byCust, 300, (c) => ({ code: c, name: custName(c) })),
+      by_slm: top(bySlm, 200, (c) => ({ code: c, name: slmName.get(c) || '' })),
+      by_sku: top(bySku, 600, skuShape),
+      by_group: top(byGroup, 200, (g) => ({ name: g })),
+      below_cost: [...pair.entries()].filter(([, p]) => p.covered - p.cogs.total < -0.005)
+        .sort((a, b) => (a[1].covered - a[1].cogs.total) - (b[1].covered - b[1].cogs.total)).slice(0, 100)
+        .map(([k, p]) => { const [cust, sku, slm] = k.split('\u0001'); return { cust, cust_name: custName(cust), sku, name: names.get(sku) || sku, slm, unit: (skuInfo.get(sku) || {}).unit, qc: p.qc, covered: p.covered, cogs: p.cogs }; }),
+      cost_changes: changes.sort((a, b) => Math.abs(b.cur / b.prev - 1) * b.covered - Math.abs(a.cur / a.prev - 1) * a.covered).slice(0, 60),
+    };
+  }
+  router.get('/margin', (req, res) => {
+    if (!skuCost.canSeeCost(req.user)) return res.status(403).json({ error: 'ไม่มีสิทธิ์เห็นทุนและกำไร' });
+    try {
+      res.json(marginDetail(req.query, req.user));
+    } catch (e) {
+      if (e.status === 400) return res.status(400).json({ error: e.message });
+      console.error('[dashboardExec] /margin failed:', e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -743,3 +1009,5 @@ module.exports = function dashboardExecRoutes(db) {
 
   return router;
 };
+
+module.exports.yearSources = yearSources;
