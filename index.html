@@ -10806,6 +10806,27 @@ function sdCust(){
   document.getElementById('sd-ta').innerHTML=h+'</tbody></table></div>';
 }
 
+// มุมมองมาตรฐานของแท็บรายสินค้าจัดกลุ่มจาก prod_group ของแถวออเดอร์ ซึ่งยังเป็นรหัสกลุ่ม Express ดิบ (2026-11-16, ผู้ใช้แจ้ง
+// "ยังแสดงอยู่": 10004 ค็อกเทลไก่อยู่กลุ่ม TSS · ค่าเช่า 99-7/99-8 อยู่ "ไม่ระบุกลุ่ม") — server จัดกลุ่มใหม่ให้แล้วใน
+// /api/invoice_detail/pivot (g = 001–006 จากรหัส/ชื่อ · x = 1 ไม่ใช่สินค้า) จึงใช้ข้อมูลชุดนั้นเป็นตัวกำหนดกลุ่มต่อ SKU:
+// x → เอาออกจากมุมมองสินค้า · กลุ่มต่างจากเดิม → ย้ายไปกลุ่มนั้น · SKU ที่ไม่อยู่ใน pivot (ยังไม่ออกใบกำกับ) = คงเดิม
+// pivot ยังโหลดไม่เสร็จ = คืนรายการเดิม (โหลดเสร็จ _sdPvLoad เรียก sdRender ใหม่เอง)
+function _sdRegroupProds(prods,pv){
+  if(!pv||pv.loading||!Array.isArray(pv.rows))return prods;
+  const map=new Map();
+  pv.rows.forEach(r=>{if(!r.k||r.k==='(none)')return;const o=map.get(r.k)||{};if(r.x)o.x=1;else if(r.g)o.g=expressGroupLabel(r.g);map.set(r.k,o);});
+  const out=new Map();
+  const put=(n,it)=>{let g=out.get(n);if(!g){g={n,_tot:0,it:[]};out.set(n,g);}g.it.push(it);g._tot+=it._tot||0;};
+  let moved=false;
+  prods.forEach(p=>(p.it||[]).forEach(it=>{
+    const o=map.get(it.c);
+    if(o&&o.x&&!o.g){moved=true;return;}
+    const n=o&&o.g&&o.g!==p.n?(moved=true,o.g):p.n;
+    put(n,it);
+  }));
+  if(!moved)return prods;
+  return [...out.values()].map(g=>({...g,it:g.it.sort((a,b)=>b._tot-a._tot)})).sort((a,b)=>b._tot-a._tot);
+}
 function sdProd(){
   if(!document.getElementById('sd-ta')) return; // page navigated away while an async load was in flight
   const sDn=_sd.sort.col==='val'?(_sd.sort.dir>0?'▼':'▲'):'';
@@ -10827,6 +10848,7 @@ function sdProd(){
     const yoyM=_sdYoYMaps();
     const _vc=(cur,prev)=>_sd.showYoY?(_sdApi.yoyLoading?'<span style="color:var(--TX3);font-size:11px">⏳</span>':_yoyPct(cur,prev||0)):'—';
     let prods=[...(F?F.prods:_sdApi.prods)];
+    if(_sdApi.invoiceBased) prods=_sdRegroupProds(prods,_sdPvLoad(F?F.slm:''));
     if(q) prods=prods.filter(p=>p.n.toLowerCase().includes(q)||p.it.some(i=>i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)));
     if(_sd.sort.col==='val') prods=_sdByValue(prods);
     // Express's AR ledger (ARTRN — the source for the invoice-based total above) has no SKU/product
