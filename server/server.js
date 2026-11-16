@@ -138,6 +138,30 @@ if (imapConfigured()) {
   console.log('[importPoFromEmail] PO_EMAIL_IMAP_* not configured — email PO import disabled');
 }
 
+// รายงานยอดขายส่ง LINE ทุกวันจันทร์ (2026-11-13, lib/lineWeeklyReport.js) — ปิดไว้จนกว่าจะตั้ง WEEKLY_LINE_REPORT_ENABLED=1
+// ก่อนส่ง sync Express/Bplus 1 รอบให้ยอดวันอาทิตย์เข้าครบ (sync ล้ม/กำลังรันอยู่ = ส่งด้วยข้อมูลที่มี)
+// เวลาเครื่อง DB PC เป็นเวลาไทย จึงใช้เวลาเครื่องได้เลย
+if (process.env.WEEKLY_LINE_REPORT_ENABLED === '1') {
+  const LINE_CRON = cron.validate(process.env.WEEKLY_LINE_REPORT_CRON || '') ? process.env.WEEKLY_LINE_REPORT_CRON : '30 8 * * 1';
+  let lineReportRunning = false;
+  console.log(`[lineWeeklyReport] scheduled: ${LINE_CRON}`);
+  cron.schedule(LINE_CRON, async () => {
+    if (lineReportRunning) return;
+    lineReportRunning = true;
+    try {
+      try { await triggerSyncNow(); } catch (e) { console.warn('[lineWeeklyReport] pre-send sync skipped:', e.message); }
+      const { reportRange } = require('./lib/weeklySalesReport');
+      const { sendWeeklyReport } = require('./lib/lineWeeklyReport');
+      const r = await sendWeeklyReport(db, { ...reportRange(new Date()), trigger: 'cron' });
+      console.log(`[lineWeeklyReport] sent ${r.from}..${r.to}:`, r.results.map((x) => `${x.target}=${x.ok ? 'ok' : x.error}`).join(', '));
+    } catch (e) {
+      console.error('[lineWeeklyReport] failed:', e.message);
+    } finally {
+      lineReportRunning = false;
+    }
+  });
+}
+
 process.on('SIGINT', () => {
   syncWorker.terminate();
   db.close();

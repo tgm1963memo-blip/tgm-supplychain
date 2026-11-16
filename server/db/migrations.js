@@ -984,6 +984,33 @@ function runMigrations(db) {
   // ไม่งั้น Dashboard ขึ้นค่าว่างจนจบรอบ sync ถัดไป · หลังจากนี้นับตอนจบทุกรอบ sync (lib/dataCounts.js)
   if (!db.prepare('SELECT 1 FROM sc_data_counts WHERE id = 1').get()) require('../lib/dataCounts').refreshDataCounts(db);
 
+  // รายงาน LINE รายสัปดาห์ (2026-11-13, lib/lineMessaging.js): กลุ่ม/ห้องไลน์ที่บอทถูกเชิญเข้า (บันทึกจาก webhook event join)
+  // active = ส่งรายงานเข้ากลุ่มนี้ · line_report_runs = ประวัติการส่ง + token ของรูป (URL สาธารณะที่ LINE ดึงรูป)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS line_targets (
+      target_id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'group',
+      name TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 0,
+      joined_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      left_at TEXT,
+      updated_by TEXT,
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS line_report_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_from TEXT NOT NULL,
+      period_to TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      trigger TEXT NOT NULL,
+      targets TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL,
+      error TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+  `);
+
   // Tops เบเกอรี่ (KK = 30-TA/TB/TF) + Saladbar (AA = 30-TD) ไม่แทนด้วยยอดสาขา (2026-10-20, ผู้ใช้แจ้ง "คุณปูยังขาดข้อมูลการขายของ TOP")
   // — ตั้งครั้งเดียวเมื่อยังไม่เคยตั้ง keep_skus · หลังจากนี้แก้ได้ในหน้า Master (lib/chainSales.js)
   const chainRow = db.prepare("SELECT levels_json FROM approval_workflow_templates WHERE entity_type = 'chain_sales_map'").get();

@@ -71,6 +71,11 @@ function buildApp(db, opts = {}) {
   // checks etc.) where gzip's own overhead isn't worth it; level 6 is zlib's default speed/ratio
   // balance, appropriate for the DB PC's modest CPU.
   app.use(compression({ threshold: 1024, level: 6 }));
+  // รายงาน LINE รายสัปดาห์ (2026-11-13, routes/lineReport.js): webhook ต้องได้ body ดิบไว้ตรวจลายเซ็น → mount ก่อน express.json()
+  // รูปรายงานเปิดได้โดยไม่ล็อกอิน (LINE เป็นผู้ดึงรูป) — URL มี token สุ่ม 128 บิต
+  const lineReport = require('./routes/lineReport');
+  app.use('/api/line/webhook', lineReport.webhookRouter(db));
+  app.get('/public/line-reports/:token/:n.png', lineReport.publicImage);
   app.use(express.json({ limit: '5mb' }));
 
   // tss-wms local backend (Supabase-compatible, /wms/*) — off until WMS_DB_PATH/WMS_JWT_SECRET are set. See wms/index.js.
@@ -108,6 +113,7 @@ function buildApp(db, opts = {}) {
   app.use('/api/sales_targets', authed, require('./routes/salesTargets')(db));
   // Dashboard ผู้บริหาร (2026-10-03): ยอดตามช่วงเวลา / 8 หมวดลูกค้า / Top 20 + KG — routes/dashboardExec.js
   app.use('/api/dashboard', authed, require('./routes/dashboardExec')(db));
+  app.use('/api/line_report', authed, requireRole('superadmin', 'admin'), lineReport.adminRouter(db));
   // ยอดรายสาขาห้าง (ห้อง SKU) แทนยอด DC ในมุมมองราย Sales (2026-10-07) — routes/chainSales.js
   app.use('/api/chain_sales', require('./routes/chainSales')(db));
   app.use('/api/sales_teams', require('./routes/salesTeams')(db)); // ทีมขาย + สิทธิ์ดูยอด (2026-10-03)
@@ -606,14 +612,14 @@ function buildApp(db, opts = {}) {
   const PROMO_COST_ROLES = ['superadmin', 'admin'];
   app.use('/api/promo_costs', require('./routes/promoCosts')(db, PROMO_COST_ROLES, PROMO_COST_ROLES, PROMO_COST_ROLES));
   app.use('/api/promo_eval', require('./routes/promoEval')(db, PROMO_COST_ROLES));
+  // ทุน 3 ช่องจากไฟล์ Master SKU (2026-11-16) — นำเข้า/ดูตารางทุนใช้สิทธิ์เดียวกับหน้าทุนเดิม · การเห็นกำไรบนหน้ายอดขายใช้ can_see_cost แยกต่างหาก
+  app.use('/api/cost_rounds', require('./routes/costRounds')(db, PROMO_COST_ROLES));
   app.use('/api/promo_draft_attachments', require('./routes/promoDraftAttachments')(db, PROMO_DRAFT_ROLES));
 
   // Comment ต่อแถวสินค้า (ต่อ SKU ต่อเอกสาร, 2026-09-11) — mount แบบเดียวกับ audit_log (readOnly:true
   // จาก makeCrudRouter แล้วต่อ POST เองทีหลัง): uid ต้อง derive จาก session เท่านั้น ห้ามเชื่อค่าที่ client
   // ส่งมา (คนละเหตุผลกับ draft_no/doc_no ของ header ข้างบน แต่หลักการเดียวกัน — กัน forge ตัวตนผู้เขียน
   // comment) ไม่มี PATCH/DELETE เหมือน audit_log (comment ที่เขียนแล้วไม่ควรแก้/ลบทีหลัง)
-  // ทุน 3 ช่องจากไฟล์ Master SKU (2026-11-16) — นำเข้า/ดูตารางทุนใช้สิทธิ์เดียวกับหน้าทุนเดิม · การเห็นกำไรบนหน้ายอดขายใช้ can_see_cost แยกต่างหาก
-  app.use('/api/cost_rounds', require('./routes/costRounds')(db, PROMO_COST_ROLES));
   const promoDraftLineCommentsRouter = makeCrudRouter(db, 'promo_draft_line_comments', {
     pk: 'id',
     fields: ['draft_no', 'sku', 'anchor', 'uid', 'text'],
