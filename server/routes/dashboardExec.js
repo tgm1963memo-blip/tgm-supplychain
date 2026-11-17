@@ -167,9 +167,11 @@ module.exports = function dashboardExecRoutes(db) {
     const coOf = (c) => src[c] || (c === 'TGM' ? 'TGM' : c);
     const map = new Map();
     map.ic = 0;
+    map.shop = new Map(); // รหัส Shop → ยอด (ไม่อยู่ใน map — แสดงแยกเป็น "ยอด Shop")
     for (const r of rows) {
       const amt = Number(r.amount) || 0;
       if (reqNonSales.ic.has(r.cust_code)) { map.ic += amt; continue; }
+      if (reqNonSales.shop.has(r.cust_code)) { map.shop.set(r.cust_code, (map.shop.get(r.cust_code) || 0) + amt); continue; }
       if (reqNonSales.staff.has(r.cust_code)) continue;
       // tgm = ส่วนที่ขายผ่านโรงงาน (Bplus) — ใช้แสดงยอดแยกบริษัทใต้ชื่อเครือใน Top 20
       const cur = map.get(r.cust_code) || { net: 0, consi: 0, tgm: 0 };
@@ -210,9 +212,15 @@ module.exports = function dashboardExecRoutes(db) {
     // (2026-10-14, ผู้ใช้ขอ) Shop ของบริษัท (TGM Shop โรงงาน / พระราม 3 / ตู้ทอด) ไม่นับเป็นยอดขาย — ตัดทิ้งเหมือนพนักงาน
     // ชุดเดียวกับทุกหน้า (lib/nonSales.js) · บริษัทในเครือยังแสดงใน "ยอดในเครือ" ตามเดิม
     for (const code of nonSales.nonSalesCodes(db)) if (!ic.has(code)) staff.add(code);
-    return { ic, staff };
+    // (2026-11-17, ผู้ใช้ขอ) Shop ของบริษัท — ยังไม่นับเป็นยอดขาย แต่แสดงยอดแยกเป็น "ยอด Shop" ใต้ KPI (เหมือนยอดในเครือ)
+    //   รวม Shop โรงงาน (Bplus BP-POS) + Shop พระราม 3 (TG-IG-0001 ซุปเปอร์สุธิดา) และ Shop ฝั่ง Express
+    const shop = new Set(db.prepare(`SELECT code FROM customer_profiles
+      WHERE business_type = 'company_shop' OR exec_channel IN ('shop_factory', 'shop_rama3')
+         OR corporate LIKE 'TGM Shop%' OR corporate LIKE 'TGM. SHOP%' OR corporate LIKE 'Shop โรงงาน%'`).all()
+      .map((r) => r.code).filter((c) => staff.has(c)));
+    return { ic, staff, shop };
   }
-  let reqNonSales = { ic: new Set(), staff: new Set() };
+  let reqNonSales = { ic: new Set(), staff: new Set(), shop: new Set() };
   const isNonSales = (code) => reqNonSales.ic.has(code) || reqNonSales.staff.has(code);
 
   // ขายให้บริษัทในเครือจาก Bplus โรงงาน — แสดงแยก ไม่รวมในยอดขาย (ผู้ใช้ยืนยัน 2026-10-05)
@@ -547,6 +555,14 @@ module.exports = function dashboardExecRoutes(db) {
         ty_ic: (co === 'tss' ? 0 : icTotal(from, to, slmCodes)) + ty.ic,
         ly_ic: (co === 'tss' ? 0 : icTotal(lyFrom, lyTo, slmCodes)) + ly.ic,
       };
+      // ยอด Shop แยกตาม Shop โรงงาน / Shop พระราม 3 (2026-11-17) — ไม่รวมในยอดขาย
+      for (const [k, m] of [['ty', ty.shop], ['ly', ly.shop]]) {
+        const by = { shop_factory: 0, shop_rama3: 0 };
+        for (const [code, amt] of m) by[channelOf(meta, code, consiCodes.has(code)) === 'shop_rama3' ? 'shop_rama3' : 'shop_factory'] += amt;
+        kpi[`${k}_shop`] = by.shop_factory + by.shop_rama3;
+        kpi[`${k}_shop_factory`] = by.shop_factory;
+        kpi[`${k}_shop_rama3`] = by.shop_rama3;
+      }
 
       // หมวด + กลุ่มลูกค้า (Corporate group ก่อน ไม่มีค่อยใช้ชื่อลูกค้า — กติกาเดียวกับ Top 10 ลูกค้าเดิม)
       const channelAgg = Object.fromEntries(EXEC_CHANNELS.map((c) => [c.key, { ty_net: 0, ty_consi: 0, ly_net: 0, ly_consi: 0 }]));
