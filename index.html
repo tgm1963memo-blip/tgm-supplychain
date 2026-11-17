@@ -278,6 +278,7 @@ table.draft-trail td.l{text-align:left}
 .mbox{background:var(--W);border-radius:12px;padding:24px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
 .mbox:has(#sd-inv-modal){max-width:980px}
 .mbox:has(#dlog-body){max-width:980px}
+.mbox:has(#pc-hist){max-width:900px}
 #sd-inv-modal table td,#sd-inv-modal table th{padding:6px 8px}
 .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .mt2{font-size:16px;font-weight:700;color:var(--N)}
@@ -20571,7 +20572,7 @@ function ptExport() {
 // ทุนคาดการณ์ c(m) = ทุน × (1 + %เนื้อหมู × (ราคาหมูเดือน m ÷ ราคาหมูเดือนของทุน − 1)) — ข้อมูลขาดแสดง "—" ไม่เดา
 // ═══════════════════════════════════════════════════════════════════
 // rounds/rmeta/rq/rdraft = ทุน 3 ช่องจากไฟล์ Master SKU (2026-11-16, /api/cost_rounds) — แท็บแรก เพราะเป็นทุนที่ใช้คิดกำไรบนหน้ายอดขาย
-let _pc = { tab: 'rounds', costs: null, months: null, pig: null, settings: null, q: '', draft: null, err: '', rounds: null, rmeta: null, rq: '', rdraft: null };
+let _pc = { tab: 'rounds', costs: null, months: null, pig: null, settings: null, q: '', draft: null, err: '', rounds: null, rmeta: null, rq: '', rdraft: null, bulk: null, rview: 'latest', matrix: null, mfChanged: false, mfJump: false };
 const _pcCanWrite = () => ['superadmin', 'admin'].includes(ROLE);
 const _pcCanSettings = () => ['superadmin', 'admin'].includes(ROLE);
 const _pcYm = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -20612,11 +20613,11 @@ function pcRender() {
   const ct = document.getElementById('ct'); if (!ct) return;
   const w = _pcCanWrite();
   document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="pcTemplate()">⬇ ไฟล์ทุน (Excel)</button>
-    ${w ? `<button class="btn btn-sm btn-p" onclick="document.getElementById('pc-file').click()">⬆ นำเข้าทุน Excel</button><input type="file" id="pc-file" accept=".xlsx,.xls" style="display:none" onchange="pcImport(this)">` : ''}`;
+    ${w ? `<button class="btn btn-sm btn-p" onclick="document.getElementById('pc-file').click()">⬆ นำเข้าทุน Excel</button><input type="file" id="pc-file" accept=".xlsx,.xls" multiple style="display:none" onchange="pcImport(this)">` : ''}`;
   const tab = (id, lbl) => `<button class="btn btn-sm" onclick="_pc.tab='${id}';pcRender()" style="${_pc.tab === id ? 'background:var(--N);color:#fff;border-color:var(--N);font-weight:600' : ''}">${lbl}</button>`;
   ct.innerHTML = `${_pc.err ? `<div class="al alw">โหลดข้อมูลไม่สำเร็จ: ${esc(_pc.err)}</div>` : ''}
     <div class="frow" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${tab('rounds', 'ทุน 3 ช่อง (Master SKU)')}${tab('cost', 'ทุนสำหรับพิจารณาโปร')}${tab('pig', 'ราคาหมูหน้าฟาร์ม')}${tab('rules', 'เกณฑ์พิจารณาโปร')}</div>
-    <div id="pc-draft">${_pcDraftHtml()}${_pcRoundDraftHtml()}</div>
+    <div id="pc-draft">${_pcDraftHtml()}${_pcRoundDraftHtml()}${_pcBulkHtml()}</div>
     <div id="pc-body"></div>`;
   ({ rounds: pcRenderRounds, cost: pcRenderCost, pig: pcRenderPig, rules: pcRenderRules })[_pc.tab]();
 }
@@ -20732,20 +20733,20 @@ function _pcParseSheet(ws) {
 }
 
 function pcImport(input) {
-  const file = input.files[0]; if (!file) return;
+  const files = [...input.files]; if (!files.length) return;
   input.value = '';
-  const rd = new FileReader();
-  rd.onload = async e => {
+  (async () => {
     try {
       await ensureXLSX();
-      const wb = XLSX.read(e.target.result, { type: 'array' });
+      if (files.length > 1) return pcBulkLoad(files);
+      const file = files[0];
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       // ไฟล์ Master SKU ทุน 3 ช่อง (มีคอลัมน์ ขั้นต้น + ค่าเสื่อม + รวมต้นทุน) → เข้าตารางทุนรายรอบ ไม่ใช่ทุนรายเดือนของงานโปร
       // ต้องตรวจก่อน _pcParseSheet เพราะตัวอ่านเดิมจะหยิบคอลัมน์ "ทุน" ช่องแรก ซึ่งในไฟล์นี้คือทุนเก่าปี 65
-      const masters = wb.SheetNames.map(n => ({ name: n, parsed: _pcParseMaster(wb.Sheets[n]) })).filter(s => s.parsed && s.parsed.rows.length);
-      if (masters.length) {
-        const m = masters[0];
-        _pc.draft = null;
-        _pc.rdraft = { file: file.name, sheet: m.name, parsed: m.parsed, eff: m.parsed.effGuess || today(), suspect: 'hold', preview: null, error: '' };
+      const m = _pcPickMaster(wb, file.name);
+      if (m) {
+        _pc.draft = null; _pc.bulk = null;
+        _pc.rdraft = { file: file.name, sheet: m.name, parsed: m.parsed, eff: m.parsed.effGuess || '', suspect: 'hold', preview: null, error: '' };
         _pc.tab = 'rounds'; pcRender();
         await pcRoundPreview();
         return;
@@ -20756,8 +20757,7 @@ function pcImport(input) {
       _pc.tab = 'cost'; pcRender();
       await pcPreview();
     } catch (err) { toast('อ่านไฟล์ไม่สำเร็จ: ' + (err.message || err)); }
-  };
-  rd.readAsArrayBuffer(file);
+  })();
 }
 const _pcDraftSheet = () => _pc.draft?.sheets.find(s => s.name === _pc.draft.sheet)?.parsed;
 async function pcPreview() {
@@ -20811,10 +20811,39 @@ async function pcImportSave(btn) {
 }
 
 // ── ทุน 3 ช่องจากไฟล์ Master SKU ของฝ่ายต้นทุน (2026-11-16) — server: routes/costRounds.js ──────────────
+// ป้ายรอบ RM → วันเริ่มรอบ (YYYY-MM-DD): "01-15ม.ค.69", "31มี.ค.-04เม.ย.69", "04-09 พ.ค.69", "RM 5-10.10.69", "2-7.11.69"
+// เดือนไทยเทียบแบบตัดจุด/ช่องว่าง (มค, มีค, เมย ...) · ปี 2 หลัก = พ.ศ. ย่อ → +2500 −543 · อ่านไม่ได้ = ''
+const _PC_MON_KEY = _PC_MON.map(m => m.replace(/\./g, ''));
+function _pcIso(y, mo, d) {
+  if (y < 100) y += 2500; if (y > 2400) y -= 543;
+  if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return '';
+  const s = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const t = new Date(s + 'T00:00:00Z');
+  return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === s ? s : '';
+}
+function _pcRmDate(label) {
+  const s = String(label || '').replace(/^.*?RM/i, '').replace(/\s+/g, '');
+  const d = Number((s.match(/^(\d{1,2})/) || [])[1]);
+  const y = Number((s.match(/(\d{2,4})\D*$/) || [])[1]);
+  if (!d || !y) return '';
+  const flat = s.replace(/\./g, '');
+  let mo = 0, at = Infinity;
+  _PC_MON_KEY.forEach((k, i) => { const j = flat.indexOf(k); if (j >= 0 && j < at) { at = j; mo = i + 1; } });
+  if (!mo) { const m = s.match(/^\d{1,2}-\d{1,2}[./](\d{1,2})[./]\d{2,4}/); if (m) mo = Number(m[1]); }
+  return mo ? _pcIso(y, mo, d) : '';
+}
+// ชื่อไฟล์ของฝ่ายต้นทุน "Master SKU(69.03.31มี.ค-04.04เม.ย.)ทุน3ช่อง.xlsx" → 2026-03-31 (ปี.เดือน.วันเริ่มรอบ)
+function _pcFileDate(name) {
+  const m = String(name || '').match(/\((\d{2})\.(\d{1,2})\.(\d{1,2})/);
+  return m ? _pcIso(Number(m[1]), Number(m[2]), Number(m[3])) : '';
+}
+
 // อ่านทีละช่องจาก worksheet ตรงๆ (ไม่ใช้ sheet_to_json): ช่อง error ของ Excel (#N/A, #VALUE!) มี v เป็นรหัสตัวเลข
 // (42 = #N/A) ถ้าอ่านแบบ raw จะกลายเป็น "ทุน 42 บาท" — ส่งเป็นข้อความขึ้นต้น # ให้ server รายงานเป็นค่าผิดพลาด
-// หัวคอลัมน์จับจากข้อความ ไม่ผูกตำแหน่ง: "รวมต้นทุน…" มี 2 ช่อง (RM รอบเก่าทางซ้าย / รอบล่าสุดทางขวา) ใช้ช่องขวาสุดเป็นทุนรวม
-function _pcParseMaster(ws) {
+// หัวคอลัมน์จับจากข้อความ ไม่ผูกตำแหน่ง · wantDate = วันเริ่มรอบจากชื่อไฟล์: ใช้ช่อง "รวมต้นทุน…" ที่ป้าย RM ตรงกับรอบของไฟล์
+// (2026-11-17: ไฟล์ 1–15 ม.ค. 69 มีรอบหลังแปะต่อท้ายอีก 6 ช่อง ช่องขวาสุดเป็นรอบ 31 มี.ค.) ไม่ตรงสักช่อง = ช่องขวาสุดตามเดิม
+// ช่องแรก (RM16-31ส.ค.65) = ทุนเก่า ใช้ตรวจทุนต่ำผิดปกติ
+function _pcParseMaster(ws, wantDate) {
   if (!ws || !ws['!ref']) return null;
   const rg = XLSX.utils.decode_range(ws['!ref']);
   const val = (r, c) => { const x = ws[XLSX.utils.encode_cell({ r, c })]; return !x ? null : x.t === 'e' ? String(x.w || '#ERR') : x.v; };
@@ -20827,7 +20856,8 @@ function _pcParseMaster(ws) {
   const cCode = find(/^รหัสสินค้า/), cName = find(/^ชื่อสินค้า/), cUnit = find(/^หน่วย/), cBase = find(/ขั้นต้น/), cDepr = find(/ค่าเสื่อม/);
   const tot = head.map((x, i) => (x && /^รวมต้นทุน/.test(x) ? i : -1)).filter(i => i >= 0);
   if (cCode < 0 || cBase < 0 || cDepr < 0 || !tot.length) return null;
-  const cTotal = tot[tot.length - 1], cOld = tot.length > 1 ? tot[0] : -1;
+  const hit = wantDate ? tot.slice(1).find(i => _pcRmDate(head[i]) === wantDate) : undefined;
+  const cTotal = hit ?? tot[tot.length - 1], cOld = tot.length > 1 && tot[0] !== cTotal ? tot[0] : -1;
   const cGroup = find(/^กลุ่มผลิตภัณฑ์/), cStd = find(/standard\s*cost/i), cStatus = find(/^ผลิตภัณฑ์/);
   const rows = [];
   for (let r = h + 1; r <= rg.e.r; r++) {
@@ -20836,17 +20866,153 @@ function _pcParseMaster(ws) {
     const g = c => (c >= 0 ? val(r, c) : null);
     rows.push({ row: r + 1, code, name: g(cName), unit: g(cUnit), old: g(cOld), base: g(cBase), depr: g(cDepr), total: g(cTotal), group: g(cGroup), std_group: g(cStd), status: g(cStatus) });
   }
-  // รอบ RM จากหัวคอลัมน์ทุนรวม เช่น "…ต่อกก.RM 2-7.11.69" → ป้าย "2-7.11.69" + เดาวันเริ่มมีผล 2026-11-02 (ผู้ใช้แก้ได้ก่อนนำเข้า)
-  const rm = (head[cTotal].match(/RM\s*(.+)$/i) || [])[1] || '';
-  const dm = rm.match(/(\d{1,2})\s*-\s*\d{1,2}\s*[./]\s*(\d{1,2})\s*[./]\s*(\d{2,4})/);
-  let effGuess = '';
-  if (dm) {
-    let y = Number(dm[3]); if (y < 100) y += 2500; if (y > 2400) y -= 543;
-    const mo = Number(dm[2]), d = Number(dm[1]);
-    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) effGuess = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  }
+  const rm = ((head[cTotal].match(/RM\s*(.+)$/i) || [])[1] || '').trim();
+  const rmDate = _pcRmDate(head[cTotal]);
   const col = c => (c >= 0 ? `${XLSX.utils.encode_col(c)} · ${head[c]}` : '');
-  return { rows, rm: rm.trim(), effGuess, cols: { total: col(cTotal), old: col(cOld), base: col(cBase), depr: col(cDepr), unit: col(cUnit) } };
+  return { rows, rm, rmDate, effGuess: wantDate || rmDate, matched: !!wantDate && rmDate === wantDate, totalCols: tot.length, notes: [],
+    cols: { total: col(cTotal), old: col(cOld), base: col(cBase), depr: col(cDepr), unit: col(cUnit) } };
+}
+// เลือกชีต: ชีตที่รอบ RM ตรงกับชื่อไฟล์ก่อน แล้วชีตที่มีแถวมากสุด (ไฟล์ 14–19 ก.ย. 69 มีชีต "Report" เป็นข้อมูลรอบ 24–29 ส.ค.
+// ของจริงอยู่ชีต "Report 14-19.09.69" · ชีตเล็ก Sheet1/Sheet2 ที่ฝ่ายต้นทุนทดไว้มีแค่ไม่กี่แถว)
+function _pcPickMaster(wb, fileName) {
+  const want = _pcFileDate(fileName);
+  const all = wb.SheetNames.map(n => ({ name: n, parsed: _pcParseMaster(wb.Sheets[n], want) })).filter(x => x.parsed && x.parsed.rows.length);
+  if (!all.length) return null;
+  all.sort((a, b) => (b.parsed.matched - a.parsed.matched) || (b.parsed.rows.length - a.parsed.rows.length));
+  const m = all[0], p = m.parsed;
+  if (want && !p.matched) p.notes.push(`ไม่พบช่องทุนรวมรอบ ${_pcDate(want)} ตามชื่อไฟล์ — ใช้ช่องขวาสุด (${p.rm || '?'}) ตรวจก่อนนำเข้า`);
+  if (p.totalCols > 2) p.notes.push(`ไฟล์มีช่องทุนรวม ${p.totalCols} ช่อง — ใช้ช่อง ${p.cols.total.split(' · ')[0]} ที่ตรงกับรอบของไฟล์`);
+  if (!p.cols.unit) p.notes.push('ไฟล์ไม่มีคอลัมน์หน่วยนับ — ระบบใช้หน่วยของรอบก่อนให้');
+  const other = all.find(x => x !== m && x.parsed.rows.length >= 100);
+  if (other) p.notes.push(`ใช้ชีต "${m.name}" (ชีต "${other.name}" เป็นรอบ ${other.parsed.rm || 'อื่น'})`);
+  return m;
+}
+
+// ── นำเข้าหลายไฟล์ (2026-11-17): ไฟล์ทุนทุกรอบของปี → นำเข้าทีละไฟล์จากรอบเก่าไปใหม่ ─────────────────
+// ต้องเรียง: buildPlan เทียบ "เปลี่ยนหรือไม่" กับรอบที่มีผลก่อนหน้า · แต่ละไฟล์แยก transaction · พังไฟล์ไหนหยุดที่ไฟล์นั้น
+async function pcBulkLoad(files) {
+  _pc.draft = null; _pc.rdraft = null;
+  const b = _pc.bulk = { items: [], suspect: 'hold', running: false, loading: files.length, stopped: '' };
+  _pc.tab = 'rounds'; pcRender();
+  for (const f of files) {
+    let it;
+    try {
+      const m = _pcPickMaster(XLSX.read(await f.arrayBuffer(), { type: 'array' }), f.name);
+      it = m ? { file: f.name, sheet: m.name, parsed: m.parsed, eff: m.parsed.effGuess || '', pv: null, err: '', status: 'wait' }
+        : { file: f.name, parsed: null, eff: '', pv: null, err: 'ไม่ใช่ไฟล์ Master SKU ทุน 3 ช่อง — ข้าม', status: 'skip' };
+    } catch (e) { it = { file: f.name, parsed: null, eff: '', pv: null, err: 'อ่านไฟล์ไม่ได้: ' + (e.message || e), status: 'skip' }; }
+    if (_pc.bulk !== b) return;
+    b.items.push(it); b.loading--;
+    _pcBulkSort(); _pcBulkPaint();
+  }
+  await pcBulkCheck();
+}
+const _pcBulkSort = () => _pc.bulk.items.sort((a, b) => (a.parsed ? 0 : 1) - (b.parsed ? 0 : 1) || String(a.eff || '9').localeCompare(String(b.eff || '9')));
+const _pcBulkPaint = () => { const box = document.getElementById('pc-draft'); if (box) box.innerHTML = _pcDraftHtml() + _pcRoundDraftHtml() + _pcBulkHtml(); };
+const _pcBulkReady = () => (_pc.bulk?.items || []).filter(i => i.parsed);
+function _pcBulkProblems() {
+  const seen = new Map(), out = [];
+  for (const i of _pcBulkReady()) {
+    if (!i.eff) out.push(`${i.file}: ยังไม่ระบุวันที่มีผล`);
+    else if (seen.has(i.eff)) out.push(`${i.file} กับ ${seen.get(i.eff)} มีผลวันเดียวกัน (${_pcDate(i.eff)})`);
+    else seen.set(i.eff, i.file);
+  }
+  return out;
+}
+function pcBulkEff(idx, v) {
+  const it = _pc.bulk?.items[idx]; if (!it || _pc.bulk.running) return;
+  it.eff = v; it.pv = null; it.err = '';
+  _pcBulkSort(); _pcBulkPaint();
+  pcBulkCheck();
+}
+function pcBulkSuspect(v) { if (!_pc.bulk || _pc.bulk.running) return; _pc.bulk.suspect = v; _pc.bulk.items.forEach(i => { i.pv = null; }); pcBulkCheck(); }
+// ตรวจทุกไฟล์กับข้อมูลในระบบตอนนี้ — ตัวเลข ใหม่/เปลี่ยน ของรอบหลังจะต่างไปหลังนำเข้ารอบก่อนหน้า (ยอดจริงดูที่สถานะหลังนำเข้า)
+async function pcBulkCheck() {
+  const b = _pc.bulk; if (!b || b.running || b.checking) return;
+  b.checking = true;
+  try {
+    for (const it of _pcBulkReady()) {
+      if (!it.eff || it.pv || it.status === 'done') continue;
+      it.status = 'checking'; _pcBulkPaint();
+      const eff = it.eff;
+      const r = await apiFetch('/api/cost_rounds/import/preview', { method: 'POST', body: JSON.stringify({ eff_date: eff, suspect: b.suspect, rows: it.parsed.rows }) });
+      if (_pc.bulk !== b) return;
+      it.status = 'wait';
+      if (it.eff !== eff) continue;
+      if (r.error) { it.err = r.error.message; it.pv = null; } else { it.pv = r.data; it.err = ''; }
+      _pcBulkPaint();
+    }
+  } finally { b.checking = false; }
+  if (_pc.bulk === b && _pcBulkReady().some(i => i.eff && !i.pv && i.status !== 'done' && !i.err)) pcBulkCheck();
+  else _pcBulkPaint();
+}
+async function pcBulkSave() {
+  const b = _pc.bulk; if (!b || b.running || b.checking) return;
+  const probs = _pcBulkProblems();
+  if (probs.length) { toast(probs[0]); return; }
+  const todo = _pcBulkReady().filter(i => i.status !== 'done');
+  if (!todo.length) return;
+  b.running = true; b.stopped = '';
+  let n = 0;
+  for (const it of todo) {
+    it.status = 'saving'; it.err = ''; _pcBulkPaint();
+    const r = await apiFetch('/api/cost_rounds/import', { method: 'POST', body: JSON.stringify({ eff_date: it.eff, suspect: b.suspect, rows: it.parsed.rows, file: `${it.file} · ชีต ${it.sheet}`, rm_label: it.parsed.rm || null }) });
+    if (_pc.bulk !== b) return;
+    if (r.error) { it.status = 'fail'; it.err = r.error.message; b.stopped = it.file; break; }
+    it.status = 'done'; it.res = r.data; n++;
+  }
+  b.running = false;
+  _pc.matrix = null;
+  toast(b.stopped ? `นำเข้า ${n} ไฟล์ แล้วหยุดที่ ${b.stopped}` : `นำเข้าทุนครบ ${n} ไฟล์แล้ว`);
+  await pgPromoCosts(true);
+}
+function _pcBulkHtml() {
+  const b = _pc.bulk; if (!b) return '';
+  const ok = _pcBulkReady(), probs = _pcBulkProblems();
+  const done = ok.filter(i => i.status === 'done').length, todo = ok.length - done;
+  const jumps = ok.reduce((s, i) => s + (i.pv?.jump_count || 0), 0);
+  const notes = ok.filter(i => i.parsed.notes.length).length;
+  const pvTxt = pv => `ใหม่ ${pv.new_count.toLocaleString()} · เปลี่ยน ${pv.changed_count.toLocaleString()} · ไม่เปลี่ยน ${pv.unchanged_count.toLocaleString()}${pv.suspect_count ? ` · <span style="color:var(--A)">ทุนต่ำผิดปกติ ${pv.suspect_count}</span>` : ''}${pv.error_count ? ` · <span style="color:var(--A)">ค่าผิดพลาด ${pv.error_count}</span>` : ''}`;
+  const st = i => ({
+    wait: i.pv ? `<span style="color:var(--TX2)">${pvTxt(i.pv)}</span>` : i.eff ? '<span style="color:var(--TX3)">รอตรวจ</span>' : '<span style="color:var(--A)">ระบุวันที่มีผล</span>',
+    checking: '<span style="color:var(--TX3)">กำลังตรวจ…</span>',
+    saving: '<b style="color:var(--N)">กำลังนำเข้า…</b>',
+    done: `<b style="color:var(--G)">นำเข้าแล้ว</b> <span style="color:var(--TX3)">ใหม่ ${i.res?.created ?? 0} · แก้ ${i.res?.updated ?? 0} · ไม่เปลี่ยน ${i.res?.unchanged ?? 0}${i.res?.held ? ` · พัก ${i.res.held}` : ''}</span>`,
+    fail: '<b style="color:var(--R)">ไม่สำเร็จ</b>',
+    skip: '<span style="color:var(--TX3)">ข้าม</span>',
+  })[i.status];
+  const rows = b.items.map((i, idx) => `<tr style="vertical-align:top">
+    <td style="font-size:12px">${esc(i.file)}</td>
+    <td style="font-size:12px">${i.parsed ? `${esc(i.sheet)} · <b>${esc(i.parsed.cols.total.split(' · ')[0])}</b> ${esc(i.parsed.rm ? 'RM ' + i.parsed.rm : '')}${i.parsed.notes.map(n => `<div style="color:var(--A);font-size:11.5px">⚠ ${esc(n)}</div>`).join('')}` : ''}${i.err ? `<div style="color:var(--R);font-size:11.5px">${esc(i.err)}</div>` : ''}</td>
+    <td>${i.parsed ? `<input type="date" aria-label="วันที่มีผล ${esc(i.file)}" value="${esc(i.eff)}" ${b.running || i.status === 'done' ? 'disabled' : ''} onchange="pcBulkEff(${idx},this.value)" style="font-size:12px;padding:3px 6px">` : ''}</td>
+    <td class="r">${i.parsed ? i.parsed.rows.length.toLocaleString() : ''}</td>
+    <td class="r">${i.pv?.jump_count ? `<span class="badge bba">${i.pv.jump_count.toLocaleString()}</span>` : i.pv ? '<span style="color:var(--TX3)">—</span>' : ''}</td>
+    <td style="font-size:12px">${st(i)}</td></tr>`).join('');
+  return `<div class="card" style="border:2px solid var(--N)">
+    <div class="ch"><div class="ct2">ตรวจไฟล์ Master SKU ก่อนนำเข้า — ${b.items.length} ไฟล์${b.loading ? ` (กำลังอ่านอีก ${b.loading} ไฟล์…)` : ''}</div>
+      <span style="font-size:12px;color:var(--TX3)">เรียงตามวันที่มีผล · นำเข้าทีละไฟล์จากรอบเก่าไปใหม่ · แต่ละไฟล์บันทึกแยกกัน ไฟล์ไหนพังจะหยุดที่ไฟล์นั้น</span></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
+      <div class="field" style="max-width:360px;margin:0"><label for="pc-bsus">ทุนต่ำผิดปกติ (ต่ำกว่าครึ่งของทุนเก่าช่อง E) — ใช้กับทุกไฟล์</label>
+        <select id="pc-bsus" ${b.running ? 'disabled' : ''} onchange="pcBulkSuspect(this.value)"><option value="hold" ${b.suspect === 'hold' ? 'selected' : ''}>พักไว้ ยังไม่นำเข้า</option><option value="import" ${b.suspect === 'import' ? 'selected' : ''}>นำเข้า และติดป้ายรอยืนยัน</option></select></div>
+      <div style="font-size:12px;color:var(--TX2);max-width:560px;line-height:1.6">ราคากระโดด (ทุนรวมเกิน 2 เท่า หรือต่ำกว่าครึ่งของรอบก่อน) <b>นำเข้าตามไฟล์</b> แล้วติดป้ายให้ตรวจ ไม่พักไว้ · ใหม่/เปลี่ยน เทียบกับข้อมูลในระบบตอนนี้</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <span class="badge bbl">${ok.length} ไฟล์ทุน</span>
+      ${done ? `<span class="badge bbg">นำเข้าแล้ว ${done}</span>` : ''}
+      ${notes ? `<span class="badge bba">ควรดู ${notes} ไฟล์</span>` : ''}
+      ${jumps ? `<span class="badge bba">ราคากระโดด ${jumps.toLocaleString()} จุด</span>` : ''}
+      ${probs.map(p => `<span class="badge bbr">${esc(p)}</span>`).join('')}
+    </div>
+    <div class="tw" style="max-height:460px;overflow:auto"><table><thead><tr><th>ไฟล์</th><th>ชีต · ช่องทุนรวมที่ใช้</th><th>เริ่มมีผล</th><th class="r">แถว</th><th class="r">ราคากระโดด</th><th>สถานะ</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${b.stopped ? `<div class="al alw" style="margin-top:8px">หยุดที่ไฟล์ ${esc(b.stopped)} — แก้แล้วกดนำเข้าอีกครั้ง ไฟล์ที่นำเข้าแล้วจะไม่ทำซ้ำ</div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-sm" ${b.running ? 'disabled' : ''} onclick="_pc.bulk=null;pcRender()">${todo ? 'ยกเลิก' : 'ปิด'}</button>
+      ${b.running ? `<span style="font-size:12.5px;color:var(--N)">กำลังนำเข้า ${done + 1} / ${ok.length}…</span>` : ''}
+      <span style="margin-left:auto"></span>
+      ${todo && !b.running ? `<button class="btn btn-sm" onclick="_pc.bulk.items.forEach(i=>{if(i.status!=='done'){i.pv=null;i.err='';}});pcBulkCheck()">ตรวจอีกครั้ง</button>
+        <button class="btn btn-sm btn-p" ${probs.length || b.loading ? 'disabled' : ''} onclick="pcBulkSave()">นำเข้า ${todo} ไฟล์ เรียงจากรอบเก่า</button>` : ''}
+    </div>
+  </div>`;
 }
 const _pcDate = d => { const [y, m, dd] = String(d || '').split('-').map(Number); return dd ? `${dd} ${_PC_MON[m - 1]} ${String((y + 543) % 100).padStart(2, '0')}` : '—'; };
 
@@ -20889,7 +21055,12 @@ function _pcRoundDraftHtml() {
       ${pv.dup_count ? `<span class="badge bba">รหัสซ้ำ ${pv.dup_count}</span>` : ''}
       ${pv.unknown_count ? `<span class="badge bba">ไม่พบรหัสในระบบ ${pv.unknown_count.toLocaleString()}</span>` : ''}
       ${pv.no_unit_count ? `<span class="badge bba">ไม่มีหน่วย ${pv.no_unit_count}</span>` : ''}
+      ${pv.jump_count ? `<span class="badge bba">ราคากระโดด ${pv.jump_count.toLocaleString()} (นำเข้าพร้อมป้าย)</span>` : ''}
+      ${pv.unit_inherited_count ? `<span class="badge bbl">ใช้หน่วยรอบก่อน ${pv.unit_inherited_count.toLocaleString()}</span>` : ''}
     </div>
+    ${(p.notes || []).map(n => `<div style="font-size:12px;color:var(--A);margin-bottom:4px">⚠ ${esc(n)}</div>`).join('')}
+    ${pv.jumps && pv.jumps.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">ราคากระโดด ${pv.jump_count.toLocaleString()} รายการ — ทุนรวมเกิน 2 เท่า หรือต่ำกว่าครึ่งของรอบก่อน นำเข้าตามไฟล์ แต่ควรให้ฝ่ายต้นทุนตรวจ</summary>
+      <div class="tw" style="max-height:240px;overflow:auto;margin-top:4px"><table><thead><tr><th>รหัส</th><th>สินค้า</th><th>หน่วย</th><th class="r">ทุนรวมรอบก่อน</th><th class="r">ทุนรวมรอบนี้</th></tr></thead><tbody>${pv.jumps.map(x => `<tr><td class="mono">${esc(x.code)}</td><td>${esc(x.name || '')}</td><td>${esc(x.unit || '')}</td><td class="r">${_pcNum(x.prev_total)} <span style="color:var(--TX3);font-size:11px">${_pcDate(x.prev_date)}</span></td><td class="r"><b>${_pcNum(x.total)}</b></td></tr>`).join('')}</tbody></table></div></details>` : ''}
     ${pv.suspects.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">ทุนต่ำผิดปกติ ${pv.suspect_count.toLocaleString()} รายการ — ทุนรวมต่ำกว่าครึ่งของทุนเก่า น่าจะยังไม่รวมวัตถุดิบ ควรให้ฝ่ายต้นทุนยืนยัน</summary>
       <div class="tw" style="max-height:240px;overflow:auto;margin-top:4px"><table><thead><tr><th>แถว</th><th>รหัส</th><th>สินค้า</th><th>หน่วย</th><th class="r">ทุนเก่าในไฟล์</th><th class="r">ทุนรวมรอบนี้</th></tr></thead><tbody>${pv.suspects.map(x => `<tr><td>${x.row}</td><td class="mono">${esc(x.code)}</td><td>${esc(x.name || '')}</td><td>${esc(x.unit || '')}</td><td class="r">${_pcNum(x.old_cost)}</td><td class="r">${_pcNum(x.total)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
     ${pv.errors.length ? `<details style="font-size:12px;margin-bottom:6px"><summary style="cursor:pointer;color:var(--A)">ค่าผิดพลาดในไฟล์ (ข้าม) ${pv.error_count} แถว</summary><div style="margin:4px 0 0 16px">${pv.errors.map(x => `แถว ${x.row} ${esc(x.code)}: ${esc(x.value)}`).join('<br>')}</div></details>` : ''}
@@ -20917,24 +21088,80 @@ async function pcRoundSave(btn) {
 function pcRenderRounds() {
   const box = document.getElementById('pc-body'); if (!box) return;
   const all = _pc.rounds || [], meta = _pc.rmeta || { uploads: [], rounds: [] };
-  const last = meta.rounds[0], up = meta.uploads[0];
+  const last = meta.rounds[0], first = meta.rounds[meta.rounds.length - 1], up = meta.uploads[0];
   const sus = all.filter(r => r.suspect).length, noUnit = all.filter(r => !r.unit).length;
+  const period = _pc.rview === 'period';
+  const vbtn = (id, lbl) => `<button class="btn btn-sm" onclick="_pc.rview='${id}';pcRenderRounds()" style="${_pc.rview === id ? 'background:var(--N);color:#fff;border-color:var(--N);font-weight:600' : ''}">${lbl}</button>`;
+  const chip = (key, lbl) => `<button class="btn btn-sm" aria-pressed="${_pc[key]}" onclick="_pc.${key}=!_pc.${key};pcRenderRounds()" style="border-radius:999px;${_pc[key] ? 'background:var(--LN);color:var(--N);border-color:var(--N);font-weight:600' : ''}">${lbl}</button>`;
   box.innerHTML = _pcStrip([
     ['ทุนรอบล่าสุด', last ? _pcDate(last.eff_date) : '—', up ? `${esc(up.rm_label ? 'RM ' + up.rm_label : up.file_name || '')}` : 'ยังไม่ได้นำเข้าไฟล์ Master SKU'],
-    ['SKU ที่มีทุน', all.length.toLocaleString(), `${meta.rounds.length} รอบในระบบ`],
+    ['SKU ที่มีทุน', all.length.toLocaleString(), meta.rounds.length ? `${meta.rounds.length} รอบ · ${_pcDate(first.eff_date)} – ${_pcDate(last.eff_date)}` : '0 รอบในระบบ'],
     ['ทุนต่ำผิดปกติ รอยืนยัน', sus.toLocaleString(), sus ? 'นำเข้าแล้วแต่ติดป้ายไว้' : 'ไม่มี'],
     ['ไม่มีหน่วย', noUnit.toLocaleString(), noUnit ? 'คิดต้นทุนขายไม่ได้' : 'ครบทุก SKU'],
   ]) + `<div class="card">
-    <div class="ch"><div class="ct2">ทุนต่อหน่วยนับ (ไม่รวม VAT) — ทุนที่มีผลล่าสุดของแต่ละ SKU</div>
-      <span style="font-size:12px;color:var(--TX3)">ใช้คิดกำไรขั้นต้นบนหน้ายอดขาย · นำเข้าด้วยปุ่ม "นำเข้าทุน Excel" แล้วเลือกไฟล์ Master SKU ทุน 3 ช่อง</span></div>
+    <div class="ch"><div class="ct2">${period ? 'ทุนรวมตามช่วงเวลา — ทุกรอบในระบบ' : 'ทุนต่อหน่วยนับ (ไม่รวม VAT) — ทุนที่มีผลล่าสุดของแต่ละ SKU'}</div>
+      <span style="font-size:12px;color:var(--TX3)">${period ? 'ทุนรวม บาท/หน่วยนับ ไม่รวม VAT · กดรหัสเพื่อดูประวัติ' : 'ใช้คิดกำไรขั้นต้นบนหน้ายอดขาย · นำเข้าด้วยปุ่ม "นำเข้าทุน Excel" (เลือกได้หลายไฟล์)'}</span></div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-      <input type="text" placeholder="ค้นหารหัส / ชื่อสินค้า / กลุ่ม" value="${esc(_pc.rq)}" oninput="_pc.rq=this.value;pcRenderRoundRows()" style="width:280px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px">
+      <div style="display:inline-flex;gap:4px">${vbtn('latest', 'ทุนล่าสุด')}${vbtn('period', 'ทุนตามช่วงเวลา')}</div>
+      <input type="text" aria-label="ค้นหา" placeholder="ค้นหารหัส / ชื่อสินค้า / กลุ่ม" value="${esc(_pc.rq)}" oninput="_pc.rq=this.value;${period ? 'pcRenderMatrixRows()' : 'pcRenderRoundRows()'}" style="width:260px;padding:6px 10px;border:1px solid var(--BD);border-radius:7px">
+      ${period ? chip('mfChanged', 'เฉพาะที่ทุนเปลี่ยน') + chip('mfJump', 'เฉพาะราคากระโดด') : ''}
       <span id="pc-rcount" style="font-size:12px;color:var(--TX3)"></span>
     </div>
-    <div class="tw" style="max-height:calc(100vh - 380px);overflow:auto"><table><thead><tr>
-      <th>รหัส</th><th>สินค้า</th><th>หน่วย</th><th>มีผลตั้งแต่</th><th class="r">ขั้นต้น DL+OH</th><th class="r">รวมค่าเสื่อม</th><th class="r">ทุนรวม</th><th>กลุ่มผลิตภัณฑ์</th><th></th></tr></thead><tbody id="pc-rrows"></tbody></table></div>
+    ${period ? `<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--TX2);margin-bottom:6px">
+        <span><b style="color:var(--R)">▲</b> ทุนขึ้นจากรอบก่อน</span><span><b style="color:var(--G)">▼</b> ทุนลดจากรอบก่อน</span>
+        <span style="color:var(--TX3)">ตัวเลขสีเทา = ใช้ทุนรอบก่อน (ไม่เปลี่ยน)</span>
+        <span><span class="badge bba">! ราคากระโดด</span> เกิน 2 เท่า / ต่ำกว่าครึ่งของรอบก่อน</span></div>
+      <div class="tw" style="max-height:calc(100vh - 420px);overflow:auto"><table style="white-space:nowrap"><thead id="pc-mhead"></thead><tbody id="pc-mrows"><tr><td style="padding:24px;color:var(--TX3)">กำลังโหลด…</td></tr></tbody></table></div>`
+    : `<div class="tw" style="max-height:calc(100vh - 380px);overflow:auto"><table><thead><tr>
+      <th>รหัส</th><th>สินค้า</th><th>หน่วย</th><th>มีผลตั้งแต่</th><th class="r">ขั้นต้น DL+OH</th><th class="r">รวมค่าเสื่อม</th><th class="r">ทุนรวม</th><th>กลุ่มผลิตภัณฑ์</th><th></th></tr></thead><tbody id="pc-rrows"></tbody></table></div>`}
   </div>`;
-  pcRenderRoundRows();
+  if (!period) return pcRenderRoundRows();
+  if (_pc.matrix) return pcRenderMatrixRows();
+  apiFetch('/api/cost_rounds/matrix').then(r => {
+    if (r.error) { const b = document.getElementById('pc-mrows'); if (b) b.innerHTML = `<tr><td style="padding:24px;color:var(--R)">${esc(r.error.message)}</td></tr>`; return; }
+    _pc.matrix = _pcMatrixPrep(r.data);
+    if (_pc.tab === 'rounds' && _pc.rview === 'period') pcRenderMatrixRows();
+  });
+}
+// เติมช่องรอบที่ไม่มีแถว (ทุนไม่เปลี่ยน) ด้วยค่ารอบก่อน · ก่อนรอบแรกของ SKU = ว่าง
+function _pcMatrixPrep(d) {
+  const rounds = d.rounds || [];
+  const rows = (d.rows || []).map(r => {
+    let prev = null, changed = false, jump = false;
+    const cells = rounds.map(e => {
+      const x = r.v[e];
+      if (!x) return prev == null ? null : { v: prev, carry: true };
+      const c = { v: x[0], suspect: !!x[1], jump: !!x[2], dir: prev == null || x[0] === prev ? 0 : x[0] > prev ? 1 : -1, carry: prev != null && x[0] === prev };
+      if (c.dir) changed = true;
+      if (c.jump) jump = true;
+      prev = x[0];
+      return c;
+    });
+    return { ...r, cells, changed, jump, hay: [r.sku, r.name, r.group].join(' ').toLowerCase() };
+  });
+  return { rounds, rows, jumps: rows.reduce((s, r) => s + r.cells.filter(c => c && c.jump).length, 0) };
+}
+function pcRenderMatrixRows() {
+  const body = document.getElementById('pc-mrows'), head = document.getElementById('pc-mhead'), m = _pc.matrix;
+  if (!body || !head || !m) return;
+  const q = _pc.rq.trim().toLowerCase(), MAX = 300;
+  const rows = m.rows.filter(r => (!q || r.hay.includes(q)) && (!_pc.mfChanged || r.changed) && (!_pc.mfJump || r.jump));
+  const cnt = document.getElementById('pc-rcount');
+  if (cnt) cnt.textContent = `${rows.length > MAX ? `แสดง ${MAX} จาก ${rows.length.toLocaleString()}` : `แสดง ${rows.length.toLocaleString()}`} รายการ · ${m.rounds.length} รอบ · ราคากระโดดทั้งหมด ${m.jumps.toLocaleString()} จุด`;
+  const stick = 'position:sticky;left:0;background:var(--W);z-index:1;border-right:1px solid var(--BD)';
+  head.innerHTML = `<tr><th style="${stick};z-index:2">รหัส · สินค้า</th><th>หน่วย</th>${m.rounds.map(e => `<th class="r">${_pcDate(e)}</th>`).join('')}</tr>`;
+  const cell = c => {
+    if (!c) return '<td></td>';
+    const v = _pcNum(c.v), sus = c.suspect ? ' <span class="badge bba" title="ทุนต่ำผิดปกติ รอยืนยัน">ย</span>' : '';
+    if (c.jump) return `<td class="r"><span class="badge bba" style="font-weight:700" title="ราคากระโดด">${c.dir > 0 ? '▲' : '▼'} ${v} !</span>${sus}</td>`;
+    if (c.carry) return `<td class="r" style="color:var(--TX3)">${v}</td>`;
+    if (!c.dir) return `<td class="r"><b>${v}</b>${sus}</td>`;
+    return `<td class="r" style="color:${c.dir > 0 ? 'var(--R)' : 'var(--G)'};font-weight:600">${c.dir > 0 ? '▲' : '▼'} ${v}${sus}</td>`;
+  };
+  body.innerHTML = rows.slice(0, MAX).map(r => `<tr>
+    <td style="${stick}"><a href="#" class="mono" style="font-weight:600" onclick="event.preventDefault();pcRoundLogs('${esc(r.sku)}')">${esc(r.sku)}</a> <span style="font-size:12px">${esc(r.name || '')}</span></td>
+    <td style="font-size:12px">${esc(r.unit_raw || '')}</td>${r.cells.map(cell).join('')}</tr>`).join('')
+    || `<tr><td colspan="${m.rounds.length + 2}" style="padding:24px;text-align:center;color:var(--TX3)">${m.rows.length ? 'ไม่พบสินค้าตามที่กรอง' : 'ยังไม่มีทุน — กด "นำเข้าทุน Excel" แล้วเลือกไฟล์ Master SKU ทุน 3 ช่อง'}</td></tr>`;
 }
 // ตารางทุนมีหลายพันรายการ — แสดง 300 แรกของผลค้นหา
 function pcRenderRoundRows() {
@@ -20947,18 +21174,59 @@ function pcRenderRoundRows() {
     <td style="font-size:12px">${esc(r.unit_raw || r.unit || '')}${r.unit ? '' : '<span class="badge bba">ไม่มีหน่วย</span>'}</td><td>${_pcDate(r.eff_date)}</td>
     <td class="r">${_pcNum(r.cost_base)}</td><td class="r">${_pcNum(r.cost_depr)}</td><td class="r"><b>${_pcNum(r.cost_total)}</b>${r.suspect ? ' <span class="badge bba">รอยืนยัน</span>' : ''}</td>
     <td style="font-size:12px">${esc(r.product_group || '')}</td>
-    <td><button class="btn btn-xs" onclick="pcRoundLogs('${esc(r.sku)}')" title="ประวัติทุน">ประวัติ</button></td></tr>`).join('')
+    <td><button class="btn btn-xs" onclick="pcRoundLogs('${esc(r.sku)}')" title="ทุนตามช่วงเวลาและประวัติการนำเข้า">ประวัติ</button></td></tr>`).join('')
     || `<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--TX3)">${(_pc.rounds || []).length ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีทุน — กด "นำเข้าทุน Excel" แล้วเลือกไฟล์ Master SKU ทุน 3 ช่องจากฝ่ายต้นทุน'}</td></tr>`;
 }
+// กราฟเส้นขั้นบันไดของทุนรวม: แกน x ตามวันจริง ตั้งแต่รอบแรกถึงวันนี้ · จุดราคากระโดดเป็นสีส้ม
+function _pcHistChart(rows) {
+  if (!rows.length) return '';
+  const W = 820, H = 190, L = 56, R = 10, T = 14, B = 26;
+  const t = d => Date.parse(d + 'T00:00:00Z');
+  const t0 = t(rows[0].eff_date), t1 = Math.max(Date.now(), t(rows[rows.length - 1].eff_date) + 86400000);
+  const vs = rows.map(r => r.cost_total), lo0 = Math.min(...vs), hi0 = Math.max(...vs);
+  const pad = (hi0 - lo0) * 0.08 || hi0 * 0.05 || 1, lo = Math.max(0, lo0 - pad), hi = hi0 + pad;
+  const X = d => L + (t(d) - t0) / (t1 - t0) * (W - L - R), Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  let pts = '';
+  rows.forEach((r, i) => {
+    const x = X(r.eff_date), xn = i < rows.length - 1 ? X(rows[i + 1].eff_date) : W - R;
+    if (i) pts += `${x.toFixed(1)},${Y(rows[i - 1].cost_total).toFixed(1)} `;
+    pts += `${x.toFixed(1)},${Y(r.cost_total).toFixed(1)} ${xn.toFixed(1)},${Y(r.cost_total).toFixed(1)} `;
+  });
+  const dots = rows.map(r => `<circle cx="${X(r.eff_date).toFixed(1)}" cy="${Y(r.cost_total).toFixed(1)}" r="${r.jump ? 5.5 : 3.5}" fill="${r.jump ? '#E39A12' : 'var(--N)'}" stroke="${r.jump ? 'var(--A)' : 'none'}" stroke-width="1.5"><title>${_pcDate(r.eff_date)}: ${_pcNum(r.cost_total)}</title></circle>`).join('');
+  const grid = [hi0, (hi0 + lo0) / 2, lo0].map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--BD)" stroke-dasharray="3 3"></line><text x="${L - 6}" y="${(Y(v) + 4).toFixed(1)}" font-size="11" text-anchor="end" fill="var(--TX3)">${_pcNum(v)}</text>`).join('');
+  const lab = `<text x="${L}" y="${H - 6}" font-size="11" fill="var(--TX3)">${_pcDate(rows[0].eff_date)}</text><text x="${W - R}" y="${H - 6}" font-size="11" text-anchor="end" fill="var(--TX3)">วันนี้</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="กราฟทุนรวมตามช่วงเวลา ${rows.length} รอบ ตั้งแต่ ${_pcDate(rows[0].eff_date)}">${grid}<polyline points="${pts}" fill="none" stroke="var(--N)" stroke-width="2"></polyline>${dots}${lab}</svg>`;
+}
 async function pcRoundLogs(sku) {
-  openMod(`<div class="mh"><div class="mt2">ประวัติทุน ${esc(sku)}</div><span class="mx" onclick="closeM()">✕</span></div><div id="pc-rlogs" style="font-size:12px;color:var(--TX3)">กำลังโหลด…</div>`);
-  const r = await apiFetch('/api/cost_rounds/logs?sku=' + encodeURIComponent(sku));
+  openMod(`<div id="pc-hist"><div class="mh"><div class="mt2">ทุนตามช่วงเวลา ${esc(sku)}</div><span class="mx" onclick="closeM()">✕</span></div><div id="pc-rlogs" style="font-size:12px;color:var(--TX3)">กำลังโหลด…</div></div>`);
+  const [h, r] = await Promise.all([apiFetch('/api/cost_rounds/history?sku=' + encodeURIComponent(sku)), apiFetch('/api/cost_rounds/logs?sku=' + encodeURIComponent(sku))]);
   const box = document.getElementById('pc-rlogs'); if (!box) return;
+  if (h.error) { box.textContent = h.error.message; return; }
+  const rows = h.data.rows || [];
   const lbl = f => ({ '*': 'เริ่มมีทุน', cost_total: 'ทุนรวม', cost_depr: 'รวมค่าเสื่อม', cost_base: 'ขั้นต้น DL+OH', unit: 'หน่วย', unit_grams: 'กรัม/หน่วย', suspect: 'ป้ายรอยืนยัน' }[f] || f);
   const val = (f, v) => v == null ? '—' : /^cost_/.test(f) ? _pcNum(v) : f === 'suspect' ? (v === '1' ? 'ติด' : 'ไม่ติด') : esc(v);
-  box.innerHTML = r.error ? esc(r.error.message) : (r.data || []).length ? `<div class="tw" style="max-height:360px;overflow:auto"><table><thead><tr><th>เวลา</th><th>ผู้นำเข้า</th><th>มีผลตั้งแต่</th><th>รายการ</th><th class="r">เดิม</th><th class="r">ใหม่</th></tr></thead><tbody>${r.data.map(l => `<tr>
+  const logs = r.error ? `<div>${esc(r.error.message)}</div>` : (r.data || []).length ? `<div class="tw" style="max-height:260px;overflow:auto"><table><thead><tr><th>เวลา</th><th>ผู้นำเข้า</th><th>มีผลตั้งแต่</th><th>รายการ</th><th class="r">เดิม</th><th class="r">ใหม่</th></tr></thead><tbody>${r.data.map(l => `<tr>
     <td>${esc(new Date(l.at).toLocaleString('th-TH'))}</td><td>${esc(uidToName(l.by_uid) || l.by_uid || '')}</td><td>${_pcDate(l.eff_date)}</td><td>${lbl(l.field)}</td>
     <td class="r">${l.field === '*' ? '' : val(l.field, l.old_value)}</td><td class="r">${l.field === '*' ? '' : val(l.field, l.new_value)}</td></tr>`).join('')}</tbody></table></div>` : 'ยังไม่มีประวัติ';
+  if (!rows.length) { box.innerHTML = 'ยังไม่มีทุนของสินค้านี้'; return; }
+  const cur = rows[rows.length - 1], vs = rows.map(x => x.cost_total), nJump = rows.filter(x => x.jump).length;
+  const vsFirst = rows.length > 1 ? cur.cost_total / rows[0].cost_total - 1 : null;
+  const pct = x => x.pct == null ? '<span style="color:var(--TX3)">—</span>'
+    : `<span style="color:${x.jump ? 'var(--A)' : x.pct > 0 ? 'var(--R)' : x.pct < 0 ? 'var(--G)' : 'var(--TX3)'};${x.jump ? 'font-weight:700' : ''}">${x.pct > 0 ? '▲' : x.pct < 0 ? '▼' : ''} ${Math.abs(x.pct * 100).toFixed(1)}%${x.jump ? ' ราคากระโดด' : ''}</span>`;
+  box.style.color = 'var(--TX)';
+  box.innerHTML = `<div style="font-size:13px;margin:-8px 0 10px;color:var(--TX2)">${esc(h.data.name || '')}${cur.unit_raw ? ` · หน่วยนับ ${esc(cur.unit_raw)}` : ''}${cur.product_group ? ` · ${esc(cur.product_group)}` : ''} · ทุนต่อหน่วย ไม่รวม VAT</div>
+    ${_pcStrip([
+      [`ทุนรวมปัจจุบัน`, _pcNum(cur.cost_total), `มีผลตั้งแต่ ${_pcDate(cur.eff_date)}`],
+      ['ต่ำสุด / สูงสุด', `${_pcNum(Math.min(...vs))} / ${_pcNum(Math.max(...vs))}`, `${rows.length} ช่วง`],
+      ['เทียบช่วงแรก', vsFirst == null ? '—' : `${vsFirst > 0 ? '▲' : vsFirst < 0 ? '▼' : ''} ${Math.abs(vsFirst * 100).toFixed(1)}%`, _pcDate(rows[0].eff_date)],
+      ['ราคากระโดด', nJump.toLocaleString(), nJump ? 'ควรให้ฝ่ายต้นทุนตรวจ' : 'ไม่มี'],
+    ])}
+    <div style="border:1px solid var(--BD);border-radius:8px;padding:8px 10px 4px;margin-bottom:10px">${_pcHistChart(rows)}</div>
+    <div class="tw" style="max-height:300px;overflow:auto"><table><thead><tr><th>ช่วงที่มีผล</th><th>รอบ RM</th><th class="r">ขั้นต้น DL+OH</th><th class="r">รวมค่าเสื่อม</th><th class="r">ทุนรวม</th><th class="r">เทียบช่วงก่อน</th></tr></thead><tbody>${rows.slice().reverse().map(x => `<tr style="${x.jump ? 'background:var(--LY)' : ''}">
+      <td>${_pcDate(x.eff_date)} – ${x.end_date ? _pcDate(x.end_date) : 'ปัจจุบัน'}</td><td style="font-size:12px;color:var(--TX2)">${esc(x.rm_label ? 'RM ' + x.rm_label : '')}</td>
+      <td class="r">${_pcNum(x.cost_base)}</td><td class="r">${_pcNum(x.cost_depr)}</td><td class="r"><b>${_pcNum(x.cost_total)}</b>${x.suspect ? ' <span class="badge bba">รอยืนยัน</span>' : ''}</td><td class="r">${pct(x)}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:11.5px;color:var(--TX3);margin-top:4px">รอบที่ทุนไม่เปลี่ยนจะรวมอยู่ในช่วงก่อนหน้า</div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12.5px;color:var(--TX2)">ประวัติการนำเข้า (ใครนำเข้า เมื่อไร ค่าเดิม → ค่าใหม่)</summary><div style="margin-top:6px">${logs}</div></details>`;
 }
 
 // ราคาหมูหน้าฟาร์ม: 12 เดือนก่อน – 6 เดือนหน้า · คลิกช่องเพื่อแก้ · ว่าง = ลบ · เดือนที่มีราคาจริงใช้ราคาจริงคำนวณ

@@ -14,6 +14,11 @@ const { parseUnit, round4 } = require('../lib/skuCost');
 //     ส่ง suspect: 'import' = นำเข้าพร้อมติดธง suspect ให้หน้าจอขึ้นป้ายรอยืนยัน
 const MAX_ROWS = 10000;
 const SUSPECT_RATIO = 0.5;
+// ราคากระโดด (2026-11-17): ทุนรวมเกิน 2 เท่า หรือต่ำกว่าครึ่งของรอบที่มีผลก่อนหน้า — ไฟล์รอบ ต.ค. 69 มี ~850 จุด หน่วยไม่เปลี่ยน
+// ผู้ใช้สั่ง "นำเข้าทั้งหมด + ติดป้าย": เป็นคำเตือนเท่านั้น ไม่พัก · คำนวณสดจากแถวก่อนหน้า ไม่เก็บลงตาราง
+const JUMP_HI = 2, JUMP_LO = 0.5;
+const isJump = (prev, next) => prev > 0 && next > 0 && (next / prev > JUMP_HI || next / prev < JUMP_LO);
+const dayBefore = d => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - 1); return t.toISOString().slice(0, 10); };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const normCode = v => String(v ?? '').trim();
 const normText = v => { const s = String(v ?? '').replace(/\s+/g, ' ').trim(); return s && s !== '0' ? s.slice(0, 200) : null; };
@@ -54,6 +59,7 @@ function buildPlan(db, body) {
   const known = new Set(db.prepare('SELECT code FROM products').all().map(r => r.code));
   for (const r of db.prepare('SELECT code FROM bplus_skus').all()) known.add(r.code);
   const inEffect = db.prepare('SELECT * FROM sku_cost_rounds WHERE sku = ? AND eff_date <= ? ORDER BY eff_date DESC LIMIT 1');
+  const prevOf = db.prepare('SELECT * FROM sku_cost_rounds WHERE sku = ? AND eff_date < ? ORDER BY eff_date DESC LIMIT 1');
 
   const seen = new Map();
   const skipped = { separator: 0, inactive: 0 };
@@ -87,8 +93,14 @@ function buildPlan(db, body) {
   for (const n of seen.values()) {
     if (n.next.suspect && !importSuspect) { held.push(n); continue; }
     const cur = inEffect.get(n.code, effDate) || null;
+    // รอบเดียวกันที่นำเข้าซ้ำ เทียบกับรอบก่อนหน้าของมัน ไม่ใช่กับตัวเอง
+    const prev = cur && cur.eff_date === effDate ? prevOf.get(n.code, effDate) : cur;
+    // ไฟล์ไม่มีช่องหน่วยนับ (ไฟล์รอบ 2–7 มี.ค. 69 ไม่มีคอลัมน์ D ทั้งไฟล์) → ใช้หน่วยของรอบก่อน แทนที่จะเก็บว่าง
+    // ซึ่งจะทำให้ทุนทั้งรอบคิดต้นทุนขายไม่ได้ · ไม่มีรอบก่อน = ว่างตามเดิม (รายงานใน no_unit)
+    const unitSrc = !n.next.unit && (prev?.unit ? prev : cur?.unit ? cur : null);
+    if (unitSrc) Object.assign(n.next, { unit: unitSrc.unit, unit_raw: unitSrc.unit_raw, unit_grams: unitSrc.unit_grams }), n.unitFrom = unitSrc.eff_date;
     const changed = !cur || COST_FIELDS.some(f => !same(cur[f], n.next[f]));
-    items.push({ ...n, cur, isNew: !cur, changed, sameDate: !!cur && cur.eff_date === effDate });
+    items.push({ ...n, cur, isNew: !cur, changed, sameDate: !!cur && cur.eff_date === effDate, jump: !!prev && isJump(prev.cost_total, n.next.cost_total), prev: prev || null });
   }
   return { effDate, items, held, skipped, errors, invalid, dup, importSuspect, unknown: [...seen.keys()].filter(c => !known.has(c)) };
 }
@@ -100,6 +112,7 @@ function summarize(plan) {
     prev_total: i.cur ? i.cur.cost_total : null, prev_date: i.cur ? i.cur.eff_date : null,
   });
   const changed = plan.items.filter(i => !i.isNew && i.changed);
+  const jumps = plan.items.filter(i => i.jump);
   const noUnit = plan.items.filter(i => !i.next.unit);
   return {
     eff_date: plan.effDate,
@@ -110,7 +123,9 @@ function summarize(plan) {
     suspect_mode: plan.importSuspect ? 'import' : 'hold',
     skipped: plan.skipped,
     error_count: plan.errors.length, invalid_count: plan.invalid.length, dup_count: plan.dup.length,
-    unknown_count: plan.unknown.length, no_unit_count: noUnit.length,
+    unknown_count: plan.unknown.length, no_unit_count: noUnit.length, jump_count: jumps.length,
+    unit_inherited_count: plan.items.filter(i => i.unitFrom).length,
+    jumps: jumps.slice(0, 300).map(i => ({ ...fmt(i), prev_total: i.prev.cost_total, prev_date: i.prev.eff_date })),
     new_items: plan.items.filter(i => i.isNew).slice(0, 200).map(fmt),
     changed: changed.sort((a, b) => Math.abs(b.next.cost_total / b.cur.cost_total - 1) - Math.abs(a.next.cost_total / a.cur.cost_total - 1)).slice(0, 300).map(fmt),
     suspects: (plan.importSuspect ? plan.items.filter(i => i.next.suspect) : plan.held).slice(0, 300).map(i => ({ ...fmt(i), old_cost: i.old_cost })),
@@ -166,6 +181,47 @@ module.exports = function costRoundsRoutes(db, roles) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ทุนของ SKU ตามช่วงเวลา: 1 แถวต่อรอบที่ทุนเปลี่ยน · end_date = วันก่อนแถวถัดไปของ SKU นี้ (รอบที่ไม่เปลี่ยนไม่มีแถว
+  // จึงยกทุนเดิมต่อ) · null = มีผลถึงปัจจุบัน · pct/jump เทียบแถวก่อนหน้า
+  router.get('/history', (req, res) => {
+    try {
+      const sku = normCode(req.query.sku);
+      if (!sku) return res.status(400).json({ error: 'ต้องระบุ sku' });
+      const list = db.prepare(`SELECT c.eff_date, c.cost_base, c.cost_depr, c.cost_total, c.unit, c.unit_raw, c.unit_grams, c.product_group, c.suspect, u.rm_label
+        FROM sku_cost_rounds c LEFT JOIN sku_cost_round_uploads u ON u.id = c.upload_id WHERE c.sku = ? ORDER BY c.eff_date`).all(sku);
+      const p = db.prepare('SELECT name FROM products WHERE code = ?').get(sku);
+      const rows = list.map((r, i) => {
+        const prev = i ? list[i - 1].cost_total : null;
+        return { ...r, end_date: i < list.length - 1 ? dayBefore(list[i + 1].eff_date) : null,
+          pct: prev > 0 ? round4(r.cost_total / prev - 1) : null, jump: prev != null && isJump(prev, r.cost_total) };
+      });
+      res.json({ sku, name: p ? p.name : null, rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ตาราง SKU × รอบ: rounds = วันที่มีผลทุกรอบในระบบ (เก่า → ใหม่) · v[eff_date] = [ทุนรวม, suspect, jump] เฉพาะรอบที่มีแถว
+  // client เติมช่องว่างด้วยค่ารอบก่อน (ทุนไม่เปลี่ยน)
+  router.get('/matrix', (req, res) => {
+    try {
+      const rounds = db.prepare('SELECT DISTINCT eff_date FROM sku_cost_rounds ORDER BY eff_date').all().map(r => r.eff_date);
+      const list = db.prepare(`SELECT c.sku, c.eff_date, c.cost_total, c.suspect, c.unit_raw, c.unit, c.product_group, p.name
+        FROM sku_cost_rounds c LEFT JOIN products p ON p.code = c.sku ORDER BY c.sku, c.eff_date`).all();
+      const rows = [];
+      let cur = null, prev = null;
+      for (const r of list) {
+        if (!cur || cur.sku !== r.sku) {
+          cur = { sku: r.sku, name: r.name, unit_raw: null, group: null, v: {} };
+          rows.push(cur); prev = null;
+        }
+        cur.v[r.eff_date] = [r.cost_total, r.suspect ? 1 : 0, prev != null && isJump(prev, r.cost_total) ? 1 : 0];
+        cur.unit_raw = r.unit_raw || r.unit || cur.unit_raw;
+        cur.group = r.product_group || cur.group;
+        prev = r.cost_total;
+      }
+      res.json({ rounds, rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   router.get('/logs', (req, res) => {
     try {
       const sku = normCode(req.query.sku);
@@ -210,3 +266,4 @@ module.exports.buildPlan = buildPlan;
 module.exports.summarize = summarize;
 module.exports.applyItem = applyItem;
 module.exports.tx = tx;
+module.exports.isJump = isJump;

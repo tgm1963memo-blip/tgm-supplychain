@@ -241,6 +241,63 @@ test('cost_rounds routes: Master SKU import filters junk rows, holds suspect cos
   assert.equal((await call('/auth/me', 'GET', null, 'A')).data.can_see_cost, 0);
 });
 
+test('cost_rounds: price jumps are flagged not held, history periods and SKU × round matrix, out-of-order import', async t => {
+  delete process.env.SMTP_USER; delete process.env.SMTP_PASSWORD;
+  const db = freshDb();
+  db.prepare("INSERT INTO sc_users(uid,name,role,pwd_hash) VALUES('A','A','admin','x')").run();
+  const token = createSession(db, 'A').token;
+  db.prepare("INSERT INTO products(code,name,unit) VALUES('P1','ไส้กรอก','กิโลกรัม'),('P2','เบค่อน','กิโลกรัม')").run();
+  const server = buildApp(db).listen(0, '127.0.0.1');
+  await new Promise(r => server.once('listening', r));
+  t.after(async () => { await new Promise(r => server.close(r)); db.close(); });
+  const root = `http://127.0.0.1:${server.address().port}/api`;
+  const call = async (route, method = 'GET', body) => {
+    const r = await fetch(root + route, { method, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return { status: r.status, data: await r.json() };
+  };
+  const round = (p1, p2) => [
+    { row: 4, code: 'P1', unit: 'กิโลกรัม', old: 100, total: p1 },
+    { row: 5, code: 'P2', unit: 'กิโลกรัม', old: 100, total: p2 },
+  ];
+  const imp = (eff, rows) => call('/cost_rounds/import', 'POST', { eff_date: eff, rows });
+
+  // นำเข้ารอบใหม่สุดก่อน แล้วค่อยย้อนรอบเก่า → ทุนที่มีผลแต่ละวันต้องเหมือนนำเข้าตามลำดับ
+  await imp('2026-11-02', round(104, 160));
+  await imp('2026-01-01', round(107, 165));
+  // รอบ ต.ค.: P2 พุ่งเกิน 2 เท่าของรอบก่อน (ม.ค.) → ติดธง jump แต่ยังนำเข้า
+  const pv = (await call('/cost_rounds/import/preview', 'POST', { eff_date: '2026-10-05', rows: round(107, 561) })).data;
+  assert.equal(pv.jump_count, 1);
+  assert.deepEqual(pv.jumps.map(j => [j.code, j.prev_total, j.total, j.prev_date]), [['P2', 165, 561, '2026-01-01']]);
+  assert.equal(pv.suspect_count, 0);
+  const r = (await imp('2026-10-05', round(107, 561))).data;
+  assert.deepEqual([r.created, r.updated, r.unchanged, r.held], [0, 1, 1, 0]);
+  const ctx = costContext(db);
+  assert.deepEqual(['2026-03-15', '2026-10-10', '2026-11-10'].map(d => resolveCost(ctx, 'P2', d).cost), [165, 561, 160]);
+  assert.equal(resolveCost(ctx, 'P1', '2026-10-10').cost, 107);
+
+  const h = (await call('/cost_rounds/history?sku=P2')).data;
+  assert.equal(h.name, 'เบค่อน');
+  assert.deepEqual(h.rows.map(x => [x.eff_date, x.end_date, x.cost_total, x.jump]), [
+    ['2026-01-01', '2026-10-04', 165, false], ['2026-10-05', '2026-11-01', 561, true], ['2026-11-02', null, 160, true]]);
+  assert.equal(h.rows[0].pct, null);
+  assert.equal((await call('/cost_rounds/history')).status, 400);
+
+  const m = (await call('/cost_rounds/matrix')).data;
+  assert.deepEqual(m.rounds, ['2026-01-01', '2026-10-05', '2026-11-02']);
+  const p1 = m.rows.find(x => x.sku === 'P1'), p2 = m.rows.find(x => x.sku === 'P2');
+  assert.deepEqual(p1.v, { '2026-01-01': [107, 0, 0], '2026-11-02': [104, 0, 0] });
+  assert.deepEqual(p2.v['2026-10-05'], [561, 0, 1]);
+  assert.equal(p1.unit_raw, 'กิโลกรัม');
+
+  // ไฟล์ที่ไม่มีช่องหน่วยนับ (รอบ 2–7 มี.ค. 69) → ใช้หน่วยของรอบก่อน ไม่เก็บว่าง · ไม่มีรอบก่อน = ว่าง
+  const noUnit = [{ row: 4, code: 'P1', old: 100, total: 109 }, { row: 5, code: 'P3', old: 100, total: 50 }];
+  const pv3 = (await call('/cost_rounds/import/preview', 'POST', { eff_date: '2026-03-02', rows: noUnit })).data;
+  assert.deepEqual([pv3.unit_inherited_count, pv3.no_unit_count], [1, 1]);
+  await imp('2026-03-02', noUnit);
+  const mar = db.prepare("SELECT unit, unit_raw, unit_grams FROM sku_cost_rounds WHERE sku = 'P1' AND eff_date = '2026-03-02'").get();
+  assert.deepEqual({ ...mar }, { unit: 'กก.', unit_raw: 'กิโลกรัม', unit_grams: 1000 });
+});
+
 test('dashboard exec: gross margin block only for users allowed to see cost, cost by sale date, gaps reported', async t => {
   const db = freshDb();
   const tokens = {};
