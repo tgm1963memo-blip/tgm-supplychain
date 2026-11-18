@@ -7561,6 +7561,7 @@ function _dxGpCell(p){
 function _dxCostTag(x){
   const t=[];
   if(x.source==='converted')t.push(`<span class="dx-mk cv" title="ไม่มีทุนในไฟล์ Master SKU ใช้ทุนของสินค้าต้นทางตามเอกสารแปลงสินค้า (FF)"><i></i>ทุนจากการแปลง ← <span class="mono">${esc((x.from||[]).join(', '))}</span></span>`);
+  if(x.source==='bundle')t.push(`<span class="dx-mk sus" title="ชุดราคาพิเศษ ไม่มีทุนในไฟล์ Master SKU — ประมาณจากทุนสินค้าลูกตามส่วนผสมเฉลี่ยของชุด"><i></i>ทุนจากสินค้าลูก ← <span class="mono">${esc((x.from||[]).join(', '))}</span></span>`);
   if(x.source==='promo2x')t.push(`<span class="dx-mk sus" title="ชุดโปร 1 แถม 1 / แพ็คคู่ ไม่มีทุนในไฟล์ Master SKU — ประมาณจากทุนแพ็คเดี่ยวน้ำหนักเดียวกัน × 2"><i></i>ทุนประมาณการ ×2 ← <span class="mono">${esc((x.from||[]).join(', '))}</span></span>`);
   if(x.suspect)t.push('<span class="dx-mk sus" title="ทุนรวมต่ำกว่าครึ่งของทุนเก่าในไฟล์ น่าจะยังไม่รวมวัตถุดิบ รอฝ่ายต้นทุนยืนยัน"><i></i>ทุนต่ำผิดปกติ รอยืนยัน</span>');
   return t.join(' ');
@@ -7833,7 +7834,7 @@ async function mgExport(){
   const cols=['ยอดรายสินค้า','ยอดที่คิดทุนได้','ต้นทุนขาย','กำไร','อัตรากำไร %'],val=x=>{const g=_dxGp(x,b);return [R(g.lines),R(g.covered),R(g.cogs),R(g.gp),P(g.pc)];};
   await toXLSX([
     ['กลุ่มสินค้า',['กลุ่ม',...cols],(m.by_group||[]).map(x=>[expressGroupLabel(x.name),...val(x)])],
-    ['สินค้า',['รหัส','ชื่อ','กลุ่ม','หน่วยทุน','ที่มาของทุน',...cols],(m.by_sku||[]).map(x=>[x.sku,x.name,expressGroupLabel(x.group),x.unit||'',x.source==='converted'?'จากการแปลง ← '+(x.from||[]).join(','):x.source==='promo2x'?'ประมาณการ ×2 ← '+(x.from||[]).join(','):x.suspect?'รอยืนยัน':'',...val(x)])],
+    ['สินค้า',['รหัส','ชื่อ','กลุ่ม','หน่วยทุน','ที่มาของทุน',...cols],(m.by_sku||[]).map(x=>[x.sku,x.name,expressGroupLabel(x.group),x.unit||'',x.source==='converted'?'จากการแปลง ← '+(x.from||[]).join(','):x.source==='promo2x'?'ประมาณการ ×2 ← '+(x.from||[]).join(','):x.source==='bundle'?'จากสินค้าลูก ← '+(x.from||[]).join(','):x.suspect?'รอยืนยัน':'',...val(x)])],
     ['สินค้า × ลูกค้า',['รหัสสินค้า','ชื่อสินค้า','รหัสลูกค้า','ชื่อลูกค้า',...cols],Object.entries(m.sku_custs||{}).flatMap(([sku,list])=>{const nm=((m.by_sku||[]).find(x=>x.sku===sku)||{}).name||sku;return list.map(c=>[sku,nm,c.code,c.name,...val(c)]);})],
     ['ลูกค้า',['รหัส','ชื่อ',...cols],(m.by_customer||[]).map(x=>[x.code,x.name,...val(x)])],
     ['เซลส์',['รหัส','ชื่อ',...cols],(m.by_slm||[]).map(x=>[x.code,x.name,...val(x)])],
@@ -10550,6 +10551,7 @@ function _sdCostTag(o,info){
   const t=[],s='display:inline-block;font-size:11px;border-radius:5px;padding:0 6px;margin-left:6px;font-weight:500;vertical-align:1px';
   if(o&&o.cc>0&&o.cq>0)t.push(`<span style="font-size:11px;color:var(--TX3);margin-left:6px" title="ทุนเฉลี่ยต่อหน่วยของทุน · ราคาขายเฉลี่ยต่อหน่วยเดียวกัน">ทุน ${_mg2(o.cg/o.cq)}${info.u?'/'+esc(info.u):''} · ขาย ${_mg2(o.cc/o.cq)}</span>`);
   if(info.src==='converted')t.push(`<span style="${s};background:#E0E7FF;color:#1D4ED8" title="ไม่มีทุนในไฟล์ Master SKU ใช้ทุนของสินค้าต้นทางตามเอกสารแปลงสินค้า">ทุนจากการแปลง ← ${esc((info.fr||[]).join(', '))}</span>`);
+  if(info.src==='bundle')t.push(`<span style="${s};background:#FEF3C7;color:#B45309" title="ชุดราคาพิเศษ ไม่มีทุนในไฟล์ Master SKU — ประมาณจากทุนสินค้าลูกตามส่วนผสมเฉลี่ยของชุด">ทุนจากสินค้าลูก ← ${esc((info.fr||[]).join(', '))}</span>`);
   if(info.src==='promo2x')t.push(`<span style="${s};background:#FEF3C7;color:#B45309" title="ชุดโปร 1 แถม 1 / แพ็คคู่ ไม่มีทุนในไฟล์ Master SKU — ประมาณจากทุนแพ็คเดี่ยวน้ำหนักเดียวกัน × 2">ทุนประมาณการ ×2 ← ${esc((info.fr||[]).join(', '))}</span>`);
   if(info.sus)t.push(`<span style="${s};background:#FEF3C7;color:#B45309" title="ทุนรวมต่ำกว่าครึ่งของทุนเก่า รอฝ่ายต้นทุนยืนยัน">ทุนต่ำผิดปกติ</span>`);
   if(info.est)t.push(`<span style="${s};background:#FEF3C7;color:#B45309" title="ยอดขายก่อนวันที่ทุนรอบแรกมีผล ใช้ทุนรอบแรกย้อนหลัง">ทุนประมาณ</span>`);

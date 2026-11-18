@@ -133,9 +133,32 @@ test('resolveCost: 1แถม1 / แพ็คคู่ without own cost = single
   const b = resolveCost(ctx, '10270-B', '2026-11-05'); // ไม่มีแพ็ค 300 ก. → ทุนต่อกก. ของชื่อเดียวกัน × 0.3 × 2
   assert.deepEqual([b.cost, b.from], [66, ['10270-1']]);
   assert.equal(resolveCost(ctx, '10140-B1', '2026-11-05'), null, 'ชื่อไม่ตรงกับทุนต่อกก. ของรหัสขึ้นต้นเดียวกัน = ไม่เดา');
-  assert.equal(resolveCost(ctx, '10140-A1', '2026-11-05'), null, 'ชื่อไม่บอกน้ำหนัก = ไม่เดา');
+  // 10140-A1 ชื่อไม่บอกน้ำหนัก แต่ใบกำกับบอก 150g (PROMO_PAIR_GRAMS) → ทุนต่อกก. 145.8 × 0.15 × 2
+  assert.deepEqual([resolveCost(ctx, '10140-A1', '2026-11-05').cost, resolveCost(ctx, '10140-A1', '2026-11-05').from], [43.74, ['10140']]);
   assert.equal(resolveCost(ctx, '20258-232', '2026-11-05'), null, 'หน่วยกล่อง = ไม่เดา');
   assert.equal(resolveCost(ctx, '20284-107', '2026-11-05').source, 'own');
+});
+
+test('resolveCost: special-price set without own cost = average child mix × child pack cost, flagged bundle + estimated', () => {
+  const db = freshDb();
+  db.prepare(`INSERT INTO products(code,name,unit) VALUES ('90022-1','ทีจีเอ็มอาหารพร้อมทาน 99บาท','แพค'),
+    ('A1','แฮม 400 กรัม','แพค'),('B1','เบค่อน 200 กรัม','แพค'),('C1','ไส้กรอก','แพค'),('9X','ชุดลูกไม่มีทุน','แพค')`).run();
+  db.prepare(`INSERT INTO outbound_orders(id,company,order_no) VALUES ('o1','CONSI','S1'),('o2','CONSI','S2')`).run();
+  db.prepare(`INSERT INTO outbound_lines(order_id,sku,qty,seq_num) VALUES ('o1','90022-1',10,'1'),('o2','90022-1',10,'1'),('o2','9X',4,'2')`).run();
+  const comp = db.prepare('INSERT INTO sales_line_components(company,order_id,order_no,seq_num,parent_sku,child_code,child_qty,note) VALUES (?,?,?,?,?,?,?,?)');
+  comp.run('CONSI', 'o1', 'S1', '1', '90022-1', 'A1', 10, 'a'); // 20 ชุด: A1 10 แพ็ค, B1 6 แพ็ค (ทุนต่อกก. × 200 ก.), C1 4 แพ็ค (ไม่มีทุน)
+  comp.run('CONSI', 'o2', 'S2', '1', '90022-1', 'B1', 6, 'b');
+  comp.run('CONSI', 'o2', 'S2', '1', '90022-1', 'C1', 4, 'c');
+  comp.run('CONSI', 'o2', 'S2', '2', '9X', 'C1', 4, 'd');
+  const cost = db.prepare('INSERT INTO sku_cost_rounds (sku, eff_date, cost_base, cost_depr, cost_total, unit, unit_grams) VALUES (?,?,?,?,?,?,?)');
+  cost.run('A1', '2026-11-02', 30, 35, 40, 'แพ็ค', 400);
+  cost.run('B1', '2026-11-02', 100, 110, 125, 'กก.', 1000);
+  const ctx = costContext(db);
+  const s = resolveCost(ctx, '90022-1', '2026-11-05');
+  // (0.5 × 40 + 0.3 × 125 × 0.2) ÷ 0.8 รู้ทุน 80% → 34.375
+  assert.deepEqual([s.cost, s.source, s.estimated, s.unit, s.from], [34.375, 'bundle', true, 'แพ็ค', ['A1', 'B1']]);
+  assert.equal(resolveCost(ctx, '9X', '2026-11-05'), null, 'รู้ทุนลูกไม่ถึงครึ่ง = ไม่เดา');
+  assert.equal(resolveCost(ctx, 'A1', '2026-11-05').source, 'own');
 });
 
 test('packQty: retail pack units (แพ / ซอง / ถุง / ถาด) match each other as a last resort, cartons never do', () => {

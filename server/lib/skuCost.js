@@ -16,6 +16,11 @@
 //      → ทุนต่อชุด = ทุนแพ็คเดี่ยว × 2 แล้วติด source = 'promo2x' + รหัสที่ใช้ · แพ็คเดี่ยวหาจากรหัสขึ้นต้นเดียวกัน (20284-A → 20284-*)
 //      ที่น้ำหนักต่อแพ็คเท่ากับน้ำหนักในชื่อชุดโปร (เช่น "100กรัม (1แถม1)" → 20284-107 แพ็คx100) หลายรหัส = เฉลี่ย
 //      ไม่เจอ → ทุนต่อกก. ของรหัสขึ้นต้นเดียวกันที่ชื่อสินค้าขึ้นต้นเหมือนกัน × น้ำหนัก · ชื่อไม่บอกน้ำหนัก / หน่วยขายเป็นกล่อง-ลัง = ไม่เดา
+//      ยกเว้นรหัสใน PROMO_PAIR_GRAMS (น้ำหนักแพ็คเดี่ยวที่ตรวจจากหลักฐานอื่น — ดูหมายเหตุในตาราง)
+//   5. ชุดราคาพิเศษ (90021-x / 90022-x / 90023-x ฯลฯ) ที่ไม่มีทุนของตัวเอง (ผู้ใช้สั่ง 2026-11-18 "คิดทุนชุดโปรจากสินค้าลูก")
+//      → ทุนต่อชุด = Σ (จำนวนลูกต่อชุด × ทุนต่อแพ็คของลูก ณ วันขาย) · สัดส่วนลูกจาก sales_line_components ทั้งหมด
+//      (ชุดเดียวกันใส่สินค้าต่างกันในแต่ละบิล จึงใช้ส่วนผสมเฉลี่ย) · ลูกที่ไม่มีทุน = ใช้ทุนเฉลี่ยของลูกที่มีทุนแทน
+//      เมื่อรู้ทุนลูก ≥ BUNDLE_MIN_KNOWN ของจำนวนลูกทั้งหมด ไม่ถึง = ไม่เดา · ติด source = 'bundle' + estimated
 
 const { unitLabel } = require('./productGroupMatch');
 
@@ -93,6 +98,28 @@ function loadConversions(db) {
   return byOut;
 }
 
+// ส่วนผสมของชุด → Map รหัสชุด → { children: [{ sku, per }] } · per = จำนวนลูกต่อชุด 1 หน่วย (Σ child_qty ÷ Σ จำนวนชุดในบรรทัดเดียวกัน)
+function loadBundles(db) {
+  const out = new Map();
+  let parents, kids;
+  try {
+    parents = db.prepare(`WITH k AS (SELECT DISTINCT order_id, seq_num, parent_sku FROM sales_line_components WHERE parent_sku IS NOT NULL AND parent_sku != '')
+      SELECT k.parent_sku AS sku, SUM(l.qty) AS qty FROM k JOIN outbound_lines l ON l.order_id = k.order_id AND l.seq_num = k.seq_num
+      GROUP BY k.parent_sku`).all();
+    kids = db.prepare(`SELECT parent_sku, child_code, SUM(child_qty) AS q FROM sales_line_components
+      WHERE parent_sku IS NOT NULL AND parent_sku != '' AND child_code != parent_sku GROUP BY parent_sku, child_code`).all();
+  } catch (_) { return out; } // ไม่มีตาราง (ฐานทดสอบเก่า)
+  const pq = new Map(parents.map(r => [r.sku, Number(r.qty) || 0]));
+  for (const r of kids) {
+    const q = Number(r.q) || 0, p = pq.get(r.parent_sku);
+    if (!(q > 0) || !(p > 0)) continue;
+    if (!out.has(r.parent_sku)) out.set(r.parent_sku, { children: [] });
+    out.get(r.parent_sku).children.push({ sku: r.child_code, per: q / p });
+  }
+  for (const b of out.values()) b.children.sort((a, c) => c.per - a.per);
+  return out;
+}
+
 function loadNames(db) {
   const m = new Map();
   try { for (const r of db.prepare('SELECT code, name FROM bplus_skus').all()) if (r.name) m.set(r.code, r.name); } catch (_) { /* ไม่มีตาราง Bplus */ }
@@ -106,13 +133,19 @@ function loadBaseUnits(db) {
 
 // ctx ต่อ db — สร้างใหม่เมื่อข้อมูลทุน/เอกสารแปลง/สินค้าเปลี่ยน (conversion_doc_lines เขียนใหม่ทุกรอบ sync ~5 นาที)
 const ctxCache = new WeakMap();
+// sales_line_components เขียนใหม่ทุกรอบ sync เหมือน conversion_doc_lines · ฐานที่ไม่มีตารางนี้ = ค่าคงที่
+function componentsVersionSql(db) {
+  const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sales_line_components'").get();
+  return has ? "(SELECT COUNT(*) || '|' || COALESCE(MAX(updated_at), '') FROM sales_line_components)" : "''";
+}
 function costContext(db) {
   const v = db.prepare(`SELECT (SELECT COUNT(*) || '|' || COALESCE(MAX(updated_at), '') FROM sku_cost_rounds) || '#' ||
     (SELECT COUNT(*) || '|' || COALESCE(MAX(updated_at), '') FROM conversion_doc_lines) || '#' ||
-    (SELECT COUNT(*) FROM products) AS v`).get().v;
+    (SELECT COUNT(*) FROM products) || '#' || ${componentsVersionSql(db)} AS v`).get().v;
   const hit = ctxCache.get(db);
   if (hit && hit.version === v) return hit;
-  const ctx = { version: v, idx: loadCostIndex(db), conv: loadConversions(db), baseUnits: loadBaseUnits(db), names: loadNames(db) };
+  const ctx = { version: v, idx: loadCostIndex(db), conv: loadConversions(db), baseUnits: loadBaseUnits(db), names: loadNames(db),
+    bundles: loadBundles(db) };
   ctxCache.set(db, ctx);
   return ctx;
 }
@@ -138,7 +171,7 @@ function costPer(row, value, target) {
 // ทุนทั้ง 3 ฐานของ SKU ณ วันที่ → { costs: { total, depr, base }, unit, grams, source: 'own'|'converted', from, doc, eff_date, estimated, suspect }
 // หรือ null (ไม่มีทุน) · ทุนจากการแปลงใช้อัตราส่วนจากเอกสารแปลงล่าสุดที่หาทุนต้นทางได้ครบ (ไม่ขึ้นกับวันขาย — ผลเดียวกันทั้งช่วง)
 // ส่วนทุนของต้นทางใช้รอบที่มีผล ณ วันขายเหมือนทุนของตัวเอง
-function resolveAll(ctx, sku, date) {
+function resolveAll(ctx, sku, date, opt = {}) {
   const day = String(date || '').slice(0, 10);
   const own = ownRowAt(ctx.idx, sku, day);
   if (own) {
@@ -163,12 +196,56 @@ function resolveAll(ctx, sku, date) {
       unit: ctx.baseUnits.get(sku) || null, grams: null, source: 'converted',
       from: d.sources.map(s => s.sku), doc: d.doc, eff_date: null, estimated, suspect };
   }
+  if (!opt.noBundle) {
+    const b = bundleCost(ctx, sku, day);
+    if (b) return b;
+  }
   return promoPairCost(ctx, sku, day);
+}
+
+// ── ชุดราคาพิเศษ คิดจากสินค้าลูก (กติกาข้อ 5) ─────────────────────────
+const BUNDLE_MIN_KNOWN = 0.5;
+// ทุนต่อ 1 หน่วยที่ขายลูก (แพ็ค) — หน่วยทุนตรงกับหน่วยฐาน / หน่วยปลีกห่อเดียวคนละชื่อ / ทุนต่อกก. × น้ำหนักในชื่อ · ไม่ได้ = null
+function childPackCost(ctx, cost, sku) {
+  const base = normUnit(ctx.baseUnits.get(sku));
+  if (cost.unit && cost.unit === base) return cost.costs;
+  if (PACK_UNITS.has(cost.unit) && (!base || PACK_UNITS.has(base))) return cost.costs;
+  if (cost.unit === KG) {
+    const g = gramsFromName(ctx.names && ctx.names.get(sku));
+    if (g) return { total: cost.costs.total * g / 1000, depr: cost.costs.depr * g / 1000, base: cost.costs.base * g / 1000 };
+  }
+  return null;
+}
+function bundleCost(ctx, sku, day) {
+  const b = ctx.bundles && ctx.bundles.get(sku);
+  if (!b || !b.children.length) return null;
+  const sum = { total: 0, depr: 0, base: 0 };
+  let all = 0, known = 0, suspect = false;
+  const from = [];
+  for (const c of b.children) {
+    all += c.per;
+    const cost = resolveAll(ctx, c.sku, day, { noBundle: true });
+    const per = cost && childPackCost(ctx, cost, c.sku);
+    if (!per) continue;
+    known += c.per;
+    for (const k of Object.keys(sum)) sum[k] += per[k] * c.per;
+    suspect = suspect || cost.suspect;
+    if (from.length < 5) from.push(c.sku);
+  }
+  if (!(all > 0) || known / all < BUNDLE_MIN_KNOWN) return null;
+  const scale = all / known; // ลูกที่ไม่มีทุน = ทุนเฉลี่ยของลูกที่มีทุน
+  return { costs: { total: round4(sum.total * scale), depr: round4(sum.depr * scale), base: round4(sum.base * scale) },
+    unit: normUnit(ctx.baseUnits.get(sku)) || 'แพ็ค', grams: null, source: 'bundle', from, doc: null, eff_date: null,
+    estimated: true, suspect, known_pct: Math.round(known / all * 100) };
 }
 
 // ── ชุดโปร 1 แถม 1 / แพ็คคู่ (กติกาข้อ 4) ──────────────────────────────
 const PROMO_PAIR_RE = /1\s*แถม\s*1|แพ[็]?[คก]\s*คู่/;
 const BOXY_UNIT_RE = /^(กล่อง|ลัง|กล|ลง)/;
+// ชื่อในตารางสินค้าไม่บอกน้ำหนัก แต่รู้จากหลักฐานอื่น (2026-11-18 ผู้ใช้สั่งผูกชุด 1แถม1 กับรหัสหลัก):
+//   10140-A1 "คอทเทจเบค่อน 1แถม1 TGM" — ชื่อในใบกำกับ "คอทเทจเบค่อน 150g (1แถม1)TGM"
+//   20167-A "เบค่อนแฮม1แถม1" — ไม่มีน้ำหนักที่ไหนเลย ราคาชุด ~119 บาท ≈ 2 × แพ็ค 150 ก. (20167-644 ขาย 64 บาท) → ถือ 150 ก. (รอยืนยัน)
+const PROMO_PAIR_GRAMS = { '10140-A1': 150, '20167-A': 150 };
 // น้ำหนักต่อแพ็คเดี่ยวจากชื่อ: "100กรัม", "90 กรัม", "75g", "130ก.", "(155g.*2)" — ตัวเลขแรกที่ตามด้วยหน่วยกรัม
 function gramsFromName(name) {
   const m = String(name || '').match(/(\d+(?:\.\d+)?)\s*(กรัม|g\b|g\.|ก\.|ก(?=[\s(]|$))/i);
@@ -181,7 +258,7 @@ function promoPairCost(ctx, sku, day) {
   if (!name || !PROMO_PAIR_RE.test(name)) return null;
   const unit = ctx.baseUnits.get(sku) || null;
   if (unit && BOXY_UNIT_RE.test(unit)) return null;
-  const grams = gramsFromName(name);
+  const grams = PROMO_PAIR_GRAMS[sku] || gramsFromName(name);
   const head = String(sku).split('-')[0];
   if (!grams || !head || head === sku) return null;
   if (!ctx.byHead) {
