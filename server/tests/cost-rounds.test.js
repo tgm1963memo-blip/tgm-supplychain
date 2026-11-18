@@ -161,6 +161,23 @@ test('resolveCost: special-price set without own cost = average child mix × chi
   assert.equal(resolveCost(ctx, 'A1', '2026-11-05').source, 'own');
 });
 
+test('resolveCost: set child without own cost borrows its sibling cost (BUNDLE_CHILD_ALIAS)', () => {
+  const db = freshDb();
+  db.prepare(`INSERT INTO products(code,name,unit) VALUES ('90022-2','ชุด 109 บาท','แพค'),('80004','ไส้กรอก&เบค่อนBBQ 4 ไม้','แพค'),
+    ('80004-280','เบค่อนพันไส้กรอก 280g','แพค'),('10010-114','แซนวิสแฮม (สไลด์หนา) 400 กรัม','แพค'),('10010-22','แซนวิสแฮม500g(สไลด์หนา)','กิโลกรัม')`).run();
+  db.prepare(`INSERT INTO outbound_orders(id,company,order_no) VALUES ('o1','CONSI','S1')`).run();
+  db.prepare(`INSERT INTO outbound_lines(order_id,sku,qty,seq_num) VALUES ('o1','90022-2',10,'1')`).run();
+  const comp = db.prepare('INSERT INTO sales_line_components(company,order_id,order_no,seq_num,parent_sku,child_code,child_qty,note) VALUES (?,?,?,?,?,?,?,?)');
+  comp.run('CONSI', 'o1', 'S1', '1', '90022-2', '80004', 5, 'a');
+  comp.run('CONSI', 'o1', 'S1', '1', '90022-2', '10010-114', 5, 'b');
+  const cost = db.prepare('INSERT INTO sku_cost_rounds (sku, eff_date, cost_base, cost_depr, cost_total, unit, unit_grams) VALUES (?,?,?,?,?,?,?)');
+  cost.run('80004-280', '2026-11-02', 30, 32, 36, 'แพ็ค', 280);
+  cost.run('10010-22', '2026-11-02', 130, 135, 140, 'กก.', 1000);
+  const s = resolveCost(costContext(db), '90022-2', '2026-11-05');
+  assert.equal(s.cost, 0.5 * 36 + 0.5 * 140 * 0.4); // 46
+  assert.equal(resolveCost(costContext(db), '80004', '2026-11-05'), null, 'ทุนพี่น้องใช้เฉพาะในชุด ไม่ใช่ทุนขายเดี่ยว');
+});
+
 test('packQty: retail pack units (แพ / ซอง / ถุง / ถาด) match each other as a last resort, cartons never do', () => {
   const { packQty } = require('../lib/skuCost');
   const perSachet = { unit: 'ซอง', grams: 1000 };

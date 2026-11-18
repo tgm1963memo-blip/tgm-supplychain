@@ -216,6 +216,28 @@ function childPackCost(ctx, cost, sku) {
   }
   return null;
 }
+// สินค้าลูกที่ไม่มีทุนของตัวเอง แต่เป็นสินค้าเดียวกับรหัสพี่น้องที่มีทุน (ผู้ใช้สั่ง 2026-11-18 ให้ 90022-2 / 90023-2 คิดทุนได้)
+// sku = รหัสที่ใช้ทุน · grams = น้ำหนักต่อแพ็คของลูก เมื่อรหัสพี่น้องมีทุนต่อกก.
+const BUNDLE_CHILD_ALIAS = {
+  '80004': { sku: '80004-280' }, // ไส้กรอก&เบค่อนBBQ(เสียบไม้) 4 ไม้ = เบค่อนพันไส้กรอก TGM 280g (4ไม้)
+  '10010-114': { sku: '10010-22', grams: 400 }, // แซนวิสแฮม (สไลด์หนา) 400 ก. ← แซนวิสแฮม (สไลด์หนา) ต่อกก.
+  '10249-664': { sku: '10249-66', grams: 400 }, // สเต็กแฮมดีเค สูตร4 (สไลซ์S) 400 ก. ← (สไลซ์S) ต่อกก.
+};
+function childCost(ctx, sku, day) {
+  const own = resolveAll(ctx, sku, day, { noBundle: true });
+  const per = own && childPackCost(ctx, own, sku);
+  if (per) return { per, suspect: own.suspect, sku };
+  const alias = BUNDLE_CHILD_ALIAS[sku];
+  const cost = alias && resolveAll(ctx, alias.sku, day, { noBundle: true });
+  if (!cost) return null;
+  if (alias.grams) {
+    if (cost.unit !== KG) return null;
+    const f = alias.grams / 1000;
+    return { per: { total: cost.costs.total * f, depr: cost.costs.depr * f, base: cost.costs.base * f }, suspect: cost.suspect, sku: alias.sku };
+  }
+  const p = childPackCost(ctx, cost, alias.sku);
+  return p ? { per: p, suspect: cost.suspect, sku: alias.sku } : null;
+}
 function bundleCost(ctx, sku, day) {
   const b = ctx.bundles && ctx.bundles.get(sku);
   if (!b || !b.children.length) return null;
@@ -224,9 +246,9 @@ function bundleCost(ctx, sku, day) {
   const from = [];
   for (const c of b.children) {
     all += c.per;
-    const cost = resolveAll(ctx, c.sku, day, { noBundle: true });
-    const per = cost && childPackCost(ctx, cost, c.sku);
-    if (!per) continue;
+    const hit = childCost(ctx, c.sku, day);
+    if (!hit) continue;
+    const { per } = hit, cost = { suspect: hit.suspect };
     known += c.per;
     for (const k of Object.keys(sum)) sum[k] += per[k] * c.per;
     suspect = suspect || cost.suspect;
