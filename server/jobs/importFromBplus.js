@@ -10,6 +10,8 @@
 // กติกาที่ผู้ใช้ยืนยัน 2026-10-05:
 //   · ขายให้ "ไทยซอสเซสมาร์เก็ตติ้ง" (บริษัทในเครือ ~4,100 ล้าน) เก็บแยกเป็นบริษัท BP-TGM-IC — ดูได้แต่ไม่นับเป็นยอดขาย
 //   · ไม่นับใบยืมสินค้า (IVZ/EB), รายได้อื่น (IQOA/IQOB), ขายทรัพย์สิน (SF/SFN)
+//   · ไม่นับรหัสรายได้ที่ไม่ใช่สินค้า EXCLUDED_SKUS (2026-11-19, ผู้ใช้สั่ง — 99-1 รายได้เบ็ดเตล็ดอื่นๆ ออกในใบ IVO ปกติ
+//     จึงตัดทั้งประเภทเอกสารไม่ได้ → หักยอดรายบรรทัดออกจากยอดหัวใบ ดู excludeNonSalesSkus)
 //   · ไม่นับใบค่าเช่า REN (2026-11-19, ผู้ใช้สั่ง — 99-7 ค่าเช่าที่ดิน / 99-8 เงินมัดจำค่าเช่า ไม่ใช่ยอดขายสินค้า)
 //   · ใบ IVP. (Bplus ตั้งชื่อ "ใบยืมสินค้าIVP") นับเป็นยอดขาย — 2026-10-08 ผู้ใช้ยืนยัน: Excel ฝ่ายขายนับเป็นยอดเอเย่น
 //     (เช่น SMN-02-PC นายสมนึก ออก IVP. ทุกสัปดาห์ ~80k) · ปี 2025 มี IVP. รวม 41.3 ล้าน
@@ -25,6 +27,7 @@ const FROM_DATE = '2025-01-01';
 const COMPANY = 'BP-TGM';
 const COMPANY_IC = 'BP-TGM-IC';
 const EXCLUDED_DOCCODES = ['IVZ', 'EB', 'IQOA', 'IQOB', 'SF', 'SFN', 'REN'];
+const EXCLUDED_SKUS = new Set(['99-1', '99-7', '99-8']);
 const MIN_INTERVAL_MS = (Number(process.env.BPLUS_SYNC_MIN_INTERVAL_MIN) || 30) * 60 * 1000;
 const STATE_KEY = 'bplus/TGM';
 
@@ -117,6 +120,49 @@ async function fetchFromBplus() {
   }
 }
 
+// หักรหัสใน EXCLUDED_SKUS ออกจากข้อมูลที่ดึงมา (แก้ data ในที่):
+//   · lines / docLines: ตัดบรรทัดทิ้ง
+//   · docs: หักมูลค่า + VAT ตามสัดส่วน · ใบที่เหลือแต่รหัสที่ตัด = ตัดทั้งใบ
+//   · monthly (ยอดหัวใบราย วัน×ลูกค้า): หักมูลค่าบรรทัด, VAT ตามสัดส่วนของใบ (ต้องมี docs), จำนวนใบที่ตัดทั้งใบ
+// บรรทัดสินค้าดึงเฉพาะใบขาย (302/307) — ใบลดหนี้ของรหัสเหล่านี้ (ถ้ามี) ยังหักอยู่ในยอดหัวใบ
+function excludeNonSalesSkus(data) {
+  const keyOf = (r) => [String(r.d).slice(0, 10), r.cust_code, r.slmn, r.ic ? 1 : 0].join('');
+  const adj = new Map();
+  const bump = (k, f, v) => { const a = adj.get(k) || { amount: 0, vat_amount: 0, invoice_count: 0 }; a[f] += v; adj.set(k, a); };
+  data.lines = data.lines.filter((r) => {
+    if (!EXCLUDED_SKUS.has(r.sku)) return true;
+    bump(keyOf(r), 'amount', Number(r.amount) || 0);
+    return false;
+  });
+  if (Array.isArray(data.docs) && Array.isArray(data.docLines)) {
+    const exAmt = new Map(), keep = new Set();
+    for (const l of data.docLines) {
+      if (EXCLUDED_SKUS.has(l.sku)) exAmt.set(l.doc_key, (exAmt.get(l.doc_key) || 0) + (Number(l.amount) || 0));
+      else keep.add(l.doc_key);
+    }
+    data.docLines = data.docLines.filter((l) => !EXCLUDED_SKUS.has(l.sku));
+    data.docs = data.docs.filter((r) => {
+      const ex = exAmt.get(r.doc_key);
+      if (ex == null) return true;
+      const amt = Number(r.amount) || 0, vat = Number(r.vat_amount) || 0;
+      const exVat = amt ? vat * ex / amt : 0;
+      bump(keyOf(r), 'vat_amount', exVat);
+      if (!keep.has(r.doc_key)) { if (!r.is_cn) bump(keyOf(r), 'invoice_count', 1); return false; }
+      r.amount = amt - ex; r.vat_amount = vat - exVat;
+      return true;
+    });
+  }
+  for (const r of data.monthly) {
+    const a = adj.get(keyOf(r));
+    if (!a) continue;
+    r.amount = (Number(r.amount) || 0) - a.amount;
+    r.vat_amount = (Number(r.vat_amount) || 0) - a.vat_amount;
+    r.invoice_count = (Number(r.invoice_count) || 0) - a.invoice_count;
+  }
+  data.monthly = data.monthly.filter((r) => Math.abs(Number(r.amount) || 0) > 0.005 || Number(r.invoice_count) || Number(r.cn_count));
+  return data;
+}
+
 // รัน sync (เรียกจาก jobs/syncWorker.js ต่อท้าย Express sync ใน worker เดียวกัน — กันสองงานเขียน SQLite พร้อมกัน)
 // force=true ข้ามช่วงเว้น MIN_INTERVAL (ใช้หลังแก้ตารางจับคู่พนักงานขาย)
 async function runBplusImport(db, { force = false } = {}) {
@@ -129,6 +175,7 @@ async function runBplusImport(db, { force = false } = {}) {
     // เชื่อม SQL Server ไม่ได้ / query ล้ม = โยน error ก่อนแตะข้อมูลเดิม → ข้อมูลรอบก่อนยังอยู่ครบ
     const data = await fetchFromBplus();
     if (!data.monthly.length) throw new Error('Bplus ส่งข้อมูลกลับมา 0 แถว — ข้ามรอบนี้เพื่อไม่ลบข้อมูลเดิม');
+    excludeNonSalesSkus(data);
     const map = new Map(db.prepare('SELECT bp_code, slm_code FROM bplus_salesman_map WHERE slm_code IS NOT NULL AND slm_code <> \'\'').all()
       .map((r) => [r.bp_code, r.slm_code]));
     const slmOfBp = (bp) => map.get(bp) || (bp ? `BP-${bp}` : 'BP-(none)');
@@ -239,4 +286,4 @@ async function runBplusImport(db, { force = false } = {}) {
   }
 }
 
-module.exports = { runBplusImport, bplusConfigured, fetchFromBplus, COMPANY, COMPANY_IC };
+module.exports = { runBplusImport, bplusConfigured, fetchFromBplus, excludeNonSalesSkus, EXCLUDED_SKUS, COMPANY, COMPANY_IC };
