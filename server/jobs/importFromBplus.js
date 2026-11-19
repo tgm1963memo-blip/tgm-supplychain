@@ -10,6 +10,7 @@
 // กติกาที่ผู้ใช้ยืนยัน 2026-10-05:
 //   · ขายให้ "ไทยซอสเซสมาร์เก็ตติ้ง" (บริษัทในเครือ ~4,100 ล้าน) เก็บแยกเป็นบริษัท BP-TGM-IC — ดูได้แต่ไม่นับเป็นยอดขาย
 //   · ไม่นับใบยืมสินค้า (IVZ/EB), รายได้อื่น (IQOA/IQOB), ขายทรัพย์สิน (SF/SFN)
+//   · ไม่นับใบค่าเช่า REN (2026-11-19, ผู้ใช้สั่ง — 99-7 ค่าเช่าที่ดิน / 99-8 เงินมัดจำค่าเช่า ไม่ใช่ยอดขายสินค้า)
 //   · ใบ IVP. (Bplus ตั้งชื่อ "ใบยืมสินค้าIVP") นับเป็นยอดขาย — 2026-10-08 ผู้ใช้ยืนยัน: Excel ฝ่ายขายนับเป็นยอดเอเย่น
 //     (เช่น SMN-02-PC นายสมนึก ออก IVP. ทุกสัปดาห์ ~80k) · ปี 2025 มี IVP. รวม 41.3 ล้าน
 //   · นับ: ใบกำกับ/ขายสด (DT_PROPERTIES 307/302) + ใบเพิ่มหนี้ (402) − ใบรับคืน/ลดหนี้ (308/403/337)
@@ -23,7 +24,7 @@ const { loadSlmOverrides, effectiveSlm } = require('../lib/slmOverride');
 const FROM_DATE = '2025-01-01';
 const COMPANY = 'BP-TGM';
 const COMPANY_IC = 'BP-TGM-IC';
-const EXCLUDED_DOCCODES = ['IVZ', 'EB', 'IQOA', 'IQOB', 'SF', 'SFN'];
+const EXCLUDED_DOCCODES = ['IVZ', 'EB', 'IQOA', 'IQOB', 'SF', 'SFN', 'REN'];
 const MIN_INTERVAL_MS = (Number(process.env.BPLUS_SYNC_MIN_INTERVAL_MIN) || 30) * 60 * 1000;
 const STATE_KEY = 'bplus/TGM';
 
