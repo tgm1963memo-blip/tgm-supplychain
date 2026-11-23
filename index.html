@@ -21363,7 +21363,7 @@ async function pcRulesSave(reset) {
 // ส่วน 1,2,3 (In Store / Live / เงื่อนไขค่าส่ง / อื่นๆ) แต่ละส่วนมีระยะเวลา+ลักษณะโปร และส่วนย่อย 1.1 … (ตารางสินค้า/ตาราง/ข้อความ)
 // เลข MKT ออกตอนบันทึกครั้งแรก · เลข M ออกตอนอนุมัติครบ · อนุมัติครบ = ระบบส่งอีเมล CC แทนสำเนากระดาษ
 // ═══════════════════════════════════════════════════════════════════
-const MK_STATUS = { draft: { lbl: 'ร่าง', cls: 'bbgr' }, pending: { lbl: 'รออนุมัติ', cls: 'bba' }, rejected: { lbl: 'ถูกตีกลับ', cls: 'bbr' },
+const MK_STATUS = { draft: { lbl: 'ร่าง', cls: 'bbgr' }, pending: { lbl: 'รออนุมัติ', cls: 'bba' }, offline: { lbl: 'รออนุมัติ offline (กระดาษ)', cls: 'bba' }, rejected: { lbl: 'ถูกตีกลับ', cls: 'bbr' },
   approved: { lbl: 'อนุมัติแล้ว', cls: 'bbg' }, cancelled: { lbl: 'ยกเลิก', cls: 'bbr' } };
 const MK_TYPES = {
   instore: { name: 'In Store', prod: true, pt: 'ลดราคาสินค้า', list: 'mk-pt-p' },
@@ -21634,7 +21634,7 @@ function mkRenderForm() {
   const head = `<div class="card"><div class="ch"><div class="ct2">${d.doc_no ? esc(d.doc_no) : 'ใบเคาะใหม่'} <span class="badge ${st.cls || 'bbgr'}">${esc(st.lbl || d.status)}</span>${d.promo_no ? ` <span class="badge bbg">ใบ Promotion ${esc(d.promo_no)}</span>` : ''}</div>
       <span class="hint">ผู้เสนอ ${esc(d.created_by_name || '')}</span></div>
     ${d.status === 'rejected' && d.reject_reason ? `<div class="al alw">↩️ ถูกตีกลับ: ${esc(d.reject_reason)} — แก้ไขแล้วกดส่งอนุมัติใหม่</div>` : ''}
-    ${d.levels?.length && d.status !== 'draft' ? _mkStepsHtml(d) : ''}</div>`;
+    ${d.status === 'offline' ? `<div class="al alw" style="margin:0">🖨 ส่งอนุมัติแบบ offline แล้ว — พิมพ์ใบนี้ไปเซ็นตามขั้น (${(d.levels || []).map(l => esc(l.label)).join(' → ')}) · เซ็นครบแล้วถ่ายรูปแนบ แล้วให้ผู้บันทึกกด "บันทึกอนุมัติจากเอกสารกระดาษ"</div>` : d.levels?.length && d.status !== 'draft' && d.approval_mode !== 'paper' ? _mkStepsHtml(d) : ''}</div>`;
   if (!edit) {
     ct.innerHTML = `<div class="mkp">${head}${_mkViewActions(d)}${_mkAttView(d)}<div class="card"><div class="ch"><div class="ct2">เอกสาร A4</div><button class="btn btn-sm" onclick="mkPrint()">🖨 พิมพ์ A4</button></div><div class="paperwrap">${_mkPaper(d)}</div></div>${_mkLogsHtml(d)}</div>`;
     return;
@@ -21691,7 +21691,8 @@ function mkRenderForm() {
       <button class="btn btn-sm" data-act="print">🖨 พิมพ์ A4</button>
       <button class="btn btn-sm" data-act="save">💾 บันทึกร่าง</button>
       ${_mk.meta?.can_paper_approve ? `<button class="btn btn-sm" data-act="paper" style="border-color:var(--G);color:var(--G);font-weight:700">📄 บันทึกอนุมัติจากเอกสารกระดาษ</button>` : ''}
-      <button class="btn btn-sm btn-p" data-act="submit">ส่งอนุมัติ</button>
+      <button class="btn btn-sm" data-act="offline" style="font-weight:700">🖨 ส่งอนุมัติ offline</button>
+      <button class="btn btn-sm btn-p" data-act="submit">ส่งอนุมัติในระบบ</button>
     </div>${_mkLogsHtml(d)}</div>`;
   const root = document.getElementById('mkp-form');
   root.oninput = _mkOnInput; root.onchange = _mkOnChange; root.onclick = _mkOnClick; root.onpaste = _mkOnPaste;
@@ -21828,6 +21829,7 @@ function _mkOnClick(e) {
   if (a === 'save') return mkSave();
   if (a === 'submit') return mkSubmit();
   if (a === 'paper') return mkPaperApprove();
+  if (a === 'offline') return mkSubmitOffline();
   if (a === 'print') return mkPrint();
   if (a === 'cancel') return mkCancel();
   if (a === 'preview') { _mk.preview = !_mk.preview; document.getElementById('mk-prev-card').hidden = !_mk.preview; t.textContent = _mk.preview ? 'ซ่อนตัวอย่าง A4' : 'ดูเอกสาร A4'; _mkRefresh(); if (_mk.preview) document.getElementById('mk-prev-card').scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
@@ -21910,6 +21912,23 @@ async function mkPaperApprove() {
   _mk.doc = r.data; _mk.list = null; _mk.preview = true; mkRenderForm();
   toast(`บันทึกอนุมัติแล้ว · ออกเลขใบ Promotion ${r.data.promo_no} · ระบบส่งอีเมลแจ้ง CC`);
 }
+// ส่งอนุมัติ offline (2026-11-23) — ล็อกใบ แล้วเปิดหน้าพิมพ์ A4 ไปเซ็นบนกระดาษ (ไม่ต้องตั้งผู้อนุมัติในระบบ)
+async function mkSubmitOffline() {
+  const d = _mk.doc, { E } = _mkIssues(d);
+  if (E.length) { _mkRefresh(); document.getElementById('mk-warn')?.scrollIntoView({ block: 'center' }); return toast(`ยังส่งไม่ได้ · ต้องแก้ ${E.length} จุด (ดูกล่องสีแดง)`); }
+  const steps = (_mkRouteOf(d.route_id)?.levels || []).map(l => l.label).join(' → ');
+  if (!confirm(`ส่งอนุมัติ ${d.doc_no || 'ใบเคาะใหม่'} แบบ offline (กระดาษ)?\n\n• ระบบจะล็อกใบนี้ (แก้ไม่ได้จนกว่าจะเรียกคืน) และเปิดหน้าพิมพ์ A4\n• นำไปเซ็นตามขั้น: ${steps || '-'}\n• เซ็นครบแล้วถ่ายรูปแนบ แล้วให้ผู้บันทึกกด "บันทึกอนุมัติจากเอกสารกระดาษ"`)) return;
+  const saved = await mkSave(true); if (!saved) return;
+  const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(saved.id)}/submit-offline`, { method: 'POST', body: '{}' });
+  if (r.error) return toast('ส่งอนุมัติ offline ไม่สำเร็จ: ' + r.error.message);
+  _mk.doc = r.data; _mk.list = null; _mk.preview = true; mkRenderForm();
+  toast(`ส่งอนุมัติ offline แล้ว · ${r.data.doc_no} · กำลังเปิดหน้าพิมพ์`);
+  mkPrint();
+}
+async function _mkViewUpload(input) {
+  const files = [...input.files]; input.value = ''; if (!files.length) return;
+  await _mkUpload(files); mkRenderForm();
+}
 async function mkCancel() {
   const d = _mk.doc; if (!d.id) return;
   const reason = prompt(`ยกเลิกใบเคาะ ${d.doc_no}? ระบุเหตุผล (ไม่บังคับ)`); if (reason === null) return;
@@ -21947,17 +21966,18 @@ function _mkViewActions(d) {
   const mine = d.created_by === UID, canAct = d.status === 'pending' && cur && (cur.uids || []).includes(UID) && !mine;
   return `<div class="card" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
     ${canAct ? `<b style="margin-right:auto">ใบนี้รอคุณอนุมัติในขั้น ${esc(cur.label)}</b><button class="btn btn-sm" onclick="mkDecide(false)" style="color:var(--R)">↩️ ตีกลับ</button><button class="btn btn-sm btn-p" onclick="mkDecide(true)">✅ อนุมัติ</button>` : `<span class="hint" style="margin-right:auto">${d.status === 'approved' ? `อนุมัติครบ ${_mkShort(d.approved_at)} · อีเมล CC: ${esc(d.cc_sent_note || 'กำลังส่ง')}` : d.status === 'pending' ? `รอขั้น ${esc(cur?.label || '')}` : ''}</span>`}
-    ${mine && d.status === 'pending' ? `<button class="btn btn-sm" onclick="mkRecall()">เรียกคืนมาแก้ไข</button>` : ''}
-    ${d.status === 'pending' && _mk.meta?.can_paper_approve ? `<button class="btn btn-sm" onclick="mkPaperApprove()" style="color:var(--G)">📄 บันทึกอนุมัติจากเอกสารกระดาษ</button>` : ''}
+    ${d.status === 'offline' && (mine || _mk.meta?.can_paper_approve || ['superadmin', 'admin'].includes(ROLE)) ? `<b style="margin-right:auto">รอเซ็นบนกระดาษ — เซ็นครบแล้วแนบรูปเอกสาร</b><label class="btn btn-sm" style="cursor:pointer">📷 ถ่ายรูปเอกสาร<input type="file" accept="image/*" capture="environment" style="display:none" onchange="_mkViewUpload(this)"></label><label class="btn btn-sm" style="cursor:pointer">📎 แนบไฟล์<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" style="display:none" onchange="_mkViewUpload(this)"></label>` : ''}
+    ${(mine || (d.status === 'offline' && _mk.meta?.can_paper_approve)) && ['pending', 'offline'].includes(d.status) ? `<button class="btn btn-sm" onclick="mkRecall()">เรียกคืนมาแก้ไข</button>` : ''}
+    ${['pending', 'offline'].includes(d.status) && _mk.meta?.can_paper_approve ? `<button class="btn btn-sm" onclick="mkPaperApprove()" style="color:var(--G)">📄 บันทึกอนุมัติจากเอกสารกระดาษ</button>` : ''}
     ${(_mk.meta?.can_create) ? `<button class="btn btn-sm" onclick="mkCopy()">คัดลอกเป็นใบใหม่</button>` : ''}
     ${(mine || ['superadmin', 'admin'].includes(ROLE)) && !['cancelled'].includes(d.status) ? `<button class="btn btn-sm" onclick="mkCancel()" style="color:var(--R)">ยกเลิกใบนี้</button>` : ''}
     <button class="btn btn-sm" onclick="mkPrint()">🖨 พิมพ์ A4</button></div>`;
 }
 function _mkAttView(d) {
-  if (!(d.attachments || []).length) return '';
+  if (!(d.attachments || []).length) return d.status === 'offline' ? '<div class="card"><div class="ch"><div class="ct2">เอกสารแนบ</div></div><span class="hint">ยังไม่มีรูปเอกสารที่เซ็นแล้ว — กด 📷 ถ่ายรูปเอกสาร ด้านบน</span></div>' : '';
   return `<div class="card"><div class="ch"><div class="ct2">เอกสารแนบ</div></div>${d.attachments.map(a => `<div class="att-r"><span>📎</span><b>${esc(a.label || a.filename)}</b><span class="fn">${esc(a.filename)}</span><button class="btn btn-xs" onclick="_mkOpenAtt('${esc(d.id)}','${esc(a.id)}')">เปิด</button><span></span></div>`).join('')}</div>`;
 }
-const MK_LOG_LBL = { paper_approve: 'อนุมัติจากเอกสารกระดาษ', create: 'สร้าง', update: 'แก้ไข', submit: 'ส่งอนุมัติ', approve: 'อนุมัติ', reject: 'ตีกลับ', recall: 'เรียกคืน', cancel: 'ยกเลิก', attach: 'แนบไฟล์', detach: 'ลบไฟล์', cc_mail: 'อีเมล CC' };
+const MK_LOG_LBL = { submit_offline: 'ส่งอนุมัติ offline', paper_approve: 'อนุมัติจากเอกสารกระดาษ', create: 'สร้าง', update: 'แก้ไข', submit: 'ส่งอนุมัติ', approve: 'อนุมัติ', reject: 'ตีกลับ', recall: 'เรียกคืน', cancel: 'ยกเลิก', attach: 'แนบไฟล์', detach: 'ลบไฟล์', cc_mail: 'อีเมล CC' };
 function _mkLogsHtml(d) {
   if (!(d.logs || []).length) return '';
   return `<div class="card"><div class="ch"><div class="ct2">ประวัติเอกสาร</div></div><div class="tw"><table class="t"><tbody>${d.logs.slice().reverse().map(l => `<tr><td style="white-space:nowrap;font-size:12px">${_mkShort(l.at)} ${String(l.at || '').slice(11, 16)}</td><td><b>${esc(MK_LOG_LBL[l.action] || l.action)}</b></td><td style="font-size:12px">${esc(l.detail || '')}</td><td class="hint">${esc(l.by_name || l.by_uid || 'ระบบ')}</td></tr>`).join('')}</tbody></table></div></div>`;
@@ -22024,9 +22044,9 @@ function _mkPaper(d) {
   const T = _mkSum(_mkAll(d));
   const lvls = d.levels || [];
   const sign = [['ผู้เสนอ (การตลาด)', esc(d.created_by_name || ''), _mkShort(d.submitted_at || d.doc_date)],
-    ...lvls.map(l => [esc(l.label), l.status === 'approved' ? esc(l.by_name || '') : '', l.status === 'approved' ? _mkShort(l.at) : '____/____/______'])];
+    ...lvls.map(l => [esc(l.label), l.status === 'approved' ? esc(l.by_name || '') : '', l.status === 'approved' && l.by ? _mkShort(l.at) : '____/____/______'])];
   const cc = (d.cc || []).filter(c => c.on !== false).map(_mkCcLabel);
-  const wm = d.status === 'cancelled' ? 'ยกเลิก' : d.status === 'approved' ? '' : 'ร่าง · ยังไม่อนุมัติ';
+  const wm = d.status === 'cancelled' ? 'ยกเลิก' : ['draft', 'rejected'].includes(d.status) ? 'ร่าง · ยังไม่อนุมัติ' : '';
   return `<div class="mkpaper" style="position:relative">${wm ? `<div class="wm">${wm}</div>` : ''}
     <div class="p-head"><div><div class="p-co">บริษัท ไทย ซอสเซส มาร์เก็ตติ้ง จำกัด<small>ฝ่ายการตลาด · ช่องทางออนไลน์</small></div><div class="p-title">ใบเคาะราคา / ใบโปรโมชัน (การตลาดออนไลน์)</div></div>
       <div class="p-nos"><div><span>ใบเคาะราคา No.</span><span class="mono">${esc(d.doc_no || '(ออกเลขเมื่อบันทึก)')}</span></div><div><span>ใบ Promotion No.</span><span class="mono">${esc(d.promo_no || '') || '&nbsp;'}</span></div><div><span>วันที่เขียน</span><span>${_mkShort(d.doc_date)}</span></div></div></div>
@@ -22037,7 +22057,7 @@ function _mkPaper(d) {
     <div class="p-box" style="margin-top:12px"><div class="p-row"><span>เอกสารแนบ</span><span>${(d.attachments || []).length ? d.attachments.map((a, i) => `${i + 1}. ${esc(a.label || a.filename)}`).join(' &nbsp;·&nbsp; ') : 'ไม่มี'}</span></div>
       <div class="p-row"><span>รูปแบบการจำหน่ายพิเศษ</span><span>${esc(d.body.note || '') || '&nbsp;'}</span></div></div>
     <div class="p-sign">${sign.map(([r, n, dt]) => `<div><span class="role">${r}</span><span class="line">${n}</span><span class="date">ว.ด.ป. ${dt}</span></div>`).join('')}</div>
-    ${d.approval_mode === 'paper' ? `<div class="p-copy"><b>อนุมัติจากเอกสารกระดาษ</b>ลายเซ็นอนุมัติอยู่ในเอกสารแนบ · บันทึกในระบบโดย ${esc(lvls[0]?.by_name || '')} ${_mkShort(d.approved_at)}${lvls[0]?.comment ? ' · ' + esc(lvls[0].comment) : ''}</div>` : ''}
+    ${d.approval_mode === 'paper' && d.status === 'approved' ? `<div class="p-copy"><b>อนุมัติจากเอกสารกระดาษ</b>ลายเซ็นอนุมัติอยู่ในเอกสารแนบ · บันทึกในระบบโดย ${esc(lvls[0]?.recorded_by_name || lvls[0]?.by_name || '')} ${_mkShort(d.approved_at)}${lvls[0]?.note || lvls[0]?.comment ? ' · ' + esc(lvls[0].note || lvls[0].comment) : ''}</div>` : ''}
     <div class="p-copy"><b>แจ้งทางอีเมล (CC) หลังอนุมัติ</b>${cc.map(esc).join(' · ') || '–'}<span style="margin-left:auto;padding-left:10px">${d.cc_sent_at ? esc(d.cc_sent_note || 'ส่งแล้ว') + ' ' + _mkShort(d.cc_sent_at) : 'ระบบส่งอัตโนมัติเมื่ออนุมัติครบ'}</span></div>
     <div class="p-foot"><span>FM-MKT-PRO · พิมพ์จากระบบ TSS Supply Chain</span><span>${esc(d.doc_no || 'ร่างยังไม่บันทึก')} · <span class="pg">หน้า 1/1</span></span></div></div>`;
 }

@@ -337,10 +337,27 @@ module.exports = function mktPromoDocsRoutes(db) {
     if (notify) mailApprovers(db, notify.d, notify.uids, notify.label).catch(x => console.warn('[mktPromoMail]', x.message));
   });
 
+  // ส่งอนุมัติ offline (2026-11-23, ผู้ใช้สั่ง: ยังไม่ได้ใช้ผ่านระบบ 100%) — ล็อกใบ + พิมพ์ไปเซ็นบนกระดาษตามขั้นของเส้นทาง
+  // ไม่ต้องตั้งผู้อนุมัติในระบบ · เซ็นครบแล้วถ่ายรูปแนบ → ผู้บันทึกกด "บันทึกอนุมัติจากเอกสารกระดาษ" (paper-approve)
+  router.post('/:id/submit-offline', (req, res) => send(res, () => tx(db, () => {
+    const d = load(req.params.id, req.user);
+    if (!EDITABLE.includes(d.status)) throw httpErr(400, 'ส่งอนุมัติได้เฉพาะใบที่เป็นร่าง หรือถูกตีกลับ');
+    if (!canWriteDoc(d, req.user)) throw httpErr(403, 'ส่งอนุมัติได้เฉพาะผู้เสนอ');
+    const { issues } = buildDoc(db, { ...d, ...d.body });
+    if (issues.length) throw httpErr(400, `ยังส่งอนุมัติไม่ได้ ต้องแก้ ${issues.length} จุด: ${issues.slice(0, 5).join(' · ')}`);
+    const route = routes().find(r => r.id === d.route_id) || routes()[0];
+    // ช่องลงนามบนกระดาษตามขั้นของเส้นทาง (ไม่ผูกผู้ใช้ในระบบ)
+    const levels = (route?.levels || []).map(l => ({ label: l.label, uids: [], names: [], status: 'offline', by: null, at: null, comment: null }));
+    db.prepare(`UPDATE mkt_promo_docs SET status = 'offline', approval_mode = 'paper', levels_json = ?, cur_level = 0, submitted_at = ${now}, reject_reason = NULL,
+      updated_by = ?, updated_at = ${now} WHERE id = ?`).run(JSON.stringify(levels), req.user.uid, d.id);
+    log(db, d.id, 'submit_offline', `ส่งอนุมัติแบบ offline (กระดาษ) · ${levels.map(l => l.label).join(' → ')}`, req.user.uid);
+    return full(d.id);
+  })));
+
   router.post('/:id/recall', (req, res) => send(res, () => tx(db, () => {
     const d = load(req.params.id, req.user);
-    if (d.status !== 'pending') throw httpErr(400, 'เรียกคืนได้เฉพาะใบที่รออนุมัติ');
-    if (d.created_by !== req.user.uid) throw httpErr(403, 'เรียกคืนได้เฉพาะผู้เสนอ');
+    if (!['pending', 'offline'].includes(d.status)) throw httpErr(400, 'เรียกคืนได้เฉพาะใบที่รออนุมัติ');
+    if (d.created_by !== req.user.uid && !(d.status === 'offline' && canWriteDoc(d, req.user))) throw httpErr(403, 'เรียกคืนได้เฉพาะผู้เสนอ');
     db.prepare(`UPDATE mkt_promo_docs SET status = 'draft', cur_level = 0, updated_by = ?, updated_at = ${now} WHERE id = ?`).run(req.user.uid, d.id);
     log(db, d.id, 'recall', null, req.user.uid);
     return full(d.id);
@@ -389,15 +406,18 @@ module.exports = function mktPromoDocsRoutes(db) {
       out = tx(db, () => {
         const d = load(req.params.id, req.user);
         if (!canPaper(req.user)) throw httpErr(403, 'ไม่มีสิทธิ์บันทึกอนุมัติจากเอกสารกระดาษ');
-        if (!EDITABLE.includes(d.status) && d.status !== 'pending') throw httpErr(400, 'บันทึกอนุมัติได้เฉพาะใบที่ยังไม่อนุมัติ');
+        if (!EDITABLE.includes(d.status) && !['pending', 'offline'].includes(d.status)) throw httpErr(400, 'บันทึกอนุมัติได้เฉพาะใบที่ยังไม่อนุมัติ');
         const { issues } = buildDoc(db, { ...d, ...d.body });
         if (issues.length) throw httpErr(400, `ยังบันทึกไม่ได้ ต้องแก้ ${issues.length} จุด: ${issues.slice(0, 5).join(' · ')}`);
         const scans = db.prepare("SELECT COUNT(*) AS n FROM mkt_promo_attachments WHERE doc_id = ? AND (mime_type LIKE 'image/%' OR mime_type = 'application/pdf')").get(d.id).n;
         if (!scans) throw httpErr(400, 'กรุณาแนบรูปถ่าย/PDF เอกสารที่เซ็นอนุมัติแล้วก่อน');
         const note = txt(req.body?.note, 500) || null;
         const promoNo = nextNo(db, 'promo_no', 'M', 5, PRO_SEED);
-        const levels = [{ label: 'อนุมัติจากเอกสารกระดาษ', uids: [req.user.uid], names: [req.user.name || req.user.uid], status: 'approved',
-          by: req.user.uid, by_name: req.user.name || req.user.uid, at: new Date().toISOString(), comment: note }];
+        const at = new Date().toISOString(), me = req.user.name || req.user.uid;
+        // ใบที่ส่งแบบ offline มีช่องลงนามตามขั้นของเส้นทางอยู่แล้ว → คงช่องไว้ ระบุว่าลงนามในเอกสารแนบ · ใบอื่น = ช่องเดียว
+        const levels = d.status === 'offline' && d.levels.length
+          ? d.levels.map(l => ({ ...l, status: 'approved', by: null, by_name: '(ลงนามในเอกสารแนบ)', at, comment: null, recorded_by: req.user.uid, recorded_by_name: me, note }))
+          : [{ label: 'อนุมัติจากเอกสารกระดาษ', uids: [req.user.uid], names: [me], status: 'approved', by: req.user.uid, by_name: me, at, comment: note, recorded_by: req.user.uid, recorded_by_name: me, note }];
         db.prepare(`UPDATE mkt_promo_docs SET status = 'approved', approval_mode = 'paper', promo_no = ?, levels_json = ?, cur_level = 0, submitted_at = COALESCE(submitted_at, ${now}),
           approved_at = ${now}, reject_reason = NULL, updated_by = ?, updated_at = ${now} WHERE id = ?`).run(promoNo, JSON.stringify(levels), req.user.uid, d.id);
         log(db, d.id, 'paper_approve', `อนุมัติจากเอกสารกระดาษ (แนบ ${scans} ไฟล์) · ออกเลข ${promoNo}${note ? ' · ' + note : ''}`, req.user.uid);
@@ -441,7 +461,7 @@ module.exports = function mktPromoDocsRoutes(db) {
     send(res, () => {
       const d = load(req.params.id, req.user);
       if (!canWriteDoc(d, req.user)) throw httpErr(403, 'แนบไฟล์ได้เฉพาะผู้เสนอ');
-      if (!EDITABLE.includes(d.status)) throw httpErr(400, 'แนบไฟล์ได้เฉพาะใบที่เป็นร่าง หรือถูกตีกลับ');
+      if (!EDITABLE.includes(d.status) && d.status !== 'offline') throw httpErr(400, 'แนบไฟล์ได้เฉพาะใบที่เป็นร่าง ถูกตีกลับ หรือรออนุมัติ offline');
       const f = req.file;
       if (!f) throw httpErr(400, 'ไม่พบไฟล์');
       if (!attTypes.has(f.mimetype)) throw httpErr(400, 'รองรับ PDF, รูปภาพ, Excel, Word, CSV');
@@ -466,7 +486,7 @@ module.exports = function mktPromoDocsRoutes(db) {
   router.delete('/:id/attachments/:aid', (req, res) => send(res, () => {
     const d = load(req.params.id, req.user);
     if (!canWriteDoc(d, req.user)) throw httpErr(403, 'ลบได้เฉพาะผู้เสนอ');
-    if (!EDITABLE.includes(d.status)) throw httpErr(400, 'ลบไฟล์ได้เฉพาะใบที่เป็นร่าง หรือถูกตีกลับ');
+    if (!EDITABLE.includes(d.status) && d.status !== 'offline') throw httpErr(400, 'ลบไฟล์ได้เฉพาะใบที่เป็นร่าง ถูกตีกลับ หรือรออนุมัติ offline');
     const r = db.prepare('DELETE FROM mkt_promo_attachments WHERE id = ? AND doc_id = ?').run(req.params.aid, d.id);
     if (!r.changes) throw httpErr(404, 'ไม่พบไฟล์');
     log(db, d.id, 'detach', req.params.aid, req.user.uid);
