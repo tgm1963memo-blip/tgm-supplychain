@@ -126,6 +126,8 @@ Express (Business Plus) ERP           tgm-supplychain (this repo)              t
 ### 14) จัดการกลุ่ม
 - **I/O**: กลุ่มลูกค้า/เซลส์ sync จริง (`customer_profiles`, `salesmen_profiles`); **กลุ่มสินค้า (STKGRP mapping) เป็น local-only ทั้งหมด**
 - **Dependency**: กลุ่มสินค้า local-only นี้ป้อนกราฟ Dashboard #1 — ตั้งใจแยกจาก Sales Overview ตามที่ระบุในโค้ด
+- **(2026-10-07) กลุ่มลูกค้ามี 3 มิติแยกกัน**: Corporate group (เครือ/บริษัทแม่, ข้อความอิสระ) · **ประเภทธุรกิจ** (`customer_profiles.business_type` — รายการตายตัวใน `server/lib/businessType.js`: Modern Trade/ร้านอาหาร/โรงแรม/เบเกอรี่/Catering/ผู้ผลิต/ร้านค้าทั่วไป/เอเย่นต์/ส่งออก/Online/ไดเร็คเซลส์/พนักงาน/Shop บริษัท/บริษัทในเครือ/อื่นๆ, ปุ่ม "🍽️ เดาประเภทธุรกิจ" ไม่ทับค่าที่ตั้งเอง) · หมวดผู้บริหาร (`exec_channel`, 8 หมวดของ Dashboard ผู้บริหาร) — ช่อง Category เดิมยังเป็นข้อความอิสระ (ใบเคาะราคาใช้อยู่)
+- **(2026-10-07) ตัด FK `customer_profiles.code → customers(code)`** (`server/db/customerProfilesV2.js`) — เดิมลูกค้า Bplus โรงงาน/สาขาห้างจากห้อง SKU ไม่มีแถวใน `customers` จึงบันทึกกลุ่มไม่ได้เลย (เป็นเหตุที่ NSL/TOA/BP-POS ค้าง "ยังไม่ถูกระบุ") · รอบเดียวกันจัดกลุ่มลูกค้าที่มียอดตั้งแต่ 2025 แต่ยังไม่มีกลุ่ม 331 ราย (`server/db/data/customer-regroup-20261007.json`, edited_by `regroup-2026-10-07`)
 
 ### 15) Reports
 - **I/O**: export hub (delegate ไปฟังก์ชัน export ของหน้าอื่น) + import CSV "รายงาน 73" ของ Express แบบ manual พร้อม cross-check สูตร (เงินสด+เครดิต+ค้าง−คืน เทียบยอดสุทธิ)
@@ -154,6 +156,14 @@ Express (Business Plus) ERP           tgm-supplychain (this repo)              t
 - **รหัสสินค้าขึ้นต้นด้วย "9"** (ราคาพิเศษที่จับสินค้าจริงหลายรายการ) แสดงเป็นรายการย่อยเลข 1.1/1.2 ใต้บรรทัดหลัก — แต่ละรายการย่อยเป็นสินค้าจริงมีราคา/ปริมาณเป็นของตัวเอง
 - **ยังไม่ทำ (blocked, รอข้อมูลเพิ่ม)**: ไม่มี — ทุกข้อในแผนต้นฉบับ (`menu-fuzzy-willow.md`) เสร็จแล้ว ณ 2026-09-16
 - **เทสต์**: `e2e/tests/promo-draft-creation.spec.js` (UI-level, stub SB.*) + `e2e/tests/promo-draft-api-security.spec.js` (API-level จริง: doc_no concurrency, role-gate 403, mime-type spoofing) — รวม 40+ เทสต์
+
+### 20) ราคากลาง A–G + ใบเสนอราคา + ราคาพิเศษ (2026-10-07 ถึง 2026-10-09, Sales app เท่านั้น)
+- **ราคากลาง** (`price_tiers`, 1 แถว/รหัส ราคา A..G, ประวัติ `price_tier_logs`): นำเข้าไฟล์ "ฐานราคาร้านค้า A–G" แบบตรวจผลต่างก่อนบันทึก, แก้ราคาในตาราง, ส่งออก Excel · แก้ได้เฉพาะ superadmin/admin/sales_manager (`routes/priceTiers.js`)
+- **สิทธิ์ฐานรายคน** `sc_users.min_price_tier` (ค่าเริ่มต้น E) — ตั้งในฟอร์มผู้ใช้
+- **ใบเสนอราคา** (`quotation_headers/lines/logs`, `routes/quotationHeaders.js`): เลขที่ `QT<พ.ศ.>-<เดือน>-<ลำดับ>` ออกที่ server · ชื่อ/หน่วย/ราคาฐานมาจาก server เสมอ · พิมพ์ A4 ตามฟอร์มต้นฉบับ (โลโก้ TGM)
+- **ขออนุมัติราคาต่ำกว่าสิทธิ์**: บรรทัดที่ราคาเสนอ < ราคาฐาน `min_price_tier` ของผู้สร้าง = `needs_approval` → ออกเองไม่ได้ ต้องส่งให้ผู้จัดการ (เลือกคน, อีเมลแจ้ง) · draft → pending_approval → อนุมัติ = issued / ไม่อนุมัติ (บังคับเหตุผล) = rejected แก้แล้วส่งใหม่ · ผู้สร้างเรียกคืนได้
+- **ราคาพิเศษประจำลูกค้า** (`customer_special_prices`, key = รหัสลูกค้า หรือชื่อลูกค้าใหม่): เกิดตอนอนุมัติ · เป็นราคาตั้งต้นของลูกค้ารายนั้น และราคา ≥ ราคาพิเศษไม่ต้องขอซ้ำ · ผู้จัดการดู/ปิดใช้งานได้ (ปุ่ม 💜 ในหน้ารายการ)
+- ทดสอบ: `server/tests/quotations.test.js`, `quotation-approval.test.js`, `e2e/tests/price-tiers.spec.js`
 
 ### หน้า WMS System, และหน้า orphan
 - **WMS System** (`wms`, เห็นเฉพาะ role `warehouse`): แสดง stock แบบอ่านอย่างเดียว + ปุ่มเปิด WMS app ในแท็บใหม่ + ข้อความ SSO — ข้อความ UI ในหน้านี้อ้างอิง Supabase ("ใช้ร่วมกันผ่าน Supabase") ซึ่ง**ล้าสมัยแล้ว** ตามหัวข้อ 6

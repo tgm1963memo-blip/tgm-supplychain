@@ -3,13 +3,37 @@ const bcrypt = require('bcryptjs');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { buildWhere, buildOrderBy } = require('../lib/pgQuery');
 
-const SAFE_FIELDS = ['uid', 'name', 'role', 'department', 'position', 'slm_id', 'slm_codes', 'email', 'is_active', 'created_at'];
+const SAFE_FIELDS = ['uid', 'name', 'role', 'department', 'position', 'slm_id', 'slm_codes', 'bplus_codes', 'min_price_tier', 'can_see_cost', 'email', 'is_active', 'created_at'];
 
 // "101, 110-1,,101" → "101,110-1" (ตัดช่องว่าง/ซ้ำ) · undefined = ไม่แก้ · ว่าง = null
 function normSlmCodes(v) {
   if (v === undefined) return undefined;
   const list = [...new Set((Array.isArray(v) ? v : String(v ?? '').split(',')).map(x => String(x).trim()).filter(Boolean))];
   return list.length ? list.join(',') : null;
+}
+
+// รหัสพนักงานขายใน Bplus โรงงาน (2026-10-07) — เก็บรหัสล้วน "05,12" (ตัด "BP-" ที่พิมพ์มา) · ระบบนับยอดเป็นรหัส "BP-05"
+// เหมือนรหัส Sales ของผู้ใช้ (ดู lib/salesTeams.js codesOf) · ยอดโรงงานที่จับคู่รหัส Express ไว้แล้วใช้รหัส Express อยู่แล้ว
+function normBplusCodes(v) {
+  if (v === undefined) return undefined;
+  const list = [...new Set((Array.isArray(v) ? v : String(v ?? '').split(',')).map(x => String(x).trim().replace(/^BP-/i, '')).filter(Boolean))];
+  return list.length ? list.join(',') : null;
+}
+
+// ฐานราคาต่ำสุดที่เสนอเองได้ (2026-10-07, ใบเสนอราคา) — A..G ตัวเดียว · undefined = ไม่แก้ · ค่าอื่น = error
+function normMinTier(v) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const t = String(v).trim().toUpperCase();
+  if (!/^[A-G]$/.test(t)) throw new Error('min_price_tier ต้องเป็น A–G');
+  return t;
+}
+
+// สิทธิ์เห็นทุน/อัตรากำไร (2026-11-16, ผู้ใช้ยืนยัน: ติ๊กรายคน) — 0/1 · undefined = ไม่แก้
+// ให้เฉพาะ superadmin ตั้งได้: admin แก้ผู้ใช้ได้ทุกช่อง ถ้าปล่อยช่องนี้ด้วย admin จะเปิดสิทธิ์เห็นทุนให้ตัวเองได้
+function normSeeCost(v, actor) {
+  if (v === undefined || v === null || v === '') return undefined;
+  if (actor.role !== 'superadmin') throw Object.assign(new Error('เฉพาะ Super Admin ที่กำหนดสิทธิ์เห็นทุนได้'), { status: 403 });
+  return v === true || v === 1 || v === '1' || v === 'true' ? 1 : 0;
 }
 
 // sc_users needs bcrypt-on-write and must never leak pwd_hash — handled by hand instead of the
@@ -35,7 +59,7 @@ function usersRoutes(db) {
           const params = [];
           for (const [col, val] of Object.entries({
             name: r.name, role: r.role, department: r.department, position: r.position,
-            slm_id: r.slm_id, slm_codes: normSlmCodes(r.slm_codes), email: r.email, is_active: r.is_active,
+            slm_id: r.slm_id, slm_codes: normSlmCodes(r.slm_codes), bplus_codes: normBplusCodes(r.bplus_codes), min_price_tier: normMinTier(r.min_price_tier), can_see_cost: normSeeCost(r.can_see_cost, req.user), email: r.email, is_active: r.is_active,
           })) {
             if (val === undefined) continue;
             fields.push(`${col} = ?`);
@@ -48,9 +72,9 @@ function usersRoutes(db) {
         } else {
           if (!pwd_hash) return res.status(400).json({ error: 'pwd_hash is required for a new user' });
           db.prepare(`
-            INSERT INTO sc_users (uid, name, role, department, position, slm_id, slm_codes, email, pwd_hash, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(uid, r.name, r.role, r.department || null, r.position || null, r.slm_id || null, normSlmCodes(r.slm_codes) || null, r.email || null, pwd_hash, req.user.uid);
+            INSERT INTO sc_users (uid, name, role, department, position, slm_id, slm_codes, bplus_codes, min_price_tier, can_see_cost, email, pwd_hash, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(uid, r.name, r.role, r.department || null, r.position || null, r.slm_id || null, normSlmCodes(r.slm_codes) || null, normBplusCodes(r.bplus_codes) || null, normMinTier(r.min_price_tier) || 'E', normSeeCost(r.can_see_cost, req.user) || 0, r.email || null, pwd_hash, req.user.uid);
         }
         db.prepare('INSERT INTO audit_log (uid, role, action, target) VALUES (?, ?, ?, ?)')
           .run(req.user.uid, req.user.role, existing ? 'EDIT_USER' : 'ADD_USER', uid);
@@ -58,7 +82,7 @@ function usersRoutes(db) {
       }
       res.status(201).json(Array.isArray(req.body) ? saved : saved[0]);
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      res.status(e.status || 400).json({ error: e.message });
     }
   });
 
@@ -69,11 +93,12 @@ function usersRoutes(db) {
     if (!target) return res.status(404).json({ error: 'not found' });
 
     const body = { ...req.body };
+    try { normMinTier(body.min_price_tier); normSeeCost(body.can_see_cost, req.user); } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
     const fields = [];
     const upd = [];
     for (const [col, val] of Object.entries({
       name: body.name, role: body.role, department: body.department, position: body.position,
-      slm_id: body.slm_id, slm_codes: normSlmCodes(body.slm_codes), email: body.email, is_active: body.is_active,
+      slm_id: body.slm_id, slm_codes: normSlmCodes(body.slm_codes), bplus_codes: normBplusCodes(body.bplus_codes), min_price_tier: normMinTier(body.min_price_tier), can_see_cost: normSeeCost(body.can_see_cost, req.user), email: body.email, is_active: body.is_active,
     })) {
       if (val === undefined) continue;
       fields.push(`${col} = ?`);

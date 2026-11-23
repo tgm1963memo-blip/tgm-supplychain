@@ -90,7 +90,7 @@ test('isolated API approval and both attachment contracts', async t => {
   assert.equal((await call(route,'PATCH',{status:'approved'})).status,400);
   db.prepare('INSERT INTO approval_workflow_templates(entity_type,levels_json) VALUES(?,?)').run('promo_draft_exec',JSON.stringify([{mode:'all',approvers:[{uid:'A'}]}]));
   assert.equal((await call(route,'PATCH',{status:'pending_approval'})).status,200);
-  assert.equal((await call(route,'PATCH',{status:'approved'},'S')).status,400);
+  assert.equal((await call(route,'PATCH',{status:'approved'},'S')).status,404); // (2026-10-06) Sales ที่ไม่มีสิทธิ์เห็นเอกสาร = 404
   db.exec("DELETE FROM approval_workflow_templates WHERE entity_type='promo_draft_exec'");
   assert.equal((await call(route,'PATCH',{status:'pending_exec_approval'},'B')).status,400);
   assert.equal((await call(route)).data[0].status,'pending_approval');

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { sendMail, COMPANY, escapeHtml } = require('./mailer');
+const { ccEmailsOf } = require('./promoApproval');
 
 // แจ้งอนุมัติใบเคาะราคาทางอีเมล (2026-09-23, แบบเดียวกับ e-memo):
 // - เอกสารเข้าขั้นอนุมัติใหม่ (ส่งอนุมัติ / ผ่านขั้นก่อนหน้า / escalate ผู้บริหาร) → ส่งอีเมลถึงผู้อนุมัติของขั้นนั้น
@@ -88,12 +89,13 @@ function prevCommentsHtml(header) {
     ${rows.map(r => `<div style="border-left:3px solid ${r.ok ? '#0A5940' : '#A32D2D'};background:#F7F9FC;padding:6px 10px;margin-bottom:4px;font-size:12.5px">
       <b>${e(r.name)}</b> <span style="color:#6B7280">· ${e(r.step)} · ${r.ok ? 'อนุมัติ' : 'ไม่อนุมัติ'} · ${new Date(r.ts).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })} น.</span>
       ${vSum(r.lv) ? `<div style="margin-top:2px;font-weight:700">ผลตรวจสอบ: <span style="color:#0A5940">✅ ขายได้ ${vSum(r.lv).p}</span> · <span style="color:#A32D2D">⚠️ ขาดทุน ${vSum(r.lv).l}</span> รายการ</div>` : ''}
-      ${r.comment ? `<div style="margin-top:2px">💬 ${e(r.comment)}</div>` : ''}</div>`).join('')}</div>`;
+      ${r.comment ? `<div style="margin-top:2px">ความเห็น: ${e(r.comment)}</div>` : ''}</div>`).join('')}</div>`;
 }
 
 function renderApprovalRequestEmail({ header, sum, approverName, stepLabel, approveUrl, rejectUrl, openUrl }) {
   const btn = (href, bg, color, label) => `<a href="${e(href)}" style="background:${bg};color:${color};padding:11px 22px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block;margin:4px 6px">${label}</a>`;
-  const subject = `[รออนุมัติ] ใบเคาะราคา ${header.doc_no || header.draft_no} — ${header.promo_name || ''}`.trim();
+  // หัวเรื่อง (2026-10-09, ผู้ใช้ขอ): "Approve Promotion" + ชื่อโปร (+ เลขที่ไว้ค้นในระบบ)
+  const subject = `Approve Promotion: ${header.promo_name || '(ไม่มีชื่อ)'} [${header.doc_no || header.draft_no}]`;
   const html = shell(`
     <p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#111">เรียน คุณ${e(approverName)}<br/>
       มีใบเคาะราคารอการอนุมัติจากท่าน</p>
@@ -103,7 +105,7 @@ function renderApprovalRequestEmail({ header, sum, approverName, stepLabel, appr
     <div style="text-align:center;margin:22px 0 8px">
       ${btn(approveUrl, '#0A5940', '#fff', '✅ อนุมัติ')}
       ${btn(rejectUrl, '#A32D2D', '#fff', '❌ ไม่อนุมัติ')}
-      ${btn(openUrl, '#D4AF37', '#111', '🔎 เปิดดูในระบบ')}
+      ${btn(openUrl, '#D4AF37', '#111', 'เปิดดูในระบบ')}
     </div>
     <p style="margin:6px 0 0;font-size:11.5px;color:#6B7280;line-height:1.7;text-align:center">
       กด "อนุมัติ" หรือ "ไม่อนุมัติ" จะเปิดหน้ายืนยันให้ใส่ความเห็นก่อนบันทึก · หรือกด "เปิดดูในระบบ" เพื่อดูรายละเอียดทั้งหมดและอนุมัติในระบบ
@@ -122,7 +124,7 @@ function renderResultEmail({ header, sum, outcome, byName, comment, openUrl }) {
     ${summaryBlockHtml(header, sum, '')}
     ${ok && header.promo_no ? `<p style="font-size:13px;margin:4px 0">เลขที่ใบโปรโมชั่น: <b style="font-family:monospace">${e(header.promo_no)}</b> — คีย์เข้า Express แล้วกดปิดสถานะในระบบ</p>` : ''}
     <div style="text-align:center;margin:18px 0 4px">
-      <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">🔎 เปิดดูในระบบ</a>
+      <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">เปิดดูในระบบ</a>
     </div>`);
   const text = `${subject}\n${comment ? 'ความเห็น: ' + comment + '\n' : ''}เปิดในระบบ: ${openUrl}`;
   return { subject, html, text };
@@ -158,11 +160,45 @@ async function notifyCurrentApprovers(db, header, baseUrl) {
 
 async function notifyCreator(db, header, outcome, byUid, comment) {
   const creator = db.prepare('SELECT email FROM sc_users WHERE uid = ?').get(header.created_by);
-  if (!creator?.email) return { sent: false, reason: 'NO_EMAIL' };
+  // (2026-10-12, ผู้ใช้ขอ) CC ของเส้นทางได้อีเมลครั้งเดียวตอน "คีย์เข้า Express แล้ว" (notifyCcKeyed) — ผลอนุมัติส่งเฉพาะผู้จัดทำ
+  // เลขาที่สร้างแทนได้สำเนาด้วย
+  const actual = header.created_by_actual && header.created_by_actual !== header.created_by ? emailOf(db, header.created_by_actual) : '';
+  const cc = actual && actual.toLowerCase() !== String(creator?.email || '').toLowerCase() ? [actual] : [];
+  if (!creator?.email && !cc.length) return { sent: false, reason: 'NO_EMAIL' };
   const byName = byUid ? (db.prepare('SELECT name FROM sc_users WHERE uid = ?').get(byUid)?.name || byUid) : '';
   const mail = renderResultEmail({ header, sum: docSummary(db, header), outcome, byName, comment,
     openUrl: `${appUrl()}/?draft=${encodeURIComponent(header.draft_no)}` });
-  return sendMail({ to: creator.email, ...mail });
+  return creator?.email ? sendMail({ to: creator.email, cc, ...mail }) : sendMail({ to: cc.join(', '), ...mail });
+}
+
+async function notifyOverlapHold(db, header, hold) {
+  const creator = db.prepare('SELECT name, email, is_active FROM sc_users WHERE uid = ?').get(header.created_by);
+  if (!creator?.email || !creator.is_active) return { sent: false, reason: 'NO_EMAIL' };
+  const rows = (hold.docs || []).map(o => [o.kind === 'draft' ? 'ใบเคาะในระบบ' : 'ใบโปร Express', `${o.ref} · ${fmtD(o.start)} – ${fmtD(o.due)} · ${o.skus.length} สินค้า ${o.branches.length} สาขา`]);
+  return sendMail({ to: creator.email, ...simpleMail(header, '⏸ ต้องยกเลิกโปรเก่าที่ช่วงเวลาซ้อนก่อนส่งต่อผู้อนุมัติ',
+    [['เอกสาร', header.doc_no || header.draft_no], ...rows, ['ขั้นตอน', 'ยกเลิกโปรเก่าให้เรียบร้อย แล้วกด "ยืนยันยกเลิกครบ" ในใบเคาะ']], openUrlOf(header)) });
+}
+
+// แจ้ง CC ของเส้นทาง — (2026-10-12, ผู้ใช้ขอ) ส่งครั้งเดียวตอน "คีย์เข้า Express แล้ว" แทนตอนส่งอนุมัติ/ผลอนุมัติ
+// อีเมลแจ้งเพื่อทราบ ไม่มีลิงก์อนุมัติ (ลิงก์ token ผูกกับผู้อนุมัติแต่ละคน ส่งต่อให้ CC ไม่ได้)
+async function notifyCcKeyed(db, header) {
+  const cc = ccEmailsOf(db, header.route_id);
+  if (!cc.length) return { sent: false, reason: 'NO_CC' };
+  const sum = docSummary(db, header);
+  const levels = [...parse(header.approval_history_json), ...parse(header.levels_json)];
+  const openUrl = openUrlOf(header);
+  const keyer = header.keyed_by ? (db.prepare('SELECT name FROM sc_users WHERE uid = ?').get(header.keyed_by)?.name || header.keyed_by) : '';
+  const subject = `[แจ้งเพื่อทราบ] คีย์เข้า Express แล้ว — ${header.promo_no || header.doc_no || header.draft_no} ${header.promo_name || ''}`.trim();
+  const html = shell(`<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#111">แจ้งเพื่อทราบ — ใบเคาะราคาอนุมัติครบและคีย์เข้า Express แล้ว${keyer ? ` โดย <b>${e(keyer)}</b>` : ''}${header.route_name ? ` (เส้นทาง <b>${e(header.route_name)}</b>)` : ''}</p>
+    ${summaryBlockHtml(header, sum, '')}
+    ${itemsTableHtml(sum.items)}
+    ${levels.length ? `<div style="font-size:13px;margin:8px 0"><b>ลำดับการอนุมัติ:</b> ${levels.map((lv, i) => `${i + 1}. ${e(lv.label || 'ขั้นที่ ' + (i + 1))} (${(lv.approvers || []).map(a => e(a.name || a.uid)).join(', ')})`).join(' → ')}</div>` : ''}
+    <div style="text-align:center;margin:18px 0 4px">
+      <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">เปิดดูในระบบ</a>
+    </div>
+    <p style="margin:6px 0 0;font-size:11.5px;color:#6B7280;text-align:center">ท่านได้รับอีเมลนี้ในฐานะผู้รับสำเนา (CC) ของเส้นทางอนุมัติ</p>`);
+  return sendMail({ to: cc.join(', '), subject, html, text: `${subject}
+เปิดในระบบ: ${openUrl}` });
 }
 
 // เรียกหลังบันทึกการเปลี่ยนแปลงหัวเอกสาร (PATCH ปกติ หรืออนุมัติผ่านอีเมล) — before/after เป็น row ที่ parse แล้ว
@@ -170,7 +206,12 @@ async function afterChange(db, before, after, baseUrl) {
   if (!after) return;
   const pending = ['pending_approval', 'pending_exec_approval'];
   const levelChanged = before.status !== after.status || (before.current_level || 0) !== (after.current_level || 0);
+  const holdNow = (() => { const v = after.overlap_hold_json; const h = v && typeof v === 'string' ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v; return h && !h.cleared_at ? h : null; })();
+  const holdBefore = (() => { const v = before.overlap_hold_json; return !!v && v !== 'null'; })();
+  // พักรอ Sales ยกเลิกโปรเก่าที่ซ้อน (2026-10-06) — ยังไม่แจ้งผู้อนุมัติลำดับถัดไป แจ้งผู้จัดทำแทน
+  if (holdNow && !holdBefore) { await notifyOverlapHold(db, after, holdNow); return; }
   if (pending.includes(after.status) && levelChanged) await notifyCurrentApprovers(db, after, baseUrl);
+  if (after.status === 'keyed_to_express' && before.status !== 'keyed_to_express') await notifyCcKeyed(db, after);
   if (before.status !== after.status && (after.status === 'approved' || after.status === 'rejected')) {
     const acted = [...parse(after.approval_history_json), ...parse(after.levels_json)].flatMap(l => l.approvers || [])
       .filter(a => a.ts).sort((x, y) => String(y.ts).localeCompare(String(x.ts)))[0];
@@ -184,24 +225,34 @@ function simpleMail(header, title, rows, openUrl) {
   const subject = `${title} — ${docNo} ${header.promo_name || ''}`.trim();
   const html = shell(`<h2 style="margin:0 0 10px;font-size:17px;color:#1E3A5F">${e(title)}</h2>
     <table style="border-collapse:collapse;font-size:13px;margin-bottom:14px">${rows.map(([k, v]) => `<tr><td style="padding:3px 12px 3px 0;color:#6B7280;white-space:nowrap">${e(k)}</td><td style="padding:3px 0;font-weight:600">${e(v)}</td></tr>`).join('')}</table>
-    <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">🔎 เปิดดูในระบบ</a>`);
+    <a href="${e(openUrl)}" style="background:#D4AF37;color:#111;padding:11px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">เปิดดูในระบบ</a>`);
   return { subject, html, text: `${subject}\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\nเปิดในระบบ: ${openUrl}` };
 }
 const emailOf = (db, uid) => { const u = db.prepare('SELECT email, is_active FROM sc_users WHERE uid = ?').get(uid); return u?.email && u.is_active ? u.email : ''; };
 const openUrlOf = header => `${appUrl()}/?draft=${encodeURIComponent(header.draft_no)}`;
-const scopeText = rq => rq.scope === 'all' ? 'ยกเลิกทั้งใบ' : `ยกเลิกบางรายการ (${(rq.skus || []).join(', ')})`;
+const rangeText = (a, b) => `${fmtD(a)} – ${fmtD(b)}`;
+// scope 'dates' (2026-10-12) = ขอเปลี่ยนแปลงวันที่ — เลขเอกสารเดิม
+const dateRows = rq => {
+  const f = rq.dates_from || {}, t = rq.dates_to || {};
+  return [['วันโปร', `${rangeText(f.start_date, f.due_date)} → ${rangeText(t.start_date, t.due_date)}`],
+    ...(f.cost_start_date !== t.cost_start_date || f.cost_end_date !== t.cost_end_date ? [['วันทุน', `${rangeText(f.cost_start_date, f.cost_end_date)} → ${rangeText(t.cost_start_date, t.cost_end_date)}`]] : [])];
+};
+const scopeText = rq => rq.scope === 'all' ? 'ยกเลิกทั้งใบ' : rq.scope === 'dates' ? 'เปลี่ยนแปลงวันที่' : `ยกเลิกบางรายการ (${(rq.skus || []).join(', ')})`;
 async function notifyCancelRequest(db, header, rq) {
   const to = emailOf(db, rq.approver_uid);
   if (!to) return { sent: false, reason: 'NO_EMAIL' };
-  return sendMail({ to, ...simpleMail(header, '🚫 ขออนุมัติยกเลิกเอกสาร', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
-    ['รายการ', scopeText(rq)], ['ผู้ขอ', rq.requested_by_name || rq.requested_by], ['หมายเหตุ', rq.reason]], openUrlOf(header)) });
+  const isDates = rq.scope === 'dates';
+  return sendMail({ to, ...simpleMail(header, isDates ? 'ขออนุมัติเปลี่ยนแปลงวันที่' : 'ขออนุมัติยกเลิกเอกสาร', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
+    ['รายการ', scopeText(rq)], ...(isDates ? dateRows(rq) : []), ['ผู้ขอ', rq.requested_by_name || rq.requested_by], ['หมายเหตุ', rq.reason]], openUrlOf(header)) });
 }
 async function notifyCancelDecision(db, header, d) {
   const to = emailOf(db, d.requested_by);
   if (!to) return { sent: false, reason: 'NO_EMAIL' };
-  return sendMail({ to, ...simpleMail(header, d.result === 'approved' ? '✅ อนุมัติการยกเลิกแล้ว' : '❌ ไม่อนุมัติการยกเลิก', [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
-    ['รายการ', scopeText(d)], ['ผู้อนุมัติ', d.decided_by_name || d.decided_by], ['หมายเหตุ', d.manager_note || '—'],
-    ...(d.result === 'approved' ? [['หมายเหตุระบบ', 'ระบบไม่เขียน Express — ต้องยกเลิกโปรใน Express เองด้วย']] : [])], openUrlOf(header)) });
+  const isDates = d.scope === 'dates', ok = d.result === 'approved';
+  const title = isDates ? (ok ? '✅ อนุมัติเปลี่ยนแปลงวันที่แล้ว' : '❌ ไม่อนุมัติเปลี่ยนแปลงวันที่') : (ok ? '✅ อนุมัติการยกเลิกแล้ว' : '❌ ไม่อนุมัติการยกเลิก');
+  return sendMail({ to, ...simpleMail(header, title, [['เอกสาร', header.promo_no || header.doc_no || header.draft_no],
+    ['รายการ', scopeText(d)], ...(isDates ? dateRows(d) : []), ['ผู้อนุมัติ', d.decided_by_name || d.decided_by], ['หมายเหตุ', d.manager_note || '—'],
+    ...(ok ? [['หมายเหตุระบบ', isDates ? 'ระบบไม่เขียน Express — ต้องแก้วันที่โปรใน Express เองด้วย' : 'ระบบไม่เขียน Express — ต้องยกเลิกโปรใน Express เองด้วย']] : [])], openUrlOf(header)) });
 }
 async function notifyRecall(db, header, uids, byName, note) {
   const out = [];
@@ -214,4 +265,4 @@ async function notifyRecall(db, header, uids, byName, note) {
   return out;
 }
 
-module.exports = { notifyCancelRequest, notifyCancelDecision, notifyRecall, afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };
+module.exports = { notifyCcKeyed, notifyCancelRequest, notifyCancelDecision, notifyRecall, afterChange, notifyCurrentApprovers, docSummary, renderApprovalRequestEmail, renderResultEmail, summaryBlockHtml, itemsTableHtml, prevCommentsHtml, shell, appUrl };

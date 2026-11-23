@@ -47,7 +47,8 @@ CREATE INDEX IF NOT EXISTS idx_customers_group ON customers(cust_group);
 
 -- extra per-customer metadata edited from the web app (corporate/category/slm overrides)
 CREATE TABLE IF NOT EXISTS customer_profiles (
-  code             TEXT PRIMARY KEY REFERENCES customers(code),
+  -- ไม่มี FK ไป customers: ลูกค้า Bplus/สาขาห้างไม่มีแถวใน customers (ดู db/customerProfilesV2.js)
+  code             TEXT PRIMARY KEY,
   name             TEXT,
   corporate        TEXT,
   category         TEXT,
@@ -784,6 +785,28 @@ CREATE INDEX IF NOT EXISTS idx_promo_docs_dates ON promo_docs(start_date, due_da
 -- Confirmed live 2026-08-26: this exact mistake put the service in a restart-crash loop. The index
 -- is created in migrations.js instead, right after the column is added.
 
+-- ใบสั่งซื้อจาก Express (POPR/POPRIT) สำหรับหน้ารับของเข้าของ tss-wms — ดู syncExpressPoLines() · ตารางใหม่ ใส่ index ตรงนี้ได้
+CREATE TABLE IF NOT EXISTS express_po_lines (
+  id            TEXT PRIMARY KEY,
+  company       TEXT NOT NULL,
+  po_no         TEXT NOT NULL,
+  seq           TEXT NOT NULL,
+  po_date       TEXT,
+  due_date      TEXT NOT NULL,
+  supplier_code TEXT,
+  supplier_name TEXT,
+  sku           TEXT NOT NULL,
+  sku_name      TEXT,
+  unit          TEXT,
+  loc_code      TEXT,
+  ordered_qty   REAL NOT NULL DEFAULT 0,
+  cancelled_qty REAL NOT NULL DEFAULT 0,
+  remain_qty    REAL NOT NULL DEFAULT 0,
+  doc_status    TEXT,
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_express_po_lines_due ON express_po_lines(due_date);
+
 -- Promo drafts (2026-09-03, requested: "สร้างใบโปรในระบบ" ก่อนคีย์เข้า Express จริง) — ร่างเอกสาร
 -- โปรโมชัน/เคาะราคา เก็บในระบบเราเองเท่านั้น ไม่เขียนเข้า Express DBF โดยตรง (Express ไม่มี write-path
 -- ในระบบนี้เลย มีแต่ read/sync ทางเดียว) พนักงานยังต้องคีย์เข้า Express เองหลังอนุมัติเสร็จเหมือนเดิม แล้ว
@@ -1120,20 +1143,24 @@ SELECT * FROM v_sales_overview_sales_monthly WHERE company = 'CONSI';
 -- single-row health check — index.html's getStockPlanning()/dashboard "data confidence" card.
 -- Rebuilt 2026-07-13 to add orphan-SKU counters (DROP-first, see v_stock_by_warehouse comment above) —
 -- these are what should show ~715 -> ~0 for orphan_sku_consi_count once syncProducts() pulls CONSI too.
+-- 2026-10-20 (code review): ตัวเลขหนัก (ออเดอร์/บรรทัด/SKU กำพร้าใน sales_transactions — ~3.3 วิ) นับตอนจบรอบ sync
+-- เก็บใน sc_data_counts (lib/dataCounts.js) — view นี้อ่านจากตาราง ส่วนเวลา sync / สถานะ Bplus / การจอง / stock อ่านสด
+CREATE TABLE IF NOT EXISTS sc_data_counts (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  so_count INTEGER, line_count INTEGER, orders_without_line INTEGER,
+  orphan_sku_sales_count INTEGER, orphan_sku_consi_count INTEGER,
+  computed_at TEXT
+);
 DROP VIEW IF EXISTS v_sc_data_confidence;
 CREATE VIEW v_sc_data_confidence AS
 SELECT
-  (SELECT COUNT(*) FROM outbound_orders) AS so_count,
-  (SELECT COUNT(*) FROM outbound_lines) AS line_count,
+  (SELECT so_count FROM sc_data_counts WHERE id = 1) AS so_count,
+  (SELECT line_count FROM sc_data_counts WHERE id = 1) AS line_count,
   (SELECT COUNT(*) FROM bookings WHERE status != 'cancelled') AS active_booking_count,
-  (SELECT COUNT(*) FROM outbound_orders o
-     WHERE NOT EXISTS (SELECT 1 FROM outbound_lines l WHERE l.order_id = o.id)) AS orders_without_line,
+  (SELECT orders_without_line FROM sc_data_counts WHERE id = 1) AS orders_without_line,
   (SELECT COUNT(*) FROM products WHERE is_active = 1) AS active_product_count,
-  (SELECT COUNT(DISTINCT t.sku) FROM sales_transactions t
-     WHERE t.sku IS NOT NULL AND NOT EXISTS (SELECT 1 FROM products p WHERE p.code = t.sku)) AS orphan_sku_sales_count,
-  (SELECT COUNT(DISTINCT t.sku) FROM sales_transactions t
-     WHERE t.company = 'CONSI' AND t.sku IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM products p WHERE p.code = t.sku)) AS orphan_sku_consi_count,
+  (SELECT orphan_sku_sales_count FROM sc_data_counts WHERE id = 1) AS orphan_sku_sales_count,
+  (SELECT orphan_sku_consi_count FROM sc_data_counts WHERE id = 1) AS orphan_sku_consi_count,
   (SELECT COUNT(DISTINCT s.sku) FROM stock s
      WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.code = s.sku)) AS orphan_sku_stock_count,
   -- Fixed 2026-07-17: this used to be MAX(bookings.created_at, stock.last_updated) — but
@@ -1142,7 +1169,12 @@ SELECT
   -- of 4,947 stock rows carry a LMOVDAT in the future (max seen: 2026-07-22, 5 days ahead of a
   -- 2026-07-17 sync), which made "Express Sync ล่าสุด" show an impossible future date. sync_log
   -- is the actual record of when runImport() executed, so use its most recent successful run.
-  (SELECT finished_at FROM sync_log WHERE status = 'ok' ORDER BY finished_at DESC LIMIT 1) AS synced_at;
+  -- 2026-10-09: แยก Bplus (โรงงาน TGM, source='bplus') ออก — เดิมรอบ Bplus ที่สำเร็จทีหลังทำให้ "Express Sync ล่าสุด"
+  -- แสดงเวลาของ Bplus แทน · bplus_* = รอบ Bplus ล่าสุดที่สำเร็จ + สถานะ/ข้อความของรอบล่าสุด (ผู้ใช้ขอให้แสดงบน Dashboard)
+  (SELECT finished_at FROM sync_log WHERE status = 'ok' AND source <> 'bplus' ORDER BY finished_at DESC LIMIT 1) AS synced_at,
+  (SELECT finished_at FROM sync_log WHERE status = 'ok' AND source = 'bplus' ORDER BY finished_at DESC LIMIT 1) AS bplus_synced_at,
+  (SELECT status FROM sync_log WHERE source = 'bplus' ORDER BY started_at DESC LIMIT 1) AS bplus_status,
+  (SELECT message FROM sync_log WHERE source = 'bplus' ORDER BY started_at DESC LIMIT 1) AS bplus_message;
 
 -- one row per Express company book — a cheap standing tripwire so a future "does this company's data
 -- look sane" question can be answered by glancing at this instead of re-opening DBF files by hand.
@@ -1175,3 +1207,108 @@ SELECT
   (SELECT MAX(b.created_at) FROM bookings b WHERE b.sku = p.code) AS latest_created_at
 FROM products p
 WHERE p.is_active = 1;
+
+-- ราคากลางร้านค้า ฐาน A–G (2026-10-07, ใบเสนอราคา) — 1 แถวต่อรหัสสินค้า ตรงกับไฟล์ "ฐานราคาร้านค้า A.B.C.D.E.F.G"
+-- ที่ฝ่ายขายใช้อยู่ (รหัส/ชื่อไทย/ชื่ออังกฤษ/หน่วย/ราคา A..G) · A ถูกสุด → G แพงสุด · price_x ว่าง = ฐานนั้นไม่มีราคา
+-- รหัสเป็นข้อความตามไฟล์ (บางรหัสไม่ตรง products ของ Express — เก็บได้ แต่หน้านำเข้าแจ้งเตือน)
+-- นำเข้า/แก้ได้ที่ routes/priceTiers.js เท่านั้น ทุกการเปลี่ยนเขียน price_tier_logs
+CREATE TABLE IF NOT EXISTS price_tiers (
+  code        TEXT PRIMARY KEY,
+  name_th     TEXT,
+  name_en     TEXT,
+  unit        TEXT,
+  price_a     REAL,
+  price_b     REAL,
+  price_c     REAL,
+  price_d     REAL,
+  price_e     REAL,
+  price_f     REAL,
+  price_g     REAL,
+  is_active   INTEGER NOT NULL DEFAULT 1,
+  note        TEXT,
+  updated_by  TEXT,
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE TABLE IF NOT EXISTS price_tier_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code       TEXT NOT NULL,
+  field      TEXT NOT NULL,
+  old_value  TEXT,
+  new_value  TEXT,
+  source     TEXT NOT NULL,
+  batch_id   TEXT,
+  by_uid     TEXT,
+  at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_price_tier_logs_code ON price_tier_logs(code, at);
+
+-- ใบเสนอราคา (2026-10-08, รอบ 2 ของแผน folder-cryptic-lamport) — แทนไฟล์ Excel "ไฟล์เสนอราคาฐาน X" ชีต ฟอร์มต้นฉบับ
+-- doc_no ออกที่ server ตอนสร้าง (QT<พ.ศ.>-<เดือน>-<ลำดับ>) · status: draft → issued (พิมพ์ได้) / cancelled
+-- รอบ 2 ใช้ได้เฉพาะฐานในสิทธิ์ (sc_users.min_price_tier) — ราคาต่ำกว่าสิทธิ์/การขออนุมัติอยู่รอบ 3
+-- base_price/needs_approval คำนวณที่ server จาก price_tiers ทุกครั้ง ไม่เชื่อค่าจาก client
+-- remarks_json = [{th, en}] หมายเหตุสองภาษา · signer_json = { name, title, contact } ผู้ลงนาม "ขอแสดงความนับถือ"
+CREATE TABLE IF NOT EXISTS quotation_headers (
+  id            TEXT PRIMARY KEY,
+  doc_no        TEXT UNIQUE,
+  doc_date      TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'draft',
+  customer_code TEXT,
+  customer_name TEXT NOT NULL,
+  attn          TEXT,
+  tel           TEXT,
+  email         TEXT,
+  price_tier    TEXT NOT NULL,
+  sales_name    TEXT,
+  from_text     TEXT,
+  remarks_json  TEXT,
+  signer_json   TEXT,
+  note          TEXT,
+  created_by    TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by    TEXT,
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  issued_at     TEXT,
+  cancelled_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS quotation_lines (
+  header_id      TEXT NOT NULL,
+  seq            INTEGER NOT NULL,
+  product_code   TEXT NOT NULL,
+  name_th        TEXT,
+  name_en        TEXT,
+  unit           TEXT,
+  base_price     REAL,
+  quoted_price   REAL NOT NULL,
+  price_source   TEXT NOT NULL DEFAULT 'tier',
+  tier_used      TEXT,
+  needs_approval INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (header_id, seq)
+);
+CREATE TABLE IF NOT EXISTS quotation_logs (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  header_id TEXT NOT NULL,
+  action    TEXT NOT NULL,
+  detail    TEXT,
+  by_uid    TEXT,
+  at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_quotation_headers_by ON quotation_headers(created_by, doc_date);
+CREATE INDEX IF NOT EXISTS idx_quotation_logs_h ON quotation_logs(header_id, at);
+
+-- ราคาพิเศษประจำลูกค้า (2026-10-09, ใบเสนอราคา รอบ 3) — เกิดจากใบเสนอราคาที่ผู้จัดการอนุมัติราคาต่ำกว่าสิทธิ์ของ Sales
+-- ครั้งต่อไปลูกค้ารายเดิม + สินค้าเดิม ใช้ราคานี้เป็นค่าตั้งต้นและไม่ต้องขออนุมัติซ้ำ (ราคาเสนอ ≥ ราคาพิเศษ)
+-- cust_key = 'C:<รหัสลูกค้า>' หรือ 'N:<ชื่อลูกค้าใหม่ ตัวพิมพ์เล็ก>' (ลูกค้ารายใหม่ที่ยังไม่มีรหัส) · 1 ราคาต่อลูกค้า×สินค้า (อนุมัติใหม่ = ทับ)
+CREATE TABLE IF NOT EXISTS customer_special_prices (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  cust_key            TEXT NOT NULL,
+  customer_code       TEXT,
+  customer_name       TEXT,
+  product_code        TEXT NOT NULL,
+  price               REAL NOT NULL,
+  source_quotation_id TEXT,
+  approved_by         TEXT,
+  approved_at         TEXT,
+  is_active           INTEGER NOT NULL DEFAULT 1,
+  updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (cust_key, product_code)
+);

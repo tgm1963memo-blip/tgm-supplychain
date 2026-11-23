@@ -82,6 +82,12 @@ const PRODUCT_COMPANIES = companyListFromEnv('PRODUCT_COMPANIES', ['TSS', 'CONSI
 // recurring sync going forward. COMPANY_DATE_CUTOFF below still applies, so the TSS-NV/TSSN-68
 // cutover fix keeps working under the wider list.
 const SALES_COMPANIES = companyListFromEnv('SALES_COMPANIES', ['TSS', 'CONSI', 'TGM', 'TSS-68', 'TSSN-68', 'TSSN-67', 'TSS-67', 'TSS-NV']);
+// ห้องสต็อกเพิ่มเติม (2026-10-22 ตามที่ผู้ใช้ขอ "ตรวจนับ stock และกระทบยอด แยก TSS กับ Shop"): Express เปิดห้อง
+// SHOP3 (SHOP TGM RAMA III) คุมสต็อกของ Shop แยกจาก TSS — ย้ายของ Shop ออกจากคลัง 10/12 ของ TSS มาทั้งหมด
+// เก็บลงตาราง company_stock / company_stock_movements_daily / company_stock_movements_wms_daily (มีคอลัมน์ company)
+// แยกจากตาราง stock/stock_movements_* เดิมของ TSS โดยตั้งใจ — ตารางเดิมมีผู้อ่านหลายจุด (views, ABC, planning)
+// ที่ไม่กรอง company เลย ถ้าปนกันยอด Shop จะไปโผล่ในยอด TSS (รหัสคลัง 01–19 ซ้ำกันด้วย)
+const EXTRA_STOCK_COMPANIES = companyListFromEnv('EXTRA_STOCK_COMPANIES', ['SHOP3']);
 
 // Confirmed with user 2026-07-10 (TSS) and re-checked 2026-07-13 (CONSI, same distribution shape):
 // STKTYP='0' = real sellable products on this system.
@@ -90,6 +96,10 @@ const PRODUCT_STKTYP_INCLUDE = ['0'];
 const ORDER_DOCSTAT_INCLUDE = ['M'];
 // Accounting confirmed these ARTRN document series must not be counted as sales revenue.
 // Keep the rule close to the Express importer so every invoice-derived total uses the same exclusion.
+// (2026-10-20) ย้ายรายการเล่มไป lib/salesDocs.js + เพิ่ม IT (ค่าขนส่ง) / IV (ขายวัสดุ) — ใช้กับยอดขาย/รายสินค้าเท่านั้น
+// syncInvoices() (ตาราง invoices ของหน้าจ่ายสินค้าตามใบกำกับ) ยังตัดเฉพาะ LF/LE/LG แบบเดิม — ใบ IT/IV ยังต้องจ่ายของ/วางบิล
+const { isNonSalesDocNum } = require('../lib/salesDocs');
+const { loadSlmOverrides, effectiveSlm, loadSlmSkuOverrides, effectiveSlmSku } = require('../lib/slmOverride');
 const SALES_DOCNUM_EXCLUDE_PREFIXES = new Set(['LF', 'LE', 'LG']);
 function isExcludedSalesDocNum(docNum) {
   const prefix = String(docNum || '').trim().toUpperCase().slice(0, 2);
@@ -128,6 +138,18 @@ async function readTable(company, baseName) {
   return dbf.readRecords();
 }
 
+// ARTRNRM.DBF ถูกอ่าน 3 จุดต่อรอบ sync (syncSales / buildInvoiceLineComponents / syncInvoices) — อ่านครั้งเดียวต่อบริษัทต่อรอบ
+// (2026-10-28, code review) · cache มีเฉพาะระหว่าง runImport (ล้างใน finally) ไม่ค้างหน่วยความจำข้ามรอบ · ผู้เรียกต้องไม่แก้ array ที่ได้
+let remarkCycleCache = null;
+// บรรทัดใบรับสินค้า (RH) จาก STCRD.DBF ของ TSS — syncStockMovements อ่านไฟล์นี้ (~265MB) อยู่แล้วทุกรอบ
+// จึงเก็บเฉพาะแถว RH ไว้ให้ syncExpressPoLines ใช้ต่อ ไม่ต้องอ่านไฟล์ซ้ำ · ล้างทิ้งตอนจบรอบ (2026-11-05)
+let receiptLinesCycle = null;
+async function readRemarks(company) {
+  if (!remarkCycleCache) return readTable(company, 'ARTRNRM.DBF');
+  if (!remarkCycleCache.has(company)) remarkCycleCache.set(company, readTable(company, 'ARTRNRM.DBF'));
+  try { return await remarkCycleCache.get(company); } catch (e) { remarkCycleCache.delete(company); throw e; }
+}
+
 function toIsoDate(d) {
   return d instanceof Date && !isNaN(d) ? d.toISOString().slice(0, 10) : null;
 }
@@ -141,9 +163,14 @@ function ym(d) {
 // first 3 characters (dropping any "-N" suffix) so sub-codes collapse onto one parent salesperson
 // code and joins/rollups group correctly; letter-prefixed codes are left untouched. Applied at every
 // point SLMCOD is read from a raw Express DBF, so every table that stores a salesperson code agrees.
+// (2026-10-27, ผู้ใช้ขอ) รหัสหลักใน KEEP_SUB_SLM_CODES เก็บรหัสย่อยตามจริง ไม่รวบ — คุณไกด์ 110: 110-1 ร้านค้า /
+// 110-2 ลูกค้าโรงแรม (Express ผูกทั้งใน ARMAS และใบกำกับ ARTRN) ให้บัญชี sales-hotel เห็นเฉพาะยอด 110-2
+// ผู้ใช้ที่ต้องเห็นยอดรวมต้องมีรหัสย่อยใน sc_users.slm_codes ครบ · ข้อมูลเก่ารหัส 110 ยังอยู่ในบริษัทปีเก่า
+const KEEP_SUB_SLM_CODES = new Set(companyListFromEnv('KEEP_SUB_SLM_CODES', ['110']));
 function normalizeSlmCode(raw) {
   const code = String(raw || '').trim();
   if (!code) return code;
+  if (code.includes('-') && KEEP_SUB_SLM_CODES.has(code.split('-')[0])) return code;
   return /^[0-9]/.test(code) ? code.slice(0, 3) : code;
 }
 
@@ -237,10 +264,11 @@ async function syncProducts(db) {
   const seen = new Set();
   const unitNames = await loadUnitNameMap();
   const upsert = db.prepare(`
-    INSERT INTO products (code, name, group_name, unit, standard_price, price_company, is_active, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    INSERT INTO products (code, name, group_name, unit, standard_price, price_company, created_date, is_active, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(code) DO UPDATE SET name = excluded.name, group_name = excluded.group_name,
       unit = excluded.unit, standard_price = excluded.standard_price, price_company = excluded.price_company,
+      created_date = COALESCE(excluded.created_date, products.created_date),
       is_active = 1, updated_at = excluded.updated_at
   `);
   // Combo/set codes (STKTYP != '0', e.g. the -A/-B suffix codes STMAS uses for bundle SKUs) are
@@ -294,7 +322,8 @@ async function syncProducts(db) {
         const unit = (unitCode && unitNames.get(unitCode)) || unitCode || 'กิโลกรัม';
         const standardPrice = [r.SELLPR1, r.SELLPR2, r.SELLPR3, r.SELLPR4, r.SELLPR5].map(Number).find(v => Number.isFinite(v) && v > 0) || null;
         // price_company: TSS keys STMAS prices as net cost — ใบเคาะราคา reverse-calculates a sell price from it
-        upsert.run(code, (r.STKDES || '').trim(), (r.STKGRP || '').trim(), unit, standardPrice, standardPrice ? company : null);
+        // created_date (2026-10-22): STMAS.CREDAT — วันที่สร้างรหัสสินค้าใน Express (tgm-wms ABC ใช้แยก "สินค้าใหม่" อายุ < 3 เดือน)
+        upsert.run(code, (r.STKDES || '').trim(), (r.STKGRP || '').trim(), unit, standardPrice, standardPrice ? company : null, toIsoDate(r.CREDAT));
         seen.add(code);
         importedByCompany[company]++;
       }
@@ -321,13 +350,35 @@ async function syncProducts(db) {
   }
 }
 
+// ชื่อสาขาจากที่อยู่ใน ARMAS (2026-10-12, ผู้ใช้ขอ) — ห้างหลายสาขาใช้ CUSNAM เดียวกัน (เช่น วิลล่า มาร์เก็ท เจพี จำกัด)
+// ชื่อสาขาจริงอยู่ใน ADDR03 เช่น "(สาขาพาราไดร์)" / "(พาชิโอ ลาดกระบัง)" · ช่องนี้ปนเบอร์โทร/จังหวัด/รอบส่ง
+// จึงรับเฉพาะ: ข้อความหลังคำว่า "สาขา" (ADDR03→ADDR01, CUSNAM2) หรือวงเล็บต้น ADDR03 ที่ไม่ใช่ข้อมูลอื่น
+const _brClean = (v) => String(v || '').replace(/[\u00a0\ufffd]/g, ' ').replace(/\s+/g, ' ').trim();
+const _BR_JUNK = /สินค้า|แพ็?ค|ตู้|TGM|TSS|เงินสด|รอบ|ส่ง|โทร|คุณ|^จ\.|จังหวัด|เขต|แขวง|อ\.|ต\.|\d{5}|^\d[\d\s-]*$|เวลา|ขายขาด|เครดิต|บิล|ใบกำกับ|VAT/i;
+const _BR_BAD = /^(ใหม่|รอบ|แผนก|อุปกรณ์|LOTUS|สำนักงานใหญ่)|^\d+$/i;
+function branchFromArmas(r) {
+  const tidy = (v) => _brClean(v)
+    .replace(/\s*(ส่ง|รอบ)\s*[อจพศสฤ.,\s]*$/, '')
+    .replace(/\s*(ตู้\s*(TGM|TSS|สด)?|แพ็?คซอง\s*TGM|TGM|TSS)\s*$/i, '')
+    .replace(/[.\s-]+$/, '').trim();
+  for (const part of [r.ADDR03, r.ADDR02, r.ADDR01, r.CUSNAM2].map(_brClean)) {
+    const m = part.match(/สาขา\s*(?:ที่\s*)?([^()\[\],]+)/);
+    if (!m) continue;
+    const v = tidy(m[1]);
+    if (v && v.length <= 40 && !_BR_BAD.test(v)) return v;
+  }
+  const m = _brClean(r.ADDR03).match(/^\(([^()]{2,40})\)/);
+  if (m && !_BR_JUNK.test(m[1])) { const v = tidy(m[1]); if (v && !_BR_BAD.test(v)) return v; }
+  return null;
+}
+
 async function syncCustomers(db) {
   const seen = new Set();
   const upsertCust = db.prepare(`
-    INSERT INTO customers (code, name, slm_id, is_active, updated_at)
-    VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    INSERT INTO customers (code, name, slm_id, is_active, addr_branch, updated_at)
+    VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(code) DO UPDATE SET name = excluded.name, slm_id = excluded.slm_id,
-      is_active = excluded.is_active, updated_at = excluded.updated_at
+      is_active = excluded.is_active, addr_branch = excluded.addr_branch, updated_at = excluded.updated_at
   `);
   const upsertSlm = db.prepare(`
     INSERT INTO salesmen (slm_id, name, updated_at)
@@ -352,7 +403,7 @@ async function syncCustomers(db) {
       for (const r of rows) {
         if (!r.CUSCOD || seen.has(r.CUSCOD)) continue;
         seen.add(r.CUSCOD);
-        upsertCust.run(r.CUSCOD.trim(), (r.CUSNAM || '').trim(), normalizeSlmCode(r.SLMCOD) || null, r.STATUS === 'A' ? 1 : 0);
+        upsertCust.run(r.CUSCOD.trim(), (r.CUSNAM || '').trim(), normalizeSlmCode(r.SLMCOD) || null, r.STATUS === 'A' ? 1 : 0, branchFromArmas(r));
         imported++;
       }
     }
@@ -409,6 +460,55 @@ async function syncStock(db) {
   }
 }
 
+// ห้องสต็อกเพิ่มเติม (EXTRA_STOCK_COMPANIES เช่น SHOP3, 2026-10-22) — ยอดคงเหลือรายคลัง (STLOC) + ความเคลื่อนไหว
+// รายวัน (STCRD) ด้วยสูตรเดียวกับ TSS ลงตาราง company_* (ดูเหตุผลที่แยกตารางที่ EXTRA_STOCK_COMPANIES) · ลบ/เขียน
+// ใหม่เฉพาะแถวของห้องนั้นใน transaction เดียว · โฟลเดอร์ห้องหาย (เช่นไดรฟ์หลุด) = ข้ามรอบนี้ ไม่ลบยอดเดิมทิ้ง
+async function syncExtraStockCompany(db, company) {
+  if (!fs.existsSync(path.join(EXPRESS_ROOT, company))) {
+    console.warn(`[importFromExpress] ${company}: folder not found — skipped (old data kept)`);
+    return 0;
+  }
+  const [locRows, crdRows] = await Promise.all([readTable(company, 'STLOC.DBF'), readTable(company, 'STCRD.DBF')]);
+  const { daily, wmsDaily } = buildStockMovements(crdRows, company);
+  const getProductUnit = db.prepare('SELECT unit FROM products WHERE code = ?');
+  const insertStock = db.prepare('INSERT INTO company_stock (company, sku, warehouse, qty, unit, last_updated) VALUES (?, ?, ?, ?, ?, ?)');
+  const insertDaily = db.prepare(`
+    INSERT INTO company_stock_movements_daily (company, sku, warehouse, day, received_qty, sold_qty, converted_qty, transferred_qty, other_qty, pm_qty, wms_received_qty)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertWms = db.prepare(`
+    INSERT INTO company_stock_movements_wms_daily (company, sku, day, received_qty, general_sale_qty, consi_qty, transfer_qty, converted_qty, reserved_qty, return_qty, writeoff_qty, received_value, dispatched_qty)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.exec('BEGIN');
+  try {
+    for (const t of ['company_stock', 'company_stock_movements_daily', 'company_stock_movements_wms_daily']) {
+      db.prepare(`DELETE FROM ${t} WHERE company = ?`).run(company);
+    }
+    let n = 0;
+    for (const r of locRows) {
+      if (!r.STKCOD || !r.LOCCOD) continue;
+      const sku = r.STKCOD.trim();
+      insertStock.run(company, sku, r.LOCCOD.trim(), r.LOCBAL || 0, getProductUnit.get(sku)?.unit || 'กก.', toIsoDate(r.LMOVDAT) || new Date().toISOString());
+      n++;
+    }
+    for (const [key, d] of daily) {
+      const [sku, warehouse, day] = key.split('|');
+      insertDaily.run(company, sku, warehouse, day, d.received, d.sold, d.converted, d.transferred, d.other, d.pm, d.wmsReceived);
+    }
+    for (const [key, d] of wmsDaily) {
+      const [sku, day] = key.split('|');
+      insertWms.run(company, sku, day, d.received, d.general_sale, d.consi, d.transfer, d.converted, d.reserved, d.return, d.writeoff, d.received_value, d.dispatched);
+    }
+    db.exec('COMMIT');
+    console.log(`[importFromExpress] ${company} stock: ${n} sku/warehouse rows, ${daily.size} sku/warehouse/day rows, ${wmsDaily.size} sku/day WMS rows`);
+    return n + daily.size + wmsDaily.size;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
 // Daily stock movement ledger from Express's real per-transaction stock card (STCRD.DBF) — `stock`
 // above is a current-balance snapshot only (no history at all); this is the actual day-by-day
 // activity behind it. Document-number prefix -> category confirmed directly by the user 2026-07-22:
@@ -432,6 +532,9 @@ const STCRD_CATEGORY = {
   // RH/RS มาแล้ว JX/JT จะถูกลบทิ้ง) — ผู้ใช้ยืนยันให้ถือเป็น "รับเข้า" เหมือน RH/RS ตอนคำนวณเทียบยอดนับสต็อก
   RC: 'received', RH: 'received', RR: 'received', RN: 'received', RI: 'received', RS: 'received', PM: 'received', JU: 'received', JW: 'received',
   JX: 'received', JT: 'received',
+  // ADDED (2026-10-21 ตามที่ผู้ใช้ระบุ "ให้เพิ่มเอายอดจากหัวเอกสาร JY มารวมด้วย"): JY = "SHOPคืนสินค้ารอบิล" (เริ่มใช้
+  // 21 ต.ค. 69, POSOPR 1 เข้าคลัง 01) — เดิมตกไปที่ fallback ตาม POSOPR (ได้ 'received' อยู่แล้ว) ใส่ให้ชัด
+  JY: 'received',
   RL: 'transferred', VL: 'transferred', TP: 'transferred', MK: 'transferred', TG: 'transferred', LT: 'transferred',
   FF: 'converted',
   CN: 'other', XV: 'other', SR: 'other', XZ: 'other', HN: 'other', HI: 'other', SS: 'other', GR: 'other', XX: 'other', TK: 'other', PI: 'other', KA: 'other', KB: 'other',
@@ -479,7 +582,9 @@ const WMS_GENERAL_SALE_PREFIXES = new Set([
   'IV', 'AB', 'BE', 'DA', 'AK', 'AY', 'DD', 'DM', 'GP', 'DB', 'IT', 'IE', 'BM', 'FB', 'ON', 'INV', 'BA', 'CJ', 'CK', 'IC', 'DV', 'DL', 'OL', 'KB',
 ]);
 const WMS_TRANSFER_PREFIXES = new Set(['RL', 'VL', 'TP', 'MK', 'TG', 'LT', 'GR']);
-const WMS_RETURN_PREFIXES = new Set(['PM']);
+// JY (2026-10-21) = ร้านคืนสินค้ารอบิล — การคืนของแบบเดียวกับ PM: นับเข้าเป็นของวันนั้น (ไม่ถูกหักออกแบบ "รับเข้า"
+// ตอนเทียบยอดนับ) · เดิมไม่อยู่ในชุดไหนเลย ยอด JY จึงหายจาก stock_movements_wms_daily ทั้งก้อน (kind "net"/"total")
+const WMS_RETURN_PREFIXES = new Set(['PM', 'JY']);
 const WMS_WRITEOFF_PREFIXES = new Set(['XX']);
 const WMS_CONSI_WAREHOUSES = new Set(['03', '04', '05']);
 // Purchase-cost basis for the tgm-wms conversion-BOM cost comparison feature (added 2026-08-18,
@@ -502,10 +607,68 @@ const WMS_DISPATCHED_PREFIXES = new Set(['VL', 'LT', 'TP']);
 // ชั้นสำหรับของที่โยกเข้าคลัง 02/08/10 พอดี (บั๊กคลาสเดียวกับที่เคยแก้ไปแล้วกับ consi 03/04/05 เมื่อ 2026-08-21
 // ด้านบน แค่ไม่เคยขยายมาครอบคลุม 02/08/10 ที่เพิ่มเข้ามาทีหลัง) — รวมเป็น set เดียวกันไว้กันลืมขยายซ้ำอีกรอบถ้า
 // tgm-wms เพิ่มคลังยกเว้นตัวใหม่ในอนาคต ต้องแก้ทั้ง 2 ที่คู่กันเสมอ (ที่นี่ + KIND_EXTRA_EXCLUDE_WAREHOUSES)
-const WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES = new Set(['02', '08', '10']);
+// UPDATED (2026-10-21 ตามตารางคลัง "นับ/ไม่นับ" ที่ผู้ใช้กำหนด): + 07 TGM ส่งแทน, 13 สินค้าตัวอย่าง, 18 รอเคลียร์,
+// 99 ของเสียทั่วไป — คู่กับ NON_COUNTED_WAREHOUSES ใน tgm-wms App.jsx
+const WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES = new Set(['02', '07', '08', '10', '13', '18', '99']);
+
+// กติกา prefix/ทิศทางต่อห้อง (2026-10-22) — ค่าตั้งต้นคือชุดของ TSS ด้านบน ห้องอื่นทับเฉพาะส่วนที่ต่าง
+// SHOP3 (ผู้ใช้ยืนยัน 2026-10-22 + ตรวจกับ STLOC จริง: สมมติฐานนี้ตรงยอดคงเหลือมากที่สุด):
+//   RR = รับสินค้าเข้า (POSOPR 0), JU = ปรับเข้า (POSOPR 1) → "รับเข้า"
+//   SH = ขาย (POSOPR 9), HT = รับคืนจากลูกค้า (POSOPR 2, ลูกค้าเดียวกับใบ SH) → แบบ PM/JY
+//   GR = คืนผู้ขาย (POSOPR 7, ผู้ขาย V001) → ของออก — ต่างจาก GR ของ TSS (รับโอนเข้าคลัง 10) ที่ POSOPR 7 ต้องเป็น
+//   ขาเข้า (ยืนยันกับรายงานคงเหลือ 2026-09-23) จึงกลับทิศเฉพาะห้องนี้ · ลงช่อง writeoff ของรายงาน WMS (ช่องขาออกที่
+//   ไม่ใช่การขาย ซึ่งสูตรยอดย้อนหลังทุกตัวรวมอยู่แล้ว)
+const TSS_STCRD_RULES = {
+  category: STCRD_CATEGORY,
+  posoprSign: {},
+  received: WMS_RECEIVED_PREFIXES,
+  generalSale: WMS_GENERAL_SALE_PREFIXES,
+  transfer: WMS_TRANSFER_PREFIXES,
+  returns: WMS_RETURN_PREFIXES,
+  writeoff: WMS_WRITEOFF_PREFIXES,
+  dispatched: WMS_DISPATCHED_PREFIXES,
+};
+const STCRD_COMPANY_RULES = {
+  SHOP3: {
+    category: { ...STCRD_CATEGORY, HT: 'received', GR: 'other', SH: 'sold' },
+    posoprSign: { '7': -1 },
+    received: new Set(['RR', 'JU']),
+    generalSale: new Set(['SH']),
+    transfer: new Set(),
+    returns: new Set(['HT']),
+    writeoff: new Set(['GR']),
+    dispatched: new Set(),
+    // บรรทัดหัวชุดโปร (เช่น 10003-B) ไม่ขยับสต็อกจริง — ตารางรายงาน WMS ของ TSS ยังนับอยู่ตามเดิม (ไม่แตะ) แต่ของห้องนี้
+    // ข้าม ไม่งั้นยอดย้อนหลังแบบ "net" ของรหัสชุดโปรกลายเป็นของผีหลายร้อยหน่วย (ตรวจแล้ว 13 รหัส)
+    wmsSkipBundleHeader: true,
+  },
+};
+function stcrdRules(company) {
+  return STCRD_COMPANY_RULES[company] || TSS_STCRD_RULES;
+}
 
 
 const INVOICE_LINE_COMPANIES = ['TSS', 'CONSI'];
+
+// บรรทัดสินค้าลูกของชุดโปร (2026-11-16, ผู้ใช้ให้ตรวจหน่วยทุน → พบยอดซ้ำ): ขายชุด 1แถม1 (เช่น 10274-A) STCRD มีบรรทัดหัวชุด
+// + บรรทัดสินค้าลูก (PSTKCOD = รหัสชุด, เช่น 10274-90 จำนวน ×2) ที่ TRNVAL เท่ากับหัวชุดเต็มจำนวน → ยอดรายสินค้าซ้ำ ~35 ล้าน/ปี
+// (ปี 2569 ถึง พ.ย.: 16,184 คู่ค่าเท่ากัน) · ยอดขายรายสินค้าเก็บเฉพาะบรรทัดหัวชุด (ราคาที่ขายจริง) — ทุนชุดใช้กติกา promo2x
+// ใน lib/skuCost.js · สต็อกยังเคลื่อนที่บรรทัดลูกตามเดิม (buildStockMovements) · ไม่มีบรรทัดหัวชุดในเอกสาร = เก็บบรรทัดลูกไว้
+function bundleComponentTest(rows) {
+  const parents = new Set(), present = new Set();
+  for (const r of rows) {
+    const doc = cleanText(r.DOCNUM);
+    const p = cleanText(r.PSTKCOD);
+    if (p) parents.add(`${doc}|${p}`);
+    present.add(`${doc}|${cleanText(r.STKCOD)}`);
+  }
+  return (r) => {
+    const p = cleanText(r.PSTKCOD);
+    if (!p || p === cleanText(r.STKCOD)) return false;
+    const doc = cleanText(r.DOCNUM);
+    return parents.has(`${doc}|${p}`) && present.has(`${doc}|${p}`);
+  };
+}
 
 function addInvoiceLine(invoiceLines, company, r, day) {
   const prefix = (r.DOCNUM || '').slice(0, 2);
@@ -541,7 +704,8 @@ function addInvoiceLine(invoiceLines, company, r, day) {
 
 async function addCompanyInvoiceLines(invoiceLines, company) {
   const rows = await readTable(company, 'STCRD.DBF');
-  for (const r of rows) addInvoiceLine(invoiceLines, company, r, toIsoDate(r.DOCDAT));
+  const isComp = bundleComponentTest(rows);
+  for (const r of rows) if (!isComp(r)) addInvoiceLine(invoiceLines, company, r, toIsoDate(r.DOCDAT));
   return rows.length;
 }
 
@@ -565,7 +729,7 @@ function componentCandidateKey(docNum, seqNum) {
 async function buildInvoiceLineComponents(invoiceLines) {
   const rows = [];
   for (const company of INVOICE_LINE_COMPANIES) {
-    const remarks = await readTable(company, 'ARTRNRM.DBF');
+    const remarks = await readRemarks(company);
     const remarkByDocSeq = new Map();
     for (const rm of remarks) {
       const docNum = cleanText(rm.DOCNUM);
@@ -629,11 +793,16 @@ async function buildInvoiceLineComponents(invoiceLines) {
   return rows;
 }
 
-async function syncStockMovements(db) {
-  const rows = await readTable(STOCK_COMPANY, 'STCRD.DBF');
+// แยกส่วนคำนวณออกจาก syncStockMovements (2026-10-22) ให้ห้องสต็อกเพิ่มเติม (SHOP3) ใช้สูตรเดียวกันได้ — ต่างกันแค่
+// กติกา prefix ต่อห้อง (stcrdRules) · invoiceLines/conversionLines ใช้เฉพาะของ TSS ห้องอื่นทิ้งไป
+function buildStockMovements(rows, company) {
+  const rules = stcrdRules(company);
   const daily = new Map(); // `${sku}|${warehouse}|${day}` -> {received,sold,converted,transferred,other}
   const wmsDaily = new Map(); // `${sku}|${day}` -> {received,general_sale,consi,transfer,converted,reserved,return,writeoff,received_value}
   const invoiceLines = new Map(); // `${doc}|${seq}|${sku}|${warehouse}` -> invoice item line from STCRD
+  // เอกสารแปลงสินค้า (FF) รายบรรทัด (2026-10-08) — tgm-wms ใช้ตรวจเลข FF ที่ธุรการคลังกรอกในใบสั่งแปลง
+  // ว่ามีจริงและจำนวนตรงกับใบสั่ง/ผลจริง · ยอดรายวันด้านล่างยังคิดแบบเดิม ตารางนี้เป็นข้อมูลเพิ่มเท่านั้น
+  const conversionLines = new Map(); // `${doc}|${seq}|${sku}|${warehouse}|${dir}` -> FF line
   // Bundle/promo codes (e.g. 20284-A = "1 แถม 1" of 20284-5) get a header line on every document plus
   // component lines carrying PSTKCOD = the bundle code. Express moves stock only on the components, so
   // the header line must not count as a stock movement for the bundle code.
@@ -645,6 +814,7 @@ async function syncStockMovements(db) {
     if (!bundleParentsByDoc.has(doc)) bundleParentsByDoc.set(doc, new Set());
     bundleParentsByDoc.get(doc).add(parent);
   }
+  const isBundleComponent = bundleComponentTest(rows);
   for (const r of rows) {
     if (!r.STKCOD || !r.LOCCOD) continue;
     const day = toIsoDate(r.DOCDAT);
@@ -668,7 +838,7 @@ async function syncStockMovements(db) {
     const qty = Number(r.XTRNQTY) || 0;
     const val = Number(r.TRNVAL) || 0;
 
-    addInvoiceLine(invoiceLines, STOCK_COMPANY, r, day);
+    if (!isBundleComponent(r)) addInvoiceLine(invoiceLines, company, r, day);
 
     // FIXED (2026-09-23, verified against Express's own "สินค้าคงเหลือ แยกตามคลังสินค้า" report for
     // 2026-09-22: report + these movements now reproduces live STLOC for all but 10 of ~3,255 SKUs, down
@@ -678,17 +848,29 @@ async function syncStockMovements(db) {
     // transfer's source, and (c) count bundle header lines. POSOPR already records each line's real
     // direction, so use it; the category only decides which bucket the signed amount lands in.
     const isBundleHeader = bundleParentsByDoc.get((r.DOCNUM || '').trim())?.has(sku);
-    const signed = stcrdSignedQty(r.POSOPR, qty);
+    const signOverride = rules.posoprSign[String(r.POSOPR || '').trim()];
+    const signed = signOverride ? signOverride * Math.abs(qty) : stcrdSignedQty(r.POSOPR, qty);
+    if (prefix === 'FF' && !isBundleHeader && signed !== 0) {
+      const docNum = cleanText(r.DOCNUM);
+      const seqNum = cleanText(r.SEQNUM);
+      const direction = signed < 0 ? 'out' : 'in'; // out = วัตถุดิบที่ตัดออก (POSOPR 8), in = ผลผลิตที่รับเข้า (POSOPR 1)
+      const ck = `${docNum}|${seqNum}|${sku}|${warehouse}|${direction}`;
+      if (!conversionLines.has(ck)) {
+        conversionLines.set(ck, { docNum, seqNum, docDate: day, sku, skuName: cleanText(r.STKDES), warehouse, direction, qty: 0, unitCode: cleanText(r.TQUCOD) });
+      }
+      conversionLines.get(ck).qty += Math.abs(signed);
+    }
     if (!isBundleHeader && signed !== 0) {
-      const category = STCRD_CATEGORY[prefix] || STCRD_CATEGORY_BY_POSOPR[String(r.POSOPR || '').trim()] || 'other';
+      const category = rules.category[prefix] || STCRD_CATEGORY_BY_POSOPR[String(r.POSOPR || '').trim()] || 'other';
       const key = `${sku}|${warehouse}|${day}`;
       if (!daily.has(key)) daily.set(key, { received: 0, sold: 0, converted: 0, transferred: 0, other: 0, pm: 0, wmsReceived: 0 });
       daily.get(key)[category] += signed;
-      if (prefix === 'PM' && category === 'received') daily.get(key).pm += signed;
+      if (rules.returns.has(prefix) && category === 'received') daily.get(key).pm += signed;
       // the WMS "รับเข้า" definition (RH/RS/CP/JX/JT), per warehouse — what tgm-wms backs out of the
       // count day's Express figure, see migrations.js's wms_received_qty comment
-      if (WMS_RECEIVED_PREFIXES.has(prefix)) daily.get(key).wmsReceived += signed;
+      if (rules.received.has(prefix)) daily.get(key).wmsReceived += signed;
     }
+    if (isBundleHeader && rules.wmsSkipBundleHeader) continue;
 
     // WMS report's own categorization, computed in the same pass to avoid a second DBF read/parse.
     const wmsKey = `${sku}|${day}`;
@@ -696,7 +878,7 @@ async function syncStockMovements(db) {
       if (!wmsDaily.has(wmsKey)) wmsDaily.set(wmsKey, { received: 0, general_sale: 0, consi: 0, transfer: 0, converted: 0, reserved: 0, return: 0, writeoff: 0, received_value: 0, dispatched: 0 });
       return wmsDaily.get(wmsKey);
     };
-    if (WMS_RECEIVED_PREFIXES.has(prefix)) {
+    if (rules.received.has(prefix)) {
       ensureWms().received += qty;
     }
     if (RH_RS_PREFIXES.has(prefix)) {
@@ -710,27 +892,34 @@ async function syncStockMovements(db) {
     // the same physical units): exclude WMS_CONSI_WAREHOUSES here too, matching the destination the
     // "consi" bucket below already claims — dispatched_qty should only cover VL/LT/TP shipments to
     // destinations "net" does NOT already exclude (real branches, warehouse 09, 10, 11, 19, ...).
-    if (WMS_DISPATCHED_PREFIXES.has(prefix) && warehouse !== '01' && warehouse !== '19' && !WMS_CONSI_WAREHOUSES.has(warehouse) && !WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES.has(warehouse)) {
+    if (rules.dispatched.has(prefix) && warehouse !== '01' && warehouse !== '19' && !WMS_CONSI_WAREHOUSES.has(warehouse) && !WMS_NET_NO10_EXTRA_EXCLUDE_WAREHOUSES.has(warehouse)) {
       // only the destination-side row is recorded, same reasoning as the transfer/consi bucket below —
       // independent top-level `if` (not part of the if/else chain) so this doesn't change what consi/
       // transfer/reserved already get credited — this is purely an ADDITIONAL field for tgm-wms's
       // StockCountSummaryPage to subtract on top, not a replacement for the existing buckets
       ensureWms().dispatched += qty;
     }
-    if (WMS_GENERAL_SALE_PREFIXES.has(prefix)) {
+    if (rules.generalSale.has(prefix)) {
       ensureWms().general_sale -= qty;
     } else if (prefix === 'FF') {
       ensureWms().converted += qty; // already signed in TRNQTY, same as stock_movements_daily
-    } else if (WMS_TRANSFER_PREFIXES.has(prefix) && warehouse !== '01') {
+    } else if (rules.transfer.has(prefix) && warehouse !== '01') {
       // only the destination-side row is recorded — see schema.sql comment for why
       const bucket = WMS_CONSI_WAREHOUSES.has(warehouse) ? 'consi' : (warehouse === '09' ? 'reserved' : 'transfer');
       ensureWms()[bucket] += qty;
-    } else if (WMS_RETURN_PREFIXES.has(prefix)) {
+    } else if (rules.returns.has(prefix)) {
       ensureWms().return += qty;
-    } else if (WMS_WRITEOFF_PREFIXES.has(prefix)) {
+    } else if (rules.writeoff.has(prefix)) {
       ensureWms().writeoff -= qty;
     }
   }
+  return { daily, wmsDaily, invoiceLines, conversionLines };
+}
+
+async function syncStockMovements(db) {
+  const rows = await readTable(STOCK_COMPANY, 'STCRD.DBF');
+  if (STOCK_COMPANY === PO_COMPANY) receiptLinesCycle = rows.filter((r) => String(r.DOCNUM || '').startsWith('RH'));
+  const { daily, wmsDaily, invoiceLines, conversionLines } = buildStockMovements(rows, STOCK_COMPANY);
   for (const company of INVOICE_LINE_COMPANIES) {
     if (company === STOCK_COMPANY) continue;
     await addCompanyInvoiceLines(invoiceLines, company);
@@ -773,6 +962,17 @@ async function syncStockMovements(db) {
       nInvoiceLineComponents++;
     }
 
+    db.exec('DELETE FROM conversion_doc_lines');
+    const insertConversionLine = db.prepare(`
+      INSERT INTO conversion_doc_lines (doc_num, seq_num, doc_date, sku, sku_name, warehouse, direction, qty, unit_code, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    `);
+    let nConversionLines = 0;
+    for (const c of conversionLines.values()) {
+      insertConversionLine.run(c.docNum, c.seqNum, c.docDate, c.sku, c.skuName, c.warehouse, c.direction, c.qty, c.unitCode);
+      nConversionLines++;
+    }
+
     db.exec('DELETE FROM stock_movements_wms_daily');
     const insertWms = db.prepare(`
       INSERT INTO stock_movements_wms_daily (sku, day, received_qty, general_sale_qty, consi_qty, transfer_qty, converted_qty, reserved_qty, return_qty, writeoff_qty, received_value, dispatched_qty)
@@ -786,7 +986,7 @@ async function syncStockMovements(db) {
     }
 
     db.exec('COMMIT');
-    console.log(`[importFromExpress] stock movements: ${n} sku/warehouse/day rows, ${nWms} sku/day WMS rows, ${nInvoiceLines} invoice lines, ${nInvoiceLineComponents} invoice line components`);
+    console.log(`[importFromExpress] stock movements: ${n} sku/warehouse/day rows, ${nWms} sku/day WMS rows, ${nInvoiceLines} invoice lines, ${nInvoiceLineComponents} invoice line components, ${nConversionLines} FF conversion lines`);
     return n;
   } catch (e) {
     db.exec('ROLLBACK');
@@ -890,7 +1090,7 @@ async function syncSales(db) {
   for (const company of SALES_COMPANIES) {
     const headers = await readTable(company, 'OESO.DBF');
     const items = await readTable(company, 'OESOIT.DBF');
-    const remarks = await readTable(company, 'ARTRNRM.DBF');
+    const remarks = await readRemarks(company);
 
     const byOrder = new Map();
     for (const h of headers) {
@@ -996,45 +1196,94 @@ async function syncSales(db) {
 // (Deliberately NOT changing syncInvoices() below, which shares this same RECTYP/company loop
 // shape but serves WMS dispatch matching against the real billed amount — TOTAL is correct there.)
 async function syncInvoiceSales(db) {
+  const slmOv = loadSlmOverrides(db);
+  // เจ้าของยอดรายสินค้า (2026-10-27, lib/slmOverride.js) — ARTRN ไม่มีสินค้า จึงแบ่งยอดบรรทัดของสินค้าที่กำหนดจาก invoice_lines
+  // (STCRD ก่อน VAT, เติมแล้วใน syncStockMovements รอบเดียวกัน) ไปให้รหัสนั้น · doc_num -> Map<slm, ยอด>
+  const skuOv = loadSlmSkuOverrides(db);
+  const movedByDoc = new Map();
+  if (skuOv.size) {
+    const skus = [...new Set([...skuOv.values()].flatMap(m => [...m.keys()]))];
+    const lines = db.prepare(`SELECT doc_num, UPPER(TRIM(sku)) AS sku, SUM(line_value) AS v FROM invoice_lines
+      WHERE UPPER(TRIM(sku)) IN (${skus.map(() => '?').join(',')}) GROUP BY doc_num, UPPER(TRIM(sku))`).all(...skus);
+    for (const l of lines) {
+      const doc = String(l.doc_num).trim();
+      if (!movedByDoc.has(doc)) movedByDoc.set(doc, []);
+      movedByDoc.get(doc).push({ sku: l.sku, v: Number(l.v) || 0 });
+    }
+  }
   // Plain INSERT, not upsert: each company's rows are deleted immediately below before these run,
   // so there's never a pre-existing row to conflict with within one sync cycle.
   const insert = db.prepare(`
     INSERT INTO invoice_sales_monthly (company, ym, cust_code, slm_code, amount, invoice_count, cn_count, cn_amount, vat_amount, gross_amount, cn_vat)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  // รายวัน (2026-10-06) — กติกาเดียวกับรายเดือนทุกข้อ แค่แยกตามวันที่เอกสาร (Dashboard เลือกช่วงวันที่)
+  const insertDaily = db.prepare('INSERT INTO invoice_sales_daily (company, d, cust_code, slm_code, amount, invoice_count) VALUES (?, ?, ?, ?, ?, ?)');
   // Include RECTYP='0' as revenue-bearing AI invoices. Confirmed from live TSS ARTRN on
   // 2026-09-18: Express's 2026 year-to-date sales total includes these February AI69...
   // records, and excluding them leaves the dashboard short by ~300,949 THB.
   const INVOICE_RECTYP = new Set(['0', '1', '3', '4', '5']);
+  // ใบกำกับลงวันที่ล่วงหน้า (2026-10-14, ผู้ใช้ขอ "ตัดถึงวันนี้"): วันที่ 14 ต.ค. มีใบลง 15–16 ต.ค. อยู่แล้ว ~7.6 ล้าน ทำให้ Sales Overview
+  // (รายเดือน = ทั้งเดือน) ไม่ตรง Dashboard (ช่วงวันที่ถึงวันนี้) — ไม่นับใบที่วันที่เกินวันนี้ (เวลาเครื่อง) รอบ sync หลังถึงวันนั้นจะนับเอง
+  const today = new Date().toLocaleDateString('sv-SE');
   let rowsImported = 0;
 
   for (const company of SALES_COMPANIES) {
     const rows = await readTable(company, 'ARTRN.DBF');
     const monthly = new Map(); // `${ym}|${cust_code}|${slm_code}` -> {amount, invoice_count}
+    const daily = new Map(); // `${YYYY-MM-DD}|${cust_code}|${slm_code}` -> {amount, invoice_count}
 
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
-      if (isExcludedSalesDocNum(r.DOCNUM)) continue;
+      if (isNonSalesDocNum(r.DOCNUM)) continue;
       if (!passesCompanyDateCutoff(company, r.DOCDAT)) continue;
       const period = ym(r.DOCDAT);
       if (!period) continue;
+      if (toIsoDate(r.DOCDAT) > today) continue;
       const custCode = (r.CUSCOD || '').trim() || '(none)';
       // ARTRN carries its own SLMCOD per transaction — the salesperson recorded at invoice time,
       // not necessarily the customer's current owner in the customers table.
-      const slmCode = normalizeSlmCode(r.SLMCOD) || '(none)';
-      const signedNetVal = r.RECTYP === '5' ? -(Number(r.NETVAL) || 0) : (Number(r.NETVAL) || 0);
-      const key = `${period}|${custCode}|${slmCode}`;
-      const cur = monthly.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, gross_amount: 0, cn_vat: 0 };
-      cur.amount += signedNetVal;
-      if (r.RECTYP !== '5') cur.invoice_count += 1;
-      // (2026-09-30) CN + แยก VAT — NETVAL = ก่อน VAT ทุกแบบ (FLGVAT 2 = VAT แยกนอก, 1 = รวมใน, 0 = ไม่มี VAT)
-      // VATAMT = VAT ของใบ → ยอดรวม VAT = NETVAL + VATAMT · ลดหนี้ (RECTYP 5) ติดลบ, cn_amount เก็บค่าบวก (NETVAL)
+      const slmCode = effectiveSlm(slmOv, custCode, normalizeSlmCode(r.SLMCOD) || '(none)'); // lib/slmOverride.js (2026-10-20)
+      const netVal = Number(r.NETVAL) || 0;
       const sign = r.RECTYP === '5' ? -1 : 1;
       const vat = Number(r.VATAMT) || 0;
-      cur.vat_amount += sign * vat;
-      cur.gross_amount += sign * ((Number(r.NETVAL) || 0) + vat);
-      if (r.RECTYP === '5') { cur.cn_count += 1; cur.cn_amount += Number(r.NETVAL) || 0; cur.cn_vat += vat; }
-      monthly.set(key, cur);
+      // ส่วนของใบที่เป็นสินค้าที่กำหนดเจ้าของรายสินค้า (ไม่เกินยอดใบ) — ส่วนที่เหลืออยู่กับ slmCode · ไม่มี = ทั้งใบ
+      const parts = new Map();
+      const skuMap = skuOv.get(custCode.toUpperCase());
+      const moved = skuMap ? movedByDoc.get(String(r.DOCNUM || '').trim()) : null;
+      let rest = netVal;
+      if (moved && netVal > 0) {
+        for (const m of moved) {
+          const to = skuMap.get(m.sku);
+          if (!to || to === slmCode || !(m.v > 0)) continue;
+          const v = Math.min(m.v, rest);
+          if (v <= 0) continue;
+          parts.set(to, (parts.get(to) || 0) + v);
+          rest -= v;
+        }
+      }
+      parts.set(slmCode, (parts.get(slmCode) || 0) + rest);
+      const day = toIsoDate(r.DOCDAT);
+      for (const [slm, part] of parts) {
+        const main = slm === slmCode; // นับจำนวนใบ/ลดหนี้ให้เจ้าของใบครั้งเดียว ส่วนที่แบ่งไปนับเฉพาะยอด
+        const share = netVal ? part / netVal : (main ? 1 : 0); // VAT แบ่งตามสัดส่วนยอดก่อน VAT
+        const key = `${period}|${custCode}|${slm}`;
+        const cur = monthly.get(key) || { amount: 0, invoice_count: 0, cn_count: 0, cn_amount: 0, vat_amount: 0, gross_amount: 0, cn_vat: 0 };
+        cur.amount += sign * part;
+        if (main && r.RECTYP !== '5') cur.invoice_count += 1;
+        // (2026-09-30) CN + แยก VAT — NETVAL = ก่อน VAT ทุกแบบ (FLGVAT 2 = VAT แยกนอก, 1 = รวมใน, 0 = ไม่มี VAT)
+        // VATAMT = VAT ของใบ → ยอดรวม VAT = NETVAL + VATAMT · ลดหนี้ (RECTYP 5) ติดลบ, cn_amount เก็บค่าบวก (NETVAL)
+        cur.vat_amount += sign * vat * share;
+        cur.gross_amount += sign * (part + vat * share);
+        if (r.RECTYP === '5') { if (main) cur.cn_count += 1; cur.cn_amount += part; cur.cn_vat += vat * share; }
+        monthly.set(key, cur);
+        // วันที่แปลงด้วย toIsoDate() — วิธีเดียวกับ ym() ด้านบน ยอดรายวันจึงรวมกลับเป็นรายเดือนได้ตรงกันทุกบาท
+        const dk = `${day}|${custCode}|${slm}`;
+        const dc = daily.get(dk) || { amount: 0, invoice_count: 0 };
+        dc.amount += sign * part;
+        if (main && r.RECTYP !== '5') dc.invoice_count += 1;
+        daily.set(dk, dc);
+      }
     }
 
     db.exec('BEGIN');
@@ -1044,6 +1293,11 @@ async function syncInvoiceSales(db) {
         const [period, custCode, slmCode] = key.split('|');
         insert.run(company, period, custCode, slmCode, agg.amount, agg.invoice_count, agg.cn_count, agg.cn_amount, agg.vat_amount, agg.gross_amount, agg.cn_vat);
         rowsImported++;
+      }
+      db.prepare('DELETE FROM invoice_sales_daily WHERE company = ?').run(company);
+      for (const [key, agg] of daily) {
+        const [day, custCode, slmCode] = key.split('|');
+        insertDaily.run(company, day, custCode, slmCode, agg.amount, agg.invoice_count);
       }
 
       db.exec('COMMIT');
@@ -1062,37 +1316,98 @@ async function syncInvoiceSales(db) {
 // pre-aggregated). Scoped to a rolling recent window: dispatch work only cares about invoices that
 // might still need fulfilling, not multi-year history.
 const INVOICE_SYNC_WINDOW_DAYS = 90;
+// หัวใบย้อนหลัง (2026-10-19, ผู้ใช้แจ้ง "ร้านโจโจ้บางรายการหายไป") — invoice_lines มีย้อนถึง 2024-01 แต่หัวใบ (cust/slm)
+// มีแค่ 90 วัน → Sales Overview รายสินค้า/pivot ที่ JOIN หัวใบ ทิ้งบรรทัดก่อนหน้านั้นทั้งหมด · ไม่ขยาย `invoices` เพราะ tgm-wms
+// หน้า "จ่ายสินค้าตามใบกำกับ" ดึง /api/invoices ทั้งตาราง (ไม่ส่งช่วงวันที่) → เก็บหัวใบย้อนหลังแยกใน invoice_heads
+// (คอลัมน์ที่ JOIN ใช้เท่านั้น) ครั้งแรก backfill ตั้งแต่ HEAD_HISTORY_FROM · รอบต่อไปอัปเดตเฉพาะช่วง 90 วันล่าสุด
+const HEAD_HISTORY_FROM = '2024-01-01';
+
+// หมายเหตุท้ายบิล (ARTRNRM.DBF) ต่อเลขที่บิล เรียงตามลำดับในแฟ้ม — บิล OL เก็บ "คุณ X โทร.0xx" + ที่อยู่ 2-3 บรรทัด,
+// บิล AB เก็บสาขา (เช่น "C.ชลบุรี") · ตัดบรรทัดส่วนประกอบสินค้าชุด (รหัส + จำนวน เช่น "90022 ... 20p") ที่อยู่แฟ้มเดียวกันออก
+async function loadInvoiceRemarks(company, docNums) {
+  const out = new Map();
+  for (const rm of await readRemarks(company)) {
+    const docNum = cleanText(rm.DOCNUM);
+    if (!docNums.has(docNum)) continue;
+    const text = cleanText(rm.REMARK);
+    if (!text) continue;
+    const comp = parseSalesLineComponentRemark(text);
+    if (comp?.childCode && comp.childQty > 0) continue;
+    // น้ำหนักรายบรรทัดของ SO (เช่น "(10กก)" ที่ SB…) ไม่ใช่ข้อมูลจัดส่ง
+    if (/^\(?\s*\d+(?:\.\d+)?\s*(?:กก|กิโล|kg)\.?\s*\)?$/i.test(text)) continue;
+    if (!out.has(docNum)) out.set(docNum, []);
+    out.get(docNum).push(text);
+  }
+  return out;
+}
 
 async function syncInvoices(db) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - INVOICE_SYNC_WINDOW_DAYS);
+  const cutoffIso = toIsoDate(cutoff);
+  // backfill ครั้งแรกจนสำเร็จ (บันทึกใน app_migrations) — เดิมเดาจาก MIN(doc_date) ซึ่ง backfill ซ้ำทุกรอบได้ถ้าไม่มีใบ ม.ค. 2024 (code review)
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const HEADS_BACKFILL_ID = 'invoice_heads_backfill_v1';
+  const fullHeads = !db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(HEADS_BACKFILL_ID);
+  const heads = [];
+  const seenHeads = new Set();   // ใบที่จะ upsert รอบนี้
+  const existHeads = new Set();  // ใบที่ยังมีอยู่ใน Express (ทุกวันที่ตั้งแต่ HEAD_HISTORY_FROM) — ใช้ตัดสินว่าลบได้
+  // (2026-10-20, code review) เดิมบริษัทใดคืน 0 แถว = อ่านไม่ได้ทั้งรอบ → แฟ้มที่ไม่มีบนเครื่องนี้ (เช่น TSSN-67) ทำให้ backfill
+  // ไม่เคยจบ (ดึงย้อน 2024 ทุก 5 นาที) และไม่ลบใบที่ยกเลิกเลย → แยก "ไม่มีแฟ้ม" (ข้าม) กับ "มีแฟ้มแต่อ่านไม่ได้/ว่าง" (ไม่ลบของบริษัทนั้น)
+  // ลบหัวใบเฉพาะของบริษัทที่อ่านสำเร็จ · หัวใบเก่าที่ยังไม่มีคอลัมน์บริษัท ลบได้เมื่ออ่านครบทุกบริษัทที่มีแฟ้มเท่านั้น
+  const readOk = [];             // บริษัทที่อ่าน ARTRN ได้รอบนี้
+  let unreadable = false;        // มีแฟ้มแต่อ่านไม่ได้/ว่าง หรือไม่มีแฟ้มเลยสักบริษัท (ไดรฟ์หลุด) = ไม่ลบหัวใบที่ไม่รู้บริษัท / ไม่ปิด backfill
   const routeNames = await loadRouteNameMap();
   const shipToAddresses = await loadShipToAddressMap();
 
   const upsert = db.prepare(`
-    INSERT INTO invoices (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_code, route_name, ship_to_code, ship_to_address, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    INSERT INTO invoices (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, route_code, route_name, ship_to_code, ship_to_address, remark, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(doc_num) DO UPDATE SET doc_date = excluded.doc_date, cust_code = excluded.cust_code,
       slm_code = excluded.slm_code, so_num = excluded.so_num, total = excluded.total,
       rectyp = excluded.rectyp, route_code = excluded.route_code, route_name = excluded.route_name,
       ship_to_code = excluded.ship_to_code, ship_to_address = excluded.ship_to_address,
-      updated_at = excluded.updated_at
+      remark = CASE WHEN ? THEN excluded.remark ELSE invoices.remark END, updated_at = excluded.updated_at
   `);
   // Keep the document-level invoice import aligned with syncInvoiceSales() above.
   const INVOICE_RECTYP = new Set(['0', '1', '3', '5']);
   const seen = new Set();
 
+  let present = 0;
   for (const company of SALES_COMPANIES) {
-    const rows = await readTable(company, 'ARTRN.DBF');
+    if (!findFile(path.join(EXPRESS_ROOT, company), 'ARTRN.DBF')) continue; // ไม่มีแฟ้มบริษัทนี้บนเครื่อง — ไม่ถือว่าอ่านพลาด
+    present++;
+    let rows = [];
+    try { rows = await readTable(company, 'ARTRN.DBF'); } catch (e) { console.warn(`[importFromExpress] invoice heads: read ${company} failed:`, e.message); }
+    if (rows.length) readOk.push(company); else unreadable = true;
+    // รวมเลข SO ของบิลด้วย — บิลที่เปิดจาก SO มักพิมพ์ชื่อ/ที่อยู่ผู้รับไว้ที่ SO (ARTRNRM แฟ้มเดียวกัน) ไม่ใช่ที่บิล
+    const recentDocs = new Set(rows.filter(r => r.DOCDAT instanceof Date && r.DOCDAT >= cutoff && r.DOCNUM)
+      .flatMap(r => [r.DOCNUM.trim(), (r.SONUM || '').trim()]).filter(Boolean));
+    let remarks = new Map();
+    // อ่าน ARTRNRM ไม่ได้ (เช่น Express ล็อกแฟ้ม) = คง remark เดิมไว้ ไม่เขียนทับเป็นค่าว่าง (2026-10-28, code review)
+    let remarksOk = 1;
+    if (recentDocs.size) {
+      try { remarks = await loadInvoiceRemarks(company, recentDocs); } catch (e) { remarksOk = 0; console.warn(`[importFromExpress] invoice remarks: read ${company} failed:`, e.message); }
+    }
     for (const r of rows) {
       if (!INVOICE_RECTYP.has(r.RECTYP)) continue;
       if (!r.DOCNUM) continue;
       if (isExcludedSalesDocNum(r.DOCNUM)) continue;
-      if (!(r.DOCDAT instanceof Date) || isNaN(r.DOCDAT) || r.DOCDAT < cutoff) continue;
+      if (!(r.DOCDAT instanceof Date) || isNaN(r.DOCDAT)) continue;
       const docNum = r.DOCNUM.trim();
+      const docDate = toIsoDate(r.DOCDAT);
+      const signedTotal = r.RECTYP === '5' ? -(Number(r.TOTAL) || 0) : (Number(r.TOTAL) || 0);
+      // เทียบเป็นวันที่ (ไม่ใช่เวลา) ให้ตรงกับเงื่อนไขลบด้านล่าง — เดิมใช้ r.DOCDAT >= cutoff (มีเวลาปัจจุบัน) ทำให้ใบของวันขอบ
+      // ช่วงที่ลงก่อนเวลานี้ไม่ถูกอ่าน แต่ถูกลบเพราะ doc_date >= cutoffIso (พบตอนทดสอบ: ลบผิด 643 ใบ)
+      if (docDate >= HEAD_HISTORY_FROM) existHeads.add(docNum);
+      if (docDate >= HEAD_HISTORY_FROM && (fullHeads || docDate >= cutoffIso) && !seenHeads.has(docNum)) {
+        seenHeads.add(docNum);
+        heads.push([docNum, docDate, (r.CUSCOD || '').trim() || null, normalizeSlmCode(r.SLMCOD) || null,
+          (r.SONUM || '').trim() || null, signedTotal, r.RECTYP, company]);
+      }
+      if (r.DOCDAT < cutoff) continue;
       if (seen.has(docNum)) continue; // dedupe across companies (first company in SALES_COMPANIES wins, mirrors syncProducts)
       seen.add(docNum);
-      const signedTotal = r.RECTYP === '5' ? -(Number(r.TOTAL) || 0) : (Number(r.TOTAL) || 0);
       // ADDED 2026-09-16 (สายรถ feature — see ROUTE_TABTYP comment above): ARTRN.AREACOD is Express's own
       // per-invoice delivery-route code; route_name resolved via ISTAB TABTYP=41, falls back to the raw
       // code itself if a code exists with no matching ISTAB row (better than showing nothing at all).
@@ -1104,6 +1419,8 @@ async function syncInvoices(db) {
       upsert.run(
         docNum, toIsoDate(r.DOCDAT), custCode, normalizeSlmCode(r.SLMCOD) || null,
         (r.SONUM || '').trim() || null, signedTotal, r.RECTYP, routeCode, routeName, shipToCode, shipToAddress,
+        (remarks.get(docNum) || remarks.get((r.SONUM || '').trim()))?.join('\n') || null,
+        remarksOk,
       );
     }
   }
@@ -1113,9 +1430,37 @@ async function syncInvoices(db) {
   db.exec('DELETE FROM _seen_invoices');
   const insertSeen = db.prepare('INSERT OR IGNORE INTO _seen_invoices (doc_num) VALUES (?)');
   for (const docNum of seen) insertSeen.run(docNum);
-  const deleted = db.prepare('DELETE FROM invoices WHERE doc_num NOT IN (SELECT doc_num FROM _seen_invoices)').run();
+  // อ่านบางบริษัทไม่ได้ (error ถูกจับไว้ด้านบน) = ไม่ลบ ไม่งั้นใบของบริษัทนั้นหายจากหน้าจ่ายสินค้าตามใบกำกับทั้งก้อน
+  const deleted = unreadable || !present ? { changes: 0 } : db.prepare('DELETE FROM invoices WHERE doc_num NOT IN (SELECT doc_num FROM _seen_invoices)').run();
 
   console.log(`[importFromExpress] invoices: upserted ${seen.size} (recent ${INVOICE_SYNC_WINDOW_DAYS}d window), removed ${deleted.changes} fallen out of window`);
+
+  // หัวใบย้อนหลัง — เขียนใน transaction เดียว (ไม่มี await ข้างใน) · ลบเฉพาะใบในช่วงที่อ่านมารอบนี้แต่ไม่พบแล้ว
+  // (ใบถูกลบ/ยกเลิกใน Express) และข้ามการลบถ้าอ่านไม่ได้เลย (กันไดรฟ์หลุดแล้วล้างข้อมูล — แบบเดียวกับ runImport)
+  if (heads.length) {
+    const upHead = db.prepare(`INSERT INTO invoice_heads (doc_num, doc_date, cust_code, slm_code, so_num, total, rectyp, company)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(doc_num) DO UPDATE SET doc_date = excluded.doc_date, cust_code = excluded.cust_code,
+        slm_code = excluded.slm_code, so_num = excluded.so_num, total = excluded.total, rectyp = excluded.rectyp, company = excluded.company`);
+    db.exec('BEGIN');
+    try {
+      for (const h of heads) upHead.run(...h);
+      db.exec('CREATE TEMP TABLE IF NOT EXISTS _seen_heads (doc_num TEXT PRIMARY KEY)');
+      db.exec('DELETE FROM _seen_heads');
+      const ins = db.prepare('INSERT OR IGNORE INTO _seen_heads (doc_num) VALUES (?)');
+      for (const d of existHeads) ins.run(d);
+      // ลบเฉพาะใบที่ไม่มีใน Express แล้วจริง (ไม่ใช่แค่วันที่ถูกแก้ย้อนออกนอกช่วง) และเฉพาะเมื่ออ่านครบทุกบริษัท (code review)
+      const allRead = !unreadable && present > 0;
+      const gone = db.prepare(`DELETE FROM invoice_heads WHERE doc_date >= ? AND doc_num NOT IN (SELECT doc_num FROM _seen_heads)
+          AND (company IN (SELECT value FROM json_each(?)) OR (company IS NULL AND ?))`)
+        .run(fullHeads ? HEAD_HISTORY_FROM : cutoffIso, JSON.stringify(readOk), allRead ? 1 : 0);
+      if (fullHeads && allRead) db.prepare('INSERT OR IGNORE INTO app_migrations(id) VALUES (?)').run(HEADS_BACKFILL_ID);
+      db.exec('COMMIT');
+      console.log(`[importFromExpress] invoice_heads: upserted ${heads.length} (${fullHeads ? 'backfill since ' + HEAD_HISTORY_FROM : 'recent window'}), removed ${gone.changes}`);
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
   return seen.size;
 }
 
@@ -1246,6 +1591,146 @@ async function syncPromoDocs(db) {
 const REAL_PRODUCT_GROUPS = ['001', '002', '003', '004', '005', '006'];
 const REAL_PRODUCT_GROUPS_SQL = REAL_PRODUCT_GROUPS.map((g) => `'${g}'`).join(',');
 
+// ใบสั่งซื้อจาก Express (POPR.DBF หัว + POPRIT.DBF บรรทัด) สำหรับหน้า "รับของเข้า" ของ tss-wms (2026-11-04)
+// เก็บเฉพาะสินค้าจริงหมวด 001-006 (PO มีค่าใช้จ่าย/ค่าบริการปนอยู่มาก) และไม่เอาใบยกเลิก (DOCSTAT='C')
+// เก็บใบที่ปิดแล้ว (DOCSTAT='M') ด้วย เพราะบัญชีมักปิดใบใน Express ก่อน/พร้อมกับที่คลังรับของจริง คลังยังต้องเห็นใบนั้น
+// ย้อนหลังแค่ PO_LINE_WINDOW_DAYS วัน — ใบค้างเก่าถึงปี 2006 ยังมีอยู่ใน Express แต่ไม่ใช่ของที่จะมาส่งแล้ว
+const PO_COMPANY = 'TSS';
+const PO_LINE_WINDOW_DAYS = 45;
+
+// แปลงใบรับสินค้า RH (หัว APTRN + บรรทัด STCRD) เป็นแถวรูปแบบเดียวกับ express_po_lines — po_no = เลข RH,
+// due_date = วันที่ใบ, doc_status = 'RH' · ข้ามใบยกเลิก (DOCSTAT 'C') และใบที่อ้างอิง PP แล้ว
+// จำนวนใช้ XTRNQTY (หน่วยฐาน) เหมือน buildStockMovements — TRNQTY ของรหัสย่อยที่ TFACTOR≠1 ต่ำกว่าจริง
+// แถวยอดติดลบ (แก้ยอด) หักออกจากบรรทัดสินค้าเดียวกันในใบเดียวกัน · id ของบรรทัดบวกไม่เปลี่ยน (code review 2026-11-07)
+function buildReceiptDocLines(apHeaders, stcrdRows, { cutoff, productOf, unitNames, supplierName }) {
+  const headerByDoc = new Map();
+  for (const h of apHeaders) {
+    const doc = (h.DOCNUM || '').trim();
+    if (!doc.startsWith('RH') || h.DOCSTAT === 'C' || (h.PONUM || '').trim()) continue;
+    const docDate = toIsoDate(h.DOCDAT);
+    if (!docDate || docDate < cutoff) continue;
+    headerByDoc.set(doc, { ...h, docDate });
+  }
+  const positives = [];
+  const negatives = new Map(); // `${doc}|${sku}` -> ยอดที่ต้องหัก
+  for (const l of stcrdRows) {
+    const doc = (l.DOCNUM || '').trim();
+    const header = headerByDoc.get(doc);
+    const sku = (l.STKCOD || '').trim();
+    if (!header || !sku) continue;
+    const product = productOf.get(sku);
+    if (!product || !REAL_PRODUCT_GROUPS.includes(String(product.group_name || '').slice(0, 3))) continue;
+    const qty = Number(l.XTRNQTY) || Number(l.TRNQTY) || 0;
+    if (qty < 0) negatives.set(`${doc}|${sku}`, (negatives.get(`${doc}|${sku}`) || 0) - qty);
+    else if (qty > 0) positives.push({ l, doc, sku, header, product, qty });
+  }
+  positives.sort((a, b) => a.doc.localeCompare(b.doc) || (Number(a.l.SEQNUM) || 0) - (Number(b.l.SEQNUM) || 0));
+  const rows = [];
+  for (const { l, doc, sku, header, product, qty: raw } of positives) {
+    const key = `${doc}|${sku}`;
+    const take = Math.min(raw, negatives.get(key) || 0);
+    if (take) negatives.set(key, negatives.get(key) - take);
+    const qty = Math.round((raw - take) * 1e6) / 1e6;
+    if (qty <= 0) continue;
+    const seq = (l.SEQNUM || '').trim();
+    const supplierCode = (header.SUPCOD || l.PEOPLE || '').trim();
+    const unitCode = (l.TQUCOD || '').trim();
+    // XTRNQTY เป็นหน่วยฐานเมื่อ TFACTOR≠1 จึงแสดงหน่วยฐานของสินค้าแทนหน่วยในบรรทัด
+    const converted = (Number(l.TFACTOR) || 1) !== 1;
+    const unit = converted ? product.unit || unitNames.get(unitCode) || unitCode : unitNames.get(unitCode) || product.unit || unitCode;
+    rows.push([
+      `${PO_COMPANY}:${doc}:${seq}`, PO_COMPANY, doc, seq, header.docDate, header.docDate,
+      supplierCode, supplierName.get(supplierCode) || null, sku, cleanText(l.STKDES) || null,
+      unit || null, (l.LOCCOD || '').trim() || null,
+      qty, 0, qty, 'RH',
+    ]);
+  }
+  return rows;
+}
+async function syncExpressPoLines(db) {
+  const headers = await readTable(PO_COMPANY, 'POPR.DBF');
+  // อ่านไฟล์ไม่ได้/ไม่พบไฟล์ — คงข้อมูลรอบก่อนไว้ ดีกว่าล้างจนหน้ารับเข้าว่างเปล่า
+  if (!headers.length) return 0;
+  const items = await readTable(PO_COMPANY, 'POPRIT.DBF');
+  // หัวใบอ่านได้แต่บรรทัดอ่านไม่ได้ (share หลุดกลางรอบ) — เหมือนกัน: คงข้อมูลเดิม ไม่ล้างตาราง (code review 2026-11-05)
+  if (!items.length) return 0;
+  const suppliers = await readTable(PO_COMPANY, 'APMAS.DBF');
+  const unitNames = await loadUnitNameMap();
+  const supplierName = new Map(suppliers.map((s) => [
+    (s.SUPCOD || '').trim(),
+    [s.PRENAM, s.SUPNAM].map(cleanText).filter(Boolean).join(' '),
+  ]));
+  const headerByPo = new Map();
+  for (const h of headers) {
+    const po = (h.PONUM || '').trim();
+    if (po && h.DOCSTAT !== 'C') headerByPo.set(po, h);
+  }
+  const productOf = db.prepare('SELECT group_name, unit FROM products WHERE code = ?');
+  const cutoff = toIsoDate(new Date(Date.now() - PO_LINE_WINDOW_DAYS * 86400000));
+
+  const rows = [];
+  for (const l of items) {
+    const poNo = (l.PONUM || '').trim();
+    const header = headerByPo.get(poNo);
+    const sku = (l.STKCOD || '').trim();
+    if (!header || !sku) continue;
+    const dueDate = toIsoDate(l.RCVDAT) || toIsoDate(header.RCVDAT);
+    if (!dueDate || dueDate < cutoff) continue;
+    const product = productOf.get(sku);
+    if (!product || !REAL_PRODUCT_GROUPS.includes(String(product.group_name || '').slice(0, 3))) continue;
+    const orderedQty = Number(l.ORDQTY) || 0;
+    const cancelledQty = Number(l.CANCELQTY) || 0;
+    if (orderedQty - cancelledQty <= 0) continue;
+    const seq = (l.SEQNUM || '').trim();
+    const supplierCode = (l.SUPCOD || header.SUPCOD || '').trim();
+    const unitCode = (l.TQUCOD || '').trim();
+    rows.push([
+      `${PO_COMPANY}:${poNo}:${seq}`, PO_COMPANY, poNo, seq, toIsoDate(header.PODAT), dueDate,
+      supplierCode, supplierName.get(supplierCode) || null, sku, cleanText(l.STKDES) || null,
+      unitNames.get(unitCode) || product.unit || unitCode || null, (l.LOCCOD || '').trim() || null,
+      orderedQty, cancelledQty, Number(l.REMQTY) || 0, header.DOCSTAT || null,
+    ]);
+  }
+
+  // ใบรับสินค้า (RH) ที่ไม่ได้อ้างอิงใบ PP — ตั้งแต่ 2026-11-04 TGM ส่งของโดยบัญชีคีย์ RH ตรงไม่ผ่าน PP
+  // ตามที่ผู้ใช้ระบุ "สามารถดึงจาก RH มารับได้ ถ้าไม่มี PP" · RH ที่อ้าง PP แล้วไม่เอา (ใบ PP แสดงอยู่แล้ว)
+  // อ่าน APTRN/STCRD ไม่ได้หรือได้ว่าง = คงแถว RH รอบก่อนไว้ (ใบ PP ยังอัปเดตตามปกติ) — ถ้าลบทิ้ง RH จะหายจากหน้ารับ
+  // แล้วของที่รับระหว่างนั้นถูกบันทึกเป็นไม่มีใบ พอ RH กลับมาจะค้างเต็มจำนวนและรับซ้ำได้ (code review 2026-11-07)
+  let receiptOk = false;
+  try {
+    const apHeaders = await readTable(PO_COMPANY, 'APTRN.DBF');
+    const stcrd = apHeaders.length
+      ? receiptLinesCycle || (await readTable(PO_COMPANY, 'STCRD.DBF')).filter((r) => String(r.DOCNUM || '').startsWith('RH'))
+      : [];
+    if (apHeaders.length && stcrd.length) {
+      rows.push(...buildReceiptDocLines(apHeaders, stcrd, { cutoff, productOf, unitNames, supplierName }));
+      receiptOk = true;
+    } else {
+      console.warn('[importFromExpress] receipt (RH) source empty — keeping previous RH lines');
+    }
+  } catch (e) {
+    console.warn('[importFromExpress] receipt (RH) lines failed — keeping previous RH lines:', e.message);
+  }
+
+  const insert = db.prepare(`
+    INSERT OR REPLACE INTO express_po_lines (id, company, po_no, seq, po_date, due_date, supplier_code, supplier_name,
+      sku, sku_name, unit, loc_code, ordered_qty, cancelled_qty, remain_qty, doc_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.exec('BEGIN');
+  try {
+    if (receiptOk) db.prepare('DELETE FROM express_po_lines WHERE company = ?').run(PO_COMPANY);
+    else db.prepare("DELETE FROM express_po_lines WHERE company = ? AND COALESCE(doc_status, '') <> 'RH'").run(PO_COMPANY);
+    for (const r of rows) insert.run(...r);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[importFromExpress] purchase orders: ${rows.length} line rows`);
+  return rows.length;
+}
+
 // Rebuilds the 3 materialized sales rollup tables from sales_transactions (see db/schema.sql for why
 // these are real tables instead of views — a live GROUP BY over ~1M rows took 2.7-3.3s *per paginated
 // query*, dozens of times per page load). Runs once per 5-minute cycle, after syncSales() has refreshed
@@ -1264,18 +1749,26 @@ function refreshSalesRollups(db) {
   // fall back on — do one full rebuild in that case; every cycle after that, the table is non-empty
   // and this takes the fast scoped path.
   const isEmpty = db.prepare('SELECT COUNT(*) AS n FROM v_sc_dashboard_sales_monthly').get().n === 0;
-  const cutoffYm = isEmpty ? '0000-00' : db.prepare("SELECT strftime('%Y-%m','now','-1 month') AS ym").get().ym;
+  // สร้างใหม่ทั้งหมดหนึ่งครั้งเมื่อเปลี่ยน id (ข้อมูลเดิมยังแสดงระหว่างรอ ไม่ล้างตารางก่อน): 2026-10-14 ตัดลูกค้าที่ไม่นับยอด ·
+  // 2026-10-27 แยกรหัสย่อย 110-1/110-2 (normalizeSlmCode) ย้อนหลังในตารางสรุป
+  const FULL_ONCE = '20261027_rollup_keep_sub_slm_110';
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const fullOnce = !db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(FULL_ONCE);
+  const cutoffYm = isEmpty || fullOnce ? '0000-00' : db.prepare("SELECT strftime('%Y-%m','now','-1 month') AS ym").get().ym;
 
   // 3 separate transactions instead of 1 — measured live at 12-20s+ combined, which sat well above
   // both connections' busy_timeout and was the main source of "database is locked" 500s on ordinary
   // user requests (e.g. the per-request session-expiry UPDATE in middleware/auth.js). Splitting this
   // doesn't reduce total work, but it releases the write lock between tables so a request queued up
   // behind one ~4-7s chunk isn't also stuck behind the other two.
+  // ลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ + Shop ของบริษัท, 2026-10-14 — lib/nonSales.js) ไม่เข้าตารางสรุปยอด
+  // (Dashboard รายสินค้า / ประวัติขาย / Sales Overview) · insertSql ทุกตัวรับ ? ที่ 2 = รายการรหัสที่ตัด
+  const excludeJson = JSON.stringify([...require('../lib/nonSales').nonSalesCodes(db)]);
   function runRollupStep(deleteSql, insertSql, label) {
     db.exec('BEGIN');
     try {
       db.prepare(deleteSql).run(cutoffYm);
-      db.prepare(insertSql).run(cutoffYm);
+      db.prepare(insertSql).run(cutoffYm, excludeJson);
 
       db.exec('COMMIT');
     } catch (e) {
@@ -1291,6 +1784,7 @@ function refreshSalesRollups(db) {
      FROM sales_transactions t
      LEFT JOIN products p ON p.code = t.sku
      WHERE t.tx_date IS NOT NULL AND t.sku IS NOT NULL AND strftime('%Y-%m', t.tx_date) >= ?
+       AND COALESCE(t.cust_code, '') NOT IN (SELECT value FROM json_each(?))
        AND p.group_name IN (${REAL_PRODUCT_GROUPS_SQL})
      GROUP BY 1, t.company, t.sku`,
   );
@@ -1302,6 +1796,7 @@ function refreshSalesRollups(db) {
      FROM sales_transactions t
      LEFT JOIN products p ON p.code = t.sku
      WHERE t.tx_date IS NOT NULL AND t.sku IS NOT NULL AND strftime('%Y-%m', t.tx_date) >= ?
+       AND COALESCE(t.cust_code, '') NOT IN (SELECT value FROM json_each(?))
        AND p.group_name IN (${REAL_PRODUCT_GROUPS_SQL})
      GROUP BY t.company, COALESCE(t.slm_id,''), t.sku, 3`,
   );
@@ -1317,11 +1812,176 @@ function refreshSalesRollups(db) {
      LEFT JOIN customers c ON c.code = t.cust_code
      LEFT JOIN customer_profiles cp ON cp.code = t.cust_code
      WHERE t.tx_date IS NOT NULL AND t.sku IS NOT NULL AND strftime('%Y-%m', t.tx_date) >= ?
+       AND COALESCE(t.cust_code, '') NOT IN (SELECT value FROM json_each(?))
        AND p.group_name IN (${REAL_PRODUCT_GROUPS_SQL})
      GROUP BY t.company, COALESCE(t.slm_id,''), COALESCE(t.cust_code,''), t.sku, 1`,
   );
 
+  if (fullOnce) db.prepare('INSERT OR IGNORE INTO app_migrations(id) VALUES (?)').run(FULL_ONCE);
   console.log(`[importFromExpress] refreshSalesRollups: done in ${Date.now() - t0}ms (${isEmpty ? 'full rebuild, first run' : `rebuilt ym >= ${cutoffYm}`})`);
+}
+
+// รายการสินค้าของใบ Makro (AM) / EA ใน Express โฟลเดอร์ TGM (2026-10-14) — Bplus เก็บบิลชุดเดียวกันเป็นบรรทัดสรุป
+// รหัส 0000 ไม่มีสินค้า → Dashboard ใช้ตารางนี้คำนวณ KG ของบรรทัด 0000 (ยอด AM ตรงกับ Bplus ทุกเดือน, EA ราคาใน Express
+// สูงกว่า ~25% แต่จำนวนสินค้าเป็นของจริง) · ไม่ใช่ยอดขาย — TGM ไม่อยู่ใน sales_lines เพื่อกันยอดซ้ำกับ Bplus
+const TGM_DETAIL_PREFIXES = new Set(['AM', 'EA']);
+async function syncTgmDetailLines(db) {
+  const company = 'TGM';
+  const file = findFile(path.join(EXPRESS_ROOT, company), 'STCRD.DBF');
+  if (!file) return 0;
+  const source = `${company}/STCRD.DBF#detail`;
+  const mtimeMs = fs.statSync(file).mtimeMs;
+  const prev = db.prepare('SELECT mtime_ms FROM sync_file_state WHERE source = ?').get(source);
+  if (prev && prev.mtime_ms === mtimeMs) return 0;
+  const rows = await readTable(company, 'STCRD.DBF');
+  if (!rows.length) return 0;
+  const agg = new Map();
+  for (const r of rows) {
+    const docNum = cleanText(r.DOCNUM);
+    if (!TGM_DETAIL_PREFIXES.has(docNum.slice(0, 2))) continue;
+    const d = toIsoDate(r.DOCDAT);
+    const sku = cleanText(r.STKCOD);
+    const cust = cleanText(r.PEOPLE);
+    if (!d || !sku || !cust) continue;
+    const unit = cleanText(r.TQUCOD);
+    // XTRNQTY อยู่ในหน่วยฐานแล้ว — ไม่คูณ TFACTOR ซ้ำ (2026-11-16, ดู syncSalesLinesMonthly)
+    const factor = Number(r.TFACTOR) || 1;
+    const qtyBase = Math.abs(Number(r.XTRNQTY) || (Number(r.TRNQTY) || 0) * factor);
+    const qty = Math.abs(Number(r.TRNQTY) || qtyBase / factor);
+    const key = [d, cust, sku, unit].join('\u0001');
+    const cur = agg.get(key) || { qty: 0, qtyBase: 0, amount: 0 };
+    cur.qty += qty;
+    cur.qtyBase += qtyBase;
+    cur.amount += Number(r.TRNVAL) || 0;
+    agg.set(key, cur);
+  }
+  const insert = db.prepare(`INSERT INTO tgm_detail_lines_daily (d, cust_code, sku, unit_code, qty, qty_base, amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM tgm_detail_lines_daily').run();
+    for (const [key, v] of agg) {
+      const [d, cust, sku, unit] = key.split('\u0001');
+      insert.run(d, cust, sku, unit, v.qty, v.qtyBase, v.amount);
+    }
+    db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
+      ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`).run(source, mtimeMs, new Date().toISOString());
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  console.log(`[importFromExpress] TGM detail lines (AM/EA): ${agg.size} rows`);
+  return agg.size;
+}
+
+// ยอดขายรายสินค้าต่อลูกค้า × เดือน จาก STCRD.DBF (2026-10-03, Dashboard ผู้บริหาร — Top 20 ลูกค้า บาท/KG)
+// ARTRN (invoice_sales_monthly) ไม่มีมิติสินค้า และ invoice_lines ไม่เก็บรหัสลูกค้า — แต่ STCRD มี PEOPLE (รหัสลูกค้า)
+// และ SLMCOD ทุกบรรทัด (ตรวจกับ DBF จริง 2026-10-03) จึง rollup จากที่นี่ · ใช้เงื่อนไขเอกสารขายชุดเดียวกับ
+// invoice_lines (WMS_GENERAL_SALE_PREFIXES) และตัดเอกสาร/วันที่ตามกติกาเดียวกับ syncInvoiceSales()
+// KG ไม่หักใบรับคืน/ลดหนี้ (STCRD ไม่มีรหัสเอกสารรับคืนจากลูกค้าที่ระบุได้ชัด) — หน้า Dashboard แจ้งไว้
+// STCRD ของ TSS ใหญ่ (~5 แสนแถว) และแฟ้มปีเก่า (TSS-67/68, TSSN-67/68) ไม่เปลี่ยนแล้ว จึงอ่านซ้ำเฉพาะเมื่อไฟล์
+// เปลี่ยน (mtime) และไม่ถี่กว่า SALES_LINES_MIN_INTERVAL_MIN นาที (ค่าเริ่ม 60) — ยอดบาทใน Dashboard ยังมาจาก
+// invoice_sales_monthly ทุกรอบตามเดิม มีแค่ KG ที่อาจช้ากว่าได้ไม่เกินช่วงนี้
+const SALES_LINES_MIN_INTERVAL_MS = (Number(process.env.SALES_LINES_MIN_INTERVAL_MIN) || 60) * 60 * 1000;
+async function syncSalesLinesMonthly(db) {
+  const slmOv = loadSlmOverrides(db);
+  const skuOv = loadSlmSkuOverrides(db); // เจ้าของยอดรายสินค้า (2026-10-27)
+  const getState = db.prepare('SELECT mtime_ms, synced_at FROM sync_file_state WHERE source = ?');
+  const setState = db.prepare(`INSERT INTO sync_file_state (source, mtime_ms, synced_at) VALUES (?, ?, ?)
+    ON CONFLICT(source) DO UPDATE SET mtime_ms = excluded.mtime_ms, synced_at = excluded.synced_at`);
+  const insert = db.prepare(`INSERT INTO sales_lines_monthly (company, ym, cust_code, slm_code, sku, unit_code, qty, qty_base, amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  // รายวัน (2026-10-06) — KG ของ Dashboard เมื่อเลือกช่วงวันที่ · เขียนใน transaction เดียวกับรายเดือน
+  const insertDaily = db.prepare(`INSERT INTO sales_lines_daily (company, d, cust_code, slm_code, sku, unit_code, qty, qty_base, amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  let rowsImported = 0;
+  // กติกาเปลี่ยน (เล่มที่ไม่นับยอด / เจ้าของยอดรายลูกค้า) = สร้างใหม่ทุกแฟ้ม แม้ไฟล์ไม่เปลี่ยน (2026-10-20) — เดิมข้ามแฟ้มที่ mtime เดิม
+  // แฟ้มปีเก่า (TSS-67/68) ไม่เคยเปลี่ยน จึงค้างกติกาเก่าตลอด (30-LC-0013 ปี 2567–68 ยังเป็นของ 106, ใบ IT/IV ปีเก่ายังอยู่)
+  const rulesKey = '#sales_lines_rules';
+  const rulesSig = (() => {
+    // + รหัส Sales ย่อยที่เก็บแยก (2026-10-27, KEEP_SUB_SLM_CODES) — เปลี่ยนแล้วต้องสร้างใหม่ทุกแฟ้มเช่นกัน
+    // + เจ้าของยอดรายสินค้า (2026-10-27)
+    const skuSig = [...skuOv].map(([c, m]) => [c, [...m].sort()]).sort();
+    // + 'qty-bundle-2026-11-16' = สร้างใหม่ครั้งเดียวหลังแก้ qty_base / ตัดบรรทัดลูกของชุดโปร (ข้างล่าง)
+    const s = JSON.stringify([require('../lib/salesDocs').NON_SALES_DOC_PREFIXES, [...slmOv].sort(), [...KEEP_SUB_SLM_CODES].sort(), skuSig, 'qty-bundle-2026-11-16']);
+    let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h;
+  })();
+  const rulesChanged = getState.get(rulesKey)?.mtime_ms !== rulesSig;
+  let allOk = true;
+  for (const company of SALES_COMPANIES) {
+    const file = findFile(path.join(EXPRESS_ROOT, company), 'STCRD.DBF');
+    if (!file) continue;
+    const source = `${company}/STCRD.DBF`;
+    let mtimeMs;
+    try { mtimeMs = fs.statSync(file).mtimeMs; } catch (e) { allOk = false; console.warn(`[importFromExpress] sales lines: stat ${source} failed: ${e.message}`); continue; }
+    const prev = getState.get(source);
+    if (!rulesChanged && prev && prev.mtime_ms === mtimeMs) continue;
+    if (!rulesChanged && prev && prev.synced_at && Date.now() - Date.parse(prev.synced_at) < SALES_LINES_MIN_INTERVAL_MS) continue;
+
+    const rows = await readTable(company, 'STCRD.DBF');
+    // อ่านได้ 0 แถวทั้งที่ไฟล์มีอยู่ = share หลุดกลางรอบ (ดูคอมเมนต์ใน runImport) — ข้ามไว้ อย่าลบของเดิม
+    if (!rows.length) { allOk = false; continue; }
+    const monthly = new Map();
+    const daily = new Map();
+    const isBundleComponent = bundleComponentTest(rows); // ยอดซ้ำกับบรรทัดหัวชุด — ดู bundleComponentTest
+    for (const r of rows) {
+      const docNum = cleanText(r.DOCNUM);
+      if (!WMS_GENERAL_SALE_PREFIXES.has(docNum.slice(0, 2))) continue;
+      if (isNonSalesDocNum(docNum)) continue;
+      if (isBundleComponent(r)) continue;
+      if (!passesCompanyDateCutoff(company, r.DOCDAT)) continue;
+      const period = ym(r.DOCDAT);
+      const sku = cleanText(r.STKCOD);
+      if (!period || !sku) continue;
+      const cust = cleanText(r.PEOPLE) || '(none)';
+      const slm = effectiveSlmSku(slmOv, skuOv, cust, sku, normalizeSlmCode(r.SLMCOD) || '(none)'); // เจ้าของยอดรายสินค้า/รายลูกค้า (lib/slmOverride.js)
+      const unit = cleanText(r.TQUCOD);
+      // FIXED (2026-11-16): XTRNQTY = จำนวนในหน่วยฐานแล้ว (= TRNQTY × TFACTOR, ดูคอมเมนต์ 2026-08-21 ใน buildStockMovements)
+      // เดิม qty = XTRNQTY (หน่วยฐาน แต่ติดชื่อหน่วยขาย TQUCOD) และ qty_base = XTRNQTY × TFACTOR = คูณ factor ซ้ำ
+      // → แถว TFACTOR ≠ 1 ทุนขาย/KG สูงเกินจริง (เช่น 20099 หมูอบน้ำผึ้ง แพ×2.4: GP −50% แทน +40%)
+      // ตอนนี้ qty = จำนวนในหน่วยขาย (TRNQTY) · qty_base = จำนวนในหน่วยฐาน (XTRNQTY)
+      const factor = Number(r.TFACTOR) || 1;
+      const qtyBase = Math.abs(Number(r.XTRNQTY) || (Number(r.TRNQTY) || 0) * factor);
+      const qty = Math.abs(Number(r.TRNQTY) || qtyBase / factor);
+      const key = [period, cust, slm, sku, unit].join('\u0001');
+      const cur = monthly.get(key) || { qty: 0, qtyBase: 0, amount: 0 };
+      cur.qty += qty;
+      cur.qtyBase += qtyBase;
+      cur.amount += Number(r.TRNVAL) || 0;
+      monthly.set(key, cur);
+      const dk = [toIsoDate(r.DOCDAT), cust, slm, sku, unit].join('\u0001');
+      const dc = daily.get(dk) || { qty: 0, qtyBase: 0, amount: 0 };
+      dc.qty += qty;
+      dc.qtyBase += qtyBase;
+      dc.amount += Number(r.TRNVAL) || 0;
+      daily.set(dk, dc);
+    }
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM sales_lines_monthly WHERE company = ?').run(company);
+      for (const [key, v] of monthly) {
+        const [period, cust, slm, sku, unit] = key.split('\u0001');
+        insert.run(company, period, cust, slm, sku, unit, v.qty, v.qtyBase, v.amount);
+        rowsImported++;
+      }
+      db.prepare('DELETE FROM sales_lines_daily WHERE company = ?').run(company);
+      for (const [key, v] of daily) {
+        const [day, cust, slm, sku, unit] = key.split('\u0001');
+        insertDaily.run(company, day, cust, slm, sku, unit, v.qty, v.qtyBase, v.amount);
+      }
+      setState.run(source, mtimeMs, new Date().toISOString());
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+  // จำกติกาที่ใช้สร้างแล้ว เฉพาะเมื่อสร้างใหม่ครบทุกแฟ้ม (อ่านบางแฟ้มไม่ได้ = รอบหน้าสร้างใหม่ทั้งหมดอีกครั้ง)
+  if (rulesChanged && allOk) setState.run(rulesKey, rulesSig, new Date().toISOString());
+  console.log(`[importFromExpress] sales lines monthly: ${rowsImported} rows written`);
+  return rowsImported;
 }
 
 async function runImport(db) {
@@ -1329,6 +1989,8 @@ async function runImport(db) {
   const info = db.prepare('INSERT INTO sync_log (source, started_at, status) VALUES (?, ?, ?)').run(EXPRESS_ROOT, startedAt, 'running');
   const logId = info.lastInsertRowid;
   let rowsProcessed = 0;
+  remarkCycleCache = new Map();
+  receiptLinesCycle = null;
 
   try {
     // ADDED (2026-08-20): confirmed live via service-stdout-20260820T005006 log that Z:\ExpressI can go
@@ -1349,16 +2011,34 @@ async function runImport(db) {
     rowsProcessed += await syncWarehouses(db);
     rowsProcessed += await syncStock(db);
     rowsProcessed += await syncStockMovements(db);
+    // ห้องสต็อกเพิ่มเติม (SHOP3) — พังแล้วไม่ให้ทั้งรอบ sync ของ TSS ล้มตาม
+    for (const company of EXTRA_STOCK_COMPANIES) {
+      try { rowsProcessed += await syncExtraStockCompany(db, company); } catch (e) { console.warn(`[importFromExpress] ${company} stock failed:`, e.message); }
+    }
+    // first_movement_date (2026-10-22): วันแรกที่สินค้ามีความเคลื่อนไหวใน Stock Card (STCRD) — ใช้แทน created_date
+    // เมื่อ STMAS.CREDAT ว่าง (~1/3 ของรหัสสินค้า) · stock_movements_daily ถูกสร้างใหม่ทั้งตารางทุกรอบ จึงคำนวณหลังจากนั้น
+    try {
+      db.prepare('UPDATE products SET first_movement_date = (SELECT MIN(day) FROM stock_movements_daily m WHERE m.sku = products.code)').run();
+    } catch (e) { console.warn('[importFromExpress] first_movement_date failed:', e.message); }
     const salesResult = await syncSales(db);
     rowsProcessed += salesResult.ordersImported + salesResult.linesImported + (salesResult.componentsImported || 0);
     refreshSalesRollups(db);
     rowsProcessed += await syncInvoiceSales(db);
     rowsProcessed += await syncInvoices(db);
     rowsProcessed += await syncPromoDocs(db);
+    // ฟีเจอร์เสริมของ WMS — อ่านไม่ได้ก็ไม่ควรทำให้ทั้งรอบ sync ยอดขาย/สต็อกล้มตาม
+    try { rowsProcessed += await syncExpressPoLines(db); } catch (e) { console.error('[importFromExpress] purchase orders failed:', e.message); }
+    // เสริมสำหรับ KG ใน Dashboard — พังแล้วไม่ควรทำให้ทั้งรอบ sync ถูกนับว่า error (ข้อมูลหลักบันทึกไปแล้ว)
+    try { rowsProcessed += await syncSalesLinesMonthly(db); } catch (e) { console.warn('[importFromExpress] sales lines monthly failed:', e.message); }
+    try { rowsProcessed += await syncTgmDetailLines(db); } catch (e) { console.warn('[importFromExpress] TGM detail lines failed:', e.message); }
+    // ประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม (2026-11-05) — jobs/importSampleIssues.js · อ่านเมื่อไฟล์เปลี่ยน ไม่ถี่กว่าชั่วโมงละครั้ง
+    try { rowsProcessed += await require('./importSampleIssues').syncSampleIssues(db); } catch (e) { console.warn('[importFromExpress] sample issues failed:', e.message); }
 
     // standing tripwire: surface data-quality regressions automatically instead of needing a manual
     // DBF-reading investigation every time someone wonders "is the import still correct" — see
     // v_sc_data_confidence / v_sc_import_health_by_company in db/schema.sql for what these mean.
+    // นับตัวเลขหนักของ v_sc_data_confidence เก็บไว้รอบละครั้ง (lib/dataCounts.js, 2026-10-20) แล้วอ่านผลจาก view
+    try { require('../lib/dataCounts').refreshDataCounts(db); } catch (e) { console.warn('[importFromExpress] data counts failed:', e.message); }
     const confidence = db.prepare('SELECT orphan_sku_consi_count, orphan_sku_sales_count, orphan_sku_stock_count FROM v_sc_data_confidence').get();
     if (confidence.orphan_sku_consi_count > 0 || confidence.orphan_sku_sales_count > 0 || confidence.orphan_sku_stock_count > 0) {
       console.warn(`[importFromExpress] orphan SKU check: consi=${confidence.orphan_sku_consi_count} sales=${confidence.orphan_sku_sales_count} stock=${confidence.orphan_sku_stock_count} (SKUs referenced but missing from products)`);
@@ -1370,7 +2050,10 @@ async function runImport(db) {
     console.error('[importFromExpress] failed:', e.message);
     db.prepare("UPDATE sync_log SET finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), status = 'error', message = ?, rows_processed = ? WHERE id = ?")
       .run(e.message, rowsProcessed, logId);
+  } finally {
+    remarkCycleCache = null;
+    receiptLinesCycle = null;
   }
 }
 
-module.exports = { runImport, refreshSalesRollups, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };
+module.exports = { branchFromArmas, normalizeSlmCode, readTable, readRemarks, findFile, runImport, buildStockMovements, syncExtraStockCompany, refreshSalesRollups, syncSalesLinesMonthly, syncTgmDetailLines, syncProducts, syncSales, syncInvoiceSales, syncInvoices, syncPromoDocs, syncExpressPoLines, buildReceiptDocLines, syncStockMovements, syncWarehouses, isExcludedSalesDocNum, EXPRESS_ROOT, STOCK_COMPANY, SALES_COMPANIES, PRODUCT_COMPANIES };

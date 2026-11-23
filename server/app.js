@@ -4,6 +4,7 @@ const compression = require('compression');
 const path = require('path');
 
 const { makeCrudRouter } = require('./lib/crud');
+const { cacheJson } = require('./lib/responseCache');
 const { requireAuth, requireRole } = require('./middleware/auth');
 const usersRoutes = require('./routes/users');
 
@@ -70,6 +71,11 @@ function buildApp(db, opts = {}) {
   // checks etc.) where gzip's own overhead isn't worth it; level 6 is zlib's default speed/ratio
   // balance, appropriate for the DB PC's modest CPU.
   app.use(compression({ threshold: 1024, level: 6 }));
+  // รายงาน LINE รายสัปดาห์ (2026-11-13, routes/lineReport.js): webhook ต้องได้ body ดิบไว้ตรวจลายเซ็น → mount ก่อน express.json()
+  // รูปรายงานเปิดได้โดยไม่ล็อกอิน (LINE เป็นผู้ดึงรูป) — URL มี token สุ่ม 128 บิต
+  const lineReport = require('./routes/lineReport');
+  app.use('/api/line/webhook', lineReport.webhookRouter(db));
+  app.get('/public/line-reports/:token/:n.png', lineReport.publicImage);
   app.use(express.json({ limit: '5mb' }));
 
   // tss-wms local backend (Supabase-compatible, /wms/*) — off until WMS_DB_PATH/WMS_JWT_SECRET are set. See wms/index.js.
@@ -105,6 +111,12 @@ function buildApp(db, opts = {}) {
   app.use('/api/express_stock_snapshots', authed, require('./routes/expressSnapshots')(db, wms));
   app.use('/api/invoice_detail', authed, require('./routes/invoiceDetail')(db));
   app.use('/api/sales_targets', authed, require('./routes/salesTargets')(db));
+  // Dashboard ผู้บริหาร (2026-10-03): ยอดตามช่วงเวลา / 8 หมวดลูกค้า / Top 20 + KG — routes/dashboardExec.js
+  app.use('/api/dashboard', authed, require('./routes/dashboardExec')(db));
+  app.use('/api/line_report', authed, requireRole('superadmin', 'admin'), lineReport.adminRouter(db));
+  // ยอดรายสาขาห้าง (ห้อง SKU) แทนยอด DC ในมุมมองราย Sales (2026-10-07) — routes/chainSales.js
+  app.use('/api/chain_sales', require('./routes/chainSales')(db));
+  app.use('/api/sales_teams', require('./routes/salesTeams')(db)); // ทีมขาย + สิทธิ์ดูยอด (2026-10-03)
   // สิทธิ์เขียนใบโปรร่าง (promo_drafts, 2026-09-03) — ให้ตรงกับ role ที่เข้าหน้า promo_history ได้อยู่แล้ว
   // (MASTER_DATA_ROLES ด้านบนไม่มี role ฝ่ายขายเลย ใช้ไม่ได้กับฟีเจอร์นี้)
   const PROMO_DRAFT_ROLES = ['superadmin', 'admin', 'sales_manager', 'sales_officer', 'sales_worker', 'sales'];
@@ -143,14 +155,35 @@ function buildApp(db, opts = {}) {
   //    so these mounts no longer expose write verbs at all. ──
   app.use('/api/products', authed, makeCrudRouter(db, 'products', {
     pk: 'code',
-    fields: ['code', 'name', 'group_name', 'unit', 'lead_time', 'moq', 'min_stock', 'shelf_life', 'plant', 'is_active', 'note', 'standard_price', 'price_company'],
+    fields: ['code', 'name', 'group_name', 'unit', 'lead_time', 'moq', 'min_stock', 'shelf_life', 'plant', 'is_active', 'note', 'standard_price', 'price_company', 'created_date', 'first_movement_date'],
     readOnly: true,
   }));
 
+  // ใบสั่งซื้อ Express สำหรับหน้ารับของเข้าของ tss-wms — ดู syncExpressPoLines() ใน jobs/importFromExpress.js
+  app.use('/api/express_po_lines', authed, makeCrudRouter(db, 'express_po_lines', {
+    pk: 'id',
+    fields: ['id', 'company', 'po_no', 'seq', 'po_date', 'due_date', 'supplier_code', 'supplier_name', 'sku', 'sku_name', 'unit', 'loc_code', 'ordered_qty', 'cancelled_qty', 'remain_qty', 'doc_status', 'updated_at'],
+    orderBy: 'due_date',
+    readOnly: true,
+  }));
+
+  // สิทธิ์การเห็นลูกค้า/ยอดขาย/ใบโปร ฝั่ง server (2026-10-06) — ดู lib/customerScope.js
+  const cs = require('./lib/customerScope');
+  const scopeOf = req => cs.resolveScope(db, req.user);
+  const factScope = cols => req => cs.factSql(scopeOf(req), cols);
+  const custScope = col => req => cs.custSql(scopeOf(req), col);
+  // ยอดขาย: ตัดลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ + Shop ของบริษัท, 2026-10-14) ทุกผู้ใช้ — lib/nonSales.js
+  const ns = require('./lib/nonSales');
+  const salesScope = cols => req => ns.withExclude(db, cs.factSql(scopeOf(req), cols), cols.cust);
+  // ตารางที่มีแต่รหัส Sales ไม่มีรหัสลูกค้า (sales_history / v_sales_history_company) — เห็นเฉพาะรหัส Sales ที่ดูได้
+  const slmScope = col => req => { const s = scopeOf(req); return s.all ? null : { sql: `${col} IN (SELECT value FROM json_each(?))`, params: [JSON.stringify(s.slmCodes || [])] }; };
+
   app.use('/api/customers', authed, makeCrudRouter(db, 'customers', {
     pk: 'code',
-    fields: ['code', 'name', 'cust_group', 'slm_id', 'is_active'],
+    fields: ['code', 'name', 'cust_group', 'slm_id', 'is_active', 'addr_branch'],
     readOnly: true,
+    // ownCustCodes = ลูกค้าตามรหัส Sales + เจ้า MT + ลูกค้าที่ขายจริงตามใบกำกับ (2026-10-12 — lib/customerScope.js)
+    scope: custScope('code'),
   }));
 
   app.use('/api/salesmen', authed, makeCrudRouter(db, 'salesmen', {
@@ -168,6 +201,7 @@ function buildApp(db, opts = {}) {
     fields: ['slm_id', 'sku', 'ym', 'qty', 'amount'],
     touch: [],
     readOnly: true,
+    scope: slmScope('slm_id'), // 2026-10-28, security review — ช่องเดียวกับ v_sales_history_company
   }));
 
   app.use('/api/sales_transactions', authed, makeCrudRouter(db, 'sales_transactions', {
@@ -175,7 +209,45 @@ function buildApp(db, opts = {}) {
     fields: ['company', 'tx_date', 'sku', 'cust_code', 'slm_id', 'qty', 'amount', 'so_ref'],
     touch: [],
     readOnly: true,
+    // กรองสิทธิ์อย่างเดียว ไม่ตัดลูกค้า nonSales (ผู้ไม่ถูกจำกัดได้ข้อมูลเท่าเดิม)
+    scope: req => cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_id' }),
   }));
+
+  // ยอดขายจริง + ยอดเคลื่อนไหวอื่นต่อ SKU × เดือน สำหรับหน้า ABC Analysis ของ tgm-wms (2026-10-16 ผู้ใช้แจ้ง SKU
+  // 10090-661 ขายจริง ก.ค.–ต.ค. 69 รวม 210 กก. แต่หน้า ABC บอกไม่มียอดขาย) — sales_history สร้างจากใบสั่งขาย (OESO)
+  // ซึ่งตั้งแต่ ก.ค. 69 รายการขายของ TSS ส่วนใหญ่ไม่ผ่าน SO แล้ว (SO lines หาย ~80%) จึงใช้ sales_lines_monthly
+  // (STCRD ใบกำกับจริง, qty = หน่วยสต็อก) แทน — ไม่รวม CONSI (ยอดฝากขายนับผ่าน consi_out แทน) และ BP-* (B-Plus
+  // คนละบริษัท) · TSS-67 (แฟ้มปี 2567) มีข้อมูลล้น ม.ค.–เม.ย. 68 ซ้ำกับ TSS-68 จึงตัด TSS-67 เฉพาะก่อน 2025
+  // ยอดเคลื่อนไหวอื่นจาก stock_movements_daily (มีตั้งแต่แฟ้ม TSS ปีปัจจุบัน): conv_out = ถูกใช้เป็นวัตถุดิบแปลง (FF
+  // ฝั่งออก), other_out = ตัดจ่าย/ปรับลดอื่นๆ, consi_out = โอนเข้าคลังฝากขาย 03/04/05 — การโอนระหว่างคลังภายในไม่นับ
+  // GET ?from=YYYY-MM&to=YYYY-MM → [{ sku, ym, sales_qty, sales_amount, conv_out, other_out, consi_out }]
+  app.get('/api/abc_sku_monthly', authed, (req, res) => {
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (!/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM และ from ≤ to' });
+    const sales = db.prepare(`SELECT sku, ym, SUM(qty) AS q, SUM(amount) AS a FROM sales_lines_monthly
+      WHERE ym >= ? AND ym <= ? AND company <> 'CONSI' AND company NOT LIKE 'BP-%'
+        AND NOT (company = 'TSS-67' AND ym >= '2025-01')
+      GROUP BY sku, ym`).all(from, to);
+    const moves = db.prepare(`SELECT sku, substr(day, 1, 7) AS ym,
+        SUM(CASE WHEN converted_qty < 0 THEN -converted_qty ELSE 0 END) AS conv_out,
+        SUM(CASE WHEN other_qty < 0 THEN -other_qty ELSE 0 END) AS other_out,
+        SUM(CASE WHEN warehouse IN ('03','04','05') AND transferred_qty > 0 THEN transferred_qty ELSE 0 END) AS consi_out
+      FROM stock_movements_daily WHERE day >= ? AND day < ?
+      GROUP BY sku, substr(day, 1, 7)`).all(`${from}-01`, `${to}-32`);
+    const out = new Map();
+    const row = (sku, ym) => {
+      const k = `${sku}|${ym}`;
+      if (!out.has(k)) out.set(k, { sku, ym, sales_qty: 0, sales_amount: 0, conv_out: 0, other_out: 0, consi_out: 0 });
+      return out.get(k);
+    };
+    for (const r of sales) { const o = row(r.sku, r.ym); o.sales_qty += Number(r.q) || 0; o.sales_amount += Number(r.a) || 0; }
+    for (const r of moves) {
+      if (!r.conv_out && !r.other_out && !r.consi_out) continue;
+      const o = row(r.sku, r.ym);
+      o.conv_out += Number(r.conv_out) || 0; o.other_out += Number(r.other_out) || 0; o.consi_out += Number(r.consi_out) || 0;
+    }
+    res.json([...out.values()]);
+  });
 
   app.use('/api/outbound_orders', authed, makeCrudRouter(db, 'outbound_orders', {
     pk: 'id',
@@ -231,11 +303,37 @@ function buildApp(db, opts = {}) {
     readOnly: true,
   }));
 
+  // ห้องสต็อกเพิ่มเติม (2026-10-22, SHOP3) — 3 ตารางด้านบนในแบบมีคอลัมน์ company · tgm-wms เรียกพร้อม company=eq.SHOP3
+  // (ดู syncExtraStockCompany ใน importFromExpress.js)
+  app.use('/api/company_stock', authed, makeCrudRouter(db, 'company_stock', {
+    pk: 'sku',
+    fields: ['company', 'sku', 'warehouse', 'qty', 'unit', 'last_updated'],
+    orderBy: 'sku',
+    readOnly: true,
+  }));
+  app.use('/api/company_stock_movements_daily', authed, makeCrudRouter(db, 'company_stock_movements_daily', {
+    pk: 'sku',
+    fields: ['company', 'sku', 'warehouse', 'day', 'received_qty', 'sold_qty', 'converted_qty', 'transferred_qty', 'other_qty', 'pm_qty', 'wms_received_qty'],
+    readOnly: true,
+  }));
+  app.use('/api/company_wms_stock_movements_daily', authed, makeCrudRouter(db, 'company_stock_movements_wms_daily', {
+    pk: 'sku',
+    fields: ['company', 'sku', 'day', 'received_qty', 'general_sale_qty', 'consi_qty', 'transfer_qty', 'converted_qty', 'reserved_qty', 'return_qty', 'writeoff_qty', 'received_value', 'dispatched_qty'],
+    readOnly: true,
+  }));
+
 
   // Invoice-level STCRD lines for tax-invoice fallback in tgm-wms route billing.
   app.use('/api/invoice_lines', authed, makeCrudRouter(db, 'invoice_lines', {
     pk: 'doc_num',
     fields: ['company', 'doc_num', 'seq_num', 'doc_date', 'sku', 'sku_name', 'warehouse', 'qty', 'unit_code', 'unit_factor', 'line_value', 'ref_num', 'updated_at'],
+    readOnly: true,
+  }));
+
+  // FF (แปลงสินค้า) document lines from STCRD — tgm-wms checks the FF number on a conversion order.
+  app.use('/api/conversion_doc_lines', authed, makeCrudRouter(db, 'conversion_doc_lines', {
+    pk: 'doc_num',
+    fields: ['doc_num', 'seq_num', 'doc_date', 'sku', 'sku_name', 'warehouse', 'direction', 'qty', 'unit_code', 'updated_at'],
     readOnly: true,
   }));
 
@@ -253,8 +351,15 @@ function buildApp(db, opts = {}) {
     // gp_pct added 2026-09-16: ใบเคาะราคา's per-line GP% now defaults from here (customer master)
     // instead of being typed from scratch every time — see index.html's draftLineField().
     fields: ['code', 'name', 'corporate', 'category', 'branch', 'slm', 'edited_by', 'gp_pct',
-      'corp_source', 'corp_confidence', 'corp_confirmed', 'corp_confirmed_by', 'corp_confirmed_at', 'updated_at'],
+      'corp_source', 'corp_confidence', 'corp_confirmed', 'corp_confirmed_by', 'corp_confirmed_at', 'updated_at',
+      // หมวดลูกค้าผู้บริหาร (2026-10-03) — ดู lib/execChannel.js
+      'exec_channel', 'exec_channel_source',
+      // ประเภทธุรกิจ (2026-10-07) — ดู lib/businessType.js
+      'business_type', 'business_type_source',
+      // กลุ่มลูกค้าฝั่ง Sales (2026-10-12) — แยกจาก corporate/category/exec_channel ของผู้บริหาร
+      'sales_category', 'sales_group', 'sales_group_by'],
     writeRoles: MASTER_DATA_ROLES,
+    scope: custScope('code'),
   }));
 
   app.use('/api/salesmen_profiles', authed, makeCrudRouter(db, 'salesmen_profiles', {
@@ -347,11 +452,17 @@ function buildApp(db, opts = {}) {
     fields: ['id', 'cust_code', 'cust_name', 'contact', 'phone', 'purpose', 'delivery_date', 'address', 'note',
       'items', 'test_result', 'status', 'by', 'by_name', 'date', 'ts',
       'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'reject_reason',
-      'prep_by', 'prep_at', 'disp_by', 'disp_at', 'recv_by', 'recv_at', 'submitted_at', 'updated_by'],
-    jsonFields: ['items', 'test_result'],
+      'prep_by', 'prep_at', 'disp_by', 'disp_at', 'recv_by', 'recv_at', 'submitted_at', 'updated_by',
+      // สินค้าเดิม/สินค้าใหม่ + ขั้น R&D (2026-10-05) · doc_no จงใจไม่อยู่ในรายการ — ออกโดย routes/sampleRequests.js เท่านั้น
+      'req_type', 'new_info', 'rd_accepted_by', 'rd_accepted_at', 'rd_done_by', 'rd_done_at', 'rd_note'],
+    jsonFields: ['items', 'test_result', 'new_info'],
     orderBy: 'ts',
     writeRoles: SAMPLE_REQUEST_ROLES,
   }));
+  app.use('/api/sample_request_actions', authed, require('./routes/sampleRequests')(db, SAMPLE_REQUEST_ROLES));
+  app.use('/api/sample_request_attachments', require('./routes/sampleRequestAttachments')(db, SAMPLE_REQUEST_ROLES));
+  // ประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม จาก Express (2026-11-05) — routes/sampleIssues.js
+  app.use('/api/sample_issues', authed, require('./routes/sampleIssues')(db));
 
   // Workflow อนุมัติแบบ multi-level ใช้ร่วมกันหลาย entity (2026-09) — ดู db/schema.sql
   app.use('/api/approval_workflow_templates', authed, require('./middleware/validateWorkflow')(db), makeCrudRouter(db, 'approval_workflow_templates', {
@@ -452,9 +563,12 @@ function buildApp(db, opts = {}) {
     pk: 'doc_num',
     // route_code/route_name added 2026-09-16 for tgm-wms's "สายรถ" delivery-route billing feature —
     // see importFromExpress.js's ROUTE_TABTYP comment for where these come from.
-    fields: ['doc_num', 'doc_date', 'cust_code', 'slm_code', 'so_num', 'total', 'rectyp', 'route_code', 'route_name', 'ship_to_code', 'ship_to_address', 'updated_at'],
+    fields: ['doc_num', 'doc_date', 'cust_code', 'slm_code', 'so_num', 'total', 'rectyp', 'route_code', 'route_name', 'ship_to_code', 'ship_to_address', 'remark', 'updated_at'],
     orderBy: 'doc_date',
     readOnly: true,
+    // remark ของบิล OL มีชื่อ/เบอร์/ที่อยู่ผู้รับ (2026-10-28, security review) — กรองตามสิทธิ์ลูกค้าเหมือน /api/invoice_detail/lines
+    // (ผู้ใช้ tgm-wms / ฝ่ายคลัง ไม่ใช่ฝ่ายขาย = ไม่ถูกจำกัด เห็นทั้งหมดเหมือนเดิม)
+    scope: custScope('cust_code'),
   }));
 
   // ค้นหาใบโปรทุกช่วงวันที่ (2026-10-02): หน้า "ใบโปร" โหลดตามช่วงวันที่สร้างเอกสาร — ค้นไม่เจอเพราะใบอยู่นอกช่วง
@@ -466,8 +580,10 @@ function buildApp(db, opts = {}) {
     const cols = { ref: ['doc_ref'], doc: ['sonum'], cust: ['cust_code', 'cust_name'], sku: ['sku', 'sku_name'] }[String(req.query.field || 'ref')] || ['doc_ref'];
     const like = '%' + q.replace(/[\\%_]/g, m => '\\' + m) + '%';
     const where = cols.map(c => `lower(coalesce(${c}, '')) LIKE ? ESCAPE '\\'`).join(' OR ');
-    const row = db.prepare(`SELECT MIN(create_date) AS min_create, MAX(create_date) AS max_create, COUNT(*) AS lines, COUNT(DISTINCT sonum) AS docs FROM promo_docs WHERE ${where}`).get(...cols.map(() => like));
-    const samples = db.prepare(`SELECT DISTINCT ${cols[0]} AS v FROM promo_docs WHERE ${where} LIMIT 5`).all(...cols.map(() => like)).map(r => r.v);
+    const sc = cs.custSql(scopeOf(req), 'cust_code');
+    const w2 = sc ? `(${where}) AND ${sc.sql}` : where, p2 = [...cols.map(() => like), ...(sc ? sc.params : [])];
+    const row = db.prepare(`SELECT MIN(create_date) AS min_create, MAX(create_date) AS max_create, COUNT(*) AS lines, COUNT(DISTINCT sonum) AS docs FROM promo_docs WHERE ${w2}`).get(...p2);
+    const samples = db.prepare(`SELECT DISTINCT ${cols[0]} AS v FROM promo_docs WHERE ${w2} LIMIT 5`).all(...p2).map(r => r.v);
     res.json({ ...row, samples });
   });
   app.use('/api/promo_docs', authed, makeCrudRouter(db, 'promo_docs', {
@@ -475,6 +591,7 @@ function buildApp(db, opts = {}) {
     fields: ['company', 'sonum', 'seqnum', 'cust_code', 'cust_name', 'sku', 'sku_name', 'unit_price', 'start_date', 'due_date', 'docstat', 'create_date', 'doc_ref', 'updated_at'],
     orderBy: 'start_date',
     readOnly: true,
+    scope: custScope('cust_code'),
   }));
 
   // "ใบเคาะราคา" v2 (2026-09-11) — header/lines split (ดู server/db/schema.sql's comment บน
@@ -484,6 +601,21 @@ function buildApp(db, opts = {}) {
   //   promo_drafts — เหลือแค่ฟิลด์ราย SKU/สาขา (บรรทัดสินค้า) อ้าง draft_no กลับไปที่ header
   //   promo_draft_attachments — ไฟล์แนบ (BLOB, คัดลอกโครง custreg_attachments)
   app.use('/api/promo_draft_headers', require('./routes/promoDraftHeaders')(db, PROMO_DRAFT_ROLES));
+  // Inbox แจ้งเตือน (2026-10-12) — กระดิ่งมุมขวาบน · ดู routes/inbox.js
+  app.use('/api/inbox', authed, require('./routes/inbox')(db));
+  // ราคากลางฐาน A–G (2026-10-07, ใบเสนอราคา รอบ 1) — ฝ่ายขายทุกระดับดูได้ (ใช้ออกใบเสนอราคา) แต่นำเข้า/แก้ได้
+  // เฉพาะ admin/ผู้จัดการฝ่ายขาย ตามแผนที่ผู้ใช้อนุมัติ
+  app.use('/api/price_tiers', require('./routes/priceTiers')(db, [...PROMO_DRAFT_ROLES, 'manager'], ['superadmin', 'admin', 'sales_manager']));
+  // ใบเสนอราคา (2026-10-08, รอบ 2) — ฝ่ายขายทุกระดับสร้างได้ · Sales เห็นเฉพาะของตัวเอง ผู้จัดการเห็นทั้งหมด
+  app.use('/api/quotation_headers', require('./routes/quotationHeaders')(db, [...PROMO_DRAFT_ROLES, 'manager']));
+  // ใบเคาะราคา การตลาด (ออนไลน์) 2026-11-23 — สิทธิ์ตรวจในตัว route (ผู้สร้าง / ผู้อนุมัติตามขั้น / แอดมิน)
+  app.use('/api/mkt_promo_docs', require('./routes/mktPromoDocs')(db));
+  // ทุนสินค้า + ราคาหมูหน้าฟาร์ม + เกณฑ์พิจารณาโปร (2026-10-22) — ทุนผลิตเป็นข้อมูลอ่อนไหว: ผู้ใช้สั่ง 2026-10-27 ให้เห็นเฉพาะ admin/superadmin
+  const PROMO_COST_ROLES = ['superadmin', 'admin'];
+  app.use('/api/promo_costs', require('./routes/promoCosts')(db, PROMO_COST_ROLES, PROMO_COST_ROLES, PROMO_COST_ROLES));
+  app.use('/api/promo_eval', require('./routes/promoEval')(db, PROMO_COST_ROLES));
+  // ทุน 3 ช่องจากไฟล์ Master SKU (2026-11-16) — นำเข้า/ดูตารางทุนใช้สิทธิ์เดียวกับหน้าทุนเดิม · การเห็นกำไรบนหน้ายอดขายใช้ can_see_cost แยกต่างหาก
+  app.use('/api/cost_rounds', require('./routes/costRounds')(db, PROMO_COST_ROLES));
   app.use('/api/promo_draft_attachments', require('./routes/promoDraftAttachments')(db, PROMO_DRAFT_ROLES));
 
   // Comment ต่อแถวสินค้า (ต่อ SKU ต่อเอกสาร, 2026-09-11) — mount แบบเดียวกับ audit_log (readOnly:true
@@ -547,7 +679,52 @@ function buildApp(db, opts = {}) {
   // อนุมัติใบเคาะราคาผ่านลิงก์ในอีเมล — ไม่ต้อง login (ใช้ token ส่วนตัว) ดู routes/promoEmailApprove.js
   app.use('/api/promo_approve', require('./routes/promoEmailApprove')(db));
 
-  app.use('/api/promo_drafts', authed, makeCrudRouter(db, 'promo_drafts', {
+  // (2026-10-12) ผู้ที่ถูกจำกัดสิทธิ์บันทึกบรรทัดใบเคาะได้เฉพาะสาขาที่มองเห็น (lib/customerScope.js) — กันยิง API ตรง
+  // สาขาที่อยู่ในใบนั้นอยู่แล้ว (เช่น ผู้ร่วมแก้เอกสารที่มีสาขาของคนอื่น) บันทึกซ้ำได้ตามเดิม
+  const promoDraftCustGuard = (req, res, next) => {
+    if (!['POST', 'PATCH', 'DELETE'].includes(req.method)) return next();
+    // ใบเคาะที่บรรทัดจะถูกเขียน/ลบ (2026-10-12, security review): ต้องเป็นเจ้าของ/เลขาที่ดูแล/admin (lib/promoRoles.canManageDraft)
+    // และเพิ่ม/แก้ได้เฉพาะใบที่ยังแก้ไขได้ (ร่าง / ไม่อนุมัติ) — เดิมเช็คแค่รหัสสาขา ทำให้เพิ่มบรรทัดเข้าใบของคนอื่น/ใบที่อนุมัติแล้วได้
+    {
+      const roles = require('./lib/promoRoles');
+      let nos;
+      if (req.method === 'POST') nos = [...new Set((Array.isArray(req.body) ? req.body : [req.body || {}]).map(r => r && r.draft_no).filter(Boolean).map(String))];
+      else {
+        const { buildWhere } = require('./lib/pgQuery');
+        const { where, params } = buildWhere(req.query, ['id', 'draft_no', 'cust_code', 'sku']);
+        if (!where) return res.status(400).json({ error: 'ต้องระบุบรรทัดที่จะแก้ไข/ลบ' });
+        nos = db.prepare(`SELECT DISTINCT draft_no FROM promo_drafts ${where}`).all(...params).map(r => r.draft_no);
+        if (req.method === 'PATCH' && req.body && req.body.draft_no !== undefined) nos.push(String(req.body.draft_no));
+      }
+      if (req.method === 'POST' && (Array.isArray(req.body) ? req.body : [req.body || {}]).some(r => r && !r.draft_no)) return res.status(400).json({ error: 'บรรทัดใบเคาะต้องระบุ draft_no' });
+      for (const no of new Set(nos)) {
+        const h = db.prepare('SELECT draft_no, status, created_by, created_by_actual FROM promo_draft_headers WHERE draft_no = ?').get(no);
+        if (!h) return res.status(404).json({ error: `ไม่พบใบเคาะ ${no}` });
+        if (!roles.canManageDraft(db, h, req.user)) return res.status(403).json({ error: 'แก้รายการได้เฉพาะเจ้าของเอกสาร เลขาของแผนก หรือ admin' });
+        if (req.method !== 'DELETE' && !['draft', 'rejected'].includes(h.status)) return res.status(400).json({ error: 'เอกสารนี้ส่งอนุมัติแล้ว — เรียกกลับเป็นร่างก่อนจึงแก้รายการได้' });
+      }
+    }
+    // ใบเคาะ 1 ใบ = ห้างเดียว (2026-10-12) — รวมบรรทัดที่มีอยู่แล้วของใบเดียวกัน (client ส่งเป็นหลายก้อน)
+    try {
+      const byDraft = new Map();
+      for (const r of (Array.isArray(req.body) ? req.body : [req.body || {}])) {
+        if (!r || !r.draft_no || r.cust_code === undefined) continue;
+        const k = String(r.draft_no);
+        if (!byDraft.has(k)) byDraft.set(k, db.prepare('SELECT DISTINCT cust_code FROM promo_drafts WHERE draft_no = ?').all(k).map(x => x.cust_code));
+        byDraft.get(k).push(String(r.cust_code));
+      }
+      for (const codes of byDraft.values()) require('./lib/promoNumber').assertSingleChain(db, codes);
+    } catch (e) { return res.status(400).json({ error: e.message }); }
+    const scope = scopeOf(req);
+    if (!scope || scope.all) return next();
+    const rows = (Array.isArray(req.body) ? req.body : [req.body || {}]).filter(r => r && r.cust_code !== undefined);
+    const existing = db.prepare('SELECT 1 FROM promo_drafts WHERE draft_no = ? AND cust_code = ? LIMIT 1');
+    const bad = [...new Set(rows.filter(r => !cs.canSeeCust(scope, String(r.cust_code)) && !(r.draft_no && existing.get(String(r.draft_no), String(r.cust_code))))
+      .map(r => String(r.cust_code)))];
+    if (bad.length) return res.status(403).json({ error: `ไม่มีสิทธิ์ทำเอกสารให้สาขา: ${bad.slice(0, 10).join(', ')}${bad.length > 10 ? ` และอีก ${bad.length - 10} สาขา` : ''}` });
+    next();
+  };
+  app.use('/api/promo_drafts', authed, promoDraftCustGuard, makeCrudRouter(db, 'promo_drafts', {
     pk: 'id',
     idPrefix: 'PMD',
     // weight/gp_pct_promo/cost_price_promo added 2026-09-16 — the "ราคาปกติ"/"ราคาโปรโมชั่น" columns
@@ -559,18 +736,24 @@ function buildApp(db, opts = {}) {
       'estimated_qty', 'start_date', 'due_date', 'is_sub_item', 'bill_disc_pct', 'bill_disc_pct_promo', 'compensate'],
     orderBy: 'created_at',
     writeRoles: PROMO_DRAFT_ROLES,
+    // บรรทัดของใบเคาะที่มองเห็นเท่านั้น (ส่งทั้งใบเสมอ ไม่ตัดบางสาขา) — ดู customerScope.visibleDraftNos
+    scope: req => { const nos = cs.visibleDraftNos(db, scopeOf(req), req.user.uid, req.user); return nos ? { sql: 'draft_no IN (SELECT value FROM json_each(?))', params: [JSON.stringify(nos)] } : null; },
   }));
 
   app.use('/api/v_sc_dashboard_sales_monthly', authed, makeCrudRouter(db, 'v_sc_dashboard_sales_monthly', {
     pk: 'prod_code',
     fields: ['ym', 'company', 'prod_code', 'prod_name', 'prod_group', 'qty', 'amount', 'invoice_count'],
     readOnly: true,
+    // ยอดรวมทั้งบริษัท ไม่มีมิติ Sales/ลูกค้า (2026-10-28, security review) — ผู้ที่ถูกจำกัดได้ว่าง
+    // หน้าเว็บ fallback ไปอ่าน v_sales_history_company / sales_history ที่กรองตามรหัส Sales เอง
+    scope: req => (scopeOf(req).all ? null : { sql: '0', params: [] }),
   }));
 
   app.use('/api/v_sales_history_company', authed, makeCrudRouter(db, 'v_sales_history_company', {
     pk: 'sku',
     fields: ['slm_id', 'sku', 'ym', 'qty', 'amount', 'company', 'product_name', 'group_name', 'plant'],
     readOnly: true,
+    scope: slmScope('slm_id'),
   }));
 
   // Real invoiced revenue (Express's AR ledger, ARTRN.DBF) — see db/schema.sql's invoice_sales_monthly
@@ -579,9 +762,42 @@ function buildApp(db, opts = {}) {
     pk: 'cust_code',
     fields: ['company', 'ym', 'cust_code', 'slm_code', 'amount', 'invoice_count', 'cn_count', 'cn_amount', 'vat_amount', 'gross_amount', 'cn_vat'],
     readOnly: true,
+    scope: salesScope({ cust: 'cust_code', slm: 'slm_code', blankToOwner: true, company: 'company' }),
   }));
 
-  app.get('/api/dashboard_sales_summary', authed, (req, res) => {
+  // ยอดรวมตามช่วงวันที่ (2026-10-14, ผู้ใช้ขอเทียบจำนวนวันเท่ากัน เช่น 1–14 ต.ค. กับ 1–14 ก.ย.) — จาก invoice_sales_daily
+  // GET ?from=YYYY-MM-DD&to=YYYY-MM-DD&companies=TSS,BP-TGM&slm=101,207 → { amount, invoice_count } · กรองตามสิทธิ์
+  app.get('/api/invoice_sales_daily_sum', authed, (req, res) => {
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM-DD และ from ≤ to' });
+    const csv = v => [...new Set(String(v || '').split(',').map(x => x.trim()).filter(Boolean))].slice(0, 50);
+    const cos = csv(req.query.companies), slms = csv(req.query.slm);
+    const where = ['d >= ?', 'd <= ?'], params = [from, to];
+    if (cos.length) { where.push(`company IN (${cos.map(() => '?').join(',')})`); params.push(...cos); }
+    // รหัส Sales ที่เลือก = เจ้าของยอด รวมใบไม่มีรหัส Sales ของลูกค้าที่ผูกกับรหัสนั้น (กติกาเดียวกับ Sales Overview, 2026-10-20)
+    if (slms.length) { const x = cs.slmListSql(slms, { company: 'company' }); where.push(x.sql); params.push(...x.params); }
+    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code', blankToOwner: true, company: 'company' }));
+    where.push(sc.sql); params.push(...sc.params);
+    const r = db.prepare(`SELECT SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily WHERE ${where.join(' AND ')}`).get(...params);
+    res.json({ from, to, amount: Number(r?.amount) || 0, invoice_count: Number(r?.invoice_count) || 0 });
+  });
+
+  // ยอดใบกำกับรายลูกค้า×Sales ตามช่วงวันที่ (2026-10-14, ผู้ใช้แจ้ง Sales Overview โหมด "กำหนดเอง" ยอดไม่ตรง — เดิมโหมดนี้ใช้ยอดออเดอร์
+  // รายเดือน + น้ำหนักกระจายลูกค้าแบบเก่า) — รูปเดียวกับแถว invoice_sales_monthly ที่รวมทั้งช่วงแล้ว ให้หน้าเว็บใช้ฟังก์ชันเดิมต่อได้
+  // GET ?from=YYYY-MM-DD&to=YYYY-MM-DD&company=TSS → [{ cust_code, slm_code, amount, invoice_count }] · กรองตามสิทธิ์ + ตัดลูกค้าไม่นับยอดขาย
+  // ตารางรายวันไม่มี CN/VAT แยก (amount = สุทธิหลังหัก CN แล้ว เหมือนรายเดือน)
+  app.get('/api/invoice_sales_daily_rows', authed, (req, res) => {
+    const from = String(req.query.from || ''), to = String(req.query.to || ''), company = String(req.query.company || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.status(400).json({ error: 'from/to ต้องเป็น YYYY-MM-DD และ from ≤ to' });
+    if (!company) return res.status(400).json({ error: 'company is required' });
+    const sc = ns.withExclude(db, cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_code', blankToOwner: true, company: 'company' }));
+    const rows = db.prepare(`SELECT cust_code, slm_code, SUM(amount) AS amount, SUM(invoice_count) AS invoice_count FROM invoice_sales_daily
+      WHERE company = ? AND d >= ? AND d <= ? AND ${sc.sql} GROUP BY cust_code, slm_code`).all(company, from, to, ...sc.params);
+    res.json(rows.map(r => ({ cust_code: r.cust_code, slm_code: r.slm_code, amount: Number(r.amount) || 0, invoice_count: Number(r.invoice_count) || 0 })));
+  });
+
+  // แคชตาม version ข้อมูล (2026-10-09 — วัดจริง 2–4.6 วิ/ครั้ง) ดู lib/responseCache.js
+  app.get('/api/dashboard_sales_summary', authed, cacheJson(db), (req, res) => {
     const startYm = String(req.query.startYm || '').slice(0, 7);
     const endYm = String(req.query.endYm || '').slice(0, 7);
     const slmId = String(req.query.slmId || '').trim();
@@ -597,12 +813,20 @@ function buildApp(db, opts = {}) {
     // are intentionally excluded here; this Dashboard endpoint is for the current operating year.
     const where = ['ym >= ?', 'ym <= ?'];
     const params = [startYm, endYm];
-    if (slmId) {
+    // สิทธิ์ (2026-10-06): ผู้ที่ถูกจำกัด — เลือก Sales มา = ตัดให้เหลือเฉพาะรหัสที่ดูได้ · ไม่เลือก = รหัสที่ดูได้ + ลูกค้าเจ้า MT
+    const scope = scopeOf(req);
+    let reqCodes = slmId ? [...new Set(slmId.split(',').map(s => s.trim()).filter(Boolean))] : [];
+    if (!scope.all && reqCodes.length) reqCodes = reqCodes.filter(c => scope.slmCodes.includes(c));
+    if (slmId || (!scope.all && reqCodes.length)) {
       // ผู้ใช้หนึ่งคนผูกได้หลายรหัส Express (sc_users.slm_codes) — client ส่งมาเป็น "101,110-1"
-      const codes = [...new Set(slmId.split(',').map(s => s.trim()).filter(Boolean))];
-      where.push(`slm_owner IN (${codes.map(() => '?').join(',')})`);
-      params.push(...codes);
+      where.push(reqCodes.length ? `slm_owner IN (${reqCodes.map(() => '?').join(',')})` : '0');
+      params.push(...reqCodes);
+    } else if (!scope.all) {
+      const fs2 = cs.factSql(scope, { cust: 'cust_code', slm: 'slm_owner' });
+      where.push(fs2.sql);
+      params.push(...fs2.params);
     }
+    { const ex = ns.excludeSql(db, 'cust_code'); where.push(ex.sql); params.push(...ex.params); }
     const whereSql = `WHERE ${where.join(' AND ')}`;
     const archiveListSql = `'TSS-67','TSS-68','TSSN-67','TSSN-68','CONSI-67'`;
     const canonicalCompanySql = `
@@ -654,7 +878,8 @@ function buildApp(db, opts = {}) {
     // Top 10 สินค้า (2026-09-30, ผู้ใช้ขอ "คำนวณจากสินค้าย่อยทั้งหมด"): บรรทัดออเดอร์ของสินค้าชุด (มี item ย่อยใน
     // sales_line_components เช่น 90022-x / 90021-x) → หักยอดออกจากรหัสชุด แล้วกระจายให้สินค้าย่อยตามสัดส่วนจำนวนแพ็ค
     // (ราคาต่อหน่วยของสินค้าย่อยใน Express มีไม่ครบ จึงแบ่งตามจำนวน) · ช่วงเดือน/Sales/บริษัท ตามเงื่อนไขเดียวกับด้านบน
-    const slmList = slmId ? [...new Set(slmId.split(',').map(s => s.trim()).filter(Boolean))] : [];
+    const slmList = reqCodes;
+    const setScope = !scope.all && !slmId ? cs.factSql(scope, { cust: 'o.cust_code', slm: 'o.slm_id' }) : null;
     let setRows = [];
     try {
       setRows = db.prepare(`
@@ -665,7 +890,9 @@ function buildApp(db, opts = {}) {
           JOIN outbound_orders o ON o.id = l.order_id
           WHERE substr(o.order_date, 1, 7) >= ? AND substr(o.order_date, 1, 7) <= ?
             AND UPPER(TRIM(o.company)) NOT IN (${archiveListSql})
-            ${slmList.length ? `AND o.slm_id IN (${slmList.map(() => '?').join(',')})` : ''}
+            ${slmList.length ? `AND o.slm_id IN (${slmList.map(() => '?').join(',')})` : slmId && !scope.all ? 'AND 0' : ''}
+            ${setScope ? `AND ${setScope.sql}` : ''}
+            AND o.cust_code NOT IN (SELECT value FROM json_each(?))
         )
         SELECT 'p' AS k, ln.sku AS code, NULL AS name, SUM(ln.line_value) AS amt FROM ln GROUP BY ln.sku
         UNION ALL
@@ -673,7 +900,7 @@ function buildApp(db, opts = {}) {
         FROM ln JOIN sales_line_components c ON c.order_id = ln.order_id AND c.seq_num = ln.seq_num
         JOIN cl ON cl.order_id = ln.order_id AND cl.seq_num = ln.seq_num
         GROUP BY c.child_code
-      `).all(startYm, endYm, ...slmList);
+      `).all(startYm, endYm, ...slmList, ...(setScope ? setScope.params : []), ...ns.excludeSql(db).params);
     } catch (e) { console.warn('[dashboard] set explode:', e.message); }
     const prodMap = new Map(topProducts.map(r => [r.prod_code, { ...r, from_sets: 0 }]));
     for (const r of setRows) {
@@ -735,17 +962,19 @@ function buildApp(db, opts = {}) {
     fields: ['ym', 'company', 'slm_owner', 'category', 'corporate', 'cust_code', 'cust_name',
       'prod_group', 'prod_code', 'prod_name', 'qty', 'amount', 'invoice_count'],
     readOnly: true,
+    scope: salesScope({ cust: 'cust_code', slm: 'slm_owner' }),
   }));
 
   // รายชื่อลูกค้า CONSI (2026-09-29): getConsiCustomerRows() เดิมดึง v_sc_consi_monthly ทั้งตาราง (select ถูกละเลย
   // → ทุกคอลัมน์ ~9MB ต่อหน้า × หลายหน้า) แค่เพื่อเอารหัส/ชื่อลูกค้า — สรุปที่ server ให้เหลือแถวละลูกค้า
   app.get('/api/consi_customers', authed, (req, res) => {
+    const sc = cs.factSql(scopeOf(req), { cust: 'cust_code', slm: 'slm_owner' });
     res.json(db.prepare(`
       SELECT cust_code, MAX(cust_name) AS cust_name, MAX(slm_owner) AS slm_owner
       FROM v_sales_overview_sales_monthly
-      WHERE company = 'CONSI' AND cust_code IS NOT NULL AND cust_code <> '' AND cust_code <> '(none)'
+      WHERE company = 'CONSI' AND cust_code IS NOT NULL AND cust_code <> '' AND cust_code <> '(none)' ${sc ? `AND ${sc.sql}` : ''}
       GROUP BY cust_code
-    `).all());
+    `).all(...(sc ? sc.params : [])));
   });
 
   // item ย่อยของสินค้าชุด CONSI (2026-09-29, เช่น 90022-x "กิจเอ็มอาหารพร้อมทาน") — จาก sales_line_components
@@ -812,12 +1041,20 @@ function buildApp(db, opts = {}) {
     fields: ['ym', 'company', 'slm_owner', 'category', 'corporate', 'cust_code', 'cust_name',
       'prod_group', 'prod_code', 'prod_name', 'qty', 'amount', 'invoice_count'],
     readOnly: true,
+    scope: salesScope({ cust: 'cust_code', slm: 'slm_owner' }),
   }));
 
-  app.use('/api/v_sc_data_confidence', authed, makeCrudRouter(db, 'v_sc_data_confidence', {
+  // นับแถวตารางใหญ่ 0.5 วิ/ครั้ง และ Dashboard เรียกทุกครั้งที่เปิด — แคช 60 วิ (จำนวนการจองเปลี่ยนนอกรอบ sync จึงไม่ใช้ version)
+  // (2026-10-19) วัดจริงบน DB จริงตอนนี้ 3.6 วิ (สแกน sales_transactions หา SKU กำพร้า) และ node:sqlite เป็น synchronous
+  // → ระหว่างนั้น request อื่นของ Dashboard รอคิวจนหมดเวลา ("Dashboard summary/invoice sales/confidence timeout")
+  // ผลลัพธ์ไม่ขึ้นกับผู้ใช้ จึงแคชก้อนเดียวร่วมกันทุกคน 5 นาที (เดิมแคชแยกรายคน 60 วิ = แทบทุกครั้งที่เปิดหน้าต้องคำนวณใหม่)
+  // (2026-10-20, code review) แก้ที่ต้นเหตุ: ตัวเลขหนักนับตอน sync เก็บใน sc_data_counts (lib/dataCounts.js) view เหลือ ~70 ms
+  // → เลิกแคช 5 นาที (ทำให้เวลา sync ล่าสุด / สถานะ Bplus ค้าง) · แคชสั้น 15 วิ ร่วมกันทุกคน กันเปิดหน้าพร้อมกันหลายคน
+  app.use('/api/v_sc_data_confidence', authed, cacheJson(db, { ttlMs: 15 * 1000, versioned: false, perUser: false }), makeCrudRouter(db, 'v_sc_data_confidence', {
     pk: 'so_count',
     fields: ['so_count', 'line_count', 'active_booking_count', 'orders_without_line',
-      'active_product_count', 'orphan_sku_sales_count', 'orphan_sku_consi_count', 'orphan_sku_stock_count', 'synced_at'],
+      'active_product_count', 'orphan_sku_sales_count', 'orphan_sku_consi_count', 'orphan_sku_stock_count', 'synced_at',
+      'bplus_synced_at', 'bplus_status', 'bplus_message'],
     readOnly: true,
   }));
 

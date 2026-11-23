@@ -1,0 +1,55 @@
+{
+  "_note": "ตั้งค่ารายงาน LINE รายสัปดาห์ (lib/weeklySalesReport.js) — แก้ไฟล์นี้แล้ว restart service · ชื่อใน match ต้องตรงกับชื่อเครือจาก lib/customerGroup.js (ดูได้จาก Top 20 ใน Dashboard ผู้บริหาร)",
+  "channels": [
+    { "label": "ร้านค้า", "keys": ["general", "online"] },
+    { "label": "เอเย่น", "keys": ["local_agent", "export_agent"] },
+    { "label": "ห้าง (ไม่รวมฝากขาย)", "keys": ["mall"] },
+    { "label": "แม็คโคร", "keys": ["makro"] }
+  ],
+  "shops": [
+    { "label": "Shop โรงงาน", "channel": "shop_factory" },
+    { "label": "Online", "channel": "online" },
+    { "label": "Shop พระรามสาม", "channel": "shop_rama3" }
+  ],
+  "chain_groups": [
+    {
+      "title": "แม็คโคร / บิ๊กซี",
+      "chains": [
+        { "label": "แม็คโคร", "match": ["Makro"] },
+        { "label": "บิ๊กซี", "match": ["Big C"] },
+        { "label": "ยูเอฟเอ็ม ฟูจิ ซูเปอร์", "match": ["ยูเอฟเอ็ม ฟูจิ"] },
+        { "label": "ภูเก็ตโกรเซอรี่", "match": ["ภูเก็ตโกรเซอรี่"] },
+        { "label": "ตั้งฮั่วเส็ง", "match": ["ตั้งฮั่วเส็ง"] },
+        { "label": "ไอคอนสยาม", "match": ["ไอคอนสยาม"] }
+      ]
+    },
+    {
+      "title": "คุณแต้ว",
+      "chains": [
+        { "label": "Tops", "match": ["Central Food Retail (Tops)"] },
+        { "label": "ตันตราภัณฑ์", "match": ["ตันตราภัณฑ์"] },
+        { "label": "วัน แบงค็อก มิตซูโคชิ", "match": ["มิตซูโคชิ"] },
+        { "label": "ซูเปอร์ชีป", "match": ["ซุปเปอร์ชีป"] },
+        { "label": "สหไทย ซูเปอร์", "match": ["สหไทย"] },
+        { "label": "ซีพี ออลล์", "match": ["ซีพี ออลล์"] },
+        { "label": "Central Food Wholesale", "match": ["Central Food Wholesale"] }
+      ]
+    },
+    {
+      "title": "เดอะมอลล์ / โลตัส / อื่น ๆ",
+      "rest": true,
+      "chains": [
+        { "label": "เดอะมอลล์", "match": ["The Mall"] },
+        { "label": "โลตัส", "match": ["Lotus's"] },
+        { "label": "ซี.เจ.", "match": ["ซี.เจ"] },
+        { "label": "อิออน", "match": ["AEON"] },
+        { "label": "วิลล่า", "match": ["Villa"] },
+        { "label": "สห ลอว์สัน", "match": ["Lawson"] },
+        { "label": "สุวรรณชาด", "match": ["สุวรรณชาด"] },
+        { "label": "สินทรัพย์ก้าวหน้า", "match": ["สินทรัพย์ก้าวหน้า"] },
+        { "label": "ฟู้ดแลนด์ซุปเปอร์มาร์เก็ต", "match": ["ฟู้ดแลนด์"] }
+      ]
+    }
+  ],
+  "office_customers": ["NSL-01-KK", "OIS-01-KF", "ALS-01-KG", "SPS-02-KF", "NGT-01-KF", "TNA-01-KK", "FAD-01-KK", "ZKC-01-KF"]
+}

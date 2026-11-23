@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>TSS Seal Direction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--white:#fff;--ground:#F5F6FA;--navy:#1B2064;--tint:#EEF0F8;--red:#C3161B;--t1:#14163A;--t2:#4B4F6E;--t3:#6E7290;--line:#E3E5EF;--gray:#A3A6BA;--r:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{background:var(--ground);color:var(--t1);font-family:'IBM Plex Sans Thai',sans-serif;font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.01em}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+/* header */
+.hd{height:64px;background:var(--navy);display:flex;align-items:center;padding:0 24px;color:#fff;gap:32px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:600;font-size:16px;letter-spacing:.01em}
+.nav{display:flex;height:64px;gap:4px;flex:1}
+.nav a{display:flex;align-items:center;gap:4px;padding:0 16px;color:rgba(255,255,255,.72);text-decoration:none;font-size:14px;font-weight:500;position:relative}
+.nav a.on{color:#fff}
+.nav a.on::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;background:var(--red);border-radius:3px 3px 0 0}
+.nav a svg.i{width:14px;height:14px;opacity:.7}
+.hr{display:flex;align-items:center;gap:16px;color:rgba(255,255,255,.72);font-size:13px}
+.sync{display:flex;align-items:center;gap:8px}
+.bell{position:relative;width:36px;height:36px;display:grid;place-items:center;border-radius:8px;color:#fff}
+.bell svg.i{width:20px;height:20px}
+.badge{position:absolute;top:3px;right:3px;min-width:16px;height:16px;border-radius:8px;background:var(--red);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;border:2px solid var(--navy);padding:0 3px}
+.av{width:36px;height:36px;border-radius:50%;background:#fff;color:var(--navy);display:grid;place-items:center;font-weight:600;font-size:13px}
+/* sub header */
+.sh{height:64px;background:var(--white);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 24px;gap:16px}
+.sh h1{font-size:20px;font-weight:600;letter-spacing:-.005em}
+.pill{font-size:12px;color:var(--t2);background:var(--tint);border-radius:999px;padding:2px 10px;font-weight:500}
+.sp{flex:1}
+.seg{display:flex;background:var(--ground);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg span{padding:4px 12px;font-size:13px;color:var(--t2);border-radius:6px;font-weight:500}
+.seg span.on{background:var(--white);color:var(--navy);box-shadow:0 0 0 1px var(--line);font-weight:600}
+.chip{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--t2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;background:var(--white)}
+.chip.on{background:var(--tint);border-color:#D2D6EA;color:var(--navy);font-weight:500}
+.chip svg.i{width:14px;height:14px}
+.btn{display:flex;align-items:center;gap:8px;height:36px;padding:0 16px;border-radius:8px;background:var(--red);color:#fff;font-weight:600;font-size:13px}
+/* main */
+.main{display:grid;grid-template-columns:3fr 1fr;gap:24px;padding:24px;height:772px}
+.left{display:flex;flex-direction:column;gap:16px;min-width:0}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.card{background:var(--white);border:1px solid var(--line);border-radius:var(--r)}
+.kpi{padding:16px 20px;height:136px;display:flex;flex-direction:column}
+.kl{font-size:13px;color:var(--t2);font-weight:500}
+.kv{font-size:28px;font-weight:600;letter-spacing:-.01em;margin-top:4px;line-height:1.25}
+.kv small{font-size:15px;font-weight:500;color:var(--t2);margin-left:4px}
+.kf{margin-top:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t3)}
+.up{color:#17804A;font-weight:600}.dn{color:var(--red);font-weight:600}
+.bar{height:6px;background:var(--tint);border-radius:3px;overflow:hidden;margin-top:auto}
+.bar i{display:block;height:100%;width:96.6%;background:var(--navy);border-radius:3px}
+.chart{flex:1;padding:20px 24px 16px;display:flex;flex-direction:column}
+.ch{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.ch h2,.ph h2{font-size:15px;font-weight:600}
+.lg{display:flex;gap:16px;font-size:12px;color:var(--t2);margin-left:auto}
+.lg span{display:flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:2px;background:var(--navy)}
+/* right panel */
+.right{display:flex;flex-direction:column;gap:16px;min-width:0}
+.ph{display:flex;align-items:center;gap:8px;padding:16px 20px 12px}
+.cnt{font-size:12px;font-weight:600;color:#fff;background:var(--navy);border-radius:999px;padding:0 8px;line-height:20px}
+.ph a{margin-left:auto;font-size:12px;color:var(--navy);font-weight:500}
+.doc{padding:12px 20px;border-top:1px solid var(--line)}
+.dt{display:flex;justify-content:space-between;align-items:baseline}
+.dt .mono{color:var(--navy)}
+.dt time{font-size:11px;color:var(--t3)}
+.dn2{font-size:13px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dc{font-size:12px;color:var(--t3)}
+/* stamp route */
+.route{display:flex;align-items:flex-start;margin-top:8px}
+.st{display:flex;flex-direction:column;align-items:center;gap:2px;width:52px}
+.st em{font-style:normal;font-size:11px;color:var(--t3);line-height:1.2}
+.ring{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;line-height:1}
+.ring.ok{border:2px solid var(--red);color:var(--red);transform:rotate(-6deg);box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 3px rgba(195,22,27,.55);background:repeating-radial-gradient(circle at 30% 40%,rgba(195,22,27,.10) 0 1px,transparent 1px 3px)}
+.ring.ok svg.i{width:14px;height:14px;stroke-width:2.4}
+.ring.wait{border:1.5px solid var(--navy);color:var(--navy);background:var(--tint)}
+.ring.you{border:1.5px dashed var(--navy);color:var(--navy);font-size:11px}
+.ring.off{border:1.5px solid var(--gray);color:var(--gray);position:relative}
+.ring.off::after{content:"";position:absolute;left:4px;right:4px;top:50%;height:1.5px;background:var(--gray);transform:rotate(-30deg)}
+.ln{flex:none;width:14px;height:1.5px;background:var(--line);margin:18px -6px 0}
+.ln.ok{background:var(--red);opacity:.5}
+/* showcase */
+.show{display:flex;align-items:center;gap:16px;padding:16px 20px;border-top:1px solid var(--line);background:var(--ground);border-radius:0 0 var(--r) var(--r)}
+.seal{width:104px;height:104px;border-radius:50%;flex:none;border:3px solid var(--red);color:var(--red);transform:rotate(-6deg);display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:inset 0 0 0 4px var(--ground),inset 0 0 0 5.5px var(--red);background:repeating-radial-gradient(circle at 35% 30%,rgba(195,22,27,.09) 0 1px,transparent 1px 4px),repeating-radial-gradient(circle at 70% 75%,rgba(255,255,255,.5) 0 1px,transparent 1px 5px);opacity:.92}
+.seal b{font-size:11px;letter-spacing:.14em;font-weight:600}
+.seal strong{font-size:20px;font-weight:700;line-height:1.15;margin:2px 0}
+.seal span{font-size:11px;font-weight:600;border-top:1px solid currentColor;padding-top:2px}
+.sx .mono{color:var(--navy)}
+.sx p{font-size:13px;font-weight:600;margin-top:2px}
+.sx small{font-size:12px;color:var(--t3);display:block}
+/* channels */
+.chl{padding:0 20px 12px}
+.row{display:grid;grid-template-columns:1fr 72px 36px;align-items:center;gap:8px;font-size:13px;color:var(--t2);height:26px}
+.row b{font-weight:600;color:var(--t1);text-align:right}
+.track{height:6px;background:var(--tint);border-radius:3px}.track i{display:block;height:100%;background:var(--navy);border-radius:3px}
+</style>
+</head>
+<body>
+<header class="hd">
+  <div class="brand">
+    <svg width="40" height="40" viewBox="0 0 40 40" aria-label="TSS seal"><defs><path id="arc" d="M7.5,20 a12.5,12.5 0 1,1 25,0"/></defs><circle cx="20" cy="20" r="19.5" fill="#fff"/><circle cx="20" cy="20" r="18" fill="none" stroke="#C3161B" stroke-width="1.6"/><circle cx="20" cy="20" r="10" fill="none" stroke="#C3161B" stroke-width=".6"/><text font-size="4.6" font-weight="700" fill="#C3161B" letter-spacing=".5" font-family="IBM Plex Sans Thai"><textPath href="#arc" startOffset="50%" text-anchor="middle">THAI SAUSAGE</textPath></text><text x="20" y="22.6" font-size="7.5" font-weight="700" fill="#1B2064" text-anchor="middle" font-family="IBM Plex Sans Thai">TSS</text><text x="20" y="34" font-size="3.4" font-weight="600" fill="#1B2064" text-anchor="middle" letter-spacing=".3">EST. 1963</text></svg>
+    TSS Supply Chain
+  </div>
+  <nav class="nav">
+    <a class="on" href="#">Dashboard</a>
+    <a href="#">การขาย <svg class="i" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></a>
+    <a href="#">โปรโมชัน &amp; ราคา <svg class="i" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></a>
+    <a href="#">ลูกค้า <svg class="i" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></a>
+    <a href="#">ตั้งค่า <svg class="i" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></a>
+  </nav>
+  <div class="hr">
+    <span class="sync num"><svg class="i" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 0 1-9.6 3.6M2.5 8a5.5 5.5 0 0 1 9.6-3.6M12.5 1.8v2.8H9.7M3.5 14.2v-2.8h2.8"/></svg>ซิงก์ล่าสุด 09:12 น.</span>
+    <span class="bell"><svg class="i" viewBox="0 0 20 20"><path d="M5 8a5 5 0 0 1 10 0c0 4.5 2 6 2 6H3s2-1.5 2-6M8.3 17a1.8 1.8 0 0 0 3.4 0"/></svg><span class="badge num">3</span></span>
+    <span class="av">สช</span>
+  </div>
+</header>
+<section class="sh">
+  <h1>ภาพรวมยอดขาย</h1><span class="pill">ข้อมูลตัวอย่าง</span>
+  <span class="sp"></span>
+  <div class="seg"><span class="on">ทุกบริษัท</span><span>TSS</span><span>TGM</span></div>
+  <div class="seg"><span class="on">YTD</span><span>เดือน</span><span>ไตรมาส</span><span>ทั้งปี</span></div>
+  <span class="chip on"><svg class="i" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>รวม Consi</span>
+  <span class="chip">ไม่รวม Non-VAT</span>
+  <span class="chip">ไม่รวมเบเกอรี่</span>
+  <span class="btn"><svg class="i" viewBox="0 0 16 16"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M2.5 13.5h11"/></svg>Export</span>
+</section>
+<main class="main">
+  <div class="left">
+    <div class="kpis">
+      <div class="card kpi"><div class="kl">ยอดขายสุทธิ</div><div class="kv num">฿742.6<small>ล้าน</small></div>
+        <div class="kf"><span class="up num">▲ 6.8%</span>vs 2568<svg style="margin-left:auto" width="76" height="24" viewBox="0 0 76 24"><polyline points="1,17 9,19 17,12 25,16 33,8 41,12 49,9 57,13 65,7 75,5" fill="none" stroke="#1B2064" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="75" cy="5" r="2" fill="#1B2064"/></svg></div></div>
+      <div class="card kpi"><div class="kl">ยอดฝากขาย Consi</div><div class="kv num">฿58.3<small>ล้าน</small></div><div class="kf"><span class="up num">▲ 2.1%</span>vs 2568</div></div>
+      <div class="card kpi"><div class="kl">ลูกค้าที่มียอด</div><div class="kv num">1,284<small>ราย</small></div><div class="kf"><span class="dn num">▼ 0.9%</span>vs 2568</div></div>
+      <div class="card kpi"><div class="kl">คาดการณ์ทั้งปี</div><div class="kv num">฿918<small>ล้าน</small></div><div class="kf num" style="margin:0 0 8px">เป้า ฿950 ล้าน · <b style="color:var(--t1);font-weight:600">96.6%</b></div><div class="bar" style="margin-top:0"><i></i></div></div>
+    </div>
+    <div class="card chart">
+      <div class="ch"><h2>ยอดขายรายเดือน 2569 vs เป้า</h2><span class="pill">หน่วย: ล้านบาท</span>
+        <div class="lg"><span><i class="sw"></i>ยอดขายจริง</span><span><i class="sw" style="background:#A9AED3"></i>เดือนปัจจุบัน (ถึง 17 ต.ค.)</span><span><svg width="18" height="2"><line x1="0" y1="1" x2="18" y2="1" stroke="#C3161B" stroke-width="2" stroke-dasharray="4 3"/></svg>เป้ารายเดือน 79</span></div></div>
+      <svg viewBox="0 0 978 468" width="100%" style="flex:1" font-family="IBM Plex Sans Thai" font-size="12">
+        <g stroke="#E3E5EF" stroke-width="1"><line x1="48" x2="970" y1="20" y2="20"/><line x1="48" x2="970" y1="120" y2="120"/><line x1="48" x2="970" y1="220" y2="220"/><line x1="48" x2="970" y1="320" y2="320"/><line x1="48" x2="970" y1="420" y2="420" stroke="#C9CCDC"/></g>
+        <g fill="#6E7290" text-anchor="end" style="font-variant-numeric:tabular-nums"><text x="38" y="24">100</text><text x="38" y="124">75</text><text x="38" y="224">50</text><text x="38" y="324">25</text><text x="38" y="424">0</text></g>
+        <g fill="#1B2064"><rect x="66.4" y="108" width="40" height="312" rx="3"/><rect x="143.2" y="124" width="40" height="296" rx="3"/><rect x="220" y="80" width="40" height="340" rx="3"/><rect x="296.8" y="104" width="40" height="316" rx="3"/><rect x="373.6" y="68" width="40" height="352" rx="3"/><rect x="450.4" y="88" width="40" height="332" rx="3"/><rect x="527.2" y="76" width="40" height="344" rx="3"/><rect x="604" y="92" width="40" height="328" rx="3"/><rect x="680.8" y="72" width="40" height="348" rx="3"/></g>
+        <rect x="757.6" y="256" width="40" height="164" rx="3" fill="#A9AED3"/>
+        <g fill="#4B4F6E" font-size="11.5" text-anchor="middle" font-weight="600" style="font-variant-numeric:tabular-nums"><text x="86.4" y="100">78</text><text x="163.2" y="116">74</text><text x="240" y="72">85</text><text x="316.8" y="96">79</text><text x="393.6" y="60">88</text><text x="470.4" y="80">83</text><text x="547.2" y="68">86</text><text x="624" y="84">82</text><text x="700.8" y="64">87</text><text x="777.6" y="248">41</text></g>
+        <line x1="48" x2="970" y1="104" y2="104" stroke="#C3161B" stroke-width="1.6" stroke-dasharray="6 4"/>
+        <text x="966" y="97" fill="#C3161B" font-size="11.5" font-weight="600" text-anchor="end">เป้า 79</text>
+        <g fill="#6E7290" text-anchor="middle"><text x="86.4" y="444">ม.ค.</text><text x="163.2" y="444">ก.พ.</text><text x="240" y="444">มี.ค.</text><text x="316.8" y="444">เม.ย.</text><text x="393.6" y="444">พ.ค.</text><text x="470.4" y="444">มิ.ย.</text><text x="547.2" y="444">ก.ค.</text><text x="624" y="444">ส.ค.</text><text x="700.8" y="444">ก.ย.</text><text x="777.6" y="444" fill="#1B2064" font-weight="600">ต.ค.</text><text x="854.4" y="444" fill="#A3A6BA">พ.ย.</text><text x="931.2" y="444" fill="#A3A6BA">ธ.ค.</text></g>
+      </svg>
+    </div>
+  </div>
+  <aside class="right">
+    <div class="card">
+      <div class="ph"><h2>งานรออนุมัติของฉัน</h2><span class="cnt num">3</span><a>ดูทั้งหมด</a></div>
+      <div class="doc"><div class="dt"><span class="mono">P1-2569-0142</span><time>2 ชม.</time></div><div class="dn2">ใบเคาะราคา โปรฯ ต.ค.</div><div class="dc">ฟู้ดมาร์ท สยาม</div>
+        <div class="route"><div class="st"><span class="ring ok"><svg class="i" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg></span><em>เซลส์</em></div><span class="ln ok"></span><div class="st"><span class="ring ok"><svg class="i" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg></span><em>ผจก.</em></div><span class="ln"></span><div class="st"><span class="ring you">รอคุณ</span><em style="color:var(--navy);font-weight:600">ผู้บริหาร</em></div></div></div>
+      <div class="doc"><div class="dt"><span class="mono">QT-2569-0088</span><time>เมื่อวาน</time></div><div class="dn2">ใบเสนอราคา</div><div class="dc">ริเวอร์ไซด์ โฮเทล</div>
+        <div class="route"><div class="st"><span class="ring ok"><svg class="i" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg></span><em>เซลส์</em></div><span class="ln"></span><div class="st"><span class="ring you">รอคุณ</span><em style="color:var(--navy);font-weight:600">ผจก.</em></div></div></div>
+      <div class="doc"><div class="dt"><span class="mono">CR-2569-0031</span><time>15 ต.ค.</time></div><div class="dn2">ลูกค้าใหม่</div><div class="dc">ร้านเจ๊หน่อย ค้าส่ง</div>
+        <div class="route"><div class="st"><span class="ring ok"><svg class="i" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg></span><em>เซลส์</em></div><span class="ln"></span><div class="st"><span class="ring wait">รอ</span><em>บัญชี</em></div><span class="ln"></span><div class="st"><span class="ring wait">รอ</span><em>ผจก.</em></div></div></div>
+      <div class="show"><div class="seal"><b>TSS · 1963</b><strong>อนุมัติ</strong><span class="num">16 ต.ค. 2569</span></div>
+        <div class="sx"><small>อนุมัติล่าสุด</small><span class="mono">P2-2569-0139</span><p>ใบเคาะราคา โปรฯ ส.ค.</p><small>โดย คุณสมชาย · ผู้บริหาร</small></div></div>
+    </div>
+    <div class="card" style="flex:1">
+      <div class="ph"><h2>ช่องทางขาย</h2><a>YTD</a></div>
+      <div class="chl num">
+        <div class="row">Modern Trade<span class="track"><i style="width:100%"></i></span><b>38%</b></div>
+        <div class="row">Traditional Trade<span class="track"><i style="width:58%"></i></span><b>22%</b></div>
+        <div class="row">Food Service<span class="track"><i style="width:45%"></i></span><b>17%</b></div>
+        <div class="row">ร้านค้าส่ง<span class="track"><i style="width:24%"></i></span><b>9%</b></div>
+        <div class="row">ส่งออก<span class="track"><i style="width:16%"></i></span><b>6%</b></div>
+      </div>
+    </div>
+  </aside>
+</main>
+</body>
+</html>

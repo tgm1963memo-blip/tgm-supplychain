@@ -21,12 +21,12 @@ const SALES_ONLY = [
   // (ใช้ใน mpoSelect ของ Planning ด้วย), refreshSalesOverviewGrouping (เรียกจาก saveCustomerGroup/
   // confirmCustomerGroup ฝั่ง admin ที่ใช้ทั้ง 2 แอป)
   'SD_MTH', 'SD_MD', 'SD_WM', 'SD_PRODS', 'SD_VS',
-  '_sd', '_sdApi', '_SD_CACHE_TTL', '_sdNum', '_sdCmp', '_sdByValue', '_sdResetBuildCache', '_sdInvExtras', '_draftRefDocLabel', 'promoFindAllRanges', '_sdXAdd', '_sdXOf', '_sdSplitOn', '_sdValCols', '_sdVatR', '_sdValHead', '_sdVT', '_sdProdX', '_sdTargetFor', '_sdEffSlm', '_sdRowSlmMatch', '_sdFiltered', '_sdInvDet', '_sdInvPeriod', '_sdInvDetGet', '_sdInvBranchHtml', '_sdInvCusts', '_sdInvKey', '_sdInvGroupHtml', '_sdShipBranch', '_sdShipBranchLoading', '_sdLoadShipBranch', '_sdBranchLabel', '_sdBranchCell', 'sdEditBranch', 'sdSaveBranch', 'sdInvSetView', 'sdInvTogProd', '_sdInvRegList', '_sdInvReg', 'sdShowInvoicesAt', '_SD_RECTYP', 'sdShowInvoices', 'sdInvToggleLines',
+  '_pdRolesDraft', '_pdRolesRender', '_pdRolesHtml', '_pdRolesAdd', '_pdRolesDept', '_pdRolesSave', '_promoRoles', '_promoActFor', '_promoLoadRoles', '_promoIsKeyer', '_promoActForSet', '_draftOwnerFieldHtml', 'SD_LEVELS', 'sdSetLevel', '_sdLevelBar', '_sdCatOf', '_sdFlattenBranches', '_sdRegroupCat2', '_sdCustDisplayName', '_sdGroupByForRole', 'SD_DIMS', 'SD_PV_DEFAULT', '_sdPv', '_sdPvSave', 'sdPvToggle', 'sdPvMove', 'sdPvReset', '_sdPvDragKey', 'sdPvDragStart', 'sdPvDragEnd', 'sdPvDragOver', 'sdPvDrop', '_sdToggleKeys', 'sdExpandAll', 'sdCollapseAll', '_sdPivotBar', '_sdPvData', '_sdPvLoad', '_sdPvRows', '_sdPivotHtml', '_sdVsEqCache', '_sdVsEq', '_sd', '_sdApi', 'SD_GROUP_BY', 'sdSetGroupBy', '_sdRegroup', '_sdGroupByBar', '_sdTop10Html', '_sdTop10Btn', 'sdShowTop10', '_SD_CACHE_TTL', '_sdNum', '_sdCmp', '_sdByValue', '_sdResetBuildCache', '_sdInvExtras', '_draftRefDocLabel', 'promoFindAllRanges', '_sdXAdd', '_sdXOf', '_sdSplitOn', '_sdValCols', '_sdVatR', '_sdValHead', '_sdVT', '_sdProdX', '_sdTargetFor', '_sdEffSlm', '_sdRowSlmMatch', '_sdFiltered', '_sdUseSwapAll', '_sdInvDet', '_sdInvPeriod', '_sdInvDetGet', '_sdInvBranchHtml', '_sdInvCusts', '_sdInvKey', '_sdInvGroupHtml', '_sdShipBranch', '_sdShipBranchLoading', '_sdLoadShipBranch', '_sdBranchLabel', '_sdBranchCell', 'sdEditBranch', 'sdSaveBranch', 'sdInvSetView', 'sdInvTogProd', '_sdInvRegList', '_sdInvReg', 'sdShowInvoicesAt', '_SD_RECTYP', 'sdShowInvoices', 'sdInvToggleLines',
   '_sdMonthRange', '_companyFromExpressSlm',
   '_sdKpiFromRows', '_sdSalesListFromRows', '_sdBuildKey', '_sdEnsureBuilt', '_applySalesRowsToSd',
   '_loadSalesFromSupabase', '_loadSalesSummaryFromSupabase', '_sdFmtTotal', '_sdUseLatestMonthIfEmpty',
   '_sdApiMonth', '_loadSalesFromAllHist', '_sdApiYear', '_sdWeekFactor', '_sdV', '_sdPeriodLabel',
-  'sdLoad', 'sdLoadYear', '_STKGRP_LABELS', 'expressGroupLabel',
+  'sdLoad', 'sdLoadYear', // _STKGRP_LABELS / expressGroupLabel ใช้ร่วม (หน้าวิเคราะห์กำไรของทั้ง 2 แอปจัดกลุ่ม 001–006, 2026-11-16)
   '_sdBuildCusts', '_sdBuildProds', '_sdBuildSlms',
   // Dashboard's Top 10 สินค้า/ลูกค้า (2026-09-16) — defined in the Dashboard section of the file, not
   // Sales Overview, but its body calls _sdBuildProds/_sdBuildCusts/_sdFmtTotal/_sdBar directly so it
@@ -38,12 +38,20 @@ const SALES_ONLY = [
   'dashTopTables',
   '_sbInvoiceSalesRows', '_sbInvoiceSalesRowsRange', '_sdScaleProdsToTotal',
   '_sdBuildCustsFromInvoice', '_sdBuildSlmsFromInvoice', '_sdUpdateSlmDrop',
+  // ตัวกรองบริษัท + ยอดโรงงาน (Bplus) ใน Sales Overview (2026-10-05) — เรียก _sbInvoiceSalesRows* ที่เป็น sales-only
+  '_sdCo', '_sdCoLabel', '_sdCosFor', '_sdInvMonth', '_sdInvRange', '_sdInvDays', '_sdCustSearch', '_SD_PROD_DIMS', '_sdBpLines', '_sdProdsMixed', '_SD_CASH_POS', '_sdNoPos', '_sdProdsInv', 'sdSetCo',
   '_sdD', '_sdWI', '_sdVs', '_sdBar', 'sdTogOp',
-  '_ymAddYear', '_dateAddYear', '_yoyPct', '_sdYoYMaps', '_sdYoYHead', '_sdYoYCell', '_sdLoadYoY', 'sdTogYoY',
+  '_ymAddYear', '_dateAddYear', '_yoyPct', '_sdYoYMaps', '_sdYoYHead', '_sdYoYCell', '_sdYoYRange', '_sdYoYSeq', '_sdStartYoY', '_sdLoadYoY', 'sdTogYoY',
   '_dateToYm', 'sdSetDateRange', 'sdApplyCustomRange', 'sdSetDatePreset', 'sdLoadCustom',
   'pgMySales', 'sdRender', 'sdUpdateLabel', 'sdKPI', '_xa', '_custsByItemGrouped',
+  '_sdMarginRange', 'sdMarginPanel', // แผงกำไรใน Sales Overview (2026-11-16) — หน้าวิเคราะห์กำไร (pgMargin) ใช้ร่วมทั้ง 2 แอป
+  'sdCostToggle', '_sdCostOn', '_sdCg', '_sdCostAdd', '_sdCostBar', '_SD_CH', '_SD_COST_NOTE', '_sdCostHead', '_sdCostCells', '_sdCostTag', // คอลัมน์ทุน/กำไรในตารางรายสินค้า (2026-11-16)
+  '_sdRegroupProds', // จัดกลุ่มมุมมองมาตรฐานตาม pivot (2026-11-16)
   'sdCust', 'sdProd', 'sdSlm', 'sdSetPT', 'sdNav', 'sdGoNow', 'sdTab', 'sdTogView', 'sdSort',
   'sdSetYear', 'sdSetQ', 'sdClear', 'sdExport',
+  // Export Business Review .pptx (2026-10-20)
+  '_sdQtyIdx', '_sdQtySum', '_sdQtyFmt', '_sdQtyCell', '_sdPvReady', '_sdQtyUnits', '_sdQtyRow', // ปริมาณขาย (2026-10-21)
+  'CDN_PPTX', 'ensurePptx', '_BR_MTH', 'sdBrOpen', '_sdBrRows', '_sdBrByCust', '_sdBrSum', 'sdBrExport', '_sdBrBuild',
 
   // ฝากขาย CONSI
   '_consiRows', '_consiCustF', '_consiProdF', '_consiBranchF', '_consiStartF', '_consiEndF',
@@ -71,12 +79,12 @@ const SALES_ONLY = [
   'draftGroupToggle', 'draftGroupSelectAll', 'draftGroupClear', '_draftGroupQ', 'draftGroupSearch',
   '_draftCatsForGroups', '_draftPruneCats', 'draftCatLabel', 'draftCatPickerHtml', 'draftCatListHtml',
   'draftCatRefresh', 'draftCatToggle', 'draftCatSelectAll', 'draftCatClear',
-  'draftMsLabel', 'draftMsButton', 'draftMsItems', 'draftMsSearch', 'draftMsRefresh', 'draftMsToggle', 'draftMsSelectAll',
+  'draftMsLabel', 'draftMsButton', '_draftChainRules', '_draftChainRulesLoading', '_draftLoadChainRules', '_draftChainKey', '_DRAFT_CODE_RE', '_draftChainOf', '_draftSelectedChains', '_draftMsMineOv', '_draftMyCodes', '_draftMsMine', '_draftMsMineSet', 'draftMsItems', '_draftShipBranch', '_draftShipBranchLoading', '_draftLoadShipBranch', '_custNameParts', 'draftMsSearch', 'draftMsRefresh', 'draftMsToggle', 'draftMsSelectAll',
   '_draftSkuList', 'draftEnsureSkuCatalog', '_draftFindSku', 'draftApplySku',
   // เรียกจากฟอร์มใบเคาะราคาเท่านั้น แต่ตัวเองเรียก draftLineField/draftGroupRefresh/draftMsRefresh (sales-only)
-  'draftApplyDefaultGp', 'draftRefreshCustomerCatalog', 'draftCostSameChanged', '_draftRefreshLineRefDataNow', '_draftRefPromise',
+  'draftApplyDefaultGp', 'draftRefreshCustomerCatalog', 'draftCostSameChanged', 'draftCostStartChanged', '_draftRefreshCompensateMarks', '_draftMarkCompensateInput', '_draftRefreshLineRefDataNow', '_draftRefPromise',
   '_pdWfUsers', '_pdWfPickerHtml', 'pdWfPickerClose', 'pdWfPickerOpen', 'pdWfSetField',
-  'draftRenderApprovalTrail', '_draftAnchorCmts', '_draftCmtMode', 'DRAFT_LINE_COL_LABELS', '_draftAnchorFor', '_draftElForAnchor',
+  'draftRenderApprovalTrail', '_draftHoldOf', '_draftHoldActive', '_draftHoldBoxHtml', 'draftHoldRefresh', 'draftHoldClear', '_draftAnchorCmts', '_draftCmtMode', 'DRAFT_LINE_COL_LABELS', '_draftAnchorFor', '_draftElForAnchor',
   '_acmSplit', 'draftLoadAnchorComments', 'draftRenderAnchorPins', 'draftJumpToAnchor', 'draftToggleCommentMode',
   'draftCloseAnchorPopover', 'draftOpenAnchorPopover', '_draftAskApprovalComment',
   'pdWfTogglePick', '_draftPickUsers', '_draftPickState', '_draftAskPickApprovers', '_draftPickRender', '_draftPickToggle', '_draftPickDone',
@@ -94,14 +102,16 @@ const SALES_ONLY = [
   // ใบเคาะราคา v3 (2026-09-24): สินค้า NPD / ค่าใช้จ่ายนอกสัญญา, Pro Period ก่อน / Pro No. ล่าสุด, เส้นทางอนุมัติหลายแบบ
   '_draftFormExtraHtml', '_draftOtherCostSum', '_draftBranchesFrom', '_draftIsOffContract', 'draftOffContractChanged', '_draftDocDate', '_draftPickSetRoute',
   'PROMO_DRAFT_ROUTES_ENTITY', '_draftRouteEntity', '_draftLoadRoutes', '_draftNorm', '_draftDocRouteFacts', '_draftRouteMatch', '_draftSuggestRoute',
-  '_pdWfRoutes', '_pdWfRouteId', '_pdWfCorpOpts', '_pdWfCurRoute', 'pdWfSelectRoute', 'pdWfAddRoute', 'pdWfDelRoute',
+  '_pdWfRoutes', '_pdWfRouteId', '_pdWfCorpOpts', '_pdWfCurRoute', 'PROMO_DRAFT_CC_ENTITY', '_PD_EMAIL_RE', '_pdWfCc', '_pdWfCcHtml', 'pdWfCcAdd', 'pdWfCcRem', '_pdWfCcClean', 'pdWfSelectRoute', 'pdWfAddRoute', 'pdWfDelRoute',
   'pdWfRouteName', 'pdWfRouteMatch', 'pdWfRouteType', 'pdWfRouteCorpAdd', 'pdWfRouteCorpRem',
   '_draftEquipKeep', '_draftDiscScopeKeep', '_draftSpecialDistKeep', '_draftOtherCostDetailDefault', 'draftNpdChanged', '_draftSyncOtherCostBox', 'DRAFT_LINE_COL_KEYS', 'DRAFT_LINE_COL_KEYS_V2', '_pdWfDirty',
   '_draftCorpBase', '_draftOverlap', '_draftRenderOverlapMarks', 'draftShowOverlap', '_draftCopyHeader', '_draftCopySrcNo', '_draftLinesFromRows', 'pdWfCopyRoute',
   '_draftPlan', '_draftPlanOpts', '_draftPlanRoutes', '_draftPlanUsers', '_draftPlanLoading', '_draftPlanLoad', '_draftFormRouteFacts', '_draftPlanOpt',
-  '_draftPlanFillDefaults', '_draftPlanHtml', 'draftPlanSetRoute', 'draftPlanAuto', 'draftPlanAdd', 'draftPlanAddByText', 'draftPlanRem', '_draftPlanForSave', '_draftPromoDocsCache', '_draftRefSeq', '_draftFormSeq', '_draftLoadRouteOptions',
-  '_draftRefCode', '_pdWfPrefixes', '_pdWfPrefixPrev', '_PD_PREFIX_SRC', '_pdWfPrefixHtml', '_pdWfPrefixPreview', 'pdWfPrefixTest', 'pdWfPrefixAdd', 'pdWfPrefixRem', 'pdWfPrefixField', 'pdWfPrefixSave', '_draftCustGroupsText', '_draftRenderCustSummary', '_draftPtypeOrder', 'DRAFT_VERDICT',
+  '_draftPlanFillDefaults', '_draftPlanHtml', 'draftPlanSetRoute', 'draftPlanAuto', 'draftPlanAdd', 'draftPlanAddByText', 'draftPlanRem', '_draftPlanOver', '_draftPlanOverSet', '_draftPlanOverList', 'draftPlanOverRem', 'draftPlanOverAdd', 'draftPlanOverReset', '_draftPlanForSave', '_draftPromoDocsCache', '_draftRefSeq', '_draftFormSeq', '_draftLoadRouteOptions',
+  '_draftRefCode', '_draftListQ', '_draftBusy', '_pdCodeMap', '_pdCodeMapDraft', '_pdRenumberPlan', '_pdCanCodeMap', '_pdYm', '_pdCodeMapHtml', 'pdCodeMapImport', 'pdCodeMapSave', 'pdCodeMapTest', 'pdRenumberAllPreview', 'pdRenumberAllApply', '_draftCustGroupsText', '_draftRenderCustSummary', '_draftPtypeOrder', 'DRAFT_VERDICT',
   '_draftLineVerdicts', '_draftSavedLineVerdicts', '_draftIsAuditTurn', '_draftVerdictCounts', '_draftVerdictSummary', '_draftVerdictCellHtml', 'draftSetLineVerdict',
+  // ผลวิเคราะห์โปร (2026-10-27, พิจารณาอนุมัติโปร เฟส 2)
+  '_draftEval', '_draftEvalView', '_draftEvalSuggested', 'PD_EVAL_MARK', 'PD_EVAL_FLAG', 'draftLoadEval', 'draftRenderEval', 'pdEvalHtml',
 
   // ข้อมูลลูกค้า (custreg — สมัคร/แก้ไขข้อมูลลูกค้าใหม่) — ไม่รวม custregSubToRow/custregRowToSub (ใช้ใน
   // SB.getCustregSubs()/upsertCustreg() ซึ่งเป็นส่วนหนึ่งของ SB object กลาง อยู่ทั้ง 2 แอปเสมอ — ย้ายไป core)
@@ -120,6 +130,12 @@ const SALES_ONLY = [
   'pgCrWorkflowSettings', 'crWfAddLevel', 'crWfRemLevel', 'crWfAddApprover', 'crWfRemApprover', 'crWfSave',
   'crOpenApproval', 'crConfirmWithWorkflow', 'crDoApprove', 'pgCustMap',
   'crImportCustomersFile', 'crExportCustomers', 'crDownloadCustomerTemplate',
+  // ราคากลาง A–G (2026-10-07, ใบเสนอราคา รอบ 1)
+  'PT_TIERS', '_pt', '_ptCanWrite', '_ptMin', '_ptFmt', '_ptCol', '_ptFieldLbl', 'pgPriceTiers', '_ptFiltered', 'ptRender', 'ptRenderRows', 'ptCellEdit', 'ptEdit', 'ptEditSave', '_ptParseSheet', 'ptImport', '_ptDraftSheet', 'ptPreview', '_ptDraftHtml', 'ptImportSave', 'ptExport',
+  // ใบเสนอราคา (2026-10-08, รอบ 2)
+  // ใบเคาะราคา การตลาด (2026-11-23)
+  'MK_STATUS', 'MK_TYPES', 'MK_KIND', 'MK_AFF', 'MK_TPL', '_mk', '_mkTodayISO', '_mkMonthEnd', '_mkNewSec', '_mkF', '_mkF0', '_mkMTH', '_mkPd', '_mkRange', '_mkShort', '_mkDays', '_mkSku', '_mkItemSubs', '_mkLive', '_mkAll', '_mkSum', '_mkCh', '_mkUser', '_mkCanEdit', '_mkIsNum', '_mkCss', '_mkPaperCss', '_mkLoadProducts', 'pgMktPromo', 'mkRenderList', '_mkRouteOf', '_mkLevelsFromRoute', 'mkNew', 'mkOpen', '_mkIssues', 'mkRenderForm', 'mkBack', '_mkTb', '_mkNameCell', '_mkSubForm', '_mkRenderSecs', '_mkRenderAtt', '_mkUserOpts', '_mkRenderLevels', '_mkCcLabel', '_mkRenderCc', '_mkRefresh', '_mkOnInput', '_mkOnChange', '_mkOnPaste', '_mkOnClick', '_mkPayload', 'mkSave', 'mkSubmit', 'mkCancel', 'mkDecide', 'mkRecall', 'mkCopy', '_mkStepsHtml', '_mkViewActions', '_mkAttView', 'MK_LOG_LBL', '_mkLogsHtml', '_mkUpload', '_mkDelAtt', '_mkOpenAtt', '_mkPaper', 'mkPrint', 'mkRenderRoutes',
+  'QT_STATUS', 'QT_DEFAULT_REMARKS', 'QT_DEFAULT_SIGNER', 'QT_FROM', 'QT_LOGO', '_qt', '_qtCanManage', '_qtPrice', '_qtFmt', 'pgQuotation', 'qtRenderList', 'qtNew', 'qtOpen', '_qtCollect', 'qtCustPick', 'qtAddLine', 'qtDelLine', 'qtAddRemark', 'qtDelRemark', 'qtLineCode', 'qtTierChange', 'qtResetPrice', 'qtRenderForm', 'qtSave', 'qtCancel', 'qtRenderView', 'qtPrint', '_qtSpecial', '_qtDefaultPrice', 'qtLoadSpecial', '_qtLineNeeds', '_qtPickApprover', 'qtDecide', 'qtRecall', 'qtSpecialPrices', 'qtSpecialOff',
 ];
 
 // ── Planning-only: Stock & Planning, Production Planning, จองสินค้า PO/SO, สรุปการจอง, สั่งยอดผลิต, ──

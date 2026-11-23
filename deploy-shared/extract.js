@@ -12,7 +12,7 @@ const { SALES_ONLY, PLANNING_ONLY, WMS_ONLY } = require('./app-manifest');
 
 // page-id (RNAV/nav) → เจ้าของ — คนละชุดกับ function-name manifest ด้านบน (RNAV เป็นข้อมูล ไม่ใช่ฟังก์ชัน)
 const PAGE_ID_OWNER = {
-  mysales: 'sales', consi: 'sales', promo_history: 'sales', custreg: 'sales',
+  mysales: 'sales', consi: 'sales', promo_history: 'sales', custreg: 'sales', pricetiers: 'sales', quotation: 'sales', mktpromo: 'sales',
   planstock: 'planning', po: 'planning', planbook: 'planning', booksummary: 'planning',
   prodplan: 'planning', prodsummary: 'planning', forecastdoc: 'planning', stock: 'planning', expiry: 'planning',
   wms: 'wms', // ตัดทิ้งจากทั้ง 2 แอปเสมอ

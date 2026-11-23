@@ -112,22 +112,54 @@ cron.schedule(EXPRESS_SYNC_CRON, () => {
 // the event loop the way synchronous DBF parsing + SQLite writes do. Every 10 minutes; skipped
 // entirely (imapConfigured() false) until PO_EMAIL_IMAP_* is set in .env.
 let poEmailSyncRunning = false;
+// (2026-10-26) login ไม่ผ่าน (AUTHENTICATE failed — รหัสผ่านใน .env ผิด/หมดอายุ ล้มมาตั้งแต่ 2026-08-28) → พัก 6 ชม.
+// แทนการลองใหม่ทุก 10 นาที (~144 ครั้ง/วัน เสี่ยง mail server ล็อกบัญชี/บล็อก IP เครื่องนี้) · log ข้อความจาก server ด้วย
+// ("Command failed" เฉย ๆ ไม่บอกสาเหตุ) · แก้รหัสผ่านแล้ว restart service = ลองทันที
+const PO_EMAIL_AUTH_PAUSE_MS = 6 * 3600 * 1000;
+let poEmailPausedUntil = 0;
+async function runPoEmailSync() {
+  if (poEmailSyncRunning || Date.now() < poEmailPausedUntil) return;
+  poEmailSyncRunning = true;
+  try { await importPoFromEmail(db); }
+  catch (e) {
+    const detail = [e.responseStatus, e.responseText].filter(Boolean).join(' ');
+    if (e.authenticationFailed) {
+      poEmailPausedUntil = Date.now() + PO_EMAIL_AUTH_PAUSE_MS;
+      console.error(`[importPoFromEmail] login failed (${detail || e.message}) — ตรวจ PO_EMAIL_USER/PO_EMAIL_PASSWORD ใน .env · พัก 6 ชม.`);
+    } else console.error('[importPoFromEmail] failed:', e.message, detail);
+  }
+  finally { poEmailSyncRunning = false; }
+}
 if (imapConfigured()) {
-  cron.schedule('*/10 * * * *', async () => {
-    if (poEmailSyncRunning) return;
-    poEmailSyncRunning = true;
-    try { await importPoFromEmail(db); }
-    catch (e) { console.error('[importPoFromEmail] failed:', e.message); }
-    finally { poEmailSyncRunning = false; }
-  });
+  cron.schedule('*/10 * * * *', runPoEmailSync);
   // run once shortly after boot too, instead of waiting up to 10 minutes for the first tick
-  setTimeout(() => {
-    if (poEmailSyncRunning) return;
-    poEmailSyncRunning = true;
-    importPoFromEmail(db).catch((e) => console.error('[importPoFromEmail] failed:', e.message)).finally(() => { poEmailSyncRunning = false; });
-  }, 10_000);
+  setTimeout(runPoEmailSync, 10_000);
 } else {
   console.log('[importPoFromEmail] PO_EMAIL_IMAP_* not configured — email PO import disabled');
+}
+
+// รายงานยอดขายส่ง LINE ทุกวันจันทร์ (2026-11-13, lib/lineWeeklyReport.js) — ปิดไว้จนกว่าจะตั้ง WEEKLY_LINE_REPORT_ENABLED=1
+// ก่อนส่ง sync Express/Bplus 1 รอบให้ยอดวันอาทิตย์เข้าครบ (sync ล้ม/กำลังรันอยู่ = ส่งด้วยข้อมูลที่มี)
+// เวลาเครื่อง DB PC เป็นเวลาไทย จึงใช้เวลาเครื่องได้เลย
+if (process.env.WEEKLY_LINE_REPORT_ENABLED === '1') {
+  const LINE_CRON = cron.validate(process.env.WEEKLY_LINE_REPORT_CRON || '') ? process.env.WEEKLY_LINE_REPORT_CRON : '30 8 * * 1';
+  let lineReportRunning = false;
+  console.log(`[lineWeeklyReport] scheduled: ${LINE_CRON}`);
+  cron.schedule(LINE_CRON, async () => {
+    if (lineReportRunning) return;
+    lineReportRunning = true;
+    try {
+      try { await triggerSyncNow(); } catch (e) { console.warn('[lineWeeklyReport] pre-send sync skipped:', e.message); }
+      const { reportRange } = require('./lib/weeklySalesReport');
+      const { sendWeeklyReport } = require('./lib/lineWeeklyReport');
+      const r = await sendWeeklyReport(db, { ...reportRange(new Date()), trigger: 'cron' });
+      console.log(`[lineWeeklyReport] sent ${r.from}..${r.to}:`, r.results.map((x) => `${x.target}=${x.ok ? 'ok' : x.error}`).join(', '));
+    } catch (e) {
+      console.error('[lineWeeklyReport] failed:', e.message);
+    } finally {
+      lineReportRunning = false;
+    }
+  });
 }
 
 process.on('SIGINT', () => {

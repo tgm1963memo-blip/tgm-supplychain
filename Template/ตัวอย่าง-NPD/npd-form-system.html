@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8"><title>ตัวอย่างหน้ากรอก NPD</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap">
+<style>
+  :root{--N:#1E3A5F;--BD:#D8DEE8;--bg2:#F6F8FB;--W:#fff;--TX:#1f2937;--TX2:#475569;--TX3:#8592a6;--G:#0F7B4E;--A:#B45309;--R:#B42318}
+  *{box-sizing:border-box}
+  body{font-family:'Sarabun',sans-serif;background:#EEF1F5;margin:0;padding:18px;color:var(--TX);font-size:13px}
+  .card{background:var(--W);border-radius:12px;padding:18px 20px;max-width:1080px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .ct2{font-size:17px;font-weight:700;color:var(--N)}
+  .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600}
+  .bba{background:#FEF3C7;color:#92400E}.new{background:#DCFCE7;color:#166534}
+  .sec{background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+  .sec>.t{font-weight:700;font-size:13.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .item{background:var(--W);border:1px solid var(--BD);border-radius:10px;padding:12px 14px}
+  .sub{font-size:12px;font-weight:700;color:var(--N);margin:14px 0 7px;padding-top:10px;border-top:1px dashed var(--BD);display:flex;gap:8px;align-items:center}
+  .sub:first-of-type{border-top:0;padding-top:0;margin-top:2px}
+  .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:9px 12px;align-items:end}
+  .f .l{font-size:11px;color:var(--TX3);margin-bottom:4px}
+  .inp{padding:7px 9px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:inherit;font-size:13px;background:#fff;min-height:33px}
+  .u{display:flex;gap:5px;align-items:center}.u .inp{flex:1}.u span{font-size:12px;color:var(--TX2);white-space:nowrap}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:5px 11px;border:1px solid var(--BD);border-radius:999px;font-size:12px;background:#fff;color:var(--TX2)}
+  .chip.on{background:var(--N);border-color:var(--N);color:#fff;font-weight:600}
+  .chk{display:flex;align-items:center;gap:6px;font-size:12.5px;padding:4px 0}
+  .box{width:15px;height:15px;border:1.5px solid #94a3b8;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:#fff;flex:none}
+  .box.on{background:var(--N);border-color:var(--N)}
+  .coa{display:grid;grid-template-columns:190px repeat(4,1fr);border:1px solid var(--BD);border-radius:8px;overflow:hidden;background:#fff}
+  .coa div{padding:6px 10px;border-bottom:1px solid var(--BD);font-size:12.5px;display:flex;align-items:center;gap:6px}
+  .coa .h{background:#EEF2F7;font-weight:600;font-size:11.5px;color:var(--TX2)}
+  .coa .k{font-weight:600}
+  .coa div:nth-last-child(-n+5){border-bottom:0}
+  .radio{width:14px;height:14px;border:1.5px solid #94a3b8;border-radius:50%;display:inline-block;flex:none;position:relative}
+  .radio.on{border-color:var(--N)}.radio.on::after{content:'';position:absolute;inset:2.5px;border-radius:50%;background:var(--N)}
+  .tag{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;background:#E0E7FF;color:#3730A3}
+  .hint{font-size:11.5px;color:var(--A);margin-top:6px}
+  .btns{display:flex;gap:10px;justify-content:flex-end;padding-top:6px}
+  .btn{padding:8px 16px;border-radius:8px;border:1px solid var(--BD);background:#fff;font-family:inherit;font-size:13px}
+  .btn.p{background:var(--N);color:#fff;border-color:var(--N);font-weight:600}
+  .btn.g{background:#ECFDF3;color:var(--G);border-color:#A7F3D0}
+  .note-new{border-left:3px solid #16A34A;padding-left:10px}
+  .val{font-weight:700;padding:7px 2px}
+</style></head><body>
+<div class="card">
+  <div class="ch"><div class="ct2">✨ ขอตัวอย่างสินค้าใหม่ (NPD)</div><span class="badge bba">✨ สินค้าใหม่</span></div>
+
+  <div class="sec"><div class="t">📋 ข้อมูลทั่วไป</div>
+    <div class="g" style="grid-template-columns:repeat(3,1fr)">
+      <div class="f" style="grid-column:span 2"><div class="l">ลูกค้า *</div><div class="inp">MI-LA-0001 — เดอะ ไมเนอร์ ฟู้ด กรุ๊ป จำกัด (มหาชน)</div></div>
+      <div class="f"><div class="l">กลุ่มลูกค้า</div><div class="inp">ร้านค้าทั่วไป</div></div>
+      <div class="f"><div class="l">ผู้ติดต่อ</div><div class="inp">คุณนิดา (จัดซื้อ)</div></div>
+      <div class="f"><div class="l">เบอร์โทร</div><div class="inp">081-234-5678</div></div>
+      <div class="f note-new"><div class="l">วันที่ต้องการตัวอย่าง * · ครั้งที่ <span class="badge new">ใหม่</span></div><div class="u"><div class="inp">20/10/2569</div><div class="inp" style="flex:0 0 56px;text-align:center">1</div></div></div>
+      <div class="f" style="grid-column:1/-1"><div class="l">วัตถุประสงค์ / เหตุผล *</div><div class="inp">ลูกค้าต้องการสินค้าทดแทนยี่ห้อเดิมสำหรับเมนูฮอทดอก</div></div>
+    </div>
+  </div>
+
+  <div class="sec"><div class="t">✨ รายการสินค้าใหม่ <span class="tag">ตามแบบฟอร์มโรงงาน FM-RDC-RDD-12</span></div>
+   <div class="item">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px"><b style="color:var(--N)">สินค้าใหม่ #1</b><span style="font-size:12px;color:var(--R)">✕ ลบรายการ</span></div>
+
+    <div class="sub">1. สินค้า · ราคา · ปริมาณ</div>
+    <div class="g">
+      <div class="f" style="grid-column:span 2"><div class="l">Product name — ชื่อสินค้า *</div><div class="inp">ไส้กรอกชีสพริกไทยดำ (หมู) สำหรับฮอทดอก</div></div>
+      <div class="f"><div class="l">ราคาขายลูกค้า</div><div class="u"><div class="inp">185.00</div><span>บาท/กก.</span></div></div>
+      <div class="f"><div class="l">ยอดสั่งซื้อ/เดือน</div><div class="u"><div class="inp">800</div><span>กก.</span></div></div>
+      <div class="f"><div class="l">จำนวนตัวอย่าง *</div><div class="u"><div class="inp">3</div><span>กก.</span></div></div>
+      <div class="f"><div class="l">มูลค่าคาดการณ์/เดือน</div><div class="val">148,000 บาท</div></div>
+    </div>
+
+    <div class="sub note-new">2. Brand · บรรจุภัณฑ์ <span class="badge new">ใหม่</span></div>
+    <div class="f"><div class="l">Brand</div>
+      <div class="chips"><span class="chip">TGM</span><span class="chip">TSS</span><span class="chip on">No Logo</span><span class="chip">Eurola</span><span class="chip">Other…</span></div></div>
+    <div class="g" style="margin-top:9px">
+      <div class="f"><div class="l">Packing size (1)</div><div class="u"><div class="inp">1,000</div><span>g. ×</span><div class="inp" style="flex:0 0 52px">1</div><span>Pack</span></div></div>
+      <div class="f"><div class="l">ซองบรรจุ</div><div class="chips"><span class="chip">ถุง Nylon</span><span class="chip on">เทอร์โมฟอร์ม</span></div></div>
+      <div class="f"><div class="l">Packing size (2) — ถ้ามี</div><div class="u"><div class="inp" style="color:#bbb">—</div><span>g. ×</span><div class="inp" style="flex:0 0 52px"></div><span>Pack</span></div></div>
+    </div>
+    <div class="g" style="margin-top:9px">
+      <div class="f" style="grid-column:span 2"><div class="l">Outer packaging — บรรจุภัณฑ์รวม</div>
+        <div class="chips"><span class="chip">ใส่ถุงรวม … แพ็ค</span><span class="chip">ใส่ตะกร้า … แพ็ค</span><span class="chip on">ใส่กล่องรวม 10 กก.</span></div></div>
+      <div class="f"><div class="l">กล่อง</div><div class="chips"><span class="chip">กล่องมีตรา</span><span class="chip on">กล่องไม่มีตรา</span></div></div>
+    </div>
+
+    <div class="sub note-new">3. สเปคผลิตภัณฑ์ <span class="badge new">ใหม่</span></div>
+    <div class="f"><div class="l">Type of Casing — ไส้</div>
+      <div class="chips"><span class="chip">Hog ไส้หมู</span><span class="chip">Cellulose ไส้พลาสติก</span><span class="chip">Cellulose Skinless</span><span class="chip">Sheep ไส้แกะ</span><span class="chip on">Collagen ไส้คอลลาเจน</span><span class="chip">Other…</span></div></div>
+    <div class="g" style="margin-top:9px">
+      <div class="f"><div class="l">Slice thickness</div><div class="u"><div class="inp" style="color:#bbb">—</div><span>mm</span></div></div>
+      <div class="f"><div class="l">Pieces / Kg</div><div class="u"><div class="inp">20</div><span>ชิ้น</span></div></div>
+      <div class="f"><div class="l">Diameter</div><div class="u"><div class="inp">24</div><span>mm</span></div></div>
+      <div class="f"><div class="l">Weight / Piece</div><div class="u"><div class="inp">50</div><span>g.</span></div></div>
+      <div class="f"><div class="l">Length</div><div class="u"><div class="inp">15</div><span>cm ▾</span></div></div>
+      <div class="f"><div class="l">Storage / Shelf life</div><div class="u"><div class="inp" style="flex:0 0 92px">Frozen ▾</div><div class="inp">180</div><span>วัน</span></div></div>
+    </div>
+
+    <div class="sub note-new">4. ผลตรวจ COA ที่ลูกค้าต้องการ <span class="badge new">ใหม่</span></div>
+    <div class="coa">
+      <div class="h">หัวข้อ</div><div class="h">ทุก Lot</div><div class="h">1 ครั้ง/สัปดาห์</div><div class="h">1 ครั้ง/เดือน</div><div class="h">ไม่ต้องการผลตรวจ</div>
+      <div class="k">ด้านกายภาพ</div><div><i class="radio"></i></div><div><i class="radio"></i></div><div><i class="radio on"></i></div><div><i class="radio"></i></div>
+      <div class="k">ด้านเคมี (Lab ใน)</div><div><i class="radio"></i></div><div><i class="radio"></i></div><div><i class="radio on"></i></div><div><i class="radio"></i></div>
+      <div class="k">ด้านจุลินทรีย์ (Lab ใน)</div><div><i class="radio on"></i></div><div><i class="radio"></i></div><div><i class="radio"></i></div><div><i class="radio"></i></div>
+      <div class="k">รายปี (Lab นอก)</div><div><i class="radio on"></i> 1 ครั้ง/ปี</div><div><i class="radio"></i> ตรงตัวสินค้า</div><div><i class="radio"></i> ตัวแทนกลุ่ม</div><div><i class="radio"></i></div>
+    </div>
+
+    <div class="sub">5. รายละเอียดเพิ่มเติม · Draft Spec</div>
+    <div class="g" style="grid-template-columns:2fr 1fr">
+      <div class="f"><div class="l">Detail of Product — รายละเอียดเพิ่มเติม (รสชาติ เมนู คู่แข่ง เงื่อนไขพิเศษ)</div><div class="inp" style="min-height:52px">รสพริกไทยดำเข้ม ชีสเชดดาร์ละลายด้านใน ใช้ทำเมนูฮอทดอกที่ร้าน — ต้องการทดแทนสินค้ายี่ห้อเดิม (ราคา 195 บ./กก.) · ลูกค้าขอตรวจ % เกลือทุกเดือน</div></div>
+      <div class="f note-new"><div class="l">Draft Spec. ตัวอย่างสินค้า <span class="badge new">ใหม่</span></div>
+        <div class="chk"><span class="box on">✓</span>ต้องการ Draft Spec.</div><div class="chk"><span class="box"></span>ไม่ต้องการ Draft Spec.</div></div>
+    </div>
+    <div class="g" style="margin-top:9px">
+      <div class="f"><div class="l">สินค้าอ้างอิง (SKU เดิม) — ไม่ขึ้นใน PDF โรงงาน</div><div class="inp">10123-01 ไส้กรอกชีส 1 กก.</div></div>
+      <div class="f" style="grid-column:span 2"><div class="l">ยี่ห้อ/ราคาคู่แข่ง — ไม่ขึ้นใน PDF โรงงาน</div><div class="inp">ยี่ห้อ X 195 บ./กก.</div></div>
+    </div>
+    <div class="hint">⚠ หมายเหตุ: กรณีลูกค้ามีรายละเอียดเพิ่มเติม เช่น ตรวจผลจุลินทรีย์เฉพาะล็อตแรก, ต้องการตรวจ % เกลือทุกเดือน ระบุใน "รายละเอียดเพิ่มเติม" ให้ชัดเจน</div>
+   </div>
+   <div style="margin-top:8px"><span class="btn">+ เพิ่มรายการสินค้า</span></div>
+  </div>
+
+  <div class="sec"><div class="t">💰 GP / ค่าใช้จ่ายอื่นๆ <span style="font-size:11.5px;font-weight:400;color:var(--TX3)">(คงเดิม — ใช้ภายใน ไม่ขึ้นใน PDF โรงงาน)</span></div>
+    <div class="g"><div class="f"><div class="l">GP เป้าหมาย (%)</div><div class="inp">25</div></div></div></div>
+
+  <div class="btns"><span class="btn">ยกเลิก</span><span class="btn g">💾 บันทึกร่าง</span><span class="btn p">📤 ส่งขออนุมัติ</span></div>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <div class="ch"><div class="ct2" style="font-size:15px">🧪 บันทึกผลทดสอบ — ส่วน Testing Report ของฟอร์ม <span class="badge new">ใหม่</span></div></div>
+  <div class="g" style="grid-template-columns:repeat(4,1fr)">
+    <div class="f"><div class="l">Date — วันที่ทดสอบ *</div><div class="inp">28/10/2569</div></div>
+    <div class="f"><div class="l">ครั้งที่</div><div class="inp">1</div></div>
+    <div class="f"><div class="l">Sample Code</div><div class="inp">RD-6910-021</div></div>
+    <div class="f"><div class="l">Testing Result *</div><div class="chips"><span class="chip on">Pass</span><span class="chip">Not Pass</span><span class="chip">Others</span></div></div>
+    <div class="f" style="grid-column:span 2"><div class="l">Comment</div><div class="inp">ลูกค้าพอใจรสชาติ ขอลดความเค็มลงเล็กน้อย</div></div>
+    <div class="f"><div class="l">สั่งออร์เดอร์แรก วันที่</div><div class="inp">05/11/2569</div></div>
+    <div class="f"><div class="l">จำนวน (ขั้นต่ำ 40 กก.)</div><div class="u"><div class="inp">200</div><span>กก.</span></div></div>
+  </div>
+  <div style="font-size:12px;color:var(--TX3);margin-top:8px">ช่องเดิม (ความพึงพอใจ ★, การตัดสินใจของลูกค้า, เหตุผลไม่ผ่าน) ยังอยู่ครบ</div>
+</div>
+</body></html>

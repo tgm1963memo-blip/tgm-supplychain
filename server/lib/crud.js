@@ -34,6 +34,14 @@ function makeCrudRouter(db, table, options = {}) {
   const jsonFields = options.jsonFields || [];
   const router = express.Router();
 
+  // สิทธิ์การเห็นแถว (2026-10-06, lib/customerScope.js) — options.scope(req) คืน {sql, params} หรือ null (ไม่กรอง)
+  // AND เข้ากับเงื่อนไขของคำขอ ทั้ง GET (รวม count) / PATCH / DELETE — ผู้ใช้แก้/ลบแถวที่มองไม่เห็นไม่ได้
+  function scoped(req, w) {
+    const s = options.scope ? options.scope(req) : null;
+    if (!s) return w;
+    return { where: w.where ? `WHERE (${w.where.slice(6)}) AND ${s.sql}` : `WHERE ${s.sql}`, params: [...w.params, ...s.params] };
+  }
+
   function parseJsonFields(row) {
     if (!row) return row;
     for (const f of jsonFields) {
@@ -45,7 +53,7 @@ function makeCrudRouter(db, table, options = {}) {
   }
 
   router.get('/', (req, res) => {
-    const { where, params } = buildWhere(req.query, fields);
+    const { where, params } = scoped(req, buildWhere(req.query, fields));
     const orderClause = buildOrderBy(req.query, fields, options.orderBy || pk);
     const limit = Math.min(parseInt(req.query.limit, 10) || 5000, 20000);
     const offset = parseInt(req.query.offset, 10) || 0;
@@ -73,7 +81,7 @@ function makeCrudRouter(db, table, options = {}) {
   // same idiom routes/perms.js already applies by hand, generalized here for reuse.
   if (options.writeRoles) router.use(requireRole(...options.writeRoles));
 
-  function insertOne(body, upsert, onConflict) {
+  function insertOne(req, body, upsert, onConflict) {
     const row = { ...body };
     if (options.idPrefix && !row[pk]) row[pk] = genId(options.idPrefix);
     for (const col of touch) if (row[col] === undefined) row[col] = nowIso();
@@ -84,6 +92,17 @@ function makeCrudRouter(db, table, options = {}) {
     let sql = `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders})`;
     if (upsert) {
       const conflictCol = onConflict || pk;
+      // FIXED (2026-10-28, security review): onConflict มาจาก query string แล้วถูกต่อเข้า SQL ตรงๆ — รับเฉพาะคอลัมน์ที่รู้จัก
+      if (conflictCol !== pk && !fields.includes(conflictCol)) throw new Error(`invalid onConflict column: ${conflictCol}`);
+      // FIXED (2026-10-28, security review): upsert เขียนทับแถวเดิมโดยไม่ผ่าน scope — ผู้ใช้ที่ถูกจำกัดส่ง id ของแถวที่มองไม่เห็น
+      // (เช่น บรรทัดใบเคาะของคนอื่น) มาแล้วทับ/ย้ายเข้าเอกสารตัวเองได้ · แถวเดิมที่ชนต้องอยู่ในสิทธิ์ของผู้ใช้
+      const s = options.scope ? options.scope(req) : null;
+      if (s && row[conflictCol] !== undefined) {
+        const hit = db.prepare(`SELECT 1 FROM ${table} WHERE ${conflictCol} = ? LIMIT 1`).get(row[conflictCol]);
+        if (hit && !db.prepare(`SELECT 1 FROM ${table} WHERE ${conflictCol} = ? AND ${s.sql} LIMIT 1`).get(row[conflictCol], ...s.params)) {
+          throw new Error('ไม่มีสิทธิ์แก้ไขแถวนี้');
+        }
+      }
       const updateCols = cols.filter((c) => c !== conflictCol);
       sql += ` ON CONFLICT(${conflictCol}) DO UPDATE SET ${updateCols.map((c) => `${c} = excluded.${c}`).join(',')}`;
     }
@@ -110,7 +129,7 @@ function makeCrudRouter(db, table, options = {}) {
     const rowErrors = [];
     for (let i = 0; i < rows.length; i++) {
       try {
-        ids.push(insertOne(rows[i], upsert, onConflict));
+        ids.push(insertOne(req, rows[i], upsert, onConflict));
       } catch (e) {
         rowErrors.push({ index: i, error: e.message });
       }
@@ -135,9 +154,12 @@ function makeCrudRouter(db, table, options = {}) {
     res.status(rowErrors.length && !saved.length ? 400 : 201).json(isArray ? saved : saved[0]);
   });
 
+  // FIXED (2026-10-28, security review): ตรวจ "ต้องมี filter" ก่อนเติมเงื่อนไข scope — เดิม scope ทำให้มี WHERE เสมอ
+  // ผู้ใช้ที่ถูกจำกัดส่ง PATCH/DELETE ไม่มี filter = แก้/ลบทุกแถวในสิทธิ์ตัวเองแทนที่จะได้ 400
   router.patch('/', (req, res) => {
-    const { where, params } = buildWhere(req.query, fields);
-    if (!where) return res.status(400).json({ error: 'update requires at least one filter' });
+    const raw = buildWhere(req.query, fields);
+    if (!raw.where) return res.status(400).json({ error: 'update requires at least one filter' });
+    const { where, params } = scoped(req, raw);
     const body = { ...req.body };
     for (const col of touch) body[col] = nowIso();
     // FIXED (2026-09-13, /code-review): jsonFields values need the same JSON.stringify step
@@ -158,8 +180,9 @@ function makeCrudRouter(db, table, options = {}) {
   });
 
   router.delete('/', (req, res) => {
-    const { where, params } = buildWhere(req.query, fields);
-    if (!where) return res.status(400).json({ error: 'delete requires at least one filter' });
+    const raw = buildWhere(req.query, fields);
+    if (!raw.where) return res.status(400).json({ error: 'delete requires at least one filter' });
+    const { where, params } = scoped(req, raw);
     db.prepare(`DELETE FROM ${table} ${where}`).run(...params);
     res.status(204).end();
   });

@@ -91,6 +91,10 @@ function runMigrations(db) {
   // products.price_company (2026-09-23): which company's STMAS supplied standard_price — TSS keys its
   // prices in as net cost (ราคาทุนสุทธิ), so ใบเคาะราคา must reverse-calculate a selling price from it.
   addColumnIfMissing(db, 'products', 'price_company', 'price_company TEXT');
+  // products.created_date / first_movement_date (2026-10-22): อายุสินค้าสำหรับ "สินค้าใหม่" ใน tgm-wms ABC Analysis —
+  // created_date = STMAS.CREDAT, first_movement_date = วันแรกใน stock_movements_daily (ใช้เมื่อ CREDAT ว่าง)
+  addColumnIfMissing(db, 'products', 'created_date', 'created_date TEXT');
+  addColumnIfMissing(db, 'products', 'first_movement_date', 'first_movement_date TEXT');
 
   // stock_movements_wms_daily.return_qty/writeoff_qty: added 2026-08-17 — PM (customer returns) and
   // XX (waste/spoilage write-offs) used to fall through every WMS_*_PREFIXES bucket uncategorized and
@@ -353,6 +357,9 @@ function runMigrations(db) {
   // joining ARSHIP.DBF on CUSCOD+SHIPTO at sync time so tgm-wms can print the real delivery place.
   addColumnIfMissing(db, 'invoices', 'ship_to_code', 'ship_to_code TEXT');
   addColumnIfMissing(db, 'invoices', 'ship_to_address', 'ship_to_address TEXT');
+  // invoices.remark (2026-10-27, tgm-wms "แยกบิลตามสายส่ง"): หมายเหตุท้ายบิลจาก ARTRNRM.DBF — บิล OL (ออนไลน์)
+  // เก็บชื่อ/เบอร์/ที่อยู่ผู้รับไว้ที่นี่ ไม่มีใน ARSHIP
+  addColumnIfMissing(db, 'invoices', 'remark', 'remark TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_route_code ON invoices(route_code)');
   // Dashboard and Sales Overview read current-year aggregates by month and salesperson on every open.
   // Keep those reads index-backed so the single SQLite-backed API does not stall the UI as history grows.
@@ -377,6 +384,54 @@ function runMigrations(db) {
       created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       UNIQUE(snapshot_date, kind, sku_code)
     );
+  `);
+  // ห้อง SHOP3 ใช้ kind แบบมีคำนำหน้าห้อง (เช่น "SHOP3:net_no10") ในตารางเดียวกันนี้ — ไม่ต้องเพิ่มคอลัมน์
+
+  // ยอดสต็อก/ความเคลื่อนไหวของห้องสต็อกเพิ่มเติม (2026-10-22, SHOP3 = SHOP TGM RAMA III) — โครงเดียวกับ stock /
+  // stock_movements_daily / stock_movements_wms_daily ของ TSS บวกคอลัมน์ company · แยกตารางโดยตั้งใจ ไม่ให้ไปปนกับ
+  // ผู้อ่านตารางของ TSS ที่ไม่กรอง company (ดู EXTRA_STOCK_COMPANIES ใน jobs/importFromExpress.js)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS company_stock (
+      company      TEXT NOT NULL,
+      sku          TEXT NOT NULL,
+      warehouse    TEXT NOT NULL,
+      qty          REAL NOT NULL DEFAULT 0,
+      unit         TEXT NOT NULL DEFAULT 'กก.',
+      last_updated TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (company, sku, warehouse)
+    );
+    CREATE TABLE IF NOT EXISTS company_stock_movements_daily (
+      company          TEXT NOT NULL,
+      sku              TEXT NOT NULL,
+      warehouse        TEXT NOT NULL,
+      day              TEXT NOT NULL,
+      received_qty     REAL NOT NULL DEFAULT 0,
+      sold_qty         REAL NOT NULL DEFAULT 0,
+      converted_qty    REAL NOT NULL DEFAULT 0,
+      transferred_qty  REAL NOT NULL DEFAULT 0,
+      other_qty        REAL NOT NULL DEFAULT 0,
+      pm_qty           REAL NOT NULL DEFAULT 0,
+      wms_received_qty REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, sku, warehouse, day)
+    );
+    CREATE INDEX IF NOT EXISTS idx_company_stock_mov_day ON company_stock_movements_daily(company, day);
+    CREATE TABLE IF NOT EXISTS company_stock_movements_wms_daily (
+      company           TEXT NOT NULL,
+      sku               TEXT NOT NULL,
+      day               TEXT NOT NULL,
+      received_qty      REAL NOT NULL DEFAULT 0,
+      general_sale_qty  REAL NOT NULL DEFAULT 0,
+      consi_qty         REAL NOT NULL DEFAULT 0,
+      transfer_qty      REAL NOT NULL DEFAULT 0,
+      converted_qty     REAL NOT NULL DEFAULT 0,
+      reserved_qty      REAL NOT NULL DEFAULT 0,
+      return_qty        REAL NOT NULL DEFAULT 0,
+      writeoff_qty      REAL NOT NULL DEFAULT 0,
+      received_value    REAL NOT NULL DEFAULT 0,
+      dispatched_qty    REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, sku, day)
+    );
+    CREATE INDEX IF NOT EXISTS idx_company_stock_mov_wms_day ON company_stock_movements_wms_daily(company, day);
   `);
 
   // sc_users.slm_codes (2026-09-28): รหัสพนักงานขายใน Express (SLMCOD เช่น 101,110-1) ที่ผูกกับผู้ใช้ — คั่นด้วย ,
@@ -412,7 +467,595 @@ function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_promo_draft_logs_draft ON promo_draft_logs(draft_no, ts);
   `);
 
+  // หมวดลูกค้าสำหรับผู้บริหาร (2026-10-03) — ดู server/lib/execChannel.js · source 'manual' = คนตั้ง, 'auto' = ระบบเดา
+  addColumnIfMissing(db, 'customer_profiles', 'exec_channel', 'exec_channel TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'exec_channel_source', 'exec_channel_source TEXT');
+  // ยอดขายรายสินค้าต่อลูกค้า × เดือน จาก STCRD (2026-10-03) — invoice_sales_monthly (ARTRN) ไม่มีมิติสินค้า และ
+  // invoice_lines ไม่มีรหัสลูกค้า จึงคำนวณ KG ต่อลูกค้าใน Dashboard ไม่ได้ · qty = จำนวนตามหน่วยขาย (unit_code),
+  // qty_base = qty × TFACTOR (หน่วยสต็อก) — KG คิดตอน query จาก skus.weight_per_unit ของ WMS (routes/dashboardExec.js)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_lines_monthly (
+      company    TEXT NOT NULL,
+      ym         TEXT NOT NULL,
+      cust_code  TEXT NOT NULL,
+      slm_code   TEXT NOT NULL DEFAULT '',
+      sku        TEXT NOT NULL,
+      unit_code  TEXT NOT NULL DEFAULT '',
+      qty        REAL NOT NULL DEFAULT 0,
+      qty_base   REAL NOT NULL DEFAULT 0,
+      amount     REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, ym, cust_code, slm_code, sku, unit_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_lines_monthly_ym ON sales_lines_monthly(ym, company);
+    CREATE INDEX IF NOT EXISTS idx_sales_lines_monthly_cust ON sales_lines_monthly(cust_code);
+    CREATE TABLE IF NOT EXISTS sync_file_state (
+      source     TEXT PRIMARY KEY,
+      mtime_ms   REAL,
+      synced_at  TEXT
+    );
+  `);
+
+  // Bplus ของโรงงาน (2026-10-05) — jobs/importFromBplus.js · ลูกค้าแยกจาก customers (ตาราง mirror ของ Express)
+  // รหัสลูกค้า Bplus ใช้ชุดเดียวกับ Express (เช่น 30-NW-1001) จึงใช้ customer_profiles ร่วมกันได้ ตารางนี้เก็บแค่ชื่อ/ธง
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bplus_customers (
+      code            TEXT PRIMARY KEY,
+      name            TEXT,
+      bp_slm_code     TEXT,
+      is_intercompany INTEGER NOT NULL DEFAULT 0,
+      has_export      INTEGER NOT NULL DEFAULT 0,
+      updated_at      TEXT
+    );
+    CREATE TABLE IF NOT EXISTS bplus_skus (
+      code       TEXT PRIMARY KEY,
+      name       TEXT,
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS bplus_salesman_map (
+      bp_code    TEXT PRIMARY KEY,
+      bp_name    TEXT,
+      slm_code   TEXT,
+      updated_by TEXT,
+      updated_at TEXT
+    );
+  `);
+
+  // ของตัวอย่าง แยก สินค้าเดิม / สินค้าใหม่ (2026-10-05) — คำขอเดิมทั้งหมดเป็น 'existing'
+  // doc_no = เลขที่เอกสาร SE/SN<พ.ศ.>-<เดือน>-<ลำดับ> ออกโดย server ตอนส่งคำขอ (routes/sampleRequests.js)
+  // new_info = ส่วนหัวของคำขอสินค้าใหม่ (กลุ่มลูกค้า, GP เป้าหมาย, ค่าใช้จ่ายอื่นๆ) · rd_* = ขั้น R&D ของสินค้าใหม่
+  addColumnIfMissing(db, 'sample_requests', 'req_type', "req_type TEXT NOT NULL DEFAULT 'existing'");
+  addColumnIfMissing(db, 'sample_requests', 'doc_no', 'doc_no TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'new_info', 'new_info TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_accepted_by', 'rd_accepted_by TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_accepted_at', 'rd_accepted_at TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_done_by', 'rd_done_by TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_done_at', 'rd_done_at TEXT');
+  addColumnIfMissing(db, 'sample_requests', 'rd_note', 'rd_note TEXT');
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_requests_doc_no ON sample_requests(doc_no) WHERE doc_no IS NOT NULL;
+    -- ไฟล์แนบของคำขอตัวอย่าง (รูป/สเปค) — โครงเดียวกับ promo_draft_attachments
+    CREATE TABLE IF NOT EXISTS sample_request_attachments (
+      id          TEXT PRIMARY KEY,
+      request_id  TEXT NOT NULL,
+      filename    TEXT NOT NULL,
+      mime_type   TEXT NOT NULL,
+      content     BLOB NOT NULL,
+      note        TEXT,
+      uploaded_by TEXT,
+      created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sra_request ON sample_request_attachments(request_id);
+  `);
+
+  // ยอดขายรายสาขาห้องจาก "ห้อง SKU" ใน Express (2026-10-07) — jobs/importChainRooms.js · ไม่รวมยอดบริษัท ใช้แทนยอด DC
+  // ในมุมมองราย Sales เท่านั้น (lib/chainSales.js) · raw_slm = SLMCOD ในห้อง SKU (มักเป็นชื่อคน ใช้อ้างอิงเท่านั้น)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chain_sales_monthly (
+      chain TEXT NOT NULL, ym TEXT NOT NULL, cust_code TEXT NOT NULL, raw_slm TEXT NOT NULL DEFAULT '',
+      amount REAL NOT NULL DEFAULT 0, invoice_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (chain, ym, cust_code, raw_slm)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chain_sales_monthly_ym ON chain_sales_monthly(ym);
+    CREATE TABLE IF NOT EXISTS chain_sales_daily (
+      chain TEXT NOT NULL, d TEXT NOT NULL, cust_code TEXT NOT NULL, raw_slm TEXT NOT NULL DEFAULT '',
+      amount REAL NOT NULL DEFAULT 0, invoice_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (chain, d, cust_code, raw_slm)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chain_sales_daily_d ON chain_sales_daily(d);
+    CREATE TABLE IF NOT EXISTS chain_customers (
+      code TEXT PRIMARY KEY, chain TEXT NOT NULL, name TEXT, raw_slm TEXT, updated_at TEXT
+    );
+  `);
+
+  // รหัสพนักงานขายใน Bplus โรงงานของผู้ใช้ (2026-10-07) — "05,12" · นับเป็นรหัส Sales "BP-05" (lib/salesTeams.js codesOf)
+  addColumnIfMissing(db, 'sc_users', 'bplus_codes', 'bplus_codes TEXT');
+
+  // ใบเคาะโปรซ้อน (2026-10-06) — พักให้ Sales ยกเลิกโปรเก่าก่อนเดินขั้นถัดไป (lib/promoApproval.js holdPointHit)
+  addColumnIfMissing(db, 'promo_draft_headers', 'overlap_hold_json', 'overlap_hold_json TEXT');
+
+  // ยอดขายรายวัน (2026-10-06, Dashboard เลือกช่วงวันที่ได้) — คู่ขนานกับ invoice_sales_monthly / sales_lines_monthly
+  // (สร้างจากรอบอ่านไฟล์เดียวกันใน importFromExpress.js / importFromBplus.js) · d = YYYY-MM-DD วันที่เอกสาร
+  // ตารางรายเดือนยังเป็นแหล่งหลักของหน้าอื่นทั้งหมด — ตารางรายวันใช้เฉพาะเมื่อ Dashboard ขอช่วงแบบวันที่
+  const hadDailyLines = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sales_lines_daily'").get();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_sales_daily (
+      company        TEXT NOT NULL,
+      d              TEXT NOT NULL,
+      cust_code      TEXT NOT NULL,
+      slm_code       TEXT NOT NULL DEFAULT '',
+      amount         REAL NOT NULL DEFAULT 0,
+      invoice_count  INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, d, cust_code, slm_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_invoice_sales_daily_d ON invoice_sales_daily(d, company);
+    CREATE TABLE IF NOT EXISTS sales_lines_daily (
+      company    TEXT NOT NULL,
+      d          TEXT NOT NULL,
+      cust_code  TEXT NOT NULL,
+      slm_code   TEXT NOT NULL DEFAULT '',
+      sku        TEXT NOT NULL,
+      unit_code  TEXT NOT NULL DEFAULT '',
+      qty        REAL NOT NULL DEFAULT 0,
+      qty_base   REAL NOT NULL DEFAULT 0,
+      amount     REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (company, d, cust_code, slm_code, sku, unit_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_lines_daily_cust ON sales_lines_daily(cust_code, d);
+  `);
+  // ตารางรายวันเพิ่งสร้าง → ล้างสถานะไฟล์ STCRD / Bplus ให้รอบ sync ถัดไปอ่านใหม่ทั้งหมด (ปกติอ่านซ้ำเฉพาะเมื่อไฟล์เปลี่ยน)
+  // ไม่งั้นแฟ้มปีเก่าที่ไม่เปลี่ยนแล้ว (TSS-67/68) จะไม่มีวันถูกเขียนลงตารางรายวัน · ARTRN อ่านใหม่ทุกรอบอยู่แล้ว
+  if (!hadDailyLines) {
+    try { db.exec("DELETE FROM sync_file_state WHERE source LIKE '%/STCRD.DBF' OR source = 'bplus/TGM'"); } catch (_) { /* ตารางยังไม่มี = ยังไม่เคย sync */ }
+  }
+
   require('./customerProfileRollups').migrateCustomerProfileRollups(db);
+
+  // ประเภทธุรกิจลูกค้า (2026-10-07) — ดู server/lib/businessType.js · source 'manual' = คนตั้ง, 'auto' = ระบบเดา
+  addColumnIfMissing(db, 'customer_profiles', 'business_type', 'business_type TEXT');
+  // ชื่อสาขาจากที่อยู่ ARMAS (2026-10-12) — jobs/importFromExpress.js branchFromArmas
+  addColumnIfMissing(db, 'customers', 'addr_branch', 'addr_branch TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'business_type_source', 'business_type_source TEXT');
+  // ตัด FK customers ออก (ลูกค้า Bplus บันทึกกลุ่มได้) + จัดกลุ่มลูกค้าที่ยังไม่ระบุ + เดาประเภทธุรกิจครั้งแรก
+  require('./customerProfilesV2').migrateCustomerProfilesV2(db);
+  // กลุ่มลูกค้าฝั่ง Sales (2026-10-12) — แยกจากของผู้บริหาร (corporate/category/exec_channel)
+  addColumnIfMissing(db, 'customer_profiles', 'sales_category', 'sales_category TEXT');
+  // เลขาสร้างใบเคาะแทน (2026-10-12) — created_by = เจ้าของ (Sales) · created_by_actual = ผู้กดสร้างจริง (เลขา)
+  addColumnIfMissing(db, 'promo_draft_headers', 'created_by_actual', 'created_by_actual TEXT');
+  // ใบกำกับรายเอกสารจาก Bplus โรงงาน (2026-10-12) — jobs/importFromBplus.js · ใช้ใน /api/invoice_detail (Sales Overview)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bplus_invoices (
+      doc_key TEXT PRIMARY KEY, doc_num TEXT, doc_date TEXT, cust_code TEXT, slm_code TEXT, company TEXT, doc_code TEXT,
+      is_cn INTEGER NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0, vat_amount REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_bplus_invoices_cust ON bplus_invoices(cust_code, doc_date);
+    CREATE TABLE IF NOT EXISTS bplus_invoice_lines (
+      doc_key TEXT NOT NULL, sku TEXT, unit_code TEXT, qty REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_bplus_invoice_lines_doc ON bplus_invoice_lines(doc_key);
+  `);
+  addColumnIfMissing(db, 'customer_profiles', 'sales_group', 'sales_group TEXT');
+  addColumnIfMissing(db, 'customer_profiles', 'sales_group_by', 'sales_group_by TEXT');
+  require('./customerProfilesV2').applySalesGroups20261012(db);
+  require('./customerProfilesV2').applySalesGroupsFix20261014(db);
+  require('./customerProfilesV2').applyMinorGroup20261014(db);
+  require('./customerProfilesV2').applySalesCategoryFill20261014(db);
+  require('./customerProfilesV2').applyMinorSalesGroup20261014(db);
+  require('./customerProfilesV2').applySalesCategoryGroup20261014(db);
+  require('./customerProfilesV2').applySalesCategoryManual20261014(db);
+  require('./customerProfilesV2').applySalesCategoryFill2_20261014(db);
+  require('./customerProfilesV2').applySalesGroupsFix20261019(db);
+  // หัวใบกำกับย้อนหลัง (2026-10-19) — jobs/importFromExpress.js syncInvoices เติมตั้งแต่ 2024-01 (invoices เก็บแค่ 90 วันให้ tgm-wms)
+  // v_invoice_heads = invoices (ล่าสุด, มาก่อน) + invoice_heads ที่ไม่ซ้ำ → routes/invoiceDetail.js ใช้ JOIN กับ invoice_lines
+  db.exec(`CREATE TABLE IF NOT EXISTS invoice_heads (
+    doc_num TEXT PRIMARY KEY, doc_date TEXT NOT NULL, cust_code TEXT, slm_code TEXT, so_num TEXT, total REAL, rectyp TEXT)`);
+  // company (2026-10-20, code review): ลบหัวใบที่ยกเลิกใน Express ได้เฉพาะบริษัทที่อ่าน ARTRN สำเร็จรอบนั้น (jobs/importFromExpress.js)
+  if (!db.prepare('PRAGMA table_info(invoice_heads)').all().some(c => c.name === 'company')) db.exec('ALTER TABLE invoice_heads ADD COLUMN company TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_heads_date ON invoice_heads(doc_date)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_heads_cust ON invoice_heads(cust_code, doc_date)');
+  db.exec('DROP VIEW IF EXISTS v_invoice_heads'); // สร้างใหม่ทุกครั้ง ให้นิยามล่าสุดถึงฐานข้อมูลที่ deploy แล้ว (code review)
+  // slm_code = เจ้าของยอดที่กำหนดรายลูกค้า (sales_slm_override, 2026-10-20 — lib/slmOverride.js) ไม่มี = รหัสในใบ
+  // ตาราง invoices เองไม่แตะ (tgm-wms ใช้รหัสในใบจริง) — view นี้ใช้เฉพาะหน้ายอดขาย (routes/invoiceDetail.js)
+  db.exec(`CREATE TABLE IF NOT EXISTS sales_slm_override (
+    cust_code TEXT PRIMARY KEY, slm_code TEXT NOT NULL, note TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))`);
+  // (subquery ต่อแถวแทนการห่อ UNION ALL ด้วย JOIN — ให้เงื่อนไขวันที่ยังกดลงไปใช้ index ของแต่ละตารางได้)
+  db.exec(`CREATE VIEW v_invoice_heads AS
+    SELECT v.doc_num, v.doc_date, v.cust_code, COALESCE((SELECT o.slm_code FROM sales_slm_override o WHERE o.cust_code = v.cust_code), v.slm_code) AS slm_code,
+      v.so_num, v.total, v.rectyp FROM invoices v
+    UNION ALL
+    SELECT h.doc_num, h.doc_date, h.cust_code, COALESCE((SELECT o.slm_code FROM sales_slm_override o WHERE o.cust_code = h.cust_code), h.slm_code) AS slm_code,
+      h.so_num, h.total, h.rectyp FROM invoice_heads h
+    WHERE NOT EXISTS (SELECT 1 FROM invoices i WHERE i.doc_num = h.doc_num)`);
+
+  // รายการสินค้าจริงของใบสรุปยอด Bplus รหัส 0000 (2026-10-14) — Bplus บันทึกใบ Makro (A M) / EA เป็นบรรทัดเดียว
+  // "ยอดขายสินค้ารหัส TG" ไม่มีสินค้า แต่ Express โฟลเดอร์ TGM (STCRD เอกสาร AM/EA) มีรายการสินค้าของบิลชุดเดียวกัน
+  // ใช้คำนวณ KG เท่านั้น — ไม่นับเป็นยอดขาย (ยอดขายยังมาจาก Bplus ตาม yearSources) · importFromExpress.syncTgmDetailLines
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tgm_detail_lines_daily (
+      d          TEXT NOT NULL,
+      cust_code  TEXT NOT NULL,
+      sku        TEXT NOT NULL,
+      unit_code  TEXT NOT NULL DEFAULT '',
+      qty        REAL NOT NULL DEFAULT 0,
+      qty_base   REAL NOT NULL DEFAULT 0,
+      amount     REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (d, cust_code, sku, unit_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tgm_detail_lines_cust ON tgm_detail_lines_daily(cust_code, d);
+  `);
+
+  // ใบเสนอราคา รอบ 1 (2026-10-07) — ราคากลางฐาน A–G + ประวัติการแก้ (คำอธิบายเต็มดู schema.sql)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS price_tiers (
+      code TEXT PRIMARY KEY, name_th TEXT, name_en TEXT, unit TEXT,
+      price_a REAL, price_b REAL, price_c REAL, price_d REAL, price_e REAL, price_f REAL, price_g REAL,
+      is_active INTEGER NOT NULL DEFAULT 1, note TEXT, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS price_tier_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, field TEXT NOT NULL,
+      old_value TEXT, new_value TEXT, source TEXT NOT NULL, batch_id TEXT, by_uid TEXT,
+      at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_price_tier_logs_code ON price_tier_logs(code, at);
+  `);
+  // ฐานราคาต่ำสุดที่ผู้ใช้เสนอเองได้โดยไม่ต้องขออนุมัติ (2026-10-07, ผู้ใช้ยืนยัน: ปกติ Sales ใช้ได้ E F G
+  // แต่บางคนเริ่มที่ D ได้ — ตั้งรายคน) · ต่ำกว่าฐานนี้ = ใบเสนอราคาต้องขออนุมัติ (ใช้ในรอบ 3)
+  addColumnIfMissing(db, 'sc_users', 'min_price_tier', "min_price_tier TEXT NOT NULL DEFAULT 'E'");
+  // ใบเสนอราคา รอบ 2 (2026-10-08) — หัวเอกสาร / บรรทัดสินค้า / log (คำอธิบายเต็มดู schema.sql)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS quotation_headers (
+      id TEXT PRIMARY KEY, doc_no TEXT UNIQUE, doc_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
+      customer_code TEXT, customer_name TEXT NOT NULL, attn TEXT, tel TEXT, email TEXT,
+      price_tier TEXT NOT NULL, sales_name TEXT, from_text TEXT, remarks_json TEXT, signer_json TEXT, note TEXT,
+      created_by TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      issued_at TEXT, cancelled_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS quotation_lines (
+      header_id TEXT NOT NULL, seq INTEGER NOT NULL, product_code TEXT NOT NULL,
+      name_th TEXT, name_en TEXT, unit TEXT, base_price REAL, quoted_price REAL NOT NULL,
+      price_source TEXT NOT NULL DEFAULT 'tier', tier_used TEXT, needs_approval INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (header_id, seq)
+    );
+    CREATE TABLE IF NOT EXISTS quotation_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, header_id TEXT NOT NULL, action TEXT NOT NULL, detail TEXT,
+      by_uid TEXT, at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_quotation_headers_by ON quotation_headers(created_by, doc_date);
+    CREATE INDEX IF NOT EXISTS idx_quotation_logs_h ON quotation_logs(header_id, at);
+  `);
+  // ใบเสนอราคา รอบ 3 (2026-10-09): ขออนุมัติราคาต่ำกว่าสิทธิ์ + ราคาพิเศษประจำลูกค้า (ดู schema.sql / routes/quotationHeaders.js)
+  addColumnIfMissing(db, 'quotation_headers', 'approver_uid', 'approver_uid TEXT');
+  addColumnIfMissing(db, 'quotation_headers', 'submitted_at', 'submitted_at TEXT');
+  addColumnIfMissing(db, 'quotation_headers', 'approved_by', 'approved_by TEXT');
+  addColumnIfMissing(db, 'quotation_headers', 'approved_at', 'approved_at TEXT');
+  addColumnIfMissing(db, 'quotation_headers', 'reject_reason', 'reject_reason TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_special_prices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, cust_key TEXT NOT NULL, customer_code TEXT, customer_name TEXT,
+      product_code TEXT NOT NULL, price REAL NOT NULL, source_quotation_id TEXT, approved_by TEXT, approved_at TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE (cust_key, product_code)
+    );
+  `);
+
+  // conversion_doc_lines (2026-10-08): เอกสารแปลงสินค้า FF จาก STCRD รายบรรทัด — tgm-wms ใช้ตรวจเลข FF
+  // ในใบสั่งแปลง (มีจริงไหม / จำนวนตรงไหม) · direction: out = วัตถุดิบ, in = ผลผลิต · เขียนใหม่ทุกรอบ sync
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversion_doc_lines (
+      doc_num    TEXT NOT NULL,
+      seq_num    TEXT NOT NULL DEFAULT '',
+      doc_date   TEXT,
+      sku        TEXT NOT NULL,
+      sku_name   TEXT,
+      warehouse  TEXT NOT NULL DEFAULT '',
+      direction  TEXT NOT NULL,
+      qty        REAL NOT NULL DEFAULT 0,
+      unit_code  TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (doc_num, seq_num, sku, warehouse, direction)
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversion_doc_lines_doc ON conversion_doc_lines(doc_num);
+  `);
+
+  // ทุนสินค้า + ราคาหมูหน้าฟาร์ม (2026-10-22, พิจารณาอนุมัติโปร เฟส 1) — routes/promoCosts.js · lib/promoCost.js
+  // sku_costs: ทุนต่อหน่วยขาย (ex-VAT) รายเดือนจากไฟล์ Excel ฝ่ายต้นทุน · pork_pct = สัดส่วนเนื้อหมูในทุน (0–1, ว่าง = ยังไม่รู้)
+  // pig_prices: ราคาหมูหน้าฟาร์ม บาท/กก. รายเดือน แยก actual / forecast · promo_eval_settings: เกณฑ์ G1–G5 + พารามิเตอร์ baseline
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sku_costs (
+      sku        TEXT NOT NULL,
+      month      TEXT NOT NULL,
+      cost       REAL NOT NULL,
+      unit       TEXT,
+      pork_pct   REAL,
+      upload_id  TEXT,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (sku, month)
+    );
+    CREATE TABLE IF NOT EXISTS sku_cost_uploads (
+      id          TEXT PRIMARY KEY,
+      file_name   TEXT,
+      month       TEXT NOT NULL,
+      created     INTEGER NOT NULL DEFAULT 0,
+      updated     INTEGER NOT NULL DEFAULT 0,
+      uploaded_by TEXT,
+      uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS sku_cost_logs (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      sku       TEXT NOT NULL,
+      month     TEXT NOT NULL,
+      field     TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      upload_id TEXT,
+      by_uid    TEXT,
+      at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sku_cost_logs_sku ON sku_cost_logs(sku, month);
+    CREATE TABLE IF NOT EXISTS pig_prices (
+      month        TEXT NOT NULL,
+      kind         TEXT NOT NULL CHECK (kind IN ('actual', 'forecast')),
+      price_per_kg REAL NOT NULL,
+      note         TEXT,
+      updated_by   TEXT,
+      updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (month, kind)
+    );
+    CREATE TABLE IF NOT EXISTS pig_price_logs (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      month     TEXT NOT NULL,
+      kind      TEXT NOT NULL,
+      old_value REAL,
+      new_value REAL,
+      by_uid    TEXT,
+      at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS promo_eval_settings (
+      key        TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    -- เฟส 2 (2026-10-27, lib/promoEval.js): ผลวิเคราะห์ ณ ตอนส่งอนุมัติแต่ละรอบ
+    CREATE TABLE IF NOT EXISTS promo_eval_snapshots (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      draft_no     TEXT NOT NULL,
+      created_by   TEXT,
+      created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      payload_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_promo_eval_snapshots_draft ON promo_eval_snapshots(draft_no, id);
+  `);
+
+  // ทุน 3 ช่องจากไฟล์ Master SKU + สิทธิ์เห็นทุน/กำไรรายคน (2026-11-16) — routes/costRounds.js · lib/skuCost.js
+  // sku_cost_rounds: ทุน "ต่อหน่วยนับในไฟล์" (ช่อง D เช่น แพ็คx500 = ต่อแพ็ค ไม่ใช่ต่อกก. แม้หัวคอลัมน์จะเขียนว่าต่อกก.)
+  //   cost_base = ช่อง F ขั้นต้น DL+OH · cost_depr = ช่อง G รวมค่าเสื่อม · cost_total = ช่อง H ทุนรวม (ใช้คิดกำไรหลัก)
+  //   eff_date = วันที่เริ่มมีผล (ผู้ใช้ยืนยัน 2026-11-13: ไฟล์มาเป็นรอบสัปดาห์ ยอดขายแต่ละวันใช้ทุนล่าสุดที่มีผล ณ วันนั้น)
+  //   เก็บเฉพาะแถวที่ค่าเปลี่ยนจากรอบที่มีผลอยู่ — SKU ที่ไม่อยู่ในไฟล์รอบใหม่ใช้ทุนรอบก่อนต่อไป
+  //   suspect = 1: ทุนรวมต่ำกว่าครึ่งของทุนเก่า (ช่อง E) น่าจะยังไม่รวมวัตถุดิบ — นำเข้าได้แต่ติดป้ายรอยืนยัน
+  // แยกจาก sku_costs (ทุนรายเดือนของงานพิจารณาโปร) โดยตั้งใจ — งานโปรยังอ่าน sku_costs ตามเดิม ไม่ถูกกระทบ
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sku_cost_rounds (
+      sku           TEXT NOT NULL,
+      eff_date      TEXT NOT NULL,
+      cost_base     REAL,
+      cost_depr     REAL,
+      cost_total    REAL NOT NULL,
+      unit          TEXT,
+      unit_raw      TEXT,
+      unit_grams    REAL,
+      product_group TEXT,
+      std_group     TEXT,
+      status        TEXT,
+      suspect       INTEGER NOT NULL DEFAULT 0,
+      upload_id     TEXT,
+      updated_by    TEXT,
+      updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (sku, eff_date)
+    );
+    CREATE TABLE IF NOT EXISTS sku_cost_round_uploads (
+      id          TEXT PRIMARY KEY,
+      file_name   TEXT,
+      eff_date    TEXT NOT NULL,
+      rm_label    TEXT,
+      created     INTEGER NOT NULL DEFAULT 0,
+      updated     INTEGER NOT NULL DEFAULT 0,
+      unchanged   INTEGER NOT NULL DEFAULT 0,
+      held        INTEGER NOT NULL DEFAULT 0,
+      uploaded_by TEXT,
+      uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS sku_cost_round_logs (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      sku       TEXT NOT NULL,
+      eff_date  TEXT NOT NULL,
+      field     TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      upload_id TEXT,
+      by_uid    TEXT,
+      at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sku_cost_round_logs_sku ON sku_cost_round_logs(sku, eff_date);
+  `);
+  // สิทธิ์เห็นทุน/อัตรากำไร (ผู้ใช้ยืนยัน 2026-11-13: ติ๊กรายคนในหน้าจัดการผู้ใช้ · superadmin เห็นเสมอ) — ดู lib/skuCost.js canSeeCost
+  addColumnIfMissing(db, 'sc_users', 'can_see_cost', 'can_see_cost INTEGER NOT NULL DEFAULT 0');
+
+  // กำหนด Sales เจ้าของยอดรายลูกค้า (2026-10-20, lib/slmOverride.js) — ตั้งต้น: Tops เซ็นทรัล ฟู้ด รีเทล 30-LC-0013/0014
+  // ใบออกในชื่อคุณปู (106) แต่ผู้ใช้สั่งย้ายไปเป็นของ 207 (ห้าง-เมย์) · INSERT OR IGNORE = ไม่ทับค่าที่แก้ภายหลัง
+  // (ตารางสร้างไว้แล้วก่อน v_invoice_heads ด้านบน)
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261020_slm_override_tops_lc'").get()) {
+    const ins = db.prepare('INSERT OR IGNORE INTO sales_slm_override (cust_code, slm_code, note) VALUES (?, ?, ?)');
+    for (const c of ['30-LC-0013', '30-LC-0014']) ins.run(c, '207', 'Tops เซ็นทรัล ฟู้ด รีเทล — ย้ายจากคุณปู (106) ไป 207 ตามที่ผู้ใช้สั่ง 2026-10-20');
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261020_slm_override_tops_lc')").run();
+  }
+  // ลูกค้าส่งออก (Bplus โรงงาน TGM) ทั้งหมดเป็นของคุณอุ้ม 114 (2026-10-22, ผู้ใช้สั่ง — ไฟล์ "ยอดขายลูกค้าต่างประเทศ เดือน 1-9.69
+  // ส่ง 08.10.69.xlsx") · ใน Bplus ส่วนใหญ่อยู่ใต้ "0 ขายเอง" (BP-0) บางตัวใต้ 05/06 จุฑารัตน์ · ม.ค.–ก.ย. 69 รวม 70.48 ล้าน
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261022_slm_override_export_oum'").get()) {
+    const ins = db.prepare('INSERT OR IGNORE INTO sales_slm_override (cust_code, slm_code, note) VALUES (?, ?, ?)');
+    for (const c of ['TOA-01-QC', 'LSH-01-PC', 'NE-01-QC', 'REX-01-QC', 'PAN-01-QC', 'CNC-01-QC', 'PIT-01-QC', 'SAN',
+      'PNP-01-PC', 'PIT-01-PC', 'CNC-01-PC', 'KCG-01-QC']) ins.run(c, '114', 'ลูกค้าส่งออก — เป็นของคุณอุ้ม (114) ตามที่ผู้ใช้สั่ง 2026-10-22');
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261022_slm_override_export_oum')").run();
+  }
+  // VILAVONG MANYKEO 01-KF-0002 (บิลไม่มี VAT) เป็นของคุณเป็ด 108 (2026-10-27, ผู้ใช้ยืนยันตอนเทียบไฟล์ "ยอดกันยายน 69.xlsx")
+  // ใบใน Express ลงรหัส 114 (คุณอุ้ม) ตั้งแต่ ก.พ. 2025 · ม.ค.–มิ.ย. 69 รวม 1.29 ล้าน
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261027_slm_override_vilavong_ped'").get()) {
+    db.prepare('INSERT OR IGNORE INTO sales_slm_override (cust_code, slm_code, note) VALUES (?, ?, ?)')
+      .run('01-KF-0002', '108', 'VILAVONG MANYKEO — เป็นของคุณเป็ด (108) ไม่ใช่ 114 ตามที่ผู้ใช้สั่ง 2026-10-27');
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261027_slm_override_vilavong_ped')").run();
+  }
+  // เจ้าของยอดรายสินค้า (2026-10-27, lib/slmOverride.js effectiveSlmSku) — Tops 30-LC-0013/0014 ทั้งลูกค้าเป็นของ 207
+  // แต่สินค้าเบเกอรี่เป็นของคุณลักษณา 106 (ผู้ใช้สั่ง): 10008 แซนวิสแฮม TOPS (เบเกอรี่) + 20283-27 สโมคเบค่อน 6 นิ้ว
+  // + TG0010 โรสต์แฮม 80ก. (สองตัวหลังขายให้ลูกค้ากลุ่มเบเกอรี่ด้วย) · ม.ค.–ก.ย. 69 รวมราว 0.21 ล้าน
+  db.exec(`CREATE TABLE IF NOT EXISTS sales_slm_sku_override (
+    cust_code TEXT NOT NULL, sku TEXT NOT NULL, slm_code TEXT NOT NULL, note TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (cust_code, sku))`);
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261027_slm_sku_override_tops_bakery'").get()) {
+    const ins = db.prepare('INSERT OR IGNORE INTO sales_slm_sku_override (cust_code, sku, slm_code, note) VALUES (?, ?, ?, ?)');
+    for (const c of ['30-LC-0013', '30-LC-0014']) {
+      for (const sku of ['10008', '20283-27', 'TG0010']) ins.run(c, sku, '106', 'Tops LC — สินค้าเบเกอรี่เป็นของคุณลักษณา (106) ตามที่ผู้ใช้สั่ง 2026-10-27');
+    }
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261027_slm_sku_override_tops_bakery')").run();
+  }
+  // ประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม จาก Express (2026-11-05) — jobs/importSampleIssues.js, lib/sampleIssues.js, routes/sampleIssues.js
+  // sample_issue_lines สร้างใหม่ทั้งปีทุกรอบที่ไฟล์เปลี่ยน · เจ้าของที่ผู้จัดการระบุ/ตารางจับคู่ผู้เบิกอยู่คนละตาราง (ไม่หายตอน sync)
+  // เจ้าของจริง = ที่ผู้จัดการระบุ → ใบ LA: ตารางจับคู่ผู้เบิก → รหัสในใบ/อ่านจากหมายเหตุ (ดู v_sample_issue_lines)
+  // คีย์ต้องมีคลัง (LOCCOD) — ใบเดียวกันอาจเบิกสินค้าเดียวกันจากหลายคลังในลำดับเดียวกัน (code review 2026-11-05)
+  // ตารางรูปแบบเก่า (ไม่มี loc_code) สร้างใหม่ได้เลย: ข้อมูลดึงใหม่จาก Express ทั้งปีในรอบ sync ถัดไป
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sample_issue_lines'").get() && !columnExists(db, 'sample_issue_lines', 'loc_code')) {
+    db.exec('DROP VIEW IF EXISTS v_sample_issue_lines; DROP TABLE sample_issue_lines;');
+    try { db.prepare("DELETE FROM sync_file_state WHERE source LIKE '%#sample_issues'").run(); } catch { /* ยังไม่มีตาราง */ }
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sample_issue_lines (
+      company TEXT NOT NULL, doc_num TEXT NOT NULL, seq TEXT NOT NULL, doc_date TEXT NOT NULL,
+      prefix TEXT NOT NULL, kind TEXT NOT NULL, sku TEXT NOT NULL, loc_code TEXT NOT NULL DEFAULT '', sku_name TEXT, qty REAL NOT NULL DEFAULT 0, unit TEXT,
+      cost_value REAL NOT NULL DEFAULT 0, sell_value REAL,
+      cust_code TEXT NOT NULL DEFAULT '', cust_name TEXT, slm_code TEXT NOT NULL DEFAULT '', dept_code TEXT, remark TEXT,
+      owner_src TEXT NOT NULL DEFAULT 'none',
+      PRIMARY KEY (company, doc_num, seq, sku, loc_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sample_issue_lines_date ON sample_issue_lines(doc_date);
+    CREATE INDEX IF NOT EXISTS idx_sample_issue_lines_doc ON sample_issue_lines(doc_num);
+    CREATE TABLE IF NOT EXISTS sample_person_slm_map (
+      people_code TEXT PRIMARY KEY, slm_code TEXT NOT NULL, note TEXT, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS sample_issue_owner_override (
+      doc_num TEXT PRIMARY KEY, slm_code TEXT NOT NULL DEFAULT '', cust_name TEXT, note TEXT, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    DROP VIEW IF EXISTS v_sample_issue_lines;
+    CREATE VIEW v_sample_issue_lines AS
+      SELECT l.*,
+        COALESCE(NULLIF(o.slm_code, ''), CASE WHEN l.prefix = 'LA' THEN pm.slm_code END, NULLIF(l.slm_code, ''), '') AS owner_slm,
+        CASE WHEN NULLIF(o.slm_code, '') IS NOT NULL THEN 'manual'
+             WHEN l.prefix = 'LA' THEN CASE WHEN pm.slm_code IS NOT NULL THEN 'person' ELSE 'none' END
+             ELSE l.owner_src END AS owner_from,
+        COALESCE(NULLIF(o.cust_name, ''), l.cust_name) AS owner_cust_name
+      FROM sample_issue_lines l
+      LEFT JOIN sample_issue_owner_override o ON o.doc_num = l.doc_num
+      LEFT JOIN sample_person_slm_map pm ON pm.people_code = l.cust_code;
+  `);
+  // รหัสลูกค้าในระบบที่จับได้จากหมายเหตุใบเบิก (2026-11-05, lib/sampleIssues.js matchCustomer) — ใช้จัดกลุ่ม/แสดงชื่อเท่านั้น
+  // ไม่ใช้กำหนดสิทธิ์ (factSql ยังดู cust_code/owner_slm เดิม) · view ใช้ l.* จึงเห็นคอลัมน์นี้เอง
+  addColumnIfMissing(db, 'sample_issue_lines', 'cust_match', "cust_match TEXT NOT NULL DEFAULT ''");
+  // ผู้เบิกใบ LA (รหัสพนักงาน 01-IH-xxxx ใน TSS-NV) → รหัสเซลส์ จับคู่จากชื่อในบัญชีผู้ใช้ (2026-11-05) · แก้ต่อได้ในหน้า "รอระบุเจ้าของ"
+  if (!db.prepare("SELECT 1 FROM app_migrations WHERE id = '20261105_sample_person_map'").get()) {
+    const ins = db.prepare("INSERT OR IGNORE INTO sample_person_slm_map (people_code, slm_code, note, updated_by) VALUES (?, ?, ?, 'system')");
+    for (const [code, slm, who] of [
+      ['01-IH-0060', '106', 'ลักษณา'], ['01-IH-0038', '110-1', 'ธีระพล (ไกด์)'], ['01-IH-0097', '114', 'สรณ์ศจี (คุณอุ้ม)'],
+      ['01-IH-0058', '105', 'สุนทรี (แด้)'], ['01-IH-0044', '103', 'ขนิษฐา (คุณฐา)'], ['01-IH-0096', '113', 'นภัสสร (เน)'],
+      ['01-IH-0063', '107', 'เอกพงศ์ (แมน)'], ['01-IH-0056', '104', 'วีรวุฒิ (เอ้)'], ['01-IH-0095', '112', 'สรัลนุช (เซล)'],
+      ['01-IH-0083', '202', 'ดวงใจ'], ['01-IH-0010', '108', 'ปรัชญา (คุณเป็ด)'], ['01-IH-0066', '111', 'ณุวภา (หลิน)'],
+    ]) ins.run(code, slm, `จับคู่จากชื่อผู้ใช้ — ${who}`);
+    db.prepare("INSERT INTO app_migrations(id) VALUES ('20261105_sample_person_map')").run();
+  }
+  require('./customerProfilesV2').applyMeatSupplyCounted20261104(db);
+  require('./customerProfilesV2').applySalesCategoryFix20261105(db);
+  require('./customerProfilesV2').applySalesGroupsPoo20261105(db);
+  require('./customerProfilesV2').applyModernTrade20261106(db);
+
+  // ตัวเลขของ v_sc_data_confidence ยังไม่เคยนับ (ฐานข้อมูลเดิมก่อน 2026-10-20 / ฐานใหม่) → นับครั้งแรกตอนเปิด server
+  // ไม่งั้น Dashboard ขึ้นค่าว่างจนจบรอบ sync ถัดไป · หลังจากนี้นับตอนจบทุกรอบ sync (lib/dataCounts.js)
+  if (!db.prepare('SELECT 1 FROM sc_data_counts WHERE id = 1').get()) require('../lib/dataCounts').refreshDataCounts(db);
+
+  // รายงาน LINE รายสัปดาห์ (2026-11-13, lib/lineMessaging.js): กลุ่ม/ห้องไลน์ที่บอทถูกเชิญเข้า (บันทึกจาก webhook event join)
+  // active = ส่งรายงานเข้ากลุ่มนี้ · line_report_runs = ประวัติการส่ง + token ของรูป (URL สาธารณะที่ LINE ดึงรูป)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS line_targets (
+      target_id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'group',
+      name TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 0,
+      joined_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      left_at TEXT,
+      updated_by TEXT,
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS line_report_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_from TEXT NOT NULL,
+      period_to TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      trigger TEXT NOT NULL,
+      targets TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL,
+      error TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+  `);
+
+  // Tops เบเกอรี่ (KK = 30-TA/TB/TF) + Saladbar (AA = 30-TD) ไม่แทนด้วยยอดสาขา (2026-10-20, ผู้ใช้แจ้ง "คุณปูยังขาดข้อมูลการขายของ TOP")
+  // — ตั้งครั้งเดียวเมื่อยังไม่เคยตั้ง keep_skus · หลังจากนี้แก้ได้ในหน้า Master (lib/chainSales.js)
+  const chainRow = db.prepare("SELECT levels_json FROM approval_workflow_templates WHERE entity_type = 'chain_sales_map'").get();
+  if (chainRow) {
+    let v = null;
+    try { v = JSON.parse(chainRow.levels_json); } catch { v = null; }
+    if (v?.chains?.TOPS && !Array.isArray(v.chains.TOPS.keep_skus)) {
+      v.chains.TOPS.keep_skus = ['KK', 'AA'];
+      db.prepare("UPDATE approval_workflow_templates SET levels_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE entity_type = 'chain_sales_map'")
+        .run(JSON.stringify(v));
+    }
+  }
+
+  // ใบเคาะราคา การตลาด (ออนไลน์) — 2026-11-23 (routes/mktPromoDocs.js) · เนื้อหาเอกสารเก็บ body_json ก้อนเดียว
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mkt_promo_docs (
+      id TEXT PRIMARY KEY, doc_no TEXT UNIQUE, promo_no TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft',
+      doc_date TEXT NOT NULL, customer_code TEXT NOT NULL, customer_name TEXT, gp REAL NOT NULL DEFAULT 0,
+      title TEXT NOT NULL, purpose TEXT, route_id TEXT, body_json TEXT NOT NULL DEFAULT '{}',
+      cc_json TEXT NOT NULL DEFAULT '[]', cc_owner INTEGER NOT NULL DEFAULT 1, cc_sent_at TEXT, cc_sent_note TEXT,
+      levels_json TEXT NOT NULL DEFAULT '[]', cur_level INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL, created_by_name TEXT, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      submitted_at TEXT, approved_at TEXT, reject_reason TEXT, cancelled_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS mkt_promo_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id TEXT NOT NULL, action TEXT NOT NULL, detail TEXT,
+      by_uid TEXT, at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS mkt_promo_attachments (
+      id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, label TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL,
+      content BLOB NOT NULL, uploaded_by TEXT, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS mkt_promo_routes (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, levels_json TEXT NOT NULL DEFAULT '[]', cc_json TEXT NOT NULL DEFAULT '[]',
+      sort INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_mkt_promo_docs_by ON mkt_promo_docs(created_by, created_at);
+    CREATE INDEX IF NOT EXISTS idx_mkt_promo_logs_d ON mkt_promo_logs(doc_id, at);
+    CREATE INDEX IF NOT EXISTS idx_mkt_promo_att_d ON mkt_promo_attachments(doc_id);
+  `);
+  // เส้นทางอนุมัติตั้งต้น (ยังไม่มีชื่อผู้อนุมัติ — แอดมินกำหนดในแท็บ ตั้งค่าเส้นทาง) · ใส่ครั้งเดียว ไม่ทับที่แก้แล้ว
+  const insMktRoute = db.prepare('INSERT OR IGNORE INTO mkt_promo_routes (id, name, levels_json, sort) VALUES (?, ?, ?, ?)');
+  for (const r of require('../routes/mktPromoDocs').DEFAULT_ROUTES) insMktRoute.run(r.id, r.name, JSON.stringify(r.levels.map(label => ({ label, uids: [] }))), r.sort);
 }
 
 module.exports = { runMigrations, columnExists, addColumnIfMissing };

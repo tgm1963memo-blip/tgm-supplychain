@@ -31,3 +31,7 @@ e2e/debug_*.js
 e2e/tests/_debug_*.spec.js
 
 .vercel
+
+deploy-shared/tunnel-watch.log
+deploy-shared/.tunnel-watch.lock
+deploy-shared/.tunnel-watch-state.json

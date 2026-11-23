@@ -1,0 +1,42 @@
+'use strict';
+
+// ชื่อ "เครือลูกค้า" สำหรับรวมแถวใน Top 20 (2026-10-05, ผู้ใช้ยืนยันรายการรวม) — ขั้นที่ 1 แบบแก้ด่วน
+// customer_profiles.corporate เป็นข้อความอิสระที่ปนหลายความหมาย (ตรวจข้อมูลจริง 2026-10-05):
+//   บริษัทที่ขาย ("Makro TSS"/"Makro TGM"), ฝากขาย ("วิลล่า (ยอดสั่ง)"), หน่วยธุรกิจ ("Tops/เบเกอรี่"),
+//   การขนส่ง ("บิ๊กซี เข้าศูนย์กระจาย") และชื่อสะกดต่างกัน (ไมเนอร์ 2 ชื่อ)
+// บริษัทที่ขายและวิธีขายรู้ได้จากใบกำกับอยู่แล้ว จึงตัดออกจากชื่อเครือ · ขั้นที่ 2 จะย้ายไปเป็นตาราง customer_groups/aliases
+const STRIP_SUFFIXES = [
+  /\s*\(ยอดสั่ง\)\s*$/,
+  /\s+(TSS|TGM)$/i,
+  /\s*เข้าศูนย์กระจาย$/,
+  /\/(ศูนย์กระจาย|เบเกอรี่)$/,
+];
+// เรียงลำดับสำคัญ — ข้อแรกที่ตรงชนะ · "เซ็นทรัล ฟุ้ด กรุ๊ป" กับ Tops รวมเป็นเครือเดียว (ผู้ใช้ยืนยัน 2026-10-05)
+const ALIASES = [
+  [/^makro$/i, 'Makro'],
+  // (2026-10-14, ผู้ใช้ขอ) Central Food Wholesale แยกแถวจาก Tops ตาม Excel ฝ่ายขาย — ต้องอยู่ก่อนกฎ Tops
+  // corporate จริง: "Tops Central Food Wholsale" (สะกดผิดใน Express), "เซ็นทรัล ฟู้ด โฮลเซลล์ สาขาระยอง"
+  [/^(tops\s*)?central\s*food\s*whole?sale|^เซ็นทรัล\s*ฟู้ด\s*โฮลเซล/i, 'Central Food Wholesale'],
+  [/^tops|^เซ็นทรัล\s*ฟุ้ด\s*กรุ๊ป|central\s*food/i, 'Central Food Retail (Tops)'],
+  [/^โลตัส/, "Lotus's"],
+  [/^วิลล่า/, 'Villa'],
+  [/^บิ๊กซี/, 'Big C'],
+  [/^เดอะมอลล์/, 'The Mall'],
+  // (2026-10-14) ร้านอาหารเครือ Minor ตั้ง corporate = "Minor Group" แล้ว — ชื่อนิติบุคคล ไมเนอร์ ฟู้ด ที่ยังเหลือรวมแถวเดียวกัน
+  [/ไมเนอร์\s*ฟู้ด|^minor\s*group$/i, 'Minor Group'],
+  [/^อิออน/, 'AEON'],
+  [/^สห\s*ลอว์สัน/, 'Lawson'],
+];
+
+function groupNameOf({ corporate = '', name = '', code = '' } = {}) {
+  // (2026-10-12) ชื่อเดียวกันที่พิมพ์ต่างกันนิดหน่อยใน Bplus/Express ต้องรวมเป็นแถวเดียว — ยุบวรรคซ้ำ/nbsp
+  // และตัดวรรคหลังคำนำหน้า เช่น "นายสมนึก␣␣นำศรีเจริญสุข" = "นายสมนึก นำศรีเจริญสุข", "คุณ ฐิตติทนันต์" = "คุณฐิตติทนันต์"
+  const tidy = v => String(v || '').replace(/[\s ]+/g, ' ').trim().replace(/^(คุณ|นางสาว|นาง|นาย|น\.ส\.)\s+/, '$1');
+  let n = tidy(corporate) || tidy(name);
+  if (!n) return code || '(ไม่ระบุ)';
+  for (const re of STRIP_SUFFIXES) n = n.replace(re, '').trim();
+  for (const [re, target] of ALIASES) if (re.test(n)) return target;
+  return n || code || '(ไม่ระบุ)';
+}
+
+module.exports = { groupNameOf };

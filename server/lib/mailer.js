@@ -10,7 +10,8 @@ let transporterError = null;
 
 function getTransporter() {
   if (transporter || transporterError) return transporter;
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
+  // SMTP_PASS = ชื่อตัวแปรเดียวกับ e-memo (2026-10-09: ใช้กล่องอีเมลเดียวกับ e-memo — คัดลอกค่ามาได้ตรงๆ)
+  if (!process.env.SMTP_USER || !(process.env.SMTP_PASSWORD || process.env.SMTP_PASS)) {
     transporterError = new Error('SMTP_CONFIG_MISSING');
     return null;
   }
@@ -19,10 +20,18 @@ function getTransporter() {
     host: process.env.SMTP_HOST || 'mail.tgm.co.th',
     port,
     secure: port === 465,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD || process.env.SMTP_PASS },
     tls: { rejectUnauthorized: false },
   });
   return transporter;
+}
+
+// ผู้ส่ง (2026-10-12): SMTP_FROM ที่มีอีเมล (เช่น "ชื่อ" <a@b>) ใช้ตามนั้น · ไม่มี @ = ใช้เป็นชื่อผู้ส่ง + อีเมลจาก SMTP_USER
+// · ว่าง = "TSS Supply Chain" <SMTP_USER> — เดิมใส่แค่ชื่อแล้วเซิร์ฟเวอร์อีเมลปฏิเสธ/ส่งไม่ถึง
+function fromAddress() {
+  const f = String(process.env.SMTP_FROM || '').trim(), user = process.env.SMTP_USER;
+  if (f.includes('@')) return f;
+  return `"${(f || 'TSS Supply Chain').replace(/"/g, '')}" <${user}>`;
 }
 
 function escapeHtml(value) {
@@ -75,7 +84,7 @@ async function sendResetPasswordEmail({ to, name, resetLink }) {
   const rendered = renderResetEmail({ name, resetLink });
   try {
     await t.sendMail({
-      from: process.env.SMTP_FROM || `"TSS Supply Chain" <${process.env.SMTP_USER}>`,
+      from: fromAddress(),
       to,
       subject: rendered.subject,
       html: rendered.html,
@@ -91,14 +100,21 @@ async function sendResetPasswordEmail({ to, name, resetLink }) {
 
 // ส่งอีเมลทั่วไป (ใช้กับแจ้งอนุมัติใบเคาะราคา — lib/promoApprovalMail.js) — SMTP ยังไม่ตั้งค่าก็ไม่ error
 // แค่ log หัวเรื่อง/ผู้รับไว้ เหมือน sendResetPasswordEmail
-async function sendMail({ to, subject, html, text }) {
+// emoji นอก BMP (🔎 💬 ฯลฯ — คู่ surrogate) โปรแกรมอีเมลของบริษัทแสดงเป็น "🔎" (2026-10-14, ผู้ใช้แจ้ง)
+// ตัดทิ้งก่อนส่งเสมอ รวมที่ผู้ใช้พิมพ์มาในชื่อโปร/ความเห็น · ✅ ❌ ⚠️ ↩️ อยู่ใน BMP แสดงได้ปกติ
+// (code review 2026-10-20) รวมตัวเชื่อม ZWJ (U+200D) / ตัวเลือกรูปแบบ (FE0E/FE0F) ที่ติดกับ emoji นอก BMP ด้วย — เดิมตัดแค่ตัว emoji
+// emoji ผสมเช่น 👨‍💻 (👨 ZWJ 💻) เหลือ ZWJ ค้างในหัวเรื่อง ขึ้นตัวอักษรเพี้ยน · ⚠️ ❤️ (BMP + FE0F) ไม่โดนตัด
+// ที่เดียวที่ตัด emoji ก่อนส่ง — เทมเพลตใน promoApprovalMail.js ใช้ข้อความแทน emoji นอก BMP (เช่น "ความเห็น:") ไม่ได้พึ่งตัวนี้
+const stripAstral = v => (typeof v === 'string' ? v.replace(/(?:‍?[\u{10000}-\u{10FFFF}][︎️]?)+‍?\s?/gu, '') : v);
+async function sendMail({ to, cc, subject, html, text }) {
+  [subject, html, text] = [subject, html, text].map(stripAstral);
   const t = getTransporter();
   if (!t) {
     console.warn(`[mailer] SMTP ยังไม่ได้ตั้งค่า — ไม่ได้ส่ง "${subject}" ถึง ${to}`);
     return { sent: false, reason: 'SMTP_CONFIG_MISSING' };
   }
   try {
-    await t.sendMail({ from: process.env.SMTP_FROM || `"TSS Supply Chain" <${process.env.SMTP_USER}>`, to, subject, html, text });
+    await t.sendMail({ from: fromAddress(), to, ...(cc && cc.length ? { cc } : {}), subject, html, text });
     return { sent: true };
   } catch (e) {
     console.error(`[mailer] sendMail "${subject}" -> ${to} failed:`, e.message);
@@ -106,4 +122,4 @@ async function sendMail({ to, subject, html, text }) {
   }
 }
 
-module.exports = { sendResetPasswordEmail, sendMail, COMPANY, escapeHtml };
+module.exports = { sendResetPasswordEmail, sendMail, COMPANY, escapeHtml, fromAddress };
