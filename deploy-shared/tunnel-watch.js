@@ -88,6 +88,39 @@ async function checkStaleTunnel(url) {
   }
   writeState({ fails: 0, lastRestart: Date.now() });
 }
+// ADDED (2026-11-23): ngrok ที่ tss-wms (tgm-wms.vercel.app) ใช้เรียก tgm-supplychain — โดเมนคงที่ จึงไม่ต้อง deploy ใหม่
+// แต่ ngrok.exe (task NgrokTunnel-Supplychain, เริ่มตอน logon) เคยค้างทั้งที่ process ยังอยู่: 23/11 ตอบ ERR_NGROK_3200 /
+// 16-21 วิ ตั้งแต่เปิดค้างไว้ 11/11 · ล้ม 2 รอบติด (~10 นาที) ทั้งที่ server ในเครื่องปกติ → หยุด ngrok แล้วสั่ง task ใหม่
+const NGROK = { url: 'https://tactless-decency-liquefy.ngrok-free.dev', task: 'NgrokTunnel-Supplychain' };
+const NGROK_STATE = path.join(__dirname, '.tunnel-watch-ngrok.json');
+async function checkNgrok() {
+  let st = {};
+  try { st = JSON.parse(fs.readFileSync(NGROK_STATE, 'utf8')); } catch (_) { /* ไม่มี state */ }
+  const save = s => { try { fs.writeFileSync(NGROK_STATE, JSON.stringify(s)); } catch (_) { /* ignore */ } };
+  let ok = false;
+  try {
+    const r = await fetch(NGROK.url + '/api/health', { headers: { 'ngrok-skip-browser-warning': '1' }, signal: AbortSignal.timeout(15000) });
+    ok = r.ok;
+  } catch { ok = false; }
+  if (ok) { if (st.fails) { log(`ngrok ${NGROK.url} กลับมาตอบได้`); save({ ...st, fails: 0 }); } return; }
+  if (!(await localHealthy())) { log('ngrok ตอบไม่ได้ แต่ server ในเครื่องก็ล่มด้วย — ไม่รีสตาร์ท ngrok'); return; }
+  const fails = (st.fails || 0) + 1;
+  save({ ...st, fails });
+  log(`ngrok ${NGROK.url} ตอบไม่ได้ (server ในเครื่องปกติ) ครั้งที่ ${fails}`);
+  if (fails < FAILS_BEFORE_RESTART || DRY) return;
+  if (st.lastRestart && Date.now() - st.lastRestart < RESTART_COOLDOWN_MS) return;
+  try {
+    // เรียก powershell ตรง (ไม่ผ่าน cmd แบบ run()) เพราะคำสั่งมี | และ ;
+    execFileSync('powershell.exe', ['-NoProfile', '-Command',
+      `Stop-ScheduledTask -TaskName '${NGROK.task}' -ErrorAction SilentlyContinue; Get-Process ngrok -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 2; Start-ScheduledTask -TaskName '${NGROK.task}' -ErrorAction Stop`],
+    { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60 * 1000 });
+    log(`รีสตาร์ท ngrok (task ${NGROK.task}) แล้ว`);
+  } catch (e) {
+    log(`รีสตาร์ท ngrok ไม่ได้: ${String(e.stderr || e.message).slice(-300)}`);
+  }
+  save({ fails: 0, lastRestart: Date.now() });
+}
+
 function run(cmd, args, cwd) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32', timeout: 15 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 });
 }
@@ -98,6 +131,7 @@ async function main() {
     const st = fs.statSync(LOCK);
     if (Date.now() - st.mtimeMs < 30 * 60 * 1000) return;
   } catch (_) { /* ไม่มี lock */ }
+  await checkNgrok().catch(e => log(`ตรวจ ngrok ผิดพลาด: ${e.message}`));
   const tunnel = latestTunnelUrl();
   const cfg = currentConfigUrl();
   if (!tunnel) { log('ไม่พบที่อยู่ tunnel ใน log'); return; }
