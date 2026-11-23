@@ -22,6 +22,8 @@ const ALL_ROLES = ['superadmin', 'admin', 'marketing_manager'];
 const ADMIN_ROLES = ['superadmin', 'admin'];
 const CHANNELS = [
   { code: '01-OS-0001', name: 'Shopee', gp: 48.33 }, { code: '01-OL-0001', name: 'Lazada', gp: 47.26 },
+  // TikTok (2026-11-23, ผู้ใช้ขอเพิ่ม) — ยังไม่ทราบ GP มาตรฐาน ตั้งต้น 0 ผู้เสนอแก้ในใบได้
+  { code: '01-OT-0001', name: 'TikTok', gp: 0 },
   { code: '01-OF-0001', name: 'Facebook Shop', gp: 0 }, { code: '01-OE-0001', name: 'E-commerce', gp: 0 },
   { code: '01-ON-0001', name: 'Line Official', gp: 0 }, { code: '01-OM-0001', name: 'Line My Shop', gp: 0 },
   { code: '01-OU-0001', name: 'Thaimart', gp: 0 },
