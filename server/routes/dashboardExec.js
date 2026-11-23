@@ -809,7 +809,9 @@ module.exports = function dashboardExecRoutes(db) {
       cost_changes: changes.sort((a, b) => Math.abs(b.cur / b.prev - 1) * b.covered - Math.abs(a.cur / a.prev - 1) * a.covered).slice(0, 60),
     };
   }
-  router.get('/margin', (req, res) => {
+  // แคช /margin (2026-11-23, ผู้ใช้แจ้งเมนูโหลดช้า): วัดบนสำเนา DB จริง 1.8–3.7 วิ/ครั้ง และระหว่างคำนวณ server ตอบคนอื่นไม่ได้
+  // (SQLite แบบ sync บน thread เดียว) · ล้างแคชเมื่อข้อมูล sync/ทุนรอบใหม่เปลี่ยน — กติกาเดียวกับ /exec (lib/responseCache.js)
+  router.get('/margin', cacheJson(db), (req, res) => {
     if (!skuCost.canSeeCost(req.user)) return res.status(403).json({ error: 'ไม่มีสิทธิ์เห็นทุนและกำไร' });
     try {
       res.json(marginDetail(req.query, req.user));

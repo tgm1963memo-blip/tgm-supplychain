@@ -71,6 +71,17 @@ function buildApp(db, opts = {}) {
   // checks etc.) where gzip's own overhead isn't worth it; level 6 is zlib's default speed/ratio
   // balance, appropriate for the DB PC's modest CPU.
   app.use(compression({ threshold: 1024, level: 6 }));
+  // log คำขอที่ช้า (2026-11-23, ผู้ใช้แจ้ง "เข้าแต่ละเมนูโหลดนานมาก") — เก็บหลักฐานจากระบบจริงว่า endpoint ไหนช้า
+  // เขียนลง stdout ของ service (service-stdout.log) · เฉพาะ path (ตัด query ทิ้ง กันข้อมูลลูกค้าไปอยู่ใน log) + uid/role
+  const SLOW_MS = Number(process.env.SLOW_REQUEST_MS || 1500);
+  app.use((req, res, next) => {
+    const t0 = process.hrtime.bigint();
+    res.on('finish', () => {
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      if (ms >= SLOW_MS) console.log(`[slow] ${Math.round(ms)}ms ${req.method} ${req.originalUrl.split('?')[0]} ${res.statusCode} ${res.getHeader('X-Cache') || ''} uid=${req.user?.uid || '-'} role=${req.user?.role || '-'} at=${new Date().toISOString()}`);
+    });
+    next();
+  });
   // รายงาน LINE รายสัปดาห์ (2026-11-13, routes/lineReport.js): webhook ต้องได้ body ดิบไว้ตรวจลายเซ็น → mount ก่อน express.json()
   // รูปรายงานเปิดได้โดยไม่ล็อกอิน (LINE เป็นผู้ดึงรูป) — URL มี token สุ่ม 128 บิต
   const lineReport = require('./routes/lineReport');

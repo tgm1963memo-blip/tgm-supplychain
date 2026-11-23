@@ -94,6 +94,17 @@ app.listen(PORT, () => {
   console.log(`[tgm-server] listening on port ${PORT}`);
 });
 
+// ตรวจ event loop ค้าง (2026-11-23, ผู้ใช้แจ้งเมนูโหลดช้า): SQLite แบบ sync ทำงานบน thread เดียว — คำขอหนักหนึ่งตัว
+// ทำให้ทุกคนรอ · ถ้า timer 1 วิ ทำงานช้ากว่ากำหนดเกิน 1 วิ = server ค้าง → log ไว้ (คู่กับ [slow] ใน app.js)
+{
+  let last = Date.now();
+  setInterval(() => {
+    const now = Date.now(), lag = now - last - 1000;
+    if (lag >= 1000) console.log(`[stall] event loop ค้าง ${lag}ms at=${new Date(now).toISOString()}`);
+    last = now;
+  }, 1000).unref();
+}
+
 // Every 5 minutes, 24/7 — pulls DBF data from Express into the local SQLite DB.
 // See jobs/importFromExpress.js for the open question on which OESO.DOCSTAT values count as real sales.
 console.log(`[importFromExpress] scheduled sync cron: ${EXPRESS_SYNC_CRON}`);

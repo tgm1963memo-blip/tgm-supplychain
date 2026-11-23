@@ -1056,6 +1056,12 @@ function runMigrations(db) {
   // เส้นทางอนุมัติตั้งต้น (ยังไม่มีชื่อผู้อนุมัติ — แอดมินกำหนดในแท็บ ตั้งค่าเส้นทาง) · ใส่ครั้งเดียว ไม่ทับที่แก้แล้ว
   const insMktRoute = db.prepare('INSERT OR IGNORE INTO mkt_promo_routes (id, name, levels_json, sort) VALUES (?, ?, ?, ?)');
   for (const r of require('../routes/mktPromoDocs').DEFAULT_ROUTES) insMktRoute.run(r.id, r.name, JSON.stringify(r.levels.map(label => ({ label, uids: [] }))), r.sort);
+  // อนุมัติจากเอกสารกระดาษ (2026-11-23, ผู้ใช้สั่ง) — ช่วงที่ใบโปรออนไลน์ยังไม่ได้อนุมัติในระบบ ถ่ายรูปเอกสารที่เซ็นแล้วแนบ
+  // แล้วผู้บันทึกที่กำหนดกดบันทึกเป็นอนุมัติได้ · ตั้งต้น = คุณอาทิตย์ (uid 3384, arthit@tgm.co.th) · แอดมินแก้รายชื่อได้ในหน้าเมนู
+  addColumnIfMissing(db, 'mkt_promo_docs', 'approval_mode', 'approval_mode TEXT');
+  db.exec(`CREATE TABLE IF NOT EXISTS mkt_promo_settings (key TEXT PRIMARY KEY, value TEXT, updated_by TEXT,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))`);
+  db.prepare("INSERT OR IGNORE INTO mkt_promo_settings (key, value) VALUES ('paper_approvers', ?)").run(JSON.stringify(['3384']));
 }
 
 module.exports = { runMigrations, columnExists, addColumnIfMissing };

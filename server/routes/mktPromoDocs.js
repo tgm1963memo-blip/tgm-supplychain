@@ -206,7 +206,7 @@ module.exports = function mktPromoDocsRoutes(db) {
   const load = (id, user) => {
     const d = shape(db.prepare('SELECT * FROM mkt_promo_docs WHERE id = ?').get(String(id || '')));
     if (!d) throw httpErr(404, 'ไม่พบใบเคาะราคา');
-    if (!isAll(user) && d.created_by !== user.uid && !isApprover(d, user.uid)) throw httpErr(403, 'ไม่มีสิทธิ์ดูใบเคาะราคานี้');
+    if (!isAll(user) && !canPaper(user) && d.created_by !== user.uid && !isApprover(d, user.uid)) throw httpErr(403, 'ไม่มีสิทธิ์ดูใบเคาะราคานี้');
     return d;
   };
   const full = id => {
@@ -219,10 +219,16 @@ module.exports = function mktPromoDocsRoutes(db) {
   const send = (res, fn) => { try { res.json(fn()); } catch (err) { res.status(err.status || 500).json({ error: err.message }); } };
   const routes = () => db.prepare('SELECT * FROM mkt_promo_routes WHERE is_active = 1 ORDER BY sort, id').all()
     .map(r => ({ id: r.id, name: r.name, levels: parseJson(r.levels_json, []), cc: parseJson(r.cc_json, []) }));
+  // ผู้บันทึก "อนุมัติจากเอกสารกระดาษ" (2026-11-23, ผู้ใช้สั่ง: ช่วงที่ใบโปรออนไลน์ยังไม่ได้อนุมัติในระบบ
+  // ให้ถ่ายรูปเอกสารที่เซ็นแล้วแนบ แล้วผู้ใช้ที่กำหนดกดบันทึกเป็นอนุมัติได้เลย) — แอดมินแก้รายชื่อได้
+  const paperApprovers = () => parseJson(db.prepare("SELECT value FROM mkt_promo_settings WHERE key = 'paper_approvers'").get()?.value, []);
+  const canPaper = u => paperApprovers().includes(u.uid);
+  const canWriteDoc = (d, u) => d.created_by === u.uid || ADMIN_ROLES.includes(u.role) || canPaper(u);
 
   // ข้อมูลประกอบฟอร์ม: ช่องทาง / เส้นทางอนุมัติ / ผู้ใช้ (เลือกผู้อนุมัติ+CC) / เลขถัดไป
   router.get('/meta', (req, res) => send(res, () => ({
-    channels: CHANNELS, sec_types: SEC_TYPES, routes: routes(), can_create: canCreate(req.user), is_admin: ADMIN_ROLES.includes(req.user.role),
+    channels: CHANNELS, sec_types: SEC_TYPES, routes: routes(), can_create: canCreate(req.user) || canPaper(req.user), is_admin: ADMIN_ROLES.includes(req.user.role),
+    can_paper_approve: canPaper(req.user), paper_approvers: ADMIN_ROLES.includes(req.user.role) ? paperApprovers() : undefined,
     users: db.prepare("SELECT uid, name, role, position, email IS NOT NULL AND email <> '' AS has_email FROM sc_users WHERE is_active = 1 ORDER BY name").all(),
     next: { doc_no: nextNo(db, 'doc_no', 'MKT', 4, MKT_SEED), promo_no: nextNo(db, 'promo_no', 'M', 5, PRO_SEED) },
   })));
@@ -250,6 +256,15 @@ module.exports = function mktPromoDocsRoutes(db) {
     return routes();
   })));
 
+  router.put('/settings/paper-approvers', (req, res) => send(res, () => {
+    if (!ADMIN_ROLES.includes(req.user.role)) throw httpErr(403, 'เฉพาะแอดมิน');
+    const getU = db.prepare('SELECT uid FROM sc_users WHERE uid = ? AND is_active = 1');
+    const uids = [...new Set((Array.isArray(req.body?.uids) ? req.body.uids : []).map(String))].filter(u => getU.get(u)).slice(0, 20);
+    db.prepare(`INSERT INTO mkt_promo_settings (key, value, updated_by, updated_at) VALUES ('paper_approvers', ?, ?, ${now})
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`).run(JSON.stringify(uids), req.user.uid);
+    return paperApprovers();
+  }));
+
   router.get('/', (req, res) => send(res, () => {
     const rows = db.prepare(`SELECT id, doc_no, promo_no, status, doc_date, customer_code, customer_name, title, created_by, created_by_name, levels_json, cur_level, updated_at, approved_at
       FROM mkt_promo_docs ORDER BY created_at DESC LIMIT 2000`).all();
@@ -258,7 +273,7 @@ module.exports = function mktPromoDocsRoutes(db) {
       const cur = levels[r.cur_level];
       return { ...r, levels_json: undefined, level_count: levels.length, cur_label: cur ? cur.label : null,
         awaiting_me: r.status === 'pending' && !!cur && (cur.uids || []).includes(req.user.uid), _ap: levels.some(l => (l.uids || []).includes(req.user.uid)) };
-    }).filter(r => isAll(req.user) || r.created_by === req.user.uid || r._ap).map(r => ({ ...r, _ap: undefined }));
+    }).filter(r => isAll(req.user) || canPaper(req.user) || r.created_by === req.user.uid || r._ap).map(r => ({ ...r, _ap: undefined }));
   }));
 
   router.get('/:id', (req, res) => send(res, () => { load(req.params.id, req.user); return full(req.params.id); }));
@@ -267,7 +282,7 @@ module.exports = function mktPromoDocsRoutes(db) {
     JSON.stringify(cleanCc(db, req.body?.cc)), req.body?.cc_owner === false ? 0 : 1];
 
   router.post('/', (req, res) => send(res, () => tx(db, () => {
-    if (!canCreate(req.user)) throw httpErr(403, 'ไม่มีสิทธิ์สร้างใบเคาะราคา การตลาด');
+    if (!canCreate(req.user) && !canPaper(req.user)) throw httpErr(403, 'ไม่มีสิทธิ์สร้างใบเคาะราคา การตลาด');
     const { head, body } = buildDoc(db, req.body);
     const id = genId('MKT');
     const docNo = nextNo(db, 'doc_no', 'MKT', 4, MKT_SEED);
@@ -280,7 +295,7 @@ module.exports = function mktPromoDocsRoutes(db) {
   router.put('/:id', (req, res) => send(res, () => tx(db, () => {
     const d = load(req.params.id, req.user);
     if (!EDITABLE.includes(d.status)) throw httpErr(400, 'แก้ไขได้เฉพาะใบที่เป็นร่าง หรือถูกตีกลับ');
-    if (d.created_by !== req.user.uid && !ADMIN_ROLES.includes(req.user.role)) throw httpErr(403, 'แก้ไขได้เฉพาะผู้เสนอ');
+    if (!canWriteDoc(d, req.user)) throw httpErr(403, 'แก้ไขได้เฉพาะผู้เสนอ');
     const { head, body } = buildDoc(db, req.body);
     db.prepare(`UPDATE mkt_promo_docs SET doc_date = ?, customer_code = ?, customer_name = ?, gp = ?, title = ?, purpose = ?, route_id = ?, body_json = ?, cc_json = ?, cc_owner = ?,
       updated_by = ?, updated_at = ${now} WHERE id = ?`).run(...writeBody(req, head, body), req.user.uid, d.id);
@@ -365,6 +380,37 @@ module.exports = function mktPromoDocsRoutes(db) {
     })().catch(x => console.warn('[mktPromoMail]', x.message));
   });
 
+  // บันทึกอนุมัติจากเอกสารกระดาษ — ต้องแนบรูป/PDF เอกสารที่เซ็นอนุมัติแล้วอย่างน้อย 1 ไฟล์ · ข้ามขั้นอนุมัติในระบบ
+  router.post('/:id/paper-approve', (req, res) => {
+    let out;
+    try {
+      out = tx(db, () => {
+        const d = load(req.params.id, req.user);
+        if (!canPaper(req.user)) throw httpErr(403, 'ไม่มีสิทธิ์บันทึกอนุมัติจากเอกสารกระดาษ');
+        if (!EDITABLE.includes(d.status) && d.status !== 'pending') throw httpErr(400, 'บันทึกอนุมัติได้เฉพาะใบที่ยังไม่อนุมัติ');
+        const { issues } = buildDoc(db, { ...d, ...d.body });
+        if (issues.length) throw httpErr(400, `ยังบันทึกไม่ได้ ต้องแก้ ${issues.length} จุด: ${issues.slice(0, 5).join(' · ')}`);
+        const scans = db.prepare("SELECT COUNT(*) AS n FROM mkt_promo_attachments WHERE doc_id = ? AND (mime_type LIKE 'image/%' OR mime_type = 'application/pdf')").get(d.id).n;
+        if (!scans) throw httpErr(400, 'กรุณาแนบรูปถ่าย/PDF เอกสารที่เซ็นอนุมัติแล้วก่อน');
+        const note = txt(req.body?.note, 500) || null;
+        const promoNo = nextNo(db, 'promo_no', 'M', 5, PRO_SEED);
+        const levels = [{ label: 'อนุมัติจากเอกสารกระดาษ', uids: [req.user.uid], names: [req.user.name || req.user.uid], status: 'approved',
+          by: req.user.uid, by_name: req.user.name || req.user.uid, at: new Date().toISOString(), comment: note }];
+        db.prepare(`UPDATE mkt_promo_docs SET status = 'approved', approval_mode = 'paper', promo_no = ?, levels_json = ?, cur_level = 0, submitted_at = COALESCE(submitted_at, ${now}),
+          approved_at = ${now}, reject_reason = NULL, updated_by = ?, updated_at = ${now} WHERE id = ?`).run(promoNo, JSON.stringify(levels), req.user.uid, d.id);
+        log(db, d.id, 'paper_approve', `อนุมัติจากเอกสารกระดาษ (แนบ ${scans} ไฟล์) · ออกเลข ${promoNo}${note ? ' · ' + note : ''}`, req.user.uid);
+        return full(d.id);
+      });
+    } catch (err) { return res.status(err.status || 500).json({ error: err.message }); }
+    res.json(out);
+    (async () => {
+      const r = await mailCc(db, out);
+      const sentTo = r.sent ? `ส่งแล้ว ${r.count} คน` : r.reason === 'NO_RECIPIENT' ? 'ไม่มีผู้รับ' : `ส่งไม่สำเร็จ (${r.reason})`;
+      db.prepare(`UPDATE mkt_promo_docs SET cc_sent_at = ${now}, cc_sent_note = ? WHERE id = ?`).run(sentTo, out.id);
+      log(db, out.id, 'cc_mail', sentTo, null);
+    })().catch(x => console.warn('[mktPromoMail]', x.message));
+  });
+
   router.post('/:id/reject', (req, res) => send(res, () => tx(db, () => {
     const d = load(req.params.id, req.user);
     if (d.status !== 'pending') throw httpErr(400, 'ใบนี้ไม่ได้รออนุมัติ');
@@ -392,7 +438,7 @@ module.exports = function mktPromoDocsRoutes(db) {
     if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'ไฟล์ใหญ่เกินไป (จำกัด 10MB ต่อไฟล์)' : `อัปโหลดไม่สำเร็จ: ${err.message}` });
     send(res, () => {
       const d = load(req.params.id, req.user);
-      if (d.created_by !== req.user.uid && !ADMIN_ROLES.includes(req.user.role)) throw httpErr(403, 'แนบไฟล์ได้เฉพาะผู้เสนอ');
+      if (!canWriteDoc(d, req.user)) throw httpErr(403, 'แนบไฟล์ได้เฉพาะผู้เสนอ');
       if (!EDITABLE.includes(d.status)) throw httpErr(400, 'แนบไฟล์ได้เฉพาะใบที่เป็นร่าง หรือถูกตีกลับ');
       const f = req.file;
       if (!f) throw httpErr(400, 'ไม่พบไฟล์');
@@ -408,7 +454,7 @@ module.exports = function mktPromoDocsRoutes(db) {
   }));
   router.patch('/:id/attachments/:aid', (req, res) => send(res, () => {
     const d = load(req.params.id, req.user);
-    if (d.created_by !== req.user.uid && !ADMIN_ROLES.includes(req.user.role)) throw httpErr(403, 'แก้ได้เฉพาะผู้เสนอ');
+    if (!canWriteDoc(d, req.user)) throw httpErr(403, 'แก้ได้เฉพาะผู้เสนอ');
     const label = txt(req.body?.label, 160);
     if (!label) throw httpErr(400, 'กรุณาตั้งชื่อเอกสาร');
     const r = db.prepare('UPDATE mkt_promo_attachments SET label = ? WHERE id = ? AND doc_id = ?').run(label, req.params.aid, d.id);
@@ -417,7 +463,7 @@ module.exports = function mktPromoDocsRoutes(db) {
   }));
   router.delete('/:id/attachments/:aid', (req, res) => send(res, () => {
     const d = load(req.params.id, req.user);
-    if (d.created_by !== req.user.uid && !ADMIN_ROLES.includes(req.user.role)) throw httpErr(403, 'ลบได้เฉพาะผู้เสนอ');
+    if (!canWriteDoc(d, req.user)) throw httpErr(403, 'ลบได้เฉพาะผู้เสนอ');
     if (!EDITABLE.includes(d.status)) throw httpErr(400, 'ลบไฟล์ได้เฉพาะใบที่เป็นร่าง หรือถูกตีกลับ');
     const r = db.prepare('DELETE FROM mkt_promo_attachments WHERE id = ? AND doc_id = ?').run(req.params.aid, d.id);
     if (!r.changes) throw httpErr(404, 'ไม่พบไฟล์');

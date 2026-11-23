@@ -539,6 +539,15 @@ tr:hover td{background:#FAFAFD}
   #tb{height:auto;min-height:60px;flex-wrap:wrap;padding-block:8px}
   #tb-r{order:9;width:100%;flex-wrap:wrap}
 }
+
+/* ปุ่มดู/ซ่อนรหัสผ่าน (2026-11-23) */
+.pwd-wrap{position:relative}
+.pwd-wrap input{width:100%}
+.pwd-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;border:0;background:transparent;border-radius:6px;cursor:pointer;color:var(--TX3);display:flex;align-items:center;justify-content:center;padding:0}
+.pwd-eye:hover{background:var(--bg2);color:var(--N)}
+.pwd-eye:focus-visible{outline:2px solid var(--BL);outline-offset:1px}
+.pwd-eye svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.pwd-eye[aria-pressed="false"] .slash{display:none}
 </style>
 </head>
 <body>
@@ -563,7 +572,7 @@ tr:hover td{background:#FAFAFD}
   </div>
   <div class="field">
     <label>รหัสผ่าน</label>
-    <input id="l-pwd" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
+    <div class="pwd-wrap"><input id="l-pwd" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" style="padding:12px 46px 12px 12px;border-radius:8px;border:1px solid #ddd;font-size:14px"><button type="button" class="pwd-eye" onclick="togglePwd('l-pwd',this)" aria-label="แสดงรหัสผ่าน" aria-pressed="false" title="แสดงรหัสผ่าน"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path class="slash" d="M2.5 13.5l11-11"/></svg></button></div>
   </div>
   <button class="btn btn-p" style="width:100%;justify-content:center;padding:13px 0;border-radius:8px;font-size:14px" onclick="doLogin()">เข้าสู่ระบบ</button>
   <div id="l-err" style="color:var(--R);font-size:12px;text-align:center;background:#FFF1F1;border:1px solid #FECACA;border-radius:7px;padding:8px 12px;display:none"></div>
@@ -593,11 +602,11 @@ tr:hover td{background:#FAFAFD}
   <div class="ls">กรอกรหัสผ่านใหม่สำหรับบัญชีของท่าน</div>
   <div class="field">
     <label>รหัสผ่านใหม่</label>
-    <input id="rp-pwd1" type="password" placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)" autocomplete="new-password" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
+    <div class="pwd-wrap"><input id="rp-pwd1" type="password" placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)" autocomplete="new-password" style="padding:12px 46px 12px 12px;border-radius:8px;border:1px solid #ddd;font-size:14px"><button type="button" class="pwd-eye" onclick="togglePwd('rp-pwd1',this)" aria-label="แสดงรหัสผ่าน" aria-pressed="false" title="แสดงรหัสผ่าน"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path class="slash" d="M2.5 13.5l11-11"/></svg></button></div>
   </div>
   <div class="field">
     <label>ยืนยันรหัสผ่านใหม่</label>
-    <input id="rp-pwd2" type="password" placeholder="ยืนยันรหัสผ่านใหม่" autocomplete="new-password" style="padding:12px;border-radius:8px;border:1px solid #ddd;font-size:14px">
+    <div class="pwd-wrap"><input id="rp-pwd2" type="password" placeholder="ยืนยันรหัสผ่านใหม่" autocomplete="new-password" style="padding:12px 46px 12px 12px;border-radius:8px;border:1px solid #ddd;font-size:14px"><button type="button" class="pwd-eye" onclick="togglePwd('rp-pwd2',this)" aria-label="แสดงรหัสผ่าน" aria-pressed="false" title="แสดงรหัสผ่าน"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path class="slash" d="M2.5 13.5l11-11"/></svg></button></div>
   </div>
   <button class="btn btn-p" style="width:100%;justify-content:center;padding:13px 0;border-radius:8px;font-size:14px" onclick="doResetPassword()">บันทึกรหัสผ่านใหม่</button>
   <div id="rp-msg" style="font-size:12px;text-align:center;border-radius:7px;padding:8px 12px;display:none"></div>
@@ -2953,6 +2962,16 @@ async function migrateFromLocalStorage() {
 // ════════════════════════════════════════════════
 // doLogin() — แทนที่ของเดิม
 // ════════════════════════════════════════════════
+// ดู/ซ่อนรหัสผ่าน — สลับ type ของช่อง แล้วคืนเคอร์เซอร์ไว้ที่ช่องเดิม
+function togglePwd(id, btn) {
+  const el = document.getElementById(id); if (!el) return;
+  const show = el.type === 'password';
+  el.type = show ? 'text' : 'password';
+  btn.setAttribute('aria-pressed', String(show));
+  const lbl = show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน';
+  btn.setAttribute('aria-label', lbl); btn.title = lbl;
+  el.focus(); const n = el.value.length; try { el.setSelectionRange(n, n); } catch (_) {}
+}
 async function doLogin() {
   const uid = document.getElementById('l-uid').value.trim();
   const pwd = document.getElementById('l-pwd').value;
@@ -21387,7 +21406,7 @@ const _mkAll = d => d.body.secs.flatMap(s => _mkItemSubs(s).flatMap(u => _mkLive
 const _mkSum = arr => ({ q: arr.reduce((a, x) => a + (+x.tgt || 0), 0), b: arr.reduce((a, x) => a + (+x.promo || 0) * (+x.tgt || 0), 0) });
 const _mkCh = code => (_mk.meta?.channels || []).find(c => c.code === code) || { code, name: code, gp: 0 };
 const _mkUser = uid => (_mk.meta?.users || []).find(u => u.uid === uid);
-const _mkCanEdit = d => ['draft', 'rejected'].includes(d.status) && (!d.id || d.created_by === UID || ['superadmin', 'admin'].includes(ROLE));
+const _mkCanEdit = d => ['draft', 'rejected'].includes(d.status) && (!d.id || d.created_by === UID || ['superadmin', 'admin'].includes(ROLE) || !!_mk.meta?.can_paper_approve);
 const _mkIsNum = v => /^[\s\d,.\-–+%]+$/.test(v || '') && /\d/.test(v || '');
 
 function _mkCss() {
@@ -21651,7 +21670,7 @@ function mkRenderForm() {
     <div class="card"><div class="ch"><div class="ct2">เอกสารแนบ / หมายเหตุ</div></div><div class="grid">
       <div class="span2"><span class="lbl">รูปแบบการจัดจำหน่ายพิเศษ / หมายเหตุ</span><textarea rows="2" data-hf="note" placeholder="ถ้ามี เช่น จำกัด 2 แพ็กต่อออเดอร์ / ใช้ร่วมกับคูปองร้านค้าไม่ได้">${esc(d.body.note || '')}</textarea></div>
       <div class="span2"><span class="lbl">เอกสารแนบ <span class="hint">· ตั้งชื่อไฟล์เองได้ ชื่อที่ตั้งจะขึ้นบนเอกสาร A4</span></span><div id="mk-att"></div>
-        <div class="row-act" style="padding:8px 0 0"><label class="btn btn-sm" style="cursor:pointer">📎 แนบไฟล์<input type="file" id="mk-file" multiple style="display:none" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xlsx,.xls,.docx,.csv"></label><span class="hint">PDF, รูปภาพ, Excel, Word · ไฟล์ละไม่เกิน 10 MB${d.id ? '' : ' · แนบครั้งแรกระบบจะบันทึกร่างให้ก่อน'}</span></div></div>
+        <div class="row-act" style="padding:8px 0 0"><label class="btn btn-sm" style="cursor:pointer">📎 แนบไฟล์<input type="file" id="mk-file" multiple style="display:none" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xlsx,.xls,.docx,.csv"></label><label class="btn btn-sm" style="cursor:pointer">📷 ถ่ายรูปเอกสาร<input type="file" id="mk-cam" accept="image/*" capture="environment" style="display:none"></label><span class="hint">PDF, รูปภาพ, Excel, Word · ไฟล์ละไม่เกิน 10 MB${d.id ? '' : ' · แนบครั้งแรกระบบจะบันทึกร่างให้ก่อน'}</span></div></div>
     </div></div>
     <div class="card"><div class="ch"><div class="ct2">เส้นทางอนุมัติ และอีเมล CC</div><span class="hint">อนุมัติครบ ระบบออกเลขใบ Promotion และส่งอีเมลแจ้ง CC ให้อัตโนมัติ</span></div>
       <div class="grid"><div class="span2"><span class="lbl">เส้นทางอนุมัติ</span><select data-hf="route_id">${(_mk.meta?.routes || []).map(r => `<option value="${esc(r.id)}" ${r.id === d.route_id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div></div>
@@ -21671,6 +21690,7 @@ function mkRenderForm() {
       <button class="btn btn-sm" data-act="preview">${_mk.preview ? 'ซ่อนตัวอย่าง A4' : 'ดูเอกสาร A4'}</button>
       <button class="btn btn-sm" data-act="print">🖨 พิมพ์ A4</button>
       <button class="btn btn-sm" data-act="save">💾 บันทึกร่าง</button>
+      ${_mk.meta?.can_paper_approve ? `<button class="btn btn-sm" data-act="paper" style="border-color:var(--G);color:var(--G);font-weight:700">📄 บันทึกอนุมัติจากเอกสารกระดาษ</button>` : ''}
       <button class="btn btn-sm btn-p" data-act="submit">ส่งอนุมัติ</button>
     </div>${_mkLogsHtml(d)}</div>`;
   const root = document.getElementById('mkp-form');
@@ -21787,7 +21807,7 @@ async function _mkOnChange(e) {
   if (ds.lvadd !== undefined && t.value) { const l = d.levels[+ds.lvadd]; l.uids = [...new Set([...(l.uids || []), t.value])]; _mkRenderLevels(); return _mkRefresh(); }
   if (ds.ccon !== undefined) { d.cc[+ds.ccon].on = t.checked; return _mkRefresh(); }
   if (ds.attlabel !== undefined) { const a = (d.attachments || []).find(x => x.id === ds.attlabel); if (a && d.id) { const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(d.id)}/attachments/${encodeURIComponent(a.id)}`, { method: 'PATCH', body: JSON.stringify({ label: a.label }) }); if (r.error) toast('เปลี่ยนชื่อไฟล์ไม่สำเร็จ: ' + r.error.message); else a._dirty = false; } return; }
-  if (t.id === 'mk-file' && t.files.length) { const files = [...t.files]; t.value = ''; return _mkUpload(files); }
+  if ((t.id === 'mk-file' || t.id === 'mk-cam') && t.files.length) { const files = [...t.files]; t.value = ''; return _mkUpload(files); }
 }
 function _mkOnPaste(e) {
   const t = e.target, ds = t.dataset; if (ds.td === undefined && ds.th === undefined) return;
@@ -21807,6 +21827,7 @@ function _mkOnClick(e) {
   if (!a) return;
   if (a === 'save') return mkSave();
   if (a === 'submit') return mkSubmit();
+  if (a === 'paper') return mkPaperApprove();
   if (a === 'print') return mkPrint();
   if (a === 'cancel') return mkCancel();
   if (a === 'preview') { _mk.preview = !_mk.preview; document.getElementById('mk-prev-card').hidden = !_mk.preview; t.textContent = _mk.preview ? 'ซ่อนตัวอย่าง A4' : 'ดูเอกสาร A4'; _mkRefresh(); if (_mk.preview) document.getElementById('mk-prev-card').scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
@@ -21874,6 +21895,21 @@ async function mkSubmit() {
   _mk.doc = r.data; _mk.list = null; _mk.preview = true; mkRenderForm();
   toast(`ส่งอนุมัติแล้ว · ${r.data.doc_no} → ขั้น ${r.data.levels[0]?.label || ''}`);
 }
+// บันทึกอนุมัติจากเอกสารกระดาษ (2026-11-23) — ต้องแนบรูปถ่าย/PDF เอกสารที่เซ็นแล้วก่อน · server ตรวจซ้ำ
+async function mkPaperApprove() {
+  const d = _mk.doc;
+  if (_mkCanEdit(d)) { const { E } = _mkIssues(d); if (E.length) { _mkRefresh(); document.getElementById('mk-warn')?.scrollIntoView({ block: 'center' }); return toast(`ยังบันทึกไม่ได้ · ต้องแก้ ${E.length} จุด (ดูกล่องสีแดง)`); } }
+  const scans = (d.attachments || []).filter(a => /^image\/|application\/pdf/.test(a.mime_type || ''));
+  if (!scans.length) { document.getElementById('mk-att')?.scrollIntoView({ block: 'center' }); return toast('กรุณาแนบรูปถ่ายหรือ PDF ของเอกสารที่เซ็นอนุมัติแล้วก่อน (ปุ่ม 📷 ถ่ายรูปเอกสาร)'); }
+  const note = prompt(`บันทึก ${d.doc_no || 'ใบเคาะนี้'} เป็น "อนุมัติแล้ว" จากเอกสารกระดาษ?\nแนบเอกสาร ${scans.length} ไฟล์ · ระบบจะออกเลขใบ Promotion และส่งอีเมล CC ทันที\n\nหมายเหตุ (ไม่บังคับ) เช่น ผู้เซ็นอนุมัติบนกระดาษ`, '');
+  if (note === null) return;
+  let id = d.id;
+  if (_mkCanEdit(d)) { const saved = await mkSave(true); if (!saved) return; id = saved.id; }
+  const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(id)}/paper-approve`, { method: 'POST', body: JSON.stringify({ note }) });
+  if (r.error) return toast('บันทึกอนุมัติไม่สำเร็จ: ' + r.error.message);
+  _mk.doc = r.data; _mk.list = null; _mk.preview = true; mkRenderForm();
+  toast(`บันทึกอนุมัติแล้ว · ออกเลขใบ Promotion ${r.data.promo_no} · ระบบส่งอีเมลแจ้ง CC`);
+}
 async function mkCancel() {
   const d = _mk.doc; if (!d.id) return;
   const reason = prompt(`ยกเลิกใบเคาะ ${d.doc_no}? ระบุเหตุผล (ไม่บังคับ)`); if (reason === null) return;
@@ -21912,6 +21948,7 @@ function _mkViewActions(d) {
   return `<div class="card" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
     ${canAct ? `<b style="margin-right:auto">ใบนี้รอคุณอนุมัติในขั้น ${esc(cur.label)}</b><button class="btn btn-sm" onclick="mkDecide(false)" style="color:var(--R)">↩️ ตีกลับ</button><button class="btn btn-sm btn-p" onclick="mkDecide(true)">✅ อนุมัติ</button>` : `<span class="hint" style="margin-right:auto">${d.status === 'approved' ? `อนุมัติครบ ${_mkShort(d.approved_at)} · อีเมล CC: ${esc(d.cc_sent_note || 'กำลังส่ง')}` : d.status === 'pending' ? `รอขั้น ${esc(cur?.label || '')}` : ''}</span>`}
     ${mine && d.status === 'pending' ? `<button class="btn btn-sm" onclick="mkRecall()">เรียกคืนมาแก้ไข</button>` : ''}
+    ${d.status === 'pending' && _mk.meta?.can_paper_approve ? `<button class="btn btn-sm" onclick="mkPaperApprove()" style="color:var(--G)">📄 บันทึกอนุมัติจากเอกสารกระดาษ</button>` : ''}
     ${(_mk.meta?.can_create) ? `<button class="btn btn-sm" onclick="mkCopy()">คัดลอกเป็นใบใหม่</button>` : ''}
     ${(mine || ['superadmin', 'admin'].includes(ROLE)) && !['cancelled'].includes(d.status) ? `<button class="btn btn-sm" onclick="mkCancel()" style="color:var(--R)">ยกเลิกใบนี้</button>` : ''}
     <button class="btn btn-sm" onclick="mkPrint()">🖨 พิมพ์ A4</button></div>`;
@@ -21920,7 +21957,7 @@ function _mkAttView(d) {
   if (!(d.attachments || []).length) return '';
   return `<div class="card"><div class="ch"><div class="ct2">เอกสารแนบ</div></div>${d.attachments.map(a => `<div class="att-r"><span>📎</span><b>${esc(a.label || a.filename)}</b><span class="fn">${esc(a.filename)}</span><button class="btn btn-xs" onclick="_mkOpenAtt('${esc(d.id)}','${esc(a.id)}')">เปิด</button><span></span></div>`).join('')}</div>`;
 }
-const MK_LOG_LBL = { create: 'สร้าง', update: 'แก้ไข', submit: 'ส่งอนุมัติ', approve: 'อนุมัติ', reject: 'ตีกลับ', recall: 'เรียกคืน', cancel: 'ยกเลิก', attach: 'แนบไฟล์', detach: 'ลบไฟล์', cc_mail: 'อีเมล CC' };
+const MK_LOG_LBL = { paper_approve: 'อนุมัติจากเอกสารกระดาษ', create: 'สร้าง', update: 'แก้ไข', submit: 'ส่งอนุมัติ', approve: 'อนุมัติ', reject: 'ตีกลับ', recall: 'เรียกคืน', cancel: 'ยกเลิก', attach: 'แนบไฟล์', detach: 'ลบไฟล์', cc_mail: 'อีเมล CC' };
 function _mkLogsHtml(d) {
   if (!(d.logs || []).length) return '';
   return `<div class="card"><div class="ch"><div class="ct2">ประวัติเอกสาร</div></div><div class="tw"><table class="t"><tbody>${d.logs.slice().reverse().map(l => `<tr><td style="white-space:nowrap;font-size:12px">${_mkShort(l.at)} ${String(l.at || '').slice(11, 16)}</td><td><b>${esc(MK_LOG_LBL[l.action] || l.action)}</b></td><td style="font-size:12px">${esc(l.detail || '')}</td><td class="hint">${esc(l.by_name || l.by_uid || 'ระบบ')}</td></tr>`).join('')}</tbody></table></div></div>`;
@@ -22000,6 +22037,7 @@ function _mkPaper(d) {
     <div class="p-box" style="margin-top:12px"><div class="p-row"><span>เอกสารแนบ</span><span>${(d.attachments || []).length ? d.attachments.map((a, i) => `${i + 1}. ${esc(a.label || a.filename)}`).join(' &nbsp;·&nbsp; ') : 'ไม่มี'}</span></div>
       <div class="p-row"><span>รูปแบบการจำหน่ายพิเศษ</span><span>${esc(d.body.note || '') || '&nbsp;'}</span></div></div>
     <div class="p-sign">${sign.map(([r, n, dt]) => `<div><span class="role">${r}</span><span class="line">${n}</span><span class="date">ว.ด.ป. ${dt}</span></div>`).join('')}</div>
+    ${d.approval_mode === 'paper' ? `<div class="p-copy"><b>อนุมัติจากเอกสารกระดาษ</b>ลายเซ็นอนุมัติอยู่ในเอกสารแนบ · บันทึกในระบบโดย ${esc(lvls[0]?.by_name || '')} ${_mkShort(d.approved_at)}${lvls[0]?.comment ? ' · ' + esc(lvls[0].comment) : ''}</div>` : ''}
     <div class="p-copy"><b>แจ้งทางอีเมล (CC) หลังอนุมัติ</b>${cc.map(esc).join(' · ') || '–'}<span style="margin-left:auto;padding-left:10px">${d.cc_sent_at ? esc(d.cc_sent_note || 'ส่งแล้ว') + ' ' + _mkShort(d.cc_sent_at) : 'ระบบส่งอัตโนมัติเมื่ออนุมัติครบ'}</span></div>
     <div class="p-foot"><span>FM-MKT-PRO · พิมพ์จากระบบ TSS Supply Chain</span><span>${esc(d.doc_no || 'ร่างยังไม่บันทึก')} · <span class="pg">หน้า 1/1</span></span></div></div>`;
 }
@@ -22025,11 +22063,14 @@ function mkPrint() {
 // ── ตั้งค่าเส้นทางอนุมัติ (แอดมิน) ──
 async function mkRenderRoutes() {
   _mk.view = 'routes';
-  if (!_mk.routes) _mk.routes = JSON.parse(JSON.stringify(_mk.meta?.routes || []));
+  if (!_mk.routes) { _mk.routes = JSON.parse(JSON.stringify(_mk.meta?.routes || [])); _mk.paper = [...(_mk.meta?.paper_approvers || [])]; }
   document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="_mk.routes=null;mkRenderList()">← กลับรายการ</button>`;
   const users = _mk.meta?.users || [];
   const uopt = ex => users.filter(u => !ex.includes(u.uid)).map(u => `<option value="${esc(u.uid)}">${esc(u.name)}${u.position ? ' · ' + esc(u.position) : ''}</option>`).join('');
   document.getElementById('ct').innerHTML = `<div class="mkp" id="mk-routes"><div class="al alw">ตั้งค่าผู้อนุมัติตั้งต้นแต่ละขั้น และรายชื่อ CC ตั้งต้น · ผู้เสนอแก้รายชื่อในใบของตัวเองได้ (ขั้นละ ≥1 คน) · ผู้อนุมัติต้องมีเมนู "ใบเคาะราคา การตลาด" ในหน้าสิทธิ์การใช้งานด้วย</div>
+    <div class="card"><div class="ch"><div class="ct2">ผู้บันทึกอนุมัติจากเอกสารกระดาษ</div><span class="hint">ถ่ายรูปเอกสารที่เซ็นแล้วแนบ แล้วกดบันทึกเป็นอนุมัติได้ (ข้ามขั้นอนุมัติในระบบ)</span></div>
+      <div class="pick">${(_mk.paper || []).map(u => `<span class="pk">${esc(_mkUser(u)?.name || u)}<button class="x" data-ppd="${esc(u)}">×</button></span>`).join('') || '<span class="hint">ยังไม่มี</span>'}
+      <select data-ppa="1"><option value="">+ เพิ่มผู้บันทึก…</option>${uopt(_mk.paper || [])}</select><button class="btn btn-sm btn-p" data-ppsave="1">บันทึกรายชื่อ</button></div></div>
     ${_mk.routes.map((r, a) => `<div class="card"><div class="ch"><div class="ct2"><input data-rn="${a}" value="${esc(r.name)}" style="min-width:320px;font-weight:700"></div><button class="btn btn-sm btn-p" data-rsave="${a}">บันทึกเส้นทางนี้</button></div>
       ${r.levels.map((l, i) => `<div class="lvl"><span class="n">${i + 1}</span><input data-rl="${a}:${i}" value="${esc(l.label)}"><div class="pick">${(l.uids || []).map(u => `<span class="pk">${esc(_mkUser(u)?.name || u)}<button class="x" data-rud="${a}:${i}:${esc(u)}">×</button></span>`).join('')}
         <select data-rua="${a}:${i}"><option value="">+ เลือกผู้อนุมัติ…</option>${uopt(l.uids || [])}</select><button class="x" data-rld="${a}:${i}" title="ลบขั้น" ${r.levels.length < 2 ? 'disabled' : ''}>🗑</button></div></div>`).join('')}
@@ -22045,8 +22086,12 @@ async function mkRenderRoutes() {
     if (ds.rcr) { const [a, j] = ds.rcr.split(':').map(Number); _mk.routes[a].cc[j].role = t.value; } };
   root.onchange = e => { const t = e.target, ds = t.dataset; if (!t.value) return;
     if (ds.rua) { const [a, i] = ds.rua.split(':').map(Number); const l = _mk.routes[a].levels[i]; l.uids = [...new Set([...(l.uids || []), t.value])]; mkRenderRoutes(); }
+    if (ds.ppa) { _mk.paper = [...new Set([...(_mk.paper || []), t.value])]; return mkRenderRoutes(); }
     if (ds.rca !== undefined) { const r = _mk.routes[+ds.rca]; r.cc = [...(r.cc || []), { role: '', uid: t.value, on: true, src: 'route' }]; mkRenderRoutes(); } };
   root.onclick = async e => { const t = e.target.closest('button'); if (!t) return; const ds = t.dataset;
+    if (ds.ppd) { _mk.paper = (_mk.paper || []).filter(u => u !== ds.ppd); return mkRenderRoutes(); }
+    if (ds.ppsave) { const res = await apiFetch('/api/mkt_promo_docs/settings/paper-approvers', { method: 'PUT', body: JSON.stringify({ uids: _mk.paper || [] }) });
+      if (res.error) return toast('บันทึกไม่สำเร็จ: ' + res.error.message); _mk.paper = res.data; _mk.meta.paper_approvers = res.data; mkRenderRoutes(); return toast('บันทึกรายชื่อผู้บันทึกแล้ว'); }
     if (ds.rud) { const [a, i, u] = ds.rud.split(':'); const l = _mk.routes[+a].levels[+i]; l.uids = l.uids.filter(x => x !== u); return mkRenderRoutes(); }
     if (ds.rld) { const [a, i] = ds.rld.split(':').map(Number); _mk.routes[a].levels.splice(i, 1); return mkRenderRoutes(); }
     if (ds.rla !== undefined) { _mk.routes[+ds.rla].levels.push({ label: 'ขั้นใหม่', uids: [] }); return mkRenderRoutes(); }
