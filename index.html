@@ -5463,7 +5463,7 @@ const RNAV={
   // ── Super Admin / Admin ───────────────────────────────────────────────
   superadmin:[
     ['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['promocosts','📉','ทุน & ราคาหมู'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['mktpromo','📣','ใบเคาะราคา การตลาด'],['promocosts','📉','ทุน & ราคาหมู'],
     ['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
     ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
     ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
@@ -5474,7 +5474,7 @@ const RNAV={
   ],
   admin:[
     ['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['promocosts','📉','ทุน & ราคาหมู'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['mktpromo','📣','ใบเคาะราคา การตลาด'],['promocosts','📉','ทุน & ราคาหมู'],
     ['forecast','📝','Sales Forecast'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],
     ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
     ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
@@ -5486,7 +5486,7 @@ const RNAV={
   // manager: ดูยอดขายทีม + อนุมัติ + รายงาน
   sales_manager:[
     ['dash','📊','Dashboard'],['mysales','📈','ยอดขายทีม'],['consi','📦','ฝากขาย CONSI'],
-    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
+    ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['mktpromo','📣','ใบเคาะราคา การตลาด'],
     ['forecast','📝','Sales Forecast'],
     ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['reports','📄','Reports']
   ],
@@ -5503,6 +5503,9 @@ const RNAV={
     ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
     ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']
   ],
+  // ── Marketing (2026-11-23) — ใบเคาะราคา การตลาด (ออนไลน์) ─────────────────────
+  marketing_manager:[['mktpromo','📣','ใบเคาะราคา การตลาด']],
+  marketing:[['mktpromo','📣','ใบเคาะราคา การตลาด']],
   // ── Planning department ───────────────────────────────────────────────
   // manager: ดูแล planning ทั้งหมด + approve + รายงาน
   planning_manager:[
@@ -5533,7 +5536,7 @@ const RNAV={
   warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['sample','🧪','ของตัวอย่าง']],
   manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
-const PTITLES={dash:'Dashboard',margin:'วิเคราะห์กำไร',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',promocosts:'ทุนสินค้า & ราคาหมู',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
+const PTITLES={dash:'Dashboard',mktpromo:'ใบเคาะราคา การตลาด (ออนไลน์)',margin:'วิเคราะห์กำไร',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',promocosts:'ทุนสินค้า & ราคาหมู',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
 
 // แยกแอป Sales/Planning (2026-09-15) — role ไหน "เป็นของแผนกเดียวเท่านั้น" คืนค่า 'sales'/'planning',
@@ -5541,7 +5544,7 @@ const PTITLES={dash:'Dashboard',margin:'วิเคราะห์กำไร'
 // doLogin()/restoreSession() เทียบกับ window.APP_DEPT (inject ตอน build, ไม่มีค่าตอน dev/แอปเดิมรวม
 // ทุกแผนก — ฟังก์ชันนี้เรียกได้เฉยๆ ไม่มีผลอะไรถ้า window.APP_DEPT ไม่ถูกตั้งไว้)
 function _roleDeptExclusive(role){
-  if(role==='sales_manager'||role==='sales_officer'||role==='sales_worker'||role==='sales') return 'sales';
+  if(role==='sales_manager'||role==='sales_officer'||role==='sales_worker'||role==='sales'||role==='marketing'||role==='marketing_manager') return 'sales';
   if(role==='planning_manager'||role==='planning_officer'||role==='planning_worker'||role==='planning'||role==='warehouse') return 'planning';
   return null;
 }
@@ -5682,6 +5685,7 @@ function getRoleLabel(role, dept){
     worker:`Worker${deptLabel?' ('+deptLabel+')':''}`,
     // new dept-specific keys
     sales_manager:'Sales Manager', sales_officer:'Sales Officer', sales_worker:'Sales Worker',
+    marketing_manager:'Marketing Manager', marketing:'Marketing',
     planning_manager:'Planning Manager', planning_officer:'Planning Officer', planning_worker:'Planning Worker',
     // backward-compat
     sales:'Sales', planning:'Planning', warehouse:'Warehouse',
@@ -5732,7 +5736,7 @@ function _permGroupKey(u){return `${u?.department||'Unassigned department'}|${u?
 const _NAV_GROUPS = [
   ['ภาพรวม', ['dash']],
   ['การขาย', ['mysales', 'margin', 'consi', 'forecast']],
-  ['โปรโมชัน & ราคา', ['promo_history', 'pricetiers', 'promocosts', 'quotation']],
+  ['โปรโมชัน & ราคา', ['promo_history', 'pricetiers', 'promocosts', 'quotation', 'mktpromo']],
   ['วางแผน & ผลิต', ['planstock', 'po', 'planbook', 'booksummary', 'prodplan', 'prodsummary', 'forecastdoc', 'stock', 'expiry', 'wms']],
   ['ลูกค้า & ตัวอย่าง', ['custreg', 'sample']],
   ['ตั้งค่าระบบ', ['skuadmin', 'groups', 'reports', 'users', 'perms', 'auditlog']]
@@ -5747,6 +5751,7 @@ const _NAV_ICONS = {
   promocosts: '<path d="M2 14h12M3 11l3-3 2.5 2L13 5M10 5h3v3"/>',
   margin: '<path d="M2 14h12M4 14V9M8 14V5M12 14V7"/>',
   quotation: '<path d="M3 2h10v12l-2-1.5L9 14l-1-1-1 1-2-1.5L3 14zM6 6h4M6 9h4"/>',
+  mktpromo: '<path d="M2 6.5h2.5L11 3v10L4.5 9.5H2zM4.5 9.5l1 4h2l-1-4M13 6.5v3"/>',
   planstock: '<path d="M1.5 6L8 2.5 14.5 6v8h-13zM4.5 14V8.5h7V14M4.5 11h7"/>',
   po: '<path d="M5.5 2.5h5v2h-5zM5.5 3.5H3.5v10.5h9V3.5h-2M6 8l1.5 1.5L10.5 6.5"/>',
   planbook: '<path d="M2.5 4.5L8 2l5.5 2.5v7L8 14l-5.5-2.5zM2.5 4.5L8 7l5.5-2.5M8 7v7"/>',
@@ -5999,6 +6004,7 @@ function nav(page){
       case 'pricetiers': pgPriceTiers(); break;
       case 'promocosts': pgPromoCosts(); break;
       case 'quotation': pgQuotation(); break;
+      case 'mktpromo': pgMktPromo(); break;
       case 'forecast': pgForecast(); break;
       case 'planstock': pgPlanStock(); break;
       case 'po': pgPO(); break;
@@ -15651,6 +15657,7 @@ const ALL_NAV_PAGES=[
   {id:'pricetiers',lbl:'💰 ราคากลาง A–G'},
   {id:'promocosts',lbl:'📉 ทุนสินค้า & ราคาหมู'},
   {id:'quotation',lbl:'🧾 ใบเสนอราคา'},
+  {id:'mktpromo',lbl:'📣 ใบเคาะราคา การตลาด'},
   {id:'forecast',lbl:'📝 Sales Forecast'},
   {id:'planstock',lbl:'📦 Stock & Planning'},
   {id:'po',lbl:'📋 PO Planning'},
@@ -15668,7 +15675,7 @@ const ALL_NAV_PAGES=[
   {id:'auditlog',lbl:'🔍 Audit Log'},
 ];
 // role keys สำหรับหน้า Permissions (5-level hierarchy)
-const ALL_ROLES_PERM=['superadmin','admin','manager','officer','worker','sales_manager','sales_officer','sales_worker','planning_manager','planning_officer','planning_worker'];
+const ALL_ROLES_PERM=['superadmin','admin','manager','officer','worker','sales_manager','sales_officer','sales_worker','marketing_manager','marketing','planning_manager','planning_officer','planning_worker'];
 const ROLE_LBL_P={
   superadmin:'Super Admin', admin:'Admin',
   manager:'Manager', officer:'Officer', worker:'Worker',
@@ -15696,11 +15703,14 @@ let _permTab='pages';
 const DEFAULT_ROLES={
   // ── 5-Level roles ใหม่ ──────────────────────────────────────────────
   superadmin:{label:'Super Admin',pages:(ALL_NAV_PAGES||[]).map(p=>p.id)},
-  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','promo_history','pricetiers','promocosts','quotation','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custreg','sample','skuadmin','groups','reports','auditlog']},
+  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','promo_history','pricetiers','promocosts','quotation','mktpromo','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custreg','sample','skuadmin','groups','reports','auditlog']},
   // Sales department
-  sales_manager:{label:'Sales Manager',pages:['dash','mysales','consi','promo_history','pricetiers','quotation','forecast','custreg','sample','reports']},
+  sales_manager:{label:'Sales Manager',pages:['dash','mysales','consi','promo_history','pricetiers','quotation','mktpromo','forecast','custreg','sample','reports']},
   sales_officer:{label:'Sales Officer',pages:['dash','mysales','promo_history','pricetiers','quotation','forecast','custreg','sample']},
   sales_worker:{label:'Sales Worker',pages:['dash','mysales','promo_history','pricetiers','quotation','custreg','sample']},
+  // Marketing (2026-11-23)
+  marketing_manager:{label:'Marketing Manager',pages:['mktpromo']},
+  marketing:{label:'Marketing',pages:['mktpromo']},
   // Planning department
   planning_manager:{label:'Planning Manager',pages:['dash','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','sample','skuadmin','groups','reports']},
   planning_officer:{label:'Planning Officer',pages:['dash','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','sample']},
@@ -21328,6 +21338,726 @@ async function pcRulesSave(reset) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// ใบเคาะราคา การตลาด (ออนไลน์) — 2026-11-23 · server: routes/mktPromoDocs.js
+// ต้นแบบ mock ที่ผู้ใช้รีวิวแล้ว (sheet "ใบโขก") · ผู้ออก บริษัท ไทย ซอสเซส มาร์เก็ตติ้ง จำกัด · 1 ใบ ต่อ 1 ลูกค้า
+// ส่วน 1,2,3 (In Store / Live / เงื่อนไขค่าส่ง / อื่นๆ) แต่ละส่วนมีระยะเวลา+ลักษณะโปร และส่วนย่อย 1.1 … (ตารางสินค้า/ตาราง/ข้อความ)
+// เลข MKT ออกตอนบันทึกครั้งแรก · เลข M ออกตอนอนุมัติครบ · อนุมัติครบ = ระบบส่งอีเมล CC แทนสำเนากระดาษ
+// ═══════════════════════════════════════════════════════════════════
+const MK_STATUS = { draft: { lbl: 'ร่าง', cls: 'bbgr' }, pending: { lbl: 'รออนุมัติ', cls: 'bba' }, rejected: { lbl: 'ถูกตีกลับ', cls: 'bbr' },
+  approved: { lbl: 'อนุมัติแล้ว', cls: 'bbg' }, cancelled: { lbl: 'ยกเลิก', cls: 'bbr' } };
+const MK_TYPES = {
+  instore: { name: 'In Store', prod: true, pt: 'ลดราคาสินค้า', list: 'mk-pt-p' },
+  live: { name: 'Live', prod: true, pt: 'ราคาพิเศษช่วงไลฟ์สด', list: 'mk-pt-p' },
+  ship: { name: 'เงื่อนไขค่าส่ง', prod: false, pt: 'โปรค่าจัดส่ง', list: 'mk-pt-s' },
+  other: { name: 'อื่นๆ', prod: false, pt: '', list: 'mk-pt-o' },
+};
+const MK_KIND = { items: 'ตารางสินค้า', table: 'ตาราง', text: 'ข้อความ' };
+const MK_AFF = [5, 10, 12, 15];
+const MK_TPL = {
+  items: () => ({ kind: 'items', title: '', items: [{ code: '', normal: 0, promo: 0, tgt: 0 }] }),
+  text: () => ({ kind: 'text', title: '', text: '' }),
+  table: () => ({ kind: 'table', title: '', cols: ['คอลัมน์ 1', 'คอลัมน์ 2', 'คอลัมน์ 3'], rows: [['', '', ''], ['', '', '']] }),
+  ship: () => ({ kind: 'table', title: 'ค่าจัดส่งตามยอดซื้อ (อ้างอิง Inter Express 366 บาท/ออเดอร์)', cols: ['ยอดซื้อ (บาท)', 'ลูกค้าจ่าย', 'บริษัทฯ จ่าย', 'หมายเหตุ'],
+    rows: [['1 - 699', '150', '–', 'ลูกค้าชำระเอง ระบบคิดค่าขนส่งให้อัตโนมัติ'], ['700 - 1,499', '75', '291', 'ต่างจังหวัด บริษัทฯ จ่ายส่วนต่าง (รวม 366)'], ['1,500 ขึ้นไป', 'ส่งฟรี', '366', '']] }),
+  remote: () => ({ kind: 'table', title: 'พื้นที่ห่างไกล / เกาะ (เก็บเพิ่มจากลูกค้า)', cols: ['พื้นที่', 'ค่าขนส่งเพิ่ม', 'ดรายไอซ์', 'กล่องโฟม', 'รวม', 'ยอด 1,500+ ลูกค้าจ่ายเพิ่ม', 'ยอด 2,500+ เหมาจ่าย'],
+    rows: [['ยะลา ปัตตานี นราธิวาส แม่ฮ่องสอน', '110.00', '37.45', '–', '147.45', '147.45', '100.00'], ['เกาะต่าง ๆ', '110.00', '37.45', '90.95', '238.40', '238.40', '100.00']] }),
+};
+let _mk = { list: null, meta: null, prods: null, pmap: null, last: {}, view: 'list', doc: null, q: '', status: '', err: '', preview: false, routes: null, busy: false };
+
+const _mkTodayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const _mkMonthEnd = () => { const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const _mkNewSec = (type, base) => ({ type, title: type === 'other' ? '' : MK_TYPES[type].name, d1: base?.d1 || _mkTodayISO(), d2: base?.d2 || _mkMonthEnd(),
+  ptype: MK_TYPES[type].pt, subs: [MK_TYPES[type].prod ? MK_TPL.items() : MK_TPL.text()] });
+const _mkF = (n, d = 2) => Number.isFinite(+n) ? Number(n).toLocaleString('th-TH', { minimumFractionDigits: d, maximumFractionDigits: d }) : '–';
+const _mkF0 = n => Number.isFinite(+n) ? Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : '–';
+const _mkMTH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const _mkPd = v => { const [y, m, d] = String(v || '').split('-').map(Number); return y ? { y, m, d } : null; };
+function _mkRange(a, b) {
+  const A = _mkPd(a), B = _mkPd(b); if (!A || !B) return '–';
+  if (A.y === B.y && A.m === B.m) return `${A.d} - ${B.d} ${_mkMTH[B.m - 1]} ${B.y + 543}`;
+  return `${A.d} ${_mkMTH[A.m - 1]}${A.y !== B.y ? ' ' + (A.y + 543) : ''} - ${B.d} ${_mkMTH[B.m - 1]} ${B.y + 543}`;
+}
+const _mkShort = v => { const A = _mkPd(String(v || '').slice(0, 10)); return A ? `${String(A.d).padStart(2, '0')}/${String(A.m).padStart(2, '0')}/${A.y + 543}` : '–'; };
+const _mkDays = s => { const n = Math.round((new Date(s.d2) - new Date(s.d1)) / 864e5) + 1; return n > 0 ? n : 0; };
+const _mkSku = c => _mk.pmap ? _mk.pmap.get(String(c || '').trim()) : null;
+const _mkItemSubs = s => s.subs.filter(u => u.kind === 'items');
+const _mkLive = u => u.items.filter(x => x.code || +x.promo);
+const _mkAll = d => d.body.secs.flatMap(s => _mkItemSubs(s).flatMap(u => _mkLive(u)));
+const _mkSum = arr => ({ q: arr.reduce((a, x) => a + (+x.tgt || 0), 0), b: arr.reduce((a, x) => a + (+x.promo || 0) * (+x.tgt || 0), 0) });
+const _mkCh = code => (_mk.meta?.channels || []).find(c => c.code === code) || { code, name: code, gp: 0 };
+const _mkUser = uid => (_mk.meta?.users || []).find(u => u.uid === uid);
+const _mkCanEdit = d => ['draft', 'rejected'].includes(d.status) && (!d.id || d.created_by === UID || ['superadmin', 'admin'].includes(ROLE));
+const _mkIsNum = v => /^[\s\d,.\-–+%]+$/.test(v || '') && /\d/.test(v || '');
+
+function _mkCss() {
+  if (document.getElementById('mk-css')) return;
+  const st = document.createElement('style'); st.id = 'mk-css';
+  st.textContent = `
+.mkp{--navy:#1B2064;--red:#C3161B;--rule:var(--BD);--stock:#fff;--stock-2:#F6F7FB;--ink:var(--TX);--ink-2:var(--TX2);--ink-3:var(--TX3);--navy-50:#EEF0F8;--red-50:#FCECEC;--new-bg:#FDF1E1;--new-fg:#9A5200;
+  --paper:#fff;--paper-ink:#111;--paper-rule:#222;--paper-soft:#F2F3F7;--paper-mark:#FFF4DB}
+.mkp .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.mkp .span2{grid-column:span 2}
+.mkp .chips{display:flex;flex-wrap:wrap;gap:8px}
+.mkp .chip{display:flex;align-items:center;gap:8px;border:1px solid var(--rule);border-radius:8px;padding:6px 10px;background:var(--stock);cursor:pointer;font-size:13px}
+.mkp .chip input{width:16px;height:16px;margin:0;accent-color:var(--navy)}
+.mkp .chip.on{border-color:var(--navy);background:var(--navy-50)}
+.mkp .code{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+.mkp .hint{font-size:12px;color:var(--ink-3)}
+.mkp input,.mkp select,.mkp textarea{font-family:var(--font);font-size:13px;border:1px solid var(--rule);border-radius:7px;padding:6px 9px;background:#fff;color:var(--ink);width:100%}
+.mkp input[type=checkbox],.mkp input[type=radio]{width:16px;height:16px;padding:0}
+.mkp input[readonly]{background:var(--stock-2)}
+.mkp .lbl{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:4px}
+.mkp .sec{border:1.5px solid var(--rule);border-radius:10px;margin-top:14px;overflow:hidden;background:var(--stock)}
+.mkp .sec-h{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:7px 10px 7px 14px;background:var(--navy);color:#fff}
+.mkp .sec.alt .sec-h{background:var(--red)}
+.mkp .sec-no{font-size:13px;font-weight:700;white-space:nowrap}
+.mkp .tag{font-size:11px;font-weight:600;border:1px solid currentColor;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.mkp .sec-h input{flex:1;max-width:340px;height:30px;font-weight:600}
+.mkp .tools{display:flex;gap:2px;margin-left:auto}
+.mkp .x{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:16px;width:28px;height:28px;border-radius:6px;padding:0}
+.mkp .x:hover{background:var(--red-50);color:var(--red)}
+.mkp .x:disabled{opacity:.3;cursor:default;background:transparent}
+.mkp .sec-h .x{color:#fff}
+.mkp .sec-p{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 14px;border-bottom:1px solid var(--rule);background:var(--stock-2)}
+.mkp .sec-p input[type=date]{width:150px}.mkp .sec-p .pt-in{width:240px}
+.mkp .sdays{font-size:12.5px;color:var(--navy);font-weight:600;white-space:nowrap}
+.mkp .sep{width:1px;height:22px;background:var(--rule);margin:0 6px}
+.mkp .grp{margin:10px 12px;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.mkp .grp-h{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:7px 10px;background:var(--stock-2);border-bottom:1px solid var(--rule)}
+.mkp .grp-no{font-weight:700;color:#fff;background:var(--navy);border-radius:6px;padding:2px 9px;font-size:13px}
+.mkp .grp-h input{max-width:300px}
+.mkp .grp .tw{border:0;border-radius:0}
+.mkp .row-act{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px}
+.mkp table.t{width:100%;border-collapse:collapse}
+.mkp table.t th{font-size:12px;text-align:left;padding:6px;background:var(--stock-2);border-bottom:1px solid var(--rule);white-space:nowrap}
+.mkp table.t td{padding:4px 6px;border-bottom:1px solid #EDEFF5;vertical-align:middle}
+.mkp table.t th.n,.mkp table.t td.n{text-align:right}.mkp table.t td.n input{text-align:right}
+.mkp table.t td.calc{color:var(--ink-2);text-align:right;white-space:nowrap}
+.mkp table.t th.aff{background:var(--new-bg);color:var(--new-fg);text-align:right}
+.mkp table.t td.aff{text-align:right;color:var(--ink-2);background:#FFFAF0}.mkp table.t td.aff.off{opacity:.35}
+.mkp table.t th.tgt{background:var(--new-bg);color:var(--new-fg)}
+.mkp td.nm{min-width:220px;text-align:left!important;color:var(--ink)!important;white-space:normal!important}
+.mkp td.nm .err{color:var(--red);font-weight:600}
+.mkp td.code input{font-family:var(--mono);min-width:110px}
+.mkp .th-in{display:flex;gap:4px;align-items:center}
+.mkp .addsec{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px;padding:12px;border:1.5px dashed var(--rule);border-radius:10px}
+.mkp .warn{display:flex;gap:10px;background:var(--LY);color:var(--A);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px}
+.mkp .warn.err{background:var(--red-50);color:var(--red)}.mkp .warn ul{margin:2px 0 6px;padding-left:18px}
+.mkp .sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:8px}
+.mkp .sum>div{background:var(--stock-2);border:1px solid #E7E9F1;border-radius:8px;padding:8px 12px}
+.mkp .sum .k{font-size:11.5px;color:var(--ink-3)}.mkp .sum .v{font-size:18px;font-weight:700;color:var(--navy)}
+.mkp .att-r{display:grid;grid-template-columns:22px 1fr auto auto 30px;gap:8px;align-items:center;border:1px solid var(--rule);border-radius:8px;padding:6px 8px;margin-top:6px}
+.mkp .att-r .fn{font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.mkp .lvl{display:grid;grid-template-columns:28px 130px 1fr;gap:10px;align-items:start;padding:8px 0;border-bottom:1px solid #EDEFF5}
+.mkp .lvl .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font-size:11px;font-weight:700}
+.mkp .pick{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkp .pk{display:inline-flex;align-items:center;gap:4px;background:var(--navy-50);border:1px solid #D7DAEE;border-radius:999px;padding:2px 4px 2px 10px;font-size:12.5px}
+.mkp .pk .x{width:20px;height:20px;font-size:13px}
+.mkp .pick select{width:auto;min-width:200px}
+.mkp .actbar{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;padding:10px 0;background:linear-gradient(transparent,var(--bg) 30%)}
+.mkp .steps{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.mkp .step{border:1px solid var(--rule);border-radius:8px;padding:8px 10px;min-width:150px;background:#fff}
+.mkp .step.cur{border-color:var(--A);box-shadow:0 0 0 2px rgba(154,82,0,.15)}.mkp .step.ok{border-color:var(--G)}.mkp .step.no{border-color:var(--red)}
+.mkp .paperwrap{overflow-x:auto;padding:4px 0 20px}
+${_mkPaperCss()}
+@media (max-width:700px){.mkp .span2{grid-column:auto}.mkp .lvl{grid-template-columns:28px 1fr}.mkp .lvl>:last-child{grid-column:1/-1}}`;
+  document.head.appendChild(st);
+}
+function _mkPaperCss() {
+  return `.mkpaper{--paper-ink:#111;--paper-rule:#222;--paper-soft:#F2F3F7;--paper-mark:#FFF4DB;width:794px;min-height:1123px;margin:0 auto;background:#fff;color:#111;padding:34px 38px;box-shadow:0 1px 3px rgba(0,0,0,.12),0 8px 28px rgba(20,22,58,.10);font-size:11.5px;line-height:1.45;font-family:var(--font,'IBM Plex Sans Thai',sans-serif)}
+.mkpaper .p-head{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;border-bottom:2px solid var(--paper-rule);padding-bottom:8px}
+.mkpaper .p-co{font-weight:700;font-size:13px}.mkpaper .p-co small{display:block;font-weight:400;font-size:10.5px}
+.mkpaper .p-title{font-size:17px;font-weight:700;margin-top:6px}
+.mkpaper .p-nos{border:1.5px solid var(--paper-rule);font-size:11px;min-width:250px}
+.mkpaper .p-nos div{display:grid;grid-template-columns:118px 1fr;border-bottom:1px solid var(--paper-rule)}.mkpaper .p-nos div:last-child{border-bottom:0}
+.mkpaper .p-nos span{padding:3px 7px}.mkpaper .p-nos span:first-child{background:var(--paper-soft);border-right:1px solid var(--paper-rule);font-weight:600}
+.mkpaper .mono{font-family:'IBM Plex Mono',monospace;font-weight:500}
+.mkpaper .p-box{border:1.5px solid var(--paper-rule);margin-top:10px}
+.mkpaper .p-row{display:grid;grid-template-columns:104px 1fr;border-bottom:1px solid var(--paper-rule)}.mkpaper .p-row:last-child{border-bottom:0}
+.mkpaper .p-row>span:first-child{background:var(--paper-soft);border-right:1px solid var(--paper-rule);padding:4px 7px;font-weight:600}
+.mkpaper .p-row>span:last-child{padding:4px 7px}
+.mkpaper .p-2{display:grid;grid-template-columns:1fr 1fr}.mkpaper .p-2>.p-row:first-child{border-right:1px solid var(--paper-rule)}
+.mkpaper .p-box>.p-2:last-child>.p-row{border-bottom:0}
+.mkpaper .p-sech{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-top:12px;padding:4px 8px;background:#1B2064;color:#fff;font-size:10.6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.mkpaper .p-sech.alt{background:#C3161B}.mkpaper .p-sech .t{font-weight:700;font-size:12px;margin-right:auto}.mkpaper .p-sech b{font-weight:400;opacity:.8;margin-right:3px}
+.mkpaper .p-sub{margin-top:7px;font-weight:700;font-size:11px;display:flex;gap:6px;align-items:baseline}
+.mkpaper .p-sub b{background:#1B2064;color:#fff;padding:0 5px;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.mkpaper table.pt{border-collapse:collapse;width:100%;margin-top:4px;font-size:10.4px}.mkpaper table.pti{table-layout:fixed}
+.mkpaper .pt th,.mkpaper .pt td{border:1px solid var(--paper-rule);padding:3px 5px;vertical-align:middle}
+.mkpaper .pt th{background:var(--paper-soft);font-weight:600;text-align:center;line-height:1.25}
+.mkpaper .pt td.n{text-align:right;white-space:nowrap}.mkpaper .pt td.c{text-align:center;white-space:nowrap}
+.mkpaper .pt td.code{font-family:'IBM Plex Mono',monospace;font-size:10.3px;white-space:nowrap}
+.mkpaper .pt th.affh,.mkpaper .pt td.affv{background:var(--paper-mark);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.mkpaper .pt tr.tot td{background:var(--paper-soft)}
+.mkpaper .p-text{padding:5px 8px;white-space:pre-wrap}
+.mkpaper .p-grand{display:flex;justify-content:flex-end;gap:18px;margin-top:8px;padding:4px 7px;border:1.5px solid var(--paper-rule);background:var(--paper-soft);font-size:11px}
+.mkpaper .p-grand span{margin-right:auto;font-weight:700}
+.mkpaper .p-sign{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1.5px solid var(--paper-rule);margin-top:14px}
+.mkpaper .p-sign>div{border-right:1px solid var(--paper-rule);padding:6px 7px 7px;text-align:center;min-height:86px;display:flex;flex-direction:column;justify-content:space-between}
+.mkpaper .p-sign>div:last-child{border-right:0}.mkpaper .p-sign .role{font-weight:600}
+.mkpaper .p-sign .line{border-bottom:1px dotted var(--paper-rule);min-height:30px;margin:4px 6px 0;display:flex;align-items:flex-end;justify-content:center;font-size:11px}
+.mkpaper .p-sign .date{font-size:10px}
+.mkpaper .p-copy{border:1.5px solid var(--paper-rule);border-top:0;padding:5px 7px;display:flex;flex-wrap:wrap;gap:3px 0;font-size:10.5px}.mkpaper .p-copy b{margin-right:10px}
+.mkpaper .p-foot{display:flex;justify-content:space-between;font-size:9.5px;margin-top:8px;font-family:'IBM Plex Mono',monospace}
+.mkpaper .wm{position:absolute;top:40%;left:0;right:0;text-align:center;font-size:64px;font-weight:700;color:rgba(195,22,27,.12);transform:rotate(-22deg);pointer-events:none}`;
+}
+
+async function _mkLoadProducts() {
+  if (_mk.prods) return;
+  const r = await apiFetch('/api/mkt_promo_docs/products');
+  if (r.error) { toast('โหลดรายการสินค้าไม่สำเร็จ: ' + r.error.message); _mk.prods = []; _mk.pmap = new Map(); return; }
+  _mk.prods = r.data.products || []; _mk.last = r.data.last_normal || {};
+  _mk.pmap = new Map(_mk.prods.map(p => [p.code, p]));
+}
+
+async function pgMktPromo(reload) {
+  _mkCss();
+  const ct = document.getElementById('ct');
+  if (_mk.list === null || reload || !_mk.meta) {
+    ct.innerHTML = '<div style="padding:30px;text-align:center;color:var(--TX3)">⏳ กำลังโหลดใบเคาะราคา การตลาด…</div>';
+    const [l, m] = await Promise.all([apiFetch('/api/mkt_promo_docs'), apiFetch('/api/mkt_promo_docs/meta')]);
+    if (!_isActivePage('mktpromo')) return;
+    _mk.err = l.error ? l.error.message : m.error ? m.error.message : '';
+    _mk.list = l.error ? [] : (l.data || []);
+    _mk.meta = m.error ? { channels: [], routes: [], users: [], next: {} } : m.data;
+  }
+  if (_mk.view === 'form' && _mk.doc) return mkRenderForm();
+  if (_mk.view === 'routes') return mkRenderRoutes();
+  mkRenderList();
+}
+
+function mkRenderList() {
+  _mk.view = 'list'; _mk.doc = null;
+  const m = _mk.meta || {};
+  document.getElementById('tb-r').innerHTML = `${m.is_admin ? `<button class="btn btn-sm" onclick="mkRenderRoutes()">⚙️ ตั้งค่าเส้นทางอนุมัติ</button>` : ''}${m.can_create ? `<button class="btn btn-sm btn-p" onclick="mkNew()">＋ สร้างใบเคาะ</button>` : ''}`;
+  const q = _mk.q.trim().toLowerCase();
+  const rows = (_mk.list || []).filter(r => (!_mk.status || (_mk.status === 'mine_wait' ? r.awaiting_me : r.status === _mk.status))
+    && (!q || [r.doc_no, r.promo_no, r.title, r.customer_name, r.created_by_name].some(x => String(x || '').toLowerCase().includes(q))));
+  const waitN = (_mk.list || []).filter(r => r.awaiting_me).length;
+  document.getElementById('ct').innerHTML = `<div class="mkp">${_mk.err ? `<div class="al alw">${esc(_mk.err)}</div>` : ''}
+    ${waitN ? `<div class="al alw" style="cursor:pointer" onclick="_mk.status='mine_wait';mkRenderList()">⏳ มีใบเคาะรอคุณอนุมัติ ${waitN} ใบ — กดเพื่อดู</div>` : ''}
+    <div class="card">
+      <div class="ch"><div class="ct2">📣 ใบเคาะราคา การตลาด (ออนไลน์)</div><span class="hint">ผู้ออก บริษัท ไทย ซอสเซส มาร์เก็ตติ้ง จำกัด · เลขถัดไป <b class="mono">${esc(m.next?.doc_no || '')}</b></span></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <input type="text" placeholder="🔍 เลขที่ / ชื่อรายการ / ลูกค้า / ผู้เสนอ" value="${esc(_mk.q)}" oninput="_mk.q=this.value;mkRenderList();const e=document.querySelector('.mkp input[type=text]');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="max-width:320px">
+        <select onchange="_mk.status=this.value;mkRenderList()" style="width:auto"><option value="">ทุกสถานะ</option><option value="mine_wait" ${_mk.status === 'mine_wait' ? 'selected' : ''}>รอฉันอนุมัติ</option>
+          ${Object.entries(MK_STATUS).map(([k, s]) => `<option value="${k}" ${_mk.status === k ? 'selected' : ''}>${s.lbl}</option>`).join('')}</select>
+        <span class="hint">แสดง ${rows.length.toLocaleString()} ใบ</span>
+      </div>
+      <div class="tw"><table class="t"><thead><tr><th>เลขที่ใบเคาะ</th><th>ใบ Promotion</th><th>วันที่</th><th>ชื่อรายการ</th><th>ลูกค้า</th><th>ผู้เสนอ</th><th>สถานะ</th><th></th></tr></thead><tbody>
+        ${rows.map(r => `<tr style="cursor:pointer" onclick="mkOpen('${esc(r.id)}')">
+          <td class="mono"><b>${esc(r.doc_no || '')}</b></td><td class="mono">${esc(r.promo_no || '–')}</td><td style="font-size:12px">${_mkShort(r.doc_date)}</td>
+          <td>${esc(r.title || '')}</td><td>${esc(r.customer_name || '')} <span class="code">${esc(r.customer_code || '')}</span></td><td style="font-size:12px">${esc(r.created_by_name || '')}</td>
+          <td><span class="badge ${(MK_STATUS[r.status] || {}).cls || 'bbgr'}">${esc((MK_STATUS[r.status] || {}).lbl || r.status)}</span>${r.status === 'pending' && r.cur_label ? ` <span class="hint">ขั้น ${esc(r.cur_label)}</span>` : ''}${r.awaiting_me ? ' <span class="badge bba">รอคุณอนุมัติ</span>' : ''}</td>
+          <td><button class="btn btn-xs">เปิด</button></td></tr>`).join('')
+          || `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--TX3)">${(_mk.list || []).length ? 'ไม่พบใบเคาะตามตัวกรอง' : m.can_create ? 'ยังไม่มีใบเคาะ — กด "＋ สร้างใบเคาะ" มุมขวาบน' : 'ยังไม่มีใบเคาะที่คุณเกี่ยวข้อง'}</td></tr>`}
+      </tbody></table></div>
+    </div></div>`;
+}
+
+function _mkRouteOf(id) { return (_mk.meta?.routes || []).find(r => r.id === id) || (_mk.meta?.routes || [])[0]; }
+function _mkLevelsFromRoute(r) { return (r?.levels || []).map(l => ({ label: l.label, uids: (l.uids || []).filter(u => u !== UID) })); }
+async function mkNew() {
+  await _mkLoadProducts();
+  const r = (_mk.meta?.routes || [])[0];
+  const ch = (_mk.meta?.channels || [])[0] || { code: '', gp: 0 };
+  _mk.doc = { id: null, status: 'draft', doc_date: _mkTodayISO(), customer_code: ch.code, gp: ch.gp, title: '', purpose: 'ส่งเสริมการขาย', route_id: r?.id || '',
+    body: { secs: [_mkNewSec('instore')], aff: [...MK_AFF], note: '' }, cc: (r?.cc || []).map(c => ({ ...c, on: true, src: 'route' })), cc_owner: true,
+    levels: _mkLevelsFromRoute(r), attachments: [], logs: [], created_by: UID, created_by_name: UNAME || UID };
+  _mk.preview = false; _mk.view = 'form'; mkRenderForm();
+}
+async function mkOpen(id) {
+  const [r] = await Promise.all([apiFetch('/api/mkt_promo_docs/' + encodeURIComponent(id)), _mkLoadProducts()]);
+  if (r.error) return toast('เปิดใบเคาะไม่สำเร็จ: ' + r.error.message);
+  _mk.doc = r.data;
+  if (_mkCanEdit(_mk.doc) && (!_mk.doc.levels || !_mk.doc.levels.length || _mk.doc.status === 'rejected')) {
+    const rt = _mkRouteOf(_mk.doc.route_id);
+    if (!_mk.doc.levels?.length) _mk.doc.levels = _mkLevelsFromRoute(rt);
+    else _mk.doc.levels = _mk.doc.levels.map(l => ({ label: l.label, uids: l.uids || [] }));
+  }
+  _mk.preview = !_mkCanEdit(_mk.doc); _mk.view = 'form'; mkRenderForm();
+}
+
+// ── ตรวจความถูกต้อง (ฝั่งหน้าจอ — server ตรวจซ้ำตอนบันทึก/ส่ง) ──
+function _mkIssues(d) {
+  const E = [], W = [];
+  if (!String(d.title || '').trim()) E.push('ยังไม่ได้ระบุชื่อรายการ');
+  if (!d.body.secs.length) E.push('ยังไม่มีส่วนในใบนี้ เพิ่มอย่างน้อย 1 ส่วน');
+  d.body.secs.forEach((s, si) => {
+    const no = 'ส่วน ' + (si + 1);
+    if (s.type === 'other' && !String(s.title || '').trim()) E.push(no + ': ยังไม่ได้ตั้งชื่อหัวข้อ');
+    if (!s.d1 || !s.d2) E.push(no + ': ยังไม่ได้ใส่ระยะเวลา'); else if (s.d2 < s.d1) E.push(no + ': วันสิ้นสุดอยู่ก่อนวันเริ่ม');
+    if (!s.subs.length) W.push(no + ': ยังไม่มีส่วนย่อย จะไม่แสดงในเอกสาร');
+    s.subs.forEach((u, ui) => {
+      if (u.kind !== 'items') return; const lab = `${si + 1}.${ui + 1}`;
+      u.items.forEach((x, r) => {
+        if (!x.code && !+x.promo) return; const row = `${lab} แถว ${r + 1}`;
+        if (!x.code) E.push(row + ': ยังไม่ได้กรอกรหัสสินค้า'); else if (_mk.pmap && !_mkSku(x.code)) E.push(`${row}: ไม่พบรหัส ${x.code} ในระบบ`);
+        if (x.code && !(+x.promo > 0)) E.push(row + ': ยังไม่ได้กรอกราคาโปร');
+        else if (+x.normal > 0 && +x.promo > +x.normal) W.push(`${row}: ราคาโปร (${_mkF0(x.promo)}) สูงกว่าราคาปกติ (${_mkF0(x.normal)})`);
+      });
+      if (!u.items.some(x => x.code || +x.promo)) W.push(lab + ': ตารางสินค้ายังว่าง');
+    });
+  });
+  (d.levels || []).forEach(l => { if (!(l.uids || []).length) W.push(`ขั้นอนุมัติ ${l.label}: ยังไม่ได้เลือกผู้อนุมัติ (ต้องเลือกก่อนส่ง)`); });
+  return { E, W };
+}
+
+// ── ฟอร์ม ──
+function mkRenderForm() {
+  const d = _mk.doc; if (!d) return mkRenderList();
+  _mk.view = 'form';
+  const edit = _mkCanEdit(d);
+  const st = MK_STATUS[d.status] || {};
+  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="mkBack()">← กลับรายการ</button>`;
+  const ct = document.getElementById('ct');
+  const head = `<div class="card"><div class="ch"><div class="ct2">${d.doc_no ? esc(d.doc_no) : 'ใบเคาะใหม่'} <span class="badge ${st.cls || 'bbgr'}">${esc(st.lbl || d.status)}</span>${d.promo_no ? ` <span class="badge bbg">ใบ Promotion ${esc(d.promo_no)}</span>` : ''}</div>
+      <span class="hint">ผู้เสนอ ${esc(d.created_by_name || '')}</span></div>
+    ${d.status === 'rejected' && d.reject_reason ? `<div class="al alw">↩️ ถูกตีกลับ: ${esc(d.reject_reason)} — แก้ไขแล้วกดส่งอนุมัติใหม่</div>` : ''}
+    ${d.levels?.length && d.status !== 'draft' ? _mkStepsHtml(d) : ''}</div>`;
+  if (!edit) {
+    ct.innerHTML = `<div class="mkp">${head}${_mkViewActions(d)}${_mkAttView(d)}<div class="card"><div class="ch"><div class="ct2">เอกสาร A4</div><button class="btn btn-sm" onclick="mkPrint()">🖨 พิมพ์ A4</button></div><div class="paperwrap">${_mkPaper(d)}</div></div>${_mkLogsHtml(d)}</div>`;
+    return;
+  }
+  const chs = _mk.meta?.channels || [];
+  const ch = _mkCh(d.customer_code);
+  ct.innerHTML = `<div class="mkp" id="mkp-form">${head}
+    <datalist id="mk-skus">${(_mk.prods || []).map(p => `<option value="${esc(p.code)}">${esc(p.name)}</option>`).join('')}</datalist>
+    <datalist id="mk-pt-p"><option value="ลดราคาสินค้า"><option value="Flash Sale"><option value="ซื้อ 1 แถม 1 / ของแถม"><option value="New Item / New Set"><option value="ราคาพิเศษช่วงไลฟ์สด"></datalist>
+    <datalist id="mk-pt-s"><option value="โปรค่าจัดส่ง"><option value="ส่งฟรีตามยอดซื้อ"><option value="ลดค่าส่งตามยอดซื้อ"></datalist>
+    <datalist id="mk-pt-o"><option value="ของแถมตามยอดซื้อ"><option value="เงื่อนไขการร่วมรายการ"><option value="คูปองส่วนลด"></datalist>
+    <div class="card"><div class="ch"><div class="ct2">ข้อมูลหัวเอกสาร</div></div><div class="grid">
+      <div><span class="lbl">เลขที่ใบเคาะราคา (การตลาด)</span><input value="${esc(d.doc_no || '')}" placeholder="ระบบออกเลขเมื่อบันทึก (ถัดไป ${esc(_mk.meta?.next?.doc_no || '')})" readonly></div>
+      <div><span class="lbl">ใบ Promotion No.</span><input value="${esc(d.promo_no || '')}" placeholder="ระบบออกเลขเมื่ออนุมัติครบ" readonly></div>
+      <div><span class="lbl">วันที่เขียนใบเคาะ / ใบโปร</span><input type="date" data-hf="doc_date" value="${esc(d.doc_date || '')}"></div>
+      <div><span class="lbl">ผู้เสนอ (การตลาด)</span><input value="${esc(d.created_by_name || UNAME || '')}" readonly><span class="hint">จากผู้ใช้ที่ login</span></div>
+      <div class="span2"><span class="lbl">ชื่อรายการ *</span><input data-hf="title" value="${esc(d.title || '')}" placeholder="เช่น Promotion ประจำเดือน ธันวาคม 2569"></div>
+      <div><span class="lbl">วัตถุประสงค์</span><select data-hf="purpose">${['ส่งเสริมการขาย', 'เปิดตัวสินค้าใหม่ (NPD)', 'ระบายสต๊อก', 'แข่งขันราคา'].map(o => `<option ${d.purpose === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>
+    </div></div>
+    <div class="card"><div class="ch"><div class="ct2">ลูกค้า (ช่องทางขาย) / GP</div><span class="hint">1 ใบ ต่อ 1 ลูกค้า</span></div>
+      <div class="chips">${chs.map(c => `<label class="chip ${c.code === d.customer_code ? 'on' : ''}"><input type="radio" name="mk-cust" data-cust="${esc(c.code)}" ${c.code === d.customer_code ? 'checked' : ''}><span>${esc(c.name)} <span class="code">${esc(c.code)}</span></span></label>`).join('')}</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px"><span class="lbl" style="margin:0">GP ของ ${esc(ch.name)}</span><input type="number" step="0.01" min="0" max="100" data-hf="gp" value="${d.gp ?? 0}" style="width:110px"><span class="hint">%</span></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct2">รายละเอียดโปรโมชัน · แบ่งเป็นส่วน</div><span class="hint" id="mk-lot"></span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span class="lbl" style="margin:0">Affiliate ปักตะกร้า — แสดงค่าคอมฯ ที่อัตรา</span>
+        ${MK_AFF.map(r => `<label class="chip ${d.body.aff.includes(r) ? 'on' : ''}" style="padding:4px 9px"><input type="checkbox" data-aff="${r}" ${d.body.aff.includes(r) ? 'checked' : ''}>${r}%</label>`).join('')}</div>
+      <div id="mk-secs"></div>
+      <div class="addsec"><span class="lbl" style="margin:0">+ เพิ่มส่วน เลือกหัวข้อ:</span>${Object.entries(MK_TYPES).map(([k, t]) => `<button class="btn btn-sm" data-addsec="${k}">${t.name}</button>`).join('')}</div>
+      <p class="hint" style="margin:8px 0 0">ตารางสินค้า: พิมพ์รหัสสินค้า ระบบแสดงชื่อสินค้าจาก master ให้ · ราคาปกติดึงจากใบก่อนหน้า (แก้ได้) · ตาราง: ก๊อปช่วงเซลล์จาก Excel มาวางได้</p>
+      <div id="mk-warn"></div>
+      <div class="lbl" style="margin:14px 0 0">เป้าขาย <span class="hint">· เป้าขาย (บาท) = ราคาโปร × เป้าแพ็ก</span></div><div class="sum" id="mk-tgt"></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct2">เอกสารแนบ / หมายเหตุ</div></div><div class="grid">
+      <div class="span2"><span class="lbl">รูปแบบการจัดจำหน่ายพิเศษ / หมายเหตุ</span><textarea rows="2" data-hf="note" placeholder="ถ้ามี เช่น จำกัด 2 แพ็กต่อออเดอร์ / ใช้ร่วมกับคูปองร้านค้าไม่ได้">${esc(d.body.note || '')}</textarea></div>
+      <div class="span2"><span class="lbl">เอกสารแนบ <span class="hint">· ตั้งชื่อไฟล์เองได้ ชื่อที่ตั้งจะขึ้นบนเอกสาร A4</span></span><div id="mk-att"></div>
+        <div class="row-act" style="padding:8px 0 0"><label class="btn btn-sm" style="cursor:pointer">📎 แนบไฟล์<input type="file" id="mk-file" multiple style="display:none" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xlsx,.xls,.docx,.csv"></label><span class="hint">PDF, รูปภาพ, Excel, Word · ไฟล์ละไม่เกิน 10 MB${d.id ? '' : ' · แนบครั้งแรกระบบจะบันทึกร่างให้ก่อน'}</span></div></div>
+    </div></div>
+    <div class="card"><div class="ch"><div class="ct2">เส้นทางอนุมัติ และอีเมล CC</div><span class="hint">อนุมัติครบ ระบบออกเลขใบ Promotion และส่งอีเมลแจ้ง CC ให้อัตโนมัติ</span></div>
+      <div class="grid"><div class="span2"><span class="lbl">เส้นทางอนุมัติ</span><select data-hf="route_id">${(_mk.meta?.routes || []).map(r => `<option value="${esc(r.id)}" ${r.id === d.route_id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div></div>
+      <div class="lbl" style="margin:12px 0 0">ผู้อนุมัติแต่ละขั้น <span class="hint">· ค่าตั้งต้นจากเส้นทาง แก้ได้ในใบนี้ ขั้นละอย่างน้อย 1 คน (ใส่ตัวเองไม่ได้) · คนใดคนหนึ่งในขั้นอนุมัติ = ผ่านขั้น</span></div>
+      <div id="mk-levels"></div>
+      <div class="lbl" style="margin:14px 0 4px">แจ้งทางอีเมล (CC) หลังอนุมัติ</div><div id="mk-cc"></div>
+      <div class="row-act" style="padding:8px 0 0">
+        <select id="mk-cc-user" style="width:auto;min-width:220px"><option value="">+ เพิ่มผู้ใช้ในระบบ…</option>${(_mk.meta?.users || []).map(u => `<option value="${esc(u.uid)}">${esc(u.name)}${u.position ? ' · ' + esc(u.position) : ''}${u.has_email ? '' : ' (ไม่มีอีเมล)'}</option>`).join('')}</select>
+        <input id="mk-cc-email" type="email" placeholder="หรือพิมพ์อีเมล" style="max-width:240px"><button class="btn btn-sm" data-act="ccadd">+ เพิ่ม</button>
+        <button class="btn btn-sm" data-act="ccreset">↺ คืนค่าตามเส้นทาง</button>
+        <label class="chip ${d.cc_owner !== false ? 'on' : ''}"><input type="checkbox" data-hf="cc_owner" ${d.cc_owner !== false ? 'checked' : ''}> ส่งถึงผู้เสนอและผู้อนุมัติด้วย</label>
+      </div>
+    </div>
+    <div class="card" id="mk-prev-card" ${_mk.preview ? '' : 'hidden'}><div class="ch"><div class="ct2">ตัวอย่างเอกสาร A4</div><span class="hint" id="mk-fit"></span></div><div class="paperwrap" id="mk-paper"></div></div>
+    <div class="actbar">
+      ${d.id ? `<button class="btn btn-sm" data-act="cancel" style="margin-right:auto;color:var(--R)">ยกเลิกใบนี้</button>` : ''}
+      <button class="btn btn-sm" data-act="preview">${_mk.preview ? 'ซ่อนตัวอย่าง A4' : 'ดูเอกสาร A4'}</button>
+      <button class="btn btn-sm" data-act="print">🖨 พิมพ์ A4</button>
+      <button class="btn btn-sm" data-act="save">💾 บันทึกร่าง</button>
+      <button class="btn btn-sm btn-p" data-act="submit">ส่งอนุมัติ</button>
+    </div>${_mkLogsHtml(d)}</div>`;
+  const root = document.getElementById('mkp-form');
+  root.oninput = _mkOnInput; root.onchange = _mkOnChange; root.onclick = _mkOnClick; root.onpaste = _mkOnPaste;
+  _mkRenderSecs(); _mkRenderAtt(); _mkRenderLevels(); _mkRenderCc(); _mkRefresh();
+}
+function mkBack() { _mk.doc = null; _mk.view = 'list'; pgMktPromo(true); }
+
+const _mkTb = (act, s, u, i, n, lbl) => `<span class="tools"><button class="x" data-act="${act}up" data-s="${s}" data-u="${u}" ${i === 0 ? 'disabled' : ''} aria-label="เลื่อน${lbl}ขึ้น">↑</button><button class="x" data-act="${act}down" data-s="${s}" data-u="${u}" ${i === n - 1 ? 'disabled' : ''} aria-label="เลื่อน${lbl}ลง">↓</button><button class="x" data-act="${act}del" data-s="${s}" data-u="${u}" aria-label="ลบ${lbl}">×</button></span>`;
+function _mkNameCell(x) { const p = _mkSku(x.code); if (p) return `${esc(p.name)} <span class="hint">${esc(p.unit || '')}</span>`; return x.code ? '<span class="err">ไม่พบรหัสนี้ในระบบ</span>' : '<span class="hint">พิมพ์รหัสสินค้าก่อน</span>'; }
+function _mkSubForm(s, si, u, ui) {
+  const d = _mk.doc, lab = `${si + 1}.${ui + 1}`, A = `data-s="${si}" data-u="${ui}"`;
+  const head = `<div class="grp-h"><span class="grp-no">${lab}</span><input ${A} data-uf="title" value="${esc(u.title)}" placeholder="${u.kind === 'items' ? 'ชื่อส่วนย่อย เช่น ไส้กรอก / Flash Sale' : 'ชื่อส่วนย่อย (ไม่บังคับ)'}" aria-label="ชื่อส่วนย่อย ${lab}"><span class="hint">${MK_KIND[u.kind]}${u.kind === 'items' ? ' · ' + u.items.length + ' รายการ' : ''}</span>${_mkTb('sub', si, ui, ui, s.subs.length, ' ส่วนย่อย ' + lab)}</div>`;
+  if (u.kind === 'text') return `<div class="grp">${head}<div style="padding:10px"><textarea rows="2" ${A} data-tx placeholder="พิมพ์รายละเอียดเป็นข้อความอิสระ ขึ้นบรรทัดใหม่ได้">${esc(u.text)}</textarea></div></div>`;
+  if (u.kind === 'table') return `<div class="grp">${head}<div class="tw"><table class="t" style="min-width:${Math.max(420, u.cols.length * 130)}px"><thead><tr>
+    ${u.cols.map((c, j) => `<th><div class="th-in"><input ${A} data-th data-c="${j}" value="${esc(c)}" aria-label="หัวคอลัมน์ ${j + 1}"><button class="x" data-act="delcol" ${A} data-c="${j}" ${u.cols.length < 2 ? 'disabled' : ''} aria-label="ลบคอลัมน์">×</button></div></th>`).join('')}<th style="width:34px"></th></tr></thead>
+    <tbody>${u.rows.map((r, ri) => `<tr>${r.map((v, j) => `<td><input ${A} data-td data-r="${ri}" data-c="${j}" value="${esc(v)}"></td>`).join('')}<td><button class="x" data-act="delrow" ${A} data-r="${ri}" aria-label="ลบแถว">×</button></td></tr>`).join('')}</tbody></table></div>
+    <div class="row-act"><button class="btn btn-xs" data-act="addrow" ${A}>+ แถว</button><button class="btn btn-xs" data-act="addcol" ${A}>+ คอลัมน์</button></div></div>`;
+  return `<div class="grp">${head}<div class="tw"><table class="t" style="min-width:1000px"><thead><tr>
+    <th style="width:34px">#</th><th style="width:130px">รหัสสินค้า</th><th>ชื่อสินค้า <span class="hint">(จากระบบ)</span></th><th class="n" style="width:92px">ราคาปกติ</th><th class="n" style="width:92px">ราคาโปร</th>
+    ${MK_AFF.map(r => `<th class="aff" style="opacity:${d.body.aff.includes(r) ? 1 : .4}">Aff ${r}%</th>`).join('')}<th class="n tgt" style="width:96px">เป้าขาย (แพ็ก)</th><th class="n tgt">เป้าขาย (บาท)</th><th style="width:34px"></th></tr></thead><tbody>
+    ${u.items.map((x, r) => `<tr><td class="calc" style="text-align:center">${r + 1}</td>
+      <td class="code"><input ${A} data-r="${r}" data-it="code" value="${esc(x.code)}" list="mk-skus" placeholder="รหัสสินค้า" aria-label="รหัสสินค้า ${lab} แถว ${r + 1}"></td>
+      <td class="calc nm">${_mkNameCell(x)}</td>
+      <td class="n"><input ${A} data-r="${r}" data-it="normal" type="number" min="0" step="0.01" value="${x.normal || ''}" aria-label="ราคาปกติ"></td>
+      <td class="n"><input ${A} data-r="${r}" data-it="promo" type="number" min="0" step="0.01" value="${x.promo || ''}" style="font-weight:600" aria-label="ราคาโปร"></td>
+      ${MK_AFF.map(rt => `<td class="aff affc ${d.body.aff.includes(rt) ? '' : 'off'}" data-rate="${rt}">${_mkF((+x.promo || 0) * rt / 100)}</td>`).join('')}
+      <td class="n"><input ${A} data-r="${r}" data-it="tgt" type="number" min="0" value="${x.tgt || ''}" placeholder="0" style="font-weight:600" aria-label="เป้าขายแพ็ก"></td>
+      <td class="calc tgtv">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>
+      <td><button class="x" data-act="delitem" ${A} data-r="${r}" aria-label="ลบแถว ${r + 1}">×</button></td></tr>`).join('') || `<tr><td colspan="13" class="hint" style="padding:10px">ยังไม่มีสินค้า</td></tr>`}
+    </tbody></table></div><div class="row-act"><button class="btn btn-xs" data-act="additem" ${A}>+ เพิ่มสินค้าใน ${lab}</button></div></div>`;
+}
+function _mkRenderSecs() {
+  const d = _mk.doc;
+  document.getElementById('mk-secs').innerHTML = d.body.secs.map((s, si) => {
+    const T = MK_TYPES[s.type] || MK_TYPES.other, no = si + 1;
+    return `<section class="sec ${T.prod ? '' : 'alt'}"><div class="sec-h"><span class="sec-no">ส่วน ${no}</span><span class="tag">${T.name}</span>
+      <input data-s="${si}" data-sf="title" value="${esc(s.title)}" placeholder="${s.type === 'other' ? 'ตั้งชื่อหัวข้อ เช่น เงื่อนไขของแถม' : 'หัวข้อส่วน'}" aria-label="หัวข้อส่วน ${no}">${_mkTb('sec', si, '', si, d.body.secs.length, ' ส่วน ' + no)}</div>
+      <div class="sec-p"><span class="lbl" style="margin:0">ระยะเวลา</span><input type="date" data-s="${si}" data-sf="d1" value="${esc(s.d1)}" aria-label="วันเริ่ม ส่วน ${no}"><span class="hint">ถึง</span>
+        <input type="date" data-s="${si}" data-sf="d2" value="${esc(s.d2)}" aria-label="วันสิ้นสุด ส่วน ${no}"><span class="sdays">รวม ${_mkDays(s)} วัน</span><span class="sep"></span>
+        <span class="lbl" style="margin:0">ลักษณะโปร</span><input class="pt-in" data-s="${si}" data-sf="ptype" value="${esc(s.ptype)}" list="${T.list}" placeholder="เลือกหรือพิมพ์เอง" aria-label="ลักษณะโปร ส่วน ${no}"></div>
+      ${s.subs.map((u, ui) => _mkSubForm(s, si, u, ui)).join('') || '<p class="hint" style="margin:10px 12px">ยังไม่มีส่วนย่อย เพิ่มด้านล่าง</p>'}
+      <div class="row-act" style="padding:0 12px 12px"><span class="lbl" style="margin:0">+ ส่วนย่อยใน ส่วน ${no}:</span>
+        ${T.prod ? `<button class="btn btn-xs" data-act="addsub" data-k="items" data-s="${si}">ตารางสินค้า</button>` : ''}
+        <button class="btn btn-xs" data-act="addsub" data-k="table" data-s="${si}">ตาราง</button><button class="btn btn-xs" data-act="addsub" data-k="text" data-s="${si}">ข้อความ</button>
+        ${s.type === 'ship' ? `<span class="hint">แม่แบบ:</span><button class="btn btn-xs" data-act="addsub" data-k="ship" data-s="${si}">ค่าจัดส่งตามยอดซื้อ</button><button class="btn btn-xs" data-act="addsub" data-k="remote" data-s="${si}">พื้นที่ห่างไกล/เกาะ</button>` : ''}
+      </div></section>`;
+  }).join('') || '<p class="hint" style="margin:12px 0">ยังไม่มีส่วน — เลือกหัวข้อด้านล่างเพื่อเริ่ม</p>';
+}
+function _mkRenderAtt() {
+  const el = document.getElementById('mk-att'); if (!el) return;
+  const d = _mk.doc;
+  el.innerHTML = (d.attachments || []).map(a => `<div class="att-r"><span>📎</span><input data-attlabel="${esc(a.id)}" value="${esc(a.label || '')}" aria-label="ชื่อเอกสารแนบ">
+    <span class="fn" title="${esc(a.filename)}">${esc(a.filename)} · ${a.size_bytes >= 1048576 ? _mkF(a.size_bytes / 1048576, 1) + ' MB' : Math.max(1, Math.round(a.size_bytes / 1024)) + ' KB'}</span>
+    <button class="btn btn-xs" data-act="attopen" data-a="${esc(a.id)}">เปิด</button><button class="x" data-act="attdel" data-a="${esc(a.id)}" aria-label="ลบไฟล์">×</button></div>`).join('') || '<span class="hint">ยังไม่มีไฟล์แนบ</span>';
+}
+function _mkUserOpts(exclude) { return (_mk.meta?.users || []).filter(u => u.uid !== UID && !exclude.includes(u.uid)).map(u => `<option value="${esc(u.uid)}">${esc(u.name)}${u.position ? ' · ' + esc(u.position) : ''}</option>`).join(''); }
+function _mkRenderLevels() {
+  const d = _mk.doc, el = document.getElementById('mk-levels'); if (!el) return;
+  el.innerHTML = (d.levels || []).map((l, i) => `<div class="lvl"><span class="n">${i + 1}</span><b style="padding-top:2px">${esc(l.label)}</b><div class="pick">
+    ${(l.uids || []).map(u => `<span class="pk">${esc(_mkUser(u)?.name || u)}<button class="x" data-act="lvdel" data-l="${i}" data-uid="${esc(u)}" aria-label="เอาออก">×</button></span>`).join('')}
+    <select data-lvadd="${i}"><option value="">+ เลือกผู้อนุมัติ…</option>${_mkUserOpts(l.uids || [])}</select></div></div>`).join('')
+    || '<p class="hint">เส้นทางนี้ยังไม่มีขั้นอนุมัติ — ให้แอดมินตั้งค่าที่ ⚙️ ตั้งค่าเส้นทางอนุมัติ</p>';
+}
+function _mkCcLabel(c) { const u = c.uid ? _mkUser(c.uid) : null; return u ? `${u.name}${c.role ? ' (' + c.role + ')' : ''}` : (c.email || c.role || ''); }
+function _mkRenderCc() {
+  const d = _mk.doc, el = document.getElementById('mk-cc'); if (!el) return;
+  el.innerHTML = `<div class="tw"><table class="t" style="min-width:560px"><thead><tr><th style="width:44px">ส่ง</th><th>หน้าที่</th><th>ผู้รับ</th><th>ที่มา</th><th style="width:34px"></th></tr></thead><tbody>
+    ${(d.cc || []).map((c, i) => { const u = c.uid ? _mkUser(c.uid) : null; return `<tr><td style="text-align:center"><input type="checkbox" data-ccon="${i}" ${c.on !== false ? 'checked' : ''}></td>
+      <td><input data-ccrole="${i}" value="${esc(c.role || '')}" placeholder="เช่น ระบบราคา"></td><td>${u ? esc(u.name) + (u.has_email ? '' : ' <span class="hint">(ไม่มีอีเมลในระบบ)</span>') : `<span class="mono">${esc(c.email || '')}</span>`}</td>
+      <td class="hint">${c.src === 'route' ? 'จากเส้นทาง' : 'เพิ่มในใบนี้'}</td><td><button class="x" data-act="ccdel" data-i="${i}" aria-label="ลบ">×</button></td></tr>`; }).join('')
+    || '<tr><td colspan="5" class="hint" style="padding:10px">ยังไม่มีผู้รับ CC</td></tr>'}</tbody></table></div>`;
+}
+function _mkRefresh() {
+  const d = _mk.doc; if (!d) return;
+  const A = _mkAll(d), t = _mkSum(A);
+  const lot = document.getElementById('mk-lot'); if (lot) lot.textContent = `${d.body.secs.length} ส่วน · สินค้า ${A.length} รายการ`;
+  const tg = document.getElementById('mk-tgt');
+  if (tg) tg.innerHTML = d.body.secs.map((s, si) => MK_TYPES[s.type]?.prod ? `<div><div class="k">ส่วน ${si + 1} · ${esc(s.title || MK_TYPES[s.type].name)} (บาท)</div><div class="v">${_mkF0(_mkSum(_mkItemSubs(s).flatMap(_mkLive)).b)}</div></div>` : '').join('')
+    + `<div><div class="k">เป้าขายรวม (บาท, รวม VAT)</div><div class="v">${_mkF0(t.b)}</div></div><div><div class="k">เป้าขายรวม (แพ็ก)</div><div class="v">${_mkF0(t.q)}</div></div>`;
+  const { E, W } = _mkIssues(d), w = document.getElementById('mk-warn');
+  if (w) w.innerHTML = E.length || W.length ? `<div class="warn ${E.length ? 'err' : ''}"><span>⚠</span><div>${E.length ? `<b>ต้องแก้ก่อนส่งอนุมัติ (${E.length})</b><ul>${E.map(x => '<li>' + esc(x) + '</li>').join('')}</ul>` : ''}${W.length ? `<b>ข้อควรตรวจ (${W.length})</b><ul>${W.map(x => '<li>' + esc(x) + '</li>').join('')}</ul>` : ''}</div></div>` : '';
+  if (_mk.preview) { const p = document.getElementById('mk-paper'); if (p) p.innerHTML = _mkPaper(d); }
+}
+
+function _mkOnInput(e) {
+  const t = e.target, ds = t.dataset, d = _mk.doc;
+  if (ds.hf) { if (ds.hf === 'note') d.body.note = t.value; else if (ds.hf === 'gp') d.gp = +t.value; else if (ds.hf === 'cc_owner') return; else if (ds.hf !== 'route_id') d[ds.hf] = t.value; return _mkRefresh(); }
+  if (ds.attlabel !== undefined) { const a = (d.attachments || []).find(x => x.id === ds.attlabel); if (a) { a.label = t.value; a._dirty = true; } return _mkRefresh(); }
+  if (ds.ccrole !== undefined) { d.cc[+ds.ccrole].role = t.value; return _mkRefresh(); }
+  if (ds.s === undefined) return;
+  const s = d.body.secs[+ds.s]; if (!s) return;
+  if (ds.sf) { s[ds.sf] = t.value; if (ds.sf === 'd1' || ds.sf === 'd2') t.closest('.sec-p').querySelector('.sdays').textContent = `รวม ${_mkDays(s)} วัน`; return _mkRefresh(); }
+  const u = s.subs[+ds.u]; if (!u) return;
+  if (ds.uf) { u.title = t.value; return _mkRefresh(); }
+  if (ds.it) {
+    const x = u.items[+ds.r], tr = t.closest('tr');
+    if (ds.it === 'code') { x.code = t.value.trim(); const last = _mk.last[x.code]; if (last && !(+x.normal > 0)) { x.normal = last; tr.querySelector('[data-it="normal"]').value = last; } }
+    else x[ds.it] = +t.value;
+    tr.querySelector('.nm').innerHTML = _mkNameCell(x);
+    tr.querySelectorAll('.affc').forEach(td => td.textContent = _mkF((+x.promo || 0) * td.dataset.rate / 100));
+    tr.querySelector('.tgtv').textContent = _mkF0((+x.promo || 0) * (+x.tgt || 0));
+    return _mkRefresh();
+  }
+  if (ds.tx !== undefined) u.text = t.value; else if (ds.th !== undefined) u.cols[+ds.c] = t.value; else if (ds.td !== undefined) u.rows[+ds.r][+ds.c] = t.value;
+  _mkRefresh();
+}
+async function _mkOnChange(e) {
+  const t = e.target, ds = t.dataset, d = _mk.doc;
+  if (ds.cust !== undefined) { d.customer_code = ds.cust; d.gp = _mkCh(ds.cust).gp; return mkRenderForm(); }
+  if (ds.aff !== undefined) { const r = +ds.aff; d.body.aff = t.checked ? [...new Set([...d.body.aff, r])].sort((a, b) => a - b) : d.body.aff.filter(x => x !== r); _mkRenderSecs(); t.closest('.chip').classList.toggle('on', t.checked); return _mkRefresh(); }
+  if (ds.hf === 'route_id') { d.route_id = t.value; const r = _mkRouteOf(t.value); d.levels = _mkLevelsFromRoute(r); d.cc = [...(r?.cc || []).map(c => ({ ...c, on: true, src: 'route' })), ...(d.cc || []).filter(c => c.src !== 'route')]; _mkRenderLevels(); _mkRenderCc(); toast('เปลี่ยนเส้นทางแล้ว · ผู้อนุมัติและ CC ตั้งต้นเปลี่ยนตาม'); return _mkRefresh(); }
+  if (ds.hf === 'cc_owner') { d.cc_owner = t.checked; t.closest('.chip').classList.toggle('on', t.checked); return; }
+  if (ds.lvadd !== undefined && t.value) { const l = d.levels[+ds.lvadd]; l.uids = [...new Set([...(l.uids || []), t.value])]; _mkRenderLevels(); return _mkRefresh(); }
+  if (ds.ccon !== undefined) { d.cc[+ds.ccon].on = t.checked; return _mkRefresh(); }
+  if (ds.attlabel !== undefined) { const a = (d.attachments || []).find(x => x.id === ds.attlabel); if (a && d.id) { const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(d.id)}/attachments/${encodeURIComponent(a.id)}`, { method: 'PATCH', body: JSON.stringify({ label: a.label }) }); if (r.error) toast('เปลี่ยนชื่อไฟล์ไม่สำเร็จ: ' + r.error.message); else a._dirty = false; } return; }
+  if (t.id === 'mk-file' && t.files.length) { const files = [...t.files]; t.value = ''; return _mkUpload(files); }
+}
+function _mkOnPaste(e) {
+  const t = e.target, ds = t.dataset; if (ds.td === undefined && ds.th === undefined) return;
+  const txt = (e.clipboardData || window.clipboardData).getData('text'); if (!/[\t\n]/.test(txt.trim())) return; e.preventDefault();
+  const u = _mk.doc.body.secs[+ds.s].subs[+ds.u]; const grid = txt.replace(/\r/g, '').replace(/\n$/, '').split('\n').map(l => l.split('\t'));
+  const r0 = ds.th !== undefined ? -1 : +ds.r, c0 = +ds.c;
+  grid.forEach((line, ri) => line.forEach((v, ci) => { const r = r0 + ri, c = c0 + ci;
+    while (u.cols.length <= c) { u.cols.push('คอลัมน์ ' + (u.cols.length + 1)); u.rows.forEach(x => x.push('')); }
+    if (r < 0) { u.cols[c] = v.trim(); return; }
+    while (u.rows.length <= r) u.rows.push(u.cols.map(() => '')); u.rows[r][c] = v.trim(); }));
+  _mkRenderSecs(); _mkRefresh(); toast(`วาง ${grid.length} แถว × ${Math.max(...grid.map(l => l.length))} คอลัมน์แล้ว`);
+}
+function _mkOnClick(e) {
+  const t = e.target.closest('button'); if (!t) return;
+  const ds = t.dataset, d = _mk.doc, a = ds.act;
+  if (ds.addsec) { d.body.secs.push(_mkNewSec(ds.addsec, d.body.secs[0])); _mkRenderSecs(); _mkRefresh(); const el = [...document.querySelectorAll('#mk-secs .sec')].pop(); el.scrollIntoView({ block: 'nearest' }); const f = el.querySelector(ds.addsec === 'other' ? '[data-sf="title"]' : '[data-it="code"]') || el.querySelector('textarea'); if (f) f.focus(); return; }
+  if (!a) return;
+  if (a === 'save') return mkSave();
+  if (a === 'submit') return mkSubmit();
+  if (a === 'print') return mkPrint();
+  if (a === 'cancel') return mkCancel();
+  if (a === 'preview') { _mk.preview = !_mk.preview; document.getElementById('mk-prev-card').hidden = !_mk.preview; t.textContent = _mk.preview ? 'ซ่อนตัวอย่าง A4' : 'ดูเอกสาร A4'; _mkRefresh(); if (_mk.preview) document.getElementById('mk-prev-card').scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+  if (a === 'attopen') return _mkOpenAtt(d.id, ds.a);
+  if (a === 'attdel') return _mkDelAtt(ds.a);
+  if (a === 'lvdel') { const l = d.levels[+ds.l]; l.uids = (l.uids || []).filter(u => u !== ds.uid); _mkRenderLevels(); return _mkRefresh(); }
+  if (a === 'ccdel') { d.cc.splice(+ds.i, 1); _mkRenderCc(); return _mkRefresh(); }
+  if (a === 'ccreset') { const r = _mkRouteOf(d.route_id); d.cc = (r?.cc || []).map(c => ({ ...c, on: true, src: 'route' })); d.levels = _mkLevelsFromRoute(r); _mkRenderLevels(); _mkRenderCc(); _mkRefresh(); return toast('คืนค่า CC และผู้อนุมัติตามเส้นทางแล้ว'); }
+  if (a === 'ccadd') {
+    const uid = document.getElementById('mk-cc-user').value, em = document.getElementById('mk-cc-email').value.trim().toLowerCase();
+    if (uid) { if (d.cc.some(c => c.uid === uid)) return toast('ผู้ใช้นี้อยู่ในรายชื่อแล้ว'); d.cc.push({ role: '', uid, on: true, src: 'doc' }); }
+    else if (em) { if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return toast('อีเมลไม่ถูกต้อง ตรวจรูปแบบ เช่น name@company.co.th'); if (d.cc.some(c => (c.email || '') === em)) return toast('อีเมลนี้อยู่ในรายชื่อแล้ว'); d.cc.push({ role: '', email: em, on: true, src: 'doc' }); }
+    else return toast('เลือกผู้ใช้ หรือพิมพ์อีเมลก่อน');
+    _mkRenderCc(); return _mkRefresh();
+  }
+  const si = +ds.s, s = d.body.secs[si], ui = +ds.u, u = s && s.subs[ui];
+  const mv = (arr, i, j) => { if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; };
+  switch (a) {
+    case 'secup': mv(d.body.secs, si, si - 1); break; case 'secdown': mv(d.body.secs, si, si + 1); break;
+    case 'secdel': if (!confirm(`ลบ ส่วน ${si + 1} · ${s.title || MK_TYPES[s.type].name} ?`)) return; d.body.secs.splice(si, 1); break;
+    case 'subup': mv(s.subs, ui, ui - 1); break; case 'subdown': mv(s.subs, ui, ui + 1); break;
+    case 'subdel': s.subs.splice(ui, 1); break;
+    case 'addsub': s.subs.push(MK_TPL[ds.k]()); break;
+    case 'additem': u.items.push({ code: '', normal: 0, promo: 0, tgt: 0 }); break;
+    case 'delitem': u.items.splice(+ds.r, 1); break;
+    case 'addrow': u.rows.push(u.cols.map(() => '')); break;
+    case 'addcol': u.cols.push('คอลัมน์ ' + (u.cols.length + 1)); u.rows.forEach(r => r.push('')); break;
+    case 'delrow': u.rows.splice(+ds.r, 1); break;
+    case 'delcol': u.cols.splice(+ds.c, 1); u.rows.forEach(r => r.splice(+ds.c, 1)); break;
+    default: return;
+  }
+  _mkRenderSecs(); _mkRefresh();
+  const secEl = document.querySelectorAll('#mk-secs .sec')[si]; if (!secEl) return;
+  if (a === 'additem') { const ins = secEl.querySelectorAll('.grp')[ui].querySelectorAll('[data-it="code"]'); ins[ins.length - 1].focus(); }
+  if (a === 'addsub') { const g = [...secEl.querySelectorAll('.grp')].pop(); g.scrollIntoView({ block: 'nearest' }); const f = g.querySelector('[data-it="code"]') || g.querySelector('textarea') || g.querySelector('[data-uf]'); if (f) f.focus(); }
+}
+
+const _mkPayload = d => ({ doc_date: d.doc_date, customer_code: d.customer_code, gp: d.gp, title: d.title, purpose: d.purpose, route_id: d.route_id,
+  secs: d.body.secs, aff: d.body.aff, note: d.body.note, cc: d.cc, cc_owner: d.cc_owner !== false });
+async function mkSave(quiet) {
+  const d = _mk.doc; if (_mk.busy) return null;
+  if (!String(d.title || '').trim()) { toast('กรุณาระบุชื่อรายการก่อนบันทึก'); document.querySelector('[data-hf="title"]')?.focus(); return null; }
+  _mk.busy = true;
+  const r = await apiFetch('/api/mkt_promo_docs' + (d.id ? '/' + encodeURIComponent(d.id) : ''), { method: d.id ? 'PUT' : 'POST', body: JSON.stringify(_mkPayload(d)) });
+  _mk.busy = false;
+  if (r.error) { toast('บันทึกไม่สำเร็จ: ' + r.error.message); return null; }
+  const isNew = !d.id;
+  // label ไฟล์ที่ยังไม่ได้ส่ง
+  for (const a of (d.attachments || []).filter(x => x._dirty)) await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(r.data.id)}/attachments/${encodeURIComponent(a.id)}`, { method: 'PATCH', body: JSON.stringify({ label: a.label }) });
+  const levels = d.levels;
+  _mk.doc = { ...r.data, levels: r.data.status === 'pending' ? r.data.levels : levels };
+  if (!quiet) toast(isNew ? `บันทึกร่างแล้ว · ระบบออกเลข ${r.data.doc_no} ให้อัตโนมัติ` : `บันทึกร่างแล้ว (${r.data.doc_no})`);
+  _mk.list = null; mkRenderForm();
+  return _mk.doc;
+}
+async function mkSubmit() {
+  const d = _mk.doc, { E } = _mkIssues(d);
+  const miss = (d.levels || []).filter(l => !(l.uids || []).length);
+  if (E.length || miss.length) { _mkRefresh(); document.getElementById('mk-warn')?.scrollIntoView({ block: 'center' }); return toast(`ยังส่งอนุมัติไม่ได้ · ต้องแก้ ${E.length + miss.length} จุด (ดูกล่องสีแดง)`); }
+  const levels = d.levels.map(l => ({ uids: l.uids }));
+  if (!confirm(`ส่งอนุมัติ ${d.doc_no || 'ใบเคาะใหม่'} ?\n${d.levels.map((l, i) => `${i + 1}. ${l.label}: ${l.uids.map(u => _mkUser(u)?.name || u).join(', ')}`).join('\n')}`)) return;
+  const saved = await mkSave(true); if (!saved) return;
+  const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(saved.id)}/submit`, { method: 'POST', body: JSON.stringify({ levels }) });
+  if (r.error) return toast('ส่งอนุมัติไม่สำเร็จ: ' + r.error.message);
+  _mk.doc = r.data; _mk.list = null; _mk.preview = true; mkRenderForm();
+  toast(`ส่งอนุมัติแล้ว · ${r.data.doc_no} → ขั้น ${r.data.levels[0]?.label || ''}`);
+}
+async function mkCancel() {
+  const d = _mk.doc; if (!d.id) return;
+  const reason = prompt(`ยกเลิกใบเคาะ ${d.doc_no}? ระบุเหตุผล (ไม่บังคับ)`); if (reason === null) return;
+  const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(d.id)}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) });
+  if (r.error) return toast('ยกเลิกไม่สำเร็จ: ' + r.error.message);
+  _mk.doc = r.data; _mk.list = null; mkRenderForm(); toast('ยกเลิกใบเคาะแล้ว');
+}
+async function mkDecide(ok) {
+  const d = _mk.doc; let body;
+  if (ok) { const c = prompt(`อนุมัติ ${d.doc_no} ขั้น ${d.levels[d.cur_level]?.label}? ใส่ความเห็น (ไม่บังคับ)`, ''); if (c === null) return; body = { comment: c }; }
+  else { const reason = prompt(`ตีกลับ ${d.doc_no} — ระบุเหตุผล`); if (reason === null) return; if (!reason.trim()) return toast('กรุณาระบุเหตุผลที่ไม่อนุมัติ'); body = { reason }; }
+  const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(d.id)}/${ok ? 'approve' : 'reject'}`, { method: 'POST', body: JSON.stringify(body) });
+  if (r.error) return toast((ok ? 'อนุมัติ' : 'ตีกลับ') + 'ไม่สำเร็จ: ' + r.error.message);
+  _mk.doc = r.data; _mk.list = null; mkRenderForm();
+  toast(ok ? (r.data.status === 'approved' ? `อนุมัติครบ · ออกเลขใบ Promotion ${r.data.promo_no} · ระบบส่งอีเมลแจ้ง CC แล้ว` : 'อนุมัติแล้ว · ส่งต่อขั้นถัดไป') : 'ตีกลับแล้ว · แจ้งผู้เสนอแก้ไข');
+}
+async function mkRecall() {
+  const d = _mk.doc; if (!confirm(`เรียกคืน ${d.doc_no} กลับมาเป็นร่างเพื่อแก้ไข?`)) return;
+  const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(d.id)}/recall`, { method: 'POST', body: '{}' });
+  if (r.error) return toast('เรียกคืนไม่สำเร็จ: ' + r.error.message);
+  await mkOpen(d.id); toast('เรียกคืนแล้ว แก้ไขได้');
+}
+async function mkCopy() {
+  const d = _mk.doc; await _mkLoadProducts();
+  _mk.doc = { ...JSON.parse(JSON.stringify(d)), id: null, doc_no: null, promo_no: null, status: 'draft', reject_reason: null, attachments: [], logs: [], cc_sent_at: null,
+    created_by: UID, created_by_name: UNAME || UID, doc_date: _mkTodayISO(), title: d.title + ' (สำเนา)', levels: _mkLevelsFromRoute(_mkRouteOf(d.route_id)) };
+  _mk.preview = false; mkRenderForm(); toast('คัดลอกเป็นใบใหม่แล้ว · ยังไม่บันทึก');
+}
+function _mkStepsHtml(d) {
+  return `<div class="steps">${d.levels.map((l, i) => { const cur = d.status === 'pending' && i === d.cur_level; const cls = l.status === 'approved' ? 'ok' : l.status === 'rejected' ? 'no' : cur ? 'cur' : '';
+    return `<div class="step ${cls}"><div class="hint">ขั้น ${i + 1}</div><b>${esc(l.label)}</b><div style="font-size:12px">${l.status === 'approved' ? '✅ ' + esc(l.by_name || '') + ' · ' + _mkShort(l.at) : l.status === 'rejected' ? '❌ ' + esc(l.by_name || '') + ' · ' + _mkShort(l.at) : cur ? '⏳ รอ ' + esc((l.names || l.uids || []).join(', ')) : esc((l.names || []).join(', '))}</div>${l.comment ? `<div class="hint">“${esc(l.comment)}”</div>` : ''}</div>`; }).join('<span style="align-self:center;color:var(--TX3)">→</span>')}</div>`;
+}
+function _mkViewActions(d) {
+  const cur = d.levels?.[d.cur_level];
+  const mine = d.created_by === UID, canAct = d.status === 'pending' && cur && (cur.uids || []).includes(UID) && !mine;
+  return `<div class="card" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    ${canAct ? `<b style="margin-right:auto">ใบนี้รอคุณอนุมัติในขั้น ${esc(cur.label)}</b><button class="btn btn-sm" onclick="mkDecide(false)" style="color:var(--R)">↩️ ตีกลับ</button><button class="btn btn-sm btn-p" onclick="mkDecide(true)">✅ อนุมัติ</button>` : `<span class="hint" style="margin-right:auto">${d.status === 'approved' ? `อนุมัติครบ ${_mkShort(d.approved_at)} · อีเมล CC: ${esc(d.cc_sent_note || 'กำลังส่ง')}` : d.status === 'pending' ? `รอขั้น ${esc(cur?.label || '')}` : ''}</span>`}
+    ${mine && d.status === 'pending' ? `<button class="btn btn-sm" onclick="mkRecall()">เรียกคืนมาแก้ไข</button>` : ''}
+    ${(_mk.meta?.can_create) ? `<button class="btn btn-sm" onclick="mkCopy()">คัดลอกเป็นใบใหม่</button>` : ''}
+    ${(mine || ['superadmin', 'admin'].includes(ROLE)) && !['cancelled'].includes(d.status) ? `<button class="btn btn-sm" onclick="mkCancel()" style="color:var(--R)">ยกเลิกใบนี้</button>` : ''}
+    <button class="btn btn-sm" onclick="mkPrint()">🖨 พิมพ์ A4</button></div>`;
+}
+function _mkAttView(d) {
+  if (!(d.attachments || []).length) return '';
+  return `<div class="card"><div class="ch"><div class="ct2">เอกสารแนบ</div></div>${d.attachments.map(a => `<div class="att-r"><span>📎</span><b>${esc(a.label || a.filename)}</b><span class="fn">${esc(a.filename)}</span><button class="btn btn-xs" onclick="_mkOpenAtt('${esc(d.id)}','${esc(a.id)}')">เปิด</button><span></span></div>`).join('')}</div>`;
+}
+const MK_LOG_LBL = { create: 'สร้าง', update: 'แก้ไข', submit: 'ส่งอนุมัติ', approve: 'อนุมัติ', reject: 'ตีกลับ', recall: 'เรียกคืน', cancel: 'ยกเลิก', attach: 'แนบไฟล์', detach: 'ลบไฟล์', cc_mail: 'อีเมล CC' };
+function _mkLogsHtml(d) {
+  if (!(d.logs || []).length) return '';
+  return `<div class="card"><div class="ch"><div class="ct2">ประวัติเอกสาร</div></div><div class="tw"><table class="t"><tbody>${d.logs.slice().reverse().map(l => `<tr><td style="white-space:nowrap;font-size:12px">${_mkShort(l.at)} ${String(l.at || '').slice(11, 16)}</td><td><b>${esc(MK_LOG_LBL[l.action] || l.action)}</b></td><td style="font-size:12px">${esc(l.detail || '')}</td><td class="hint">${esc(l.by_name || l.by_uid || 'ระบบ')}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+async function _mkUpload(files) {
+  let d = _mk.doc;
+  if (!d.id) { const s = await mkSave(true); if (!s) return; d = _mk.doc; }
+  for (const f of files) {
+    if (f.size > 10 * 1024 * 1024) { toast(`${f.name}: ใหญ่เกิน 10 MB`); continue; }
+    const fd = new FormData(); fd.append('file', f); fd.append('label', f.name.replace(/\.[^.]+$/, ''));
+    let res, j = null;
+    try {
+      res = await fetch(`${API_BASE}/api/mkt_promo_docs/${encodeURIComponent(d.id)}/attachments`, { method: 'POST', headers: { Authorization: 'Bearer ' + _sessionToken, 'ngrok-skip-browser-warning': 'true' }, body: fd });
+      j = await res.json().catch(() => null);
+    } catch (e) { toast('แนบไฟล์ไม่สำเร็จ: ' + e.message); continue; }
+    if (!res.ok) { toast(`แนบ ${f.name} ไม่สำเร็จ: ${(j && j.error) || res.status}`); continue; }
+    d.attachments = j;
+  }
+  _mkRenderAtt(); _mkRefresh(); toast('แนบไฟล์แล้ว · ตั้งชื่อที่จะแสดงบนเอกสารได้ในช่องชื่อ');
+}
+async function _mkDelAtt(aid) {
+  const d = _mk.doc; if (!confirm('ลบไฟล์แนบนี้?')) return;
+  const r = await apiFetch(`/api/mkt_promo_docs/${encodeURIComponent(d.id)}/attachments/${encodeURIComponent(aid)}`, { method: 'DELETE' });
+  if (r.error) return toast('ลบไฟล์ไม่สำเร็จ: ' + r.error.message);
+  d.attachments = r.data || []; _mkRenderAtt(); _mkRefresh();
+}
+async function _mkOpenAtt(id, aid) {
+  const w = window.open('', '_blank');
+  try {
+    const res = await fetch(`${API_BASE}/api/mkt_promo_docs/${encodeURIComponent(id)}/attachments/${encodeURIComponent(aid)}/content`, { headers: { Authorization: 'Bearer ' + _sessionToken, 'ngrok-skip-browser-warning': 'true' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob(); const url = URL.createObjectURL(blob);
+    if (w) w.location = url; else window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { if (w) w.close(); toast('เปิดไฟล์ไม่สำเร็จ: ' + e.message); }
+}
+
+// ── เอกสาร A4 ──
+function _mkPaper(d) {
+  const ch = _mkCh(d.customer_code), affs = MK_AFF.filter(r => d.body.aff.includes(r));
+  const cols = `<colgroup><col style="width:4.5%"><col style="width:12%"><col><col style="width:7.5%"><col style="width:8.5%">${affs.map(() => '<col style="width:7%">').join('')}<col style="width:7%"><col style="width:10%"></colgroup>`;
+  const W = 5 + affs.length + 2;
+  const head = `<thead><tr><th rowspan="2">ลำ<br>ดับ</th><th rowspan="2">รหัสสินค้า</th><th rowspan="2">ชื่อสินค้า</th><th rowspan="2">ราคา<br>ปกติ</th><th rowspan="2">ราคาโปร<br>ออนไลน์</th>${affs.length ? `<th colspan="${affs.length}" class="affh">Affiliate ปักตะกร้า (บาท)</th>` : ''}<th colspan="2" class="affh">เป้าขาย</th></tr>
+    <tr>${affs.map(r => `<th class="affh">${r}%</th>`).join('')}<th class="affh">แพ็ก</th><th class="affh">บาท</th></tr></thead>`;
+  const tot = (label, x, bold) => `<tr class="tot"><td colspan="${W - 2}" style="text-align:right">${bold ? '<b>' + label + '</b>' : label}</td><td class="n affv">${bold ? '<b>' + _mkF0(x.q) + '</b>' : _mkF0(x.q)}</td><td class="n affv">${bold ? '<b>' + _mkF0(x.b) + '</b>' : _mkF0(x.b)}</td></tr>`;
+  let nProd = 0;
+  const secs = d.body.secs.map((s, si) => {
+    const no = si + 1, T = MK_TYPES[s.type] || MK_TYPES.other;
+    const subs = s.subs.filter(u => u.kind === 'items' ? _mkLive(u).length : u.kind === 'text' ? String(u.text || '').trim() : (u.rows.some(r => r.some(v => String(v).trim())) || String(u.title || '').trim()));
+    const iSubs = subs.filter(u => u.kind === 'items'); if (iSubs.length) nProd++; if (!subs.length) return '';
+    const hdr = `<div class="p-sech ${T.prod ? '' : 'alt'}"><span class="t">ส่วน ${no} · ${esc(s.title || T.name)}</span><span><b>ระยะเวลา</b> ${_mkRange(s.d1, s.d2)} (${_mkDays(s)} วัน)</span><span><b>ลักษณะโปร</b> ${esc(s.ptype) || '–'}</span></div>`;
+    return hdr + subs.map(u => {
+      const lab = no + '.' + (s.subs.indexOf(u) + 1), sub = `<div class="p-sub"><b>${lab}</b>${esc(u.title)}</div>`;
+      if (u.kind === 'text') return sub + `<div class="p-box p-text" style="margin-top:3px">${esc(u.text)}</div>`;
+      if (u.kind === 'table') { const rows = u.rows.filter(r => r.some(v => String(v).trim()));
+        return sub + `<table class="pt" style="margin-top:3px"><thead><tr>${u.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(v => `<td class="${_mkIsNum(v) ? 'n' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`; }
+      const last = u === iSubs[iSubs.length - 1];
+      return sub + `<table class="pt pti">${cols}${head}<tbody>
+        ${_mkLive(u).map((x, i) => `<tr><td class="c">${i + 1}</td><td class="code">${esc(x.code)}</td><td>${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : '–'}</td><td class="n"><b>${_mkF0(x.promo)}</b></td>${affs.map(r => `<td class="n affv">${_mkF((+x.promo || 0) * r / 100)}</td>`).join('')}<td class="n affv">${_mkF0(+x.tgt || 0)}</td><td class="n affv">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td></tr>`).join('')}
+        ${iSubs.length > 1 ? tot('รวม ' + lab, _mkSum(_mkLive(u))) : ''}${last ? tot('รวมเป้าขาย ส่วน ' + no, _mkSum(iSubs.flatMap(_mkLive)), true) : ''}</tbody></table>`;
+    }).join('');
+  }).join('');
+  const T = _mkSum(_mkAll(d));
+  const lvls = d.levels || [];
+  const sign = [['ผู้เสนอ (การตลาด)', esc(d.created_by_name || ''), _mkShort(d.submitted_at || d.doc_date)],
+    ...lvls.map(l => [esc(l.label), l.status === 'approved' ? esc(l.by_name || '') : '', l.status === 'approved' ? _mkShort(l.at) : '____/____/______'])];
+  const cc = (d.cc || []).filter(c => c.on !== false).map(_mkCcLabel);
+  const wm = d.status === 'cancelled' ? 'ยกเลิก' : d.status === 'approved' ? '' : 'ร่าง · ยังไม่อนุมัติ';
+  return `<div class="mkpaper" style="position:relative">${wm ? `<div class="wm">${wm}</div>` : ''}
+    <div class="p-head"><div><div class="p-co">บริษัท ไทย ซอสเซส มาร์เก็ตติ้ง จำกัด<small>ฝ่ายการตลาด · ช่องทางออนไลน์</small></div><div class="p-title">ใบเคาะราคา / ใบโปรโมชัน (การตลาดออนไลน์)</div></div>
+      <div class="p-nos"><div><span>ใบเคาะราคา No.</span><span class="mono">${esc(d.doc_no || '(ออกเลขเมื่อบันทึก)')}</span></div><div><span>ใบ Promotion No.</span><span class="mono">${esc(d.promo_no || '') || '&nbsp;'}</span></div><div><span>วันที่เขียน</span><span>${_mkShort(d.doc_date)}</span></div></div></div>
+    <div class="p-box"><div class="p-row"><span>ชื่อลูกค้า / รหัสลูกค้า</span><span>${esc(ch.name)} (${esc(ch.code)})</span></div>
+      <div class="p-row"><span>GP</span><span><b>${+d.gp > 0 ? _mkF0(d.gp) + '%' : 'ไม่มี GP'}</b></span></div>
+      <div class="p-2"><div class="p-row"><span>ชื่อรายการ</span><span>${esc(d.title || '')}</span></div><div class="p-row"><span>วัตถุประสงค์</span><span>${esc(d.purpose || '')}</span></div></div></div>
+    ${secs}${nProd > 1 ? `<div class="p-grand"><span>รวมเป้าขายทุกส่วน</span><b>${_mkF0(T.q)} แพ็ก</b><b>${_mkF0(T.b)} บาท</b></div>` : ''}
+    <div class="p-box" style="margin-top:12px"><div class="p-row"><span>เอกสารแนบ</span><span>${(d.attachments || []).length ? d.attachments.map((a, i) => `${i + 1}. ${esc(a.label || a.filename)}`).join(' &nbsp;·&nbsp; ') : 'ไม่มี'}</span></div>
+      <div class="p-row"><span>รูปแบบการจำหน่ายพิเศษ</span><span>${esc(d.body.note || '') || '&nbsp;'}</span></div></div>
+    <div class="p-sign">${sign.map(([r, n, dt]) => `<div><span class="role">${r}</span><span class="line">${n}</span><span class="date">ว.ด.ป. ${dt}</span></div>`).join('')}</div>
+    <div class="p-copy"><b>แจ้งทางอีเมล (CC) หลังอนุมัติ</b>${cc.map(esc).join(' · ') || '–'}<span style="margin-left:auto;padding-left:10px">${d.cc_sent_at ? esc(d.cc_sent_note || 'ส่งแล้ว') + ' ' + _mkShort(d.cc_sent_at) : 'ระบบส่งอัตโนมัติเมื่ออนุมัติครบ'}</span></div>
+    <div class="p-foot"><span>FM-MKT-PRO · พิมพ์จากระบบ TSS Supply Chain</span><span>${esc(d.doc_no || 'ร่างยังไม่บันทึก')} · <span class="pg">หน้า 1/1</span></span></div></div>`;
+}
+// พิมพ์: เปิดหน้าต่างใหม่ บังคับ A4 แนวตั้ง ย่อให้พอดี 1 หน้า แต่ไม่เล็กกว่า 70% (ยาวกว่านั้นขึ้นหน้าใหม่ เว้นขอบ 12 มม.)
+function mkPrint() {
+  const d = _mk.doc; if (!d) return;
+  const w = window.open('', '_blank'); if (!w) return toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต pop-up แล้วลองใหม่');
+  w.document.write(`<!doctype html><html lang="th"><head><meta charset="utf-8"><title>${esc(d.doc_no || 'ใบเคาะราคา การตลาด')}</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff;font-family:'IBM Plex Sans Thai',sans-serif}${_mkPaperCss()}
+  @page{size:A4 portrait;margin:0}
+  @media print{.mkpaper{width:210mm;min-height:0;margin:0;box-shadow:none;zoom:var(--fit,1)}.mkpaper .p-sign,.mkpaper .pt tr,.mkpaper .p-box,.mkpaper .p-grand{break-inside:avoid}.mkpaper .p-sech,.mkpaper .p-sub{break-after:avoid}}
+  </style><style id="pg"></style></head><body>${_mkPaper(d)}
+  <script>
+  function fit(){var p=document.querySelector('.mkpaper');p.style.zoom='1';p.style.minHeight='0';var H=p.offsetHeight;p.style.zoom='';var MIN=0.70,one=Math.min(1,1095/H),paged=one<MIN,f=paged?MIN:one;
+   document.getElementById('pg').textContent=paged?'@page{size:A4 portrait;margin:12mm 0}':'';document.documentElement.style.setProperty('--fit',f.toFixed(4));
+   var n=paged?Math.ceil(H*MIN/1032):1;var g=document.querySelector('.pg');if(g)g.textContent=n>1?'รวม '+n+' หน้า':'หน้า 1/1';}
+  window.onload=function(){var go=function(){fit();setTimeout(function(){window.print()},250)};document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go();};
+  <` + `/script></body></html>`);
+  w.document.close();
+}
+
+// ── ตั้งค่าเส้นทางอนุมัติ (แอดมิน) ──
+async function mkRenderRoutes() {
+  _mk.view = 'routes';
+  if (!_mk.routes) _mk.routes = JSON.parse(JSON.stringify(_mk.meta?.routes || []));
+  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="_mk.routes=null;mkRenderList()">← กลับรายการ</button>`;
+  const users = _mk.meta?.users || [];
+  const uopt = ex => users.filter(u => !ex.includes(u.uid)).map(u => `<option value="${esc(u.uid)}">${esc(u.name)}${u.position ? ' · ' + esc(u.position) : ''}</option>`).join('');
+  document.getElementById('ct').innerHTML = `<div class="mkp" id="mk-routes"><div class="al alw">ตั้งค่าผู้อนุมัติตั้งต้นแต่ละขั้น และรายชื่อ CC ตั้งต้น · ผู้เสนอแก้รายชื่อในใบของตัวเองได้ (ขั้นละ ≥1 คน) · ผู้อนุมัติต้องมีเมนู "ใบเคาะราคา การตลาด" ในหน้าสิทธิ์การใช้งานด้วย</div>
+    ${_mk.routes.map((r, a) => `<div class="card"><div class="ch"><div class="ct2"><input data-rn="${a}" value="${esc(r.name)}" style="min-width:320px;font-weight:700"></div><button class="btn btn-sm btn-p" data-rsave="${a}">บันทึกเส้นทางนี้</button></div>
+      ${r.levels.map((l, i) => `<div class="lvl"><span class="n">${i + 1}</span><input data-rl="${a}:${i}" value="${esc(l.label)}"><div class="pick">${(l.uids || []).map(u => `<span class="pk">${esc(_mkUser(u)?.name || u)}<button class="x" data-rud="${a}:${i}:${esc(u)}">×</button></span>`).join('')}
+        <select data-rua="${a}:${i}"><option value="">+ เลือกผู้อนุมัติ…</option>${uopt(l.uids || [])}</select><button class="x" data-rld="${a}:${i}" title="ลบขั้น" ${r.levels.length < 2 ? 'disabled' : ''}>🗑</button></div></div>`).join('')}
+      <div class="row-act" style="padding:8px 0"><button class="btn btn-xs" data-rla="${a}">+ เพิ่มขั้น</button></div>
+      <div class="lbl" style="margin-top:10px">อีเมล CC ตั้งต้น</div>
+      ${(r.cc || []).map((c, j) => `<div class="att-r" style="grid-template-columns:1fr 1fr 30px"><input data-rcr="${a}:${j}" value="${esc(c.role || '')}" placeholder="หน้าที่ เช่น ระบบราคา"><span>${esc(_mkCcLabel({ ...c, role: '' }))}</span><button class="x" data-rcd="${a}:${j}">×</button></div>`).join('') || '<p class="hint">ยังไม่มี</p>'}
+      <div class="row-act" style="padding:8px 0"><select data-rca="${a}" style="width:auto;min-width:220px"><option value="">+ เพิ่มผู้ใช้เป็น CC…</option>${uopt((r.cc || []).map(c => c.uid))}</select><input data-rce="${a}" type="email" placeholder="หรืออีเมล" style="max-width:220px"><button class="btn btn-xs" data-rcea="${a}">+ เพิ่มอีเมล</button></div>
+    </div>`).join('')}</div>`;
+  const root = document.getElementById('mk-routes');
+  root.oninput = e => { const t = e.target, ds = t.dataset;
+    if (ds.rn !== undefined) _mk.routes[+ds.rn].name = t.value;
+    if (ds.rl) { const [a, i] = ds.rl.split(':').map(Number); _mk.routes[a].levels[i].label = t.value; }
+    if (ds.rcr) { const [a, j] = ds.rcr.split(':').map(Number); _mk.routes[a].cc[j].role = t.value; } };
+  root.onchange = e => { const t = e.target, ds = t.dataset; if (!t.value) return;
+    if (ds.rua) { const [a, i] = ds.rua.split(':').map(Number); const l = _mk.routes[a].levels[i]; l.uids = [...new Set([...(l.uids || []), t.value])]; mkRenderRoutes(); }
+    if (ds.rca !== undefined) { const r = _mk.routes[+ds.rca]; r.cc = [...(r.cc || []), { role: '', uid: t.value, on: true, src: 'route' }]; mkRenderRoutes(); } };
+  root.onclick = async e => { const t = e.target.closest('button'); if (!t) return; const ds = t.dataset;
+    if (ds.rud) { const [a, i, u] = ds.rud.split(':'); const l = _mk.routes[+a].levels[+i]; l.uids = l.uids.filter(x => x !== u); return mkRenderRoutes(); }
+    if (ds.rld) { const [a, i] = ds.rld.split(':').map(Number); _mk.routes[a].levels.splice(i, 1); return mkRenderRoutes(); }
+    if (ds.rla !== undefined) { _mk.routes[+ds.rla].levels.push({ label: 'ขั้นใหม่', uids: [] }); return mkRenderRoutes(); }
+    if (ds.rcd) { const [a, j] = ds.rcd.split(':').map(Number); _mk.routes[a].cc.splice(j, 1); return mkRenderRoutes(); }
+    if (ds.rcea !== undefined) { const a = +ds.rcea, em = root.querySelector(`[data-rce="${a}"]`).value.trim().toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return toast('อีเมลไม่ถูกต้อง'); _mk.routes[a].cc = [...(_mk.routes[a].cc || []), { role: '', email: em, on: true, src: 'route' }]; return mkRenderRoutes(); }
+    if (ds.rsave !== undefined) { const r = _mk.routes[+ds.rsave];
+      const res = await apiFetch(`/api/mkt_promo_docs/routes/${encodeURIComponent(r.id)}`, { method: 'PUT', body: JSON.stringify({ name: r.name, levels: r.levels, cc: r.cc }) });
+      if (res.error) return toast('บันทึกไม่สำเร็จ: ' + res.error.message);
+      _mk.meta.routes = res.data; _mk.routes = JSON.parse(JSON.stringify(res.data)); mkRenderRoutes(); toast('บันทึกเส้นทางอนุมัติแล้ว'); } };
+}
+
 // ใบเสนอราคา (2026-10-08, รอบ 2) — server: routes/quotationHeaders.js · ราคาจาก ราคากลาง A–G (price_tiers)
 // แทนไฟล์ "ไฟล์เสนอราคาฐาน X" ชีต ฟอร์มต้นฉบับ · รอบนี้ใช้ได้เฉพาะฐาน/ราคาในสิทธิ์ (min_price_tier) — ขออนุมัติ = รอบ 3
 // สถานะ: ร่าง (แก้ได้) → ออกแล้ว (พิมพ์ส่งลูกค้า) · ยกเลิกได้ทั้งสองสถานะ · server คำนวณราคาฐาน/ตรวจสิทธิ์เองทุกครั้ง

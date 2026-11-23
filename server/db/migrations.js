@@ -1023,6 +1023,39 @@ function runMigrations(db) {
         .run(JSON.stringify(v));
     }
   }
+
+  // ใบเคาะราคา การตลาด (ออนไลน์) — 2026-11-23 (routes/mktPromoDocs.js) · เนื้อหาเอกสารเก็บ body_json ก้อนเดียว
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mkt_promo_docs (
+      id TEXT PRIMARY KEY, doc_no TEXT UNIQUE, promo_no TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft',
+      doc_date TEXT NOT NULL, customer_code TEXT NOT NULL, customer_name TEXT, gp REAL NOT NULL DEFAULT 0,
+      title TEXT NOT NULL, purpose TEXT, route_id TEXT, body_json TEXT NOT NULL DEFAULT '{}',
+      cc_json TEXT NOT NULL DEFAULT '[]', cc_owner INTEGER NOT NULL DEFAULT 1, cc_sent_at TEXT, cc_sent_note TEXT,
+      levels_json TEXT NOT NULL DEFAULT '[]', cur_level INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL, created_by_name TEXT, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      submitted_at TEXT, approved_at TEXT, reject_reason TEXT, cancelled_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS mkt_promo_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id TEXT NOT NULL, action TEXT NOT NULL, detail TEXT,
+      by_uid TEXT, at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS mkt_promo_attachments (
+      id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, label TEXT, filename TEXT NOT NULL, mime_type TEXT NOT NULL,
+      content BLOB NOT NULL, uploaded_by TEXT, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS mkt_promo_routes (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, levels_json TEXT NOT NULL DEFAULT '[]', cc_json TEXT NOT NULL DEFAULT '[]',
+      sort INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_mkt_promo_docs_by ON mkt_promo_docs(created_by, created_at);
+    CREATE INDEX IF NOT EXISTS idx_mkt_promo_logs_d ON mkt_promo_logs(doc_id, at);
+    CREATE INDEX IF NOT EXISTS idx_mkt_promo_att_d ON mkt_promo_attachments(doc_id);
+  `);
+  // เส้นทางอนุมัติตั้งต้น (ยังไม่มีชื่อผู้อนุมัติ — แอดมินกำหนดในแท็บ ตั้งค่าเส้นทาง) · ใส่ครั้งเดียว ไม่ทับที่แก้แล้ว
+  const insMktRoute = db.prepare('INSERT OR IGNORE INTO mkt_promo_routes (id, name, levels_json, sort) VALUES (?, ?, ?, ?)');
+  for (const r of require('../routes/mktPromoDocs').DEFAULT_ROUTES) insMktRoute.run(r.id, r.name, JSON.stringify(r.levels.map(label => ({ label, uids: [] }))), r.sort);
 }
 
 module.exports = { runMigrations, columnExists, addColumnIfMissing };
