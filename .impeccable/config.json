@@ -20,6 +20,12 @@
         ],
         "createdAt": "2026-10-17T07:16:40.404Z",
         "reason": "Claude: archived decision sketch; value is IBM Plex Sans Thai (documented in DESIGN.md) misparsed from an SVG font-family attribute"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "sarabun",
+        "createdAt": "2026-11-23T07:10:00.275Z",
+        "reason": "Email HTML font stack, same as existing quotationHeaders.js/promoApprovalMail.js emails (codebase convention, not app UI)"
       }
     ]
   }
