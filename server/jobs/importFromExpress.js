@@ -2006,11 +2006,20 @@ async function runImport(db) {
     if (!fs.existsSync(EXPRESS_ROOT) || !fs.existsSync(path.join(EXPRESS_ROOT, STOCK_COMPANY))) {
       throw new Error(`Express DBF root unreachable: ${path.join(EXPRESS_ROOT, STOCK_COMPANY)} not found (mapped drive disconnected?) — skipped this cycle to avoid wiping existing data`);
     }
+    // checkpoint ระหว่างขั้น (2026-11-23, ผู้ใช้แจ้งเมนูโหลดช้า): log [stall] บนเครื่องจริงชี้ว่า server ค้าง 1–2.4 วิ เฉพาะช่วง sync
+    // — WAL โตถึง 1.8–2.0 GB ต่อรอบ (auto-checkpoint ปิดไว้ใน syncWorker.js แล้ว checkpoint ครั้งเดียวตอนจบ) ทุกการอ่านฝั่ง
+    // main thread ต้องค้นผ่าน WAL index ที่ยาวขึ้นเรื่อยๆ · PASSIVE หลังจบแต่ละขั้นหนัก = คัดหน้ากลับ DB โดยไม่บล็อกใคร
+    // แล้วการเขียนขั้นถัดไปวน WAL กลับไปเริ่มต้นใหม่ได้ (WAL ไม่เกินขนาดของขั้นเดียว) · ปิดได้ด้วย MID_SYNC_CHECKPOINT=0
+    const midCp = (step) => {
+      if (process.env.MID_SYNC_CHECKPOINT === '0') return;
+      try { db.exec('PRAGMA wal_checkpoint(PASSIVE)'); } catch (e) { console.warn('[importFromExpress] checkpoint หลัง ' + step + ' ไม่สำเร็จ:', e.message); }
+    };
     rowsProcessed += await syncProducts(db);
     rowsProcessed += await syncCustomers(db);
     rowsProcessed += await syncWarehouses(db);
     rowsProcessed += await syncStock(db);
     rowsProcessed += await syncStockMovements(db);
+    midCp('stock movements');
     // ห้องสต็อกเพิ่มเติม (SHOP3) — พังแล้วไม่ให้ทั้งรอบ sync ของ TSS ล้มตาม
     for (const company of EXTRA_STOCK_COMPANIES) {
       try { rowsProcessed += await syncExtraStockCompany(db, company); } catch (e) { console.warn(`[importFromExpress] ${company} stock failed:`, e.message); }
@@ -2022,14 +2031,19 @@ async function runImport(db) {
     } catch (e) { console.warn('[importFromExpress] first_movement_date failed:', e.message); }
     const salesResult = await syncSales(db);
     rowsProcessed += salesResult.ordersImported + salesResult.linesImported + (salesResult.componentsImported || 0);
+    midCp('sales');
     refreshSalesRollups(db);
+    midCp('sales rollups');
     rowsProcessed += await syncInvoiceSales(db);
     rowsProcessed += await syncInvoices(db);
+    midCp('invoices');
     rowsProcessed += await syncPromoDocs(db);
+    midCp('promo docs');
     // ฟีเจอร์เสริมของ WMS — อ่านไม่ได้ก็ไม่ควรทำให้ทั้งรอบ sync ยอดขาย/สต็อกล้มตาม
     try { rowsProcessed += await syncExpressPoLines(db); } catch (e) { console.error('[importFromExpress] purchase orders failed:', e.message); }
     // เสริมสำหรับ KG ใน Dashboard — พังแล้วไม่ควรทำให้ทั้งรอบ sync ถูกนับว่า error (ข้อมูลหลักบันทึกไปแล้ว)
     try { rowsProcessed += await syncSalesLinesMonthly(db); } catch (e) { console.warn('[importFromExpress] sales lines monthly failed:', e.message); }
+    midCp('sales lines monthly');
     try { rowsProcessed += await syncTgmDetailLines(db); } catch (e) { console.warn('[importFromExpress] TGM detail lines failed:', e.message); }
     // ประวัติเบิกสินค้าตัวอย่าง/ชิม/แถม (2026-11-05) — jobs/importSampleIssues.js · อ่านเมื่อไฟล์เปลี่ยน ไม่ถี่กว่าชั่วโมงละครั้ง
     try { rowsProcessed += await require('./importSampleIssues').syncSampleIssues(db); } catch (e) { console.warn('[importFromExpress] sample issues failed:', e.message); }
