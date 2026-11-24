@@ -32,9 +32,9 @@ const SEC_TYPES = { instore: 'In Store', live: 'Live', ship: 'เงื่อน
 const PROD_TYPES = ['instore', 'live'];
 const DEFAULT_ROUTES = [
   { id: 'mkt-online', name: 'การตลาดออนไลน์ (มาตรฐาน)', sort: 1,
-    levels: ['ธุรการ', 'ผู้จัดการ', 'ผู้ตรวจสอบ', 'ผู้อนุมัติ'] },
+    levels: ['ผู้จัดการ', 'ผู้ตรวจสอบ', 'ผู้อนุมัติ'] },
   { id: 'mkt-npd', name: 'การตลาด · NPD / มีค่าใช้จ่ายการตลาด', sort: 2,
-    levels: ['ธุรการ', 'ผู้จัดการ', 'ผู้ตรวจสอบ', 'ผู้อนุมัติ', 'ผู้บริหาร'] },
+    levels: ['ผู้จัดการ', 'ผู้ตรวจสอบ', 'ผู้อนุมัติ', 'ผู้บริหาร'] },
 ];
 const EDITABLE = ['draft', 'rejected'];
 const MAX_SECS = 20, MAX_SUBS = 30, MAX_ITEMS = 300, MAX_ROWS = 60, MAX_COLS = 12;

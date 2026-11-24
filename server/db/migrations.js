@@ -1067,6 +1067,19 @@ function runMigrations(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS sales_order_sync (order_id TEXT PRIMARY KEY, company TEXT NOT NULL, hash TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_sales_order_sync_co ON sales_order_sync(company);
     CREATE INDEX IF NOT EXISTS idx_sales_tx_company_soref ON sales_transactions(company, so_ref);`);
+  // ใบเคาะการตลาด: เอาขั้น/ช่องลงนาม "ธุรการ" ออก (2026-11-24, ผู้ใช้สั่ง) — ทำครั้งเดียว (app_migrations)
+  // เส้นทางอนุมัติทุกเส้น + ใบที่ยังไม่อนุมัติ (ร่าง/ถูกตีกลับ/รออนุมัติ offline) · ใบที่อนุมัติแล้ว/ยกเลิกไม่แตะ (เก็บตามที่เกิดจริง)
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  const MKT_NO_CLERK = '20261124_mkt_remove_clerk_level';
+  if (!db.prepare('SELECT 1 FROM app_migrations WHERE id = ?').get(MKT_NO_CLERK)) {
+    const strip = (json) => { try { const a = JSON.parse(json || '[]'); const b = a.filter((l) => l && l.label !== 'ธุรการ'); return b.length === a.length ? null : JSON.stringify(b); } catch { return null; } };
+    const updRoute = db.prepare('UPDATE mkt_promo_routes SET levels_json = ? WHERE id = ?');
+    for (const r of db.prepare('SELECT id, levels_json FROM mkt_promo_routes').all()) { const v = strip(r.levels_json); if (v) updRoute.run(v, r.id); }
+    const updDoc = db.prepare('UPDATE mkt_promo_docs SET levels_json = ?, cur_level = 0 WHERE id = ?');
+    for (const d of db.prepare("SELECT id, levels_json FROM mkt_promo_docs WHERE status IN ('draft', 'rejected', 'offline')").all()) { const v = strip(d.levels_json); if (v) updDoc.run(v, d.id); }
+    db.prepare('INSERT INTO app_migrations (id) VALUES (?)').run(MKT_NO_CLERK);
+    console.log('[migrations] ใบเคาะการตลาด: เอาขั้นธุรการออกจากเส้นทาง/ใบที่ยังไม่อนุมัติแล้ว');
+  }
 }
 
 module.exports = { runMigrations, columnExists, addColumnIfMissing };
