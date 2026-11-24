@@ -916,6 +916,47 @@ function buildStockMovements(rows, company) {
   return { daily, wmsDaily, invoiceLines, conversionLines };
 }
 
+// เขียนตารางแบบเทียบของเดิม (2026-11-24, ผู้ใช้แจ้งระบบค้างช่วง sync) — แทน "DELETE ทั้งตาราง + INSERT ใหม่ใน transaction เดียว"
+// ที่วัดบนสำเนา DB จริงถือ write lock 19–61 วิ (stock movements) / 14 วิ (sales lines) ทุกรอบ ทั้งที่แถวเปลี่ยนจริงไม่กี่ร้อย
+// rows = [[...keyCols, ...valCols], ...] · scope = เงื่อนไขขอบเขตแถวเดิมที่ชุดใหม่แทนที่ (เช่น company = ?)
+// แถวหาย = ลบ · แถวใหม่/ค่าเปลี่ยน = ลบ+เขียน (ใช้ IS เทียบคีย์ — คีย์บางคอลัมน์เป็น NULL ได้) · ก้อนละ DIFF_WRITE_CHUNK แถว
+// touch: คอลัมน์เวลาแก้ไขที่ตั้งเป็นเวลาปัจจุบันตอนเขียน (ไม่ใช้เทียบ) · คืน { inserted, deleted }
+const DIFF_WRITE_CHUNK = 2000;
+function writeTableDiff(db, { table, keyCols, valCols, rows, scope = { where: '', params: [] }, touch = null }) {
+  const cols = [...keyCols, ...valCols];
+  const norm = (v) => (v === undefined || v === null ? null : typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : String(v));
+  const keyOf = (r) => JSON.stringify(r.slice(0, keyCols.length).map(norm));
+  const valOf = (r) => JSON.stringify(r.slice(keyCols.length).map(norm));
+  const old = new Map();
+  for (const r of db.prepare(`SELECT ${cols.join(',')} FROM ${table} ${scope.where}`).iterate(...scope.params)) {
+    const a = cols.map((c) => r[c]);
+    old.set(keyOf(a), valOf(a));
+  }
+  const upserts = [];
+  const seen = new Set();
+  for (const r of rows) {
+    const k = keyOf(r);
+    seen.add(k);
+    if (old.get(k) !== valOf(r)) upserts.push(r);
+  }
+  const deletes = [];
+  for (const k of old.keys()) if (!seen.has(k)) deletes.push(JSON.parse(k));
+  const del = db.prepare(`DELETE FROM ${table} WHERE ${keyCols.map((c) => `${c} IS ?`).join(' AND ')}`);
+  const ins = db.prepare(`INSERT INTO ${table} (${cols.join(',')}${touch ? `,${touch}` : ''}) VALUES (${cols.map(() => '?').join(',')}${touch ? ",strftime('%Y-%m-%dT%H:%M:%fZ','now')" : ''})`);
+  const work = [...deletes.map((k) => ['d', k]), ...upserts.map((r) => ['u', r])];
+  for (let i = 0; i < work.length; i += DIFF_WRITE_CHUNK) {
+    db.exec('BEGIN');
+    try {
+      for (const [op, x] of work.slice(i, i + DIFF_WRITE_CHUNK)) {
+        if (op === 'd') del.run(...x);
+        else { del.run(...x.slice(0, keyCols.length)); ins.run(...x); }
+      }
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+  }
+  return { inserted: upserts.length, deleted: deletes.length };
+}
+
 async function syncStockMovements(db) {
   const rows = await readTable(STOCK_COMPANY, 'STCRD.DBF');
   if (STOCK_COMPANY === PO_COMPANY) receiptLinesCycle = rows.filter((r) => String(r.DOCNUM || '').startsWith('RH'));
@@ -926,72 +967,35 @@ async function syncStockMovements(db) {
   }
   const invoiceLineComponents = await buildInvoiceLineComponents(invoiceLines);
 
-  db.exec('BEGIN');
-  try {
-    db.exec('DELETE FROM stock_movements_daily');
-    const insert = db.prepare(`
-      INSERT INTO stock_movements_daily (sku, warehouse, day, received_qty, sold_qty, converted_qty, transferred_qty, other_qty, pm_qty, wms_received_qty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    let n = 0;
-    for (const [key, d] of daily) {
-      const [sku, warehouse, day] = key.split('|');
-      insert.run(sku, warehouse, day, d.received, d.sold, d.converted, d.transferred, d.other, d.pm, d.wmsReceived);
-      n++;
-    }
-
-    for (const company of INVOICE_LINE_COMPANIES) db.prepare('DELETE FROM invoice_lines WHERE company = ?').run(company);
-    const insertInvoiceLine = db.prepare(`
-      INSERT INTO invoice_lines (company, doc_num, seq_num, doc_date, sku, sku_name, warehouse, qty, unit_code, unit_factor, line_value, ref_num, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    `);
-    let nInvoiceLines = 0;
-    for (const d of invoiceLines.values()) {
-      insertInvoiceLine.run(d.company, d.docNum, d.seqNum, d.docDate, d.sku, d.skuName, d.warehouse, d.qty, d.unitCode, d.unitFactor, d.lineValue, d.refNum);
-      nInvoiceLines++;
-    }
-
-    for (const company of INVOICE_LINE_COMPANIES) db.prepare('DELETE FROM invoice_line_components WHERE company = ?').run(company);
-    const insertInvoiceLineComponent = db.prepare(`
-      INSERT OR IGNORE INTO invoice_line_components (company, doc_num, seq_num, parent_sku, source_doc_num, source_seq_num, child_code, child_name, child_qty, note, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    `);
-    let nInvoiceLineComponents = 0;
-    for (const c of invoiceLineComponents) {
-      insertInvoiceLineComponent.run(c.company, c.docNum, c.seqNum, c.parentSku, c.sourceDocNum, c.sourceSeqNum, c.childCode, c.childName, c.childQty, c.note);
-      nInvoiceLineComponents++;
-    }
-
-    db.exec('DELETE FROM conversion_doc_lines');
-    const insertConversionLine = db.prepare(`
-      INSERT INTO conversion_doc_lines (doc_num, seq_num, doc_date, sku, sku_name, warehouse, direction, qty, unit_code, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    `);
-    let nConversionLines = 0;
-    for (const c of conversionLines.values()) {
-      insertConversionLine.run(c.docNum, c.seqNum, c.docDate, c.sku, c.skuName, c.warehouse, c.direction, c.qty, c.unitCode);
-      nConversionLines++;
-    }
-
-    db.exec('DELETE FROM stock_movements_wms_daily');
-    const insertWms = db.prepare(`
-      INSERT INTO stock_movements_wms_daily (sku, day, received_qty, general_sale_qty, consi_qty, transfer_qty, converted_qty, reserved_qty, return_qty, writeoff_qty, received_value, dispatched_qty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    let nWms = 0;
-    for (const [key, d] of wmsDaily) {
-      const [sku, day] = key.split('|');
-      insertWms.run(sku, day, d.received, d.general_sale, d.consi, d.transfer, d.converted, d.reserved, d.return, d.writeoff, d.received_value, d.dispatched);
-      nWms++;
-    }
-
-    db.exec('COMMIT');
-    console.log(`[importFromExpress] stock movements: ${n} sku/warehouse/day rows, ${nWms} sku/day WMS rows, ${nInvoiceLines} invoice lines, ${nInvoiceLineComponents} invoice line components, ${nConversionLines} FF conversion lines`);
-    return n;
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
+  // เขียนแบบเทียบของเดิม ก้อนละไม่กี่พันแถว (writeTableDiff) — เดิม DELETE ทั้ง 5 ตาราง + INSERT ~870k แถวใน transaction เดียว
+  const companiesIn = { where: `WHERE company IN (${INVOICE_LINE_COMPANIES.map(() => '?').join(',')})`, params: [...INVOICE_LINE_COMPANIES] };
+  const w = [];
+  w.push(writeTableDiff(db, { table: 'stock_movements_daily', keyCols: ['sku', 'warehouse', 'day'],
+    valCols: ['received_qty', 'sold_qty', 'converted_qty', 'transferred_qty', 'other_qty', 'pm_qty', 'wms_received_qty'],
+    rows: [...daily].map(([key, d]) => [...key.split('|'), d.received, d.sold, d.converted, d.transferred, d.other, d.pm, d.wmsReceived]) }));
+  w.push(writeTableDiff(db, { table: 'invoice_lines', keyCols: ['company', 'doc_num', 'seq_num', 'sku', 'warehouse'],
+    valCols: ['doc_date', 'sku_name', 'qty', 'unit_code', 'unit_factor', 'line_value', 'ref_num'], scope: companiesIn, touch: 'updated_at',
+    rows: [...invoiceLines.values()].map((d) => [d.company, d.docNum, d.seqNum, d.sku, d.warehouse, d.docDate, d.skuName, d.qty, d.unitCode, d.unitFactor, d.lineValue, d.refNum]) }));
+  // คีย์ซ้ำในชุดใหม่ = เดิม INSERT OR IGNORE เก็บแถวแรก → ตัดซ้ำแบบเดียวกันก่อนเทียบ
+  const compSeen = new Set();
+  const compRows = [];
+  for (const c of invoiceLineComponents) {
+    const r = [c.company, c.docNum, c.seqNum, c.sourceDocNum, c.sourceSeqNum, c.childCode, c.note, c.parentSku, c.childName, c.childQty];
+    const k = JSON.stringify(r.slice(0, 7));
+    if (compSeen.has(k)) continue;
+    compSeen.add(k); compRows.push(r);
   }
+  w.push(writeTableDiff(db, { table: 'invoice_line_components', keyCols: ['company', 'doc_num', 'seq_num', 'source_doc_num', 'source_seq_num', 'child_code', 'note'],
+    valCols: ['parent_sku', 'child_name', 'child_qty'], scope: companiesIn, touch: 'updated_at', rows: compRows }));
+  w.push(writeTableDiff(db, { table: 'conversion_doc_lines', keyCols: ['doc_num', 'seq_num', 'sku', 'warehouse', 'direction'],
+    valCols: ['doc_date', 'sku_name', 'qty', 'unit_code'], touch: 'updated_at',
+    rows: [...conversionLines.values()].map((c) => [c.docNum, c.seqNum, c.sku, c.warehouse, c.direction, c.docDate, c.skuName, c.qty, c.unitCode]) }));
+  w.push(writeTableDiff(db, { table: 'stock_movements_wms_daily', keyCols: ['sku', 'day'],
+    valCols: ['received_qty', 'general_sale_qty', 'consi_qty', 'transfer_qty', 'converted_qty', 'reserved_qty', 'return_qty', 'writeoff_qty', 'received_value', 'dispatched_qty'],
+    rows: [...wmsDaily].map(([key, d]) => [...key.split('|'), d.received, d.general_sale, d.consi, d.transfer, d.converted, d.reserved, d.return, d.writeoff, d.received_value, d.dispatched]) }));
+  const n = daily.size;
+  console.log(`[importFromExpress] stock movements: ${n} sku/warehouse/day rows, ${wmsDaily.size} sku/day WMS rows, ${invoiceLines.size} invoice lines, ${compRows.length} invoice line components, ${conversionLines.size} FF conversion lines · เขียน ${w.reduce((a, x) => a + x.inserted, 0)} ลบ ${w.reduce((a, x) => a + x.deleted, 0)} แถว`);
+  return n;
 }
 
 // Warehouse code -> name lookup, from Express's generic ISTAB.DBF code-table file (TABTYP='21' rows).
@@ -1049,8 +1053,15 @@ function passesCompanyDateCutoff(company, dateValue) {
   return true;
 }
 
+// เขียนยอดขายเฉพาะใบที่เปลี่ยน (2026-11-24) — ดูคอมเมนต์ใน syncSales · เปลี่ยน VERSION เมื่อรูปแถวที่เขียนเปลี่ยน
+// (บังคับให้ทุกใบถูกเขียนใหม่หนึ่งรอบ) · CHUNK = จำนวนใบต่อ transaction (ยิ่งน้อย lock ยิ่งสั้น แต่รอบช้าลงเล็กน้อย)
+const SALES_HASH_VERSION = 'v1|';
+const SALES_WRITE_CHUNK = 300;
 async function syncSales(db) {
+  const crypto = require('crypto');
   const knownSkus = loadKnownSkuSet(db);
+  db.exec('CREATE TABLE IF NOT EXISTS sales_order_sync (order_id TEXT PRIMARY KEY, company TEXT NOT NULL, hash TEXT NOT NULL)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_order_sync_co ON sales_order_sync(company)');
   // dlv_date (DLVDAT) added 2026-08-27 — see schema.sql's comment on outbound_orders.dlv_date
   const insertOrder = db.prepare(`
     INSERT INTO outbound_orders (id, company, order_no, order_date, dlv_date, cust_code, slm_id, doc_status, total)
@@ -1100,70 +1111,97 @@ async function syncSales(db) {
       byOrder.set(h.SONUM, h);
     }
 
-    db.exec('BEGIN');
-    try {
-      // wipe this company's rows before reinserting (mirror semantics, avoids duplicate accumulation)
-      db.prepare('DELETE FROM sales_line_components WHERE company = ?').run(company);
-      db.prepare('DELETE FROM outbound_lines WHERE order_id IN (SELECT id FROM outbound_orders WHERE company = ?)').run(company);
-      db.prepare('DELETE FROM outbound_orders WHERE company = ?').run(company);
-      db.prepare('DELETE FROM sales_transactions WHERE company = ?').run(company);
-
-      for (const [sonum, h] of byOrder) {
-        const orderId = `${company}:${sonum}`;
-        insertOrder.run(orderId, company, sonum, toIsoDate(h.SODAT), toIsoDate(h.DLVDAT), h.CUSCOD || null, normalizeSlmCode(h.SLMCOD) || null, h.DOCSTAT || null, h.TOTAL || 0);
-        ordersImported++;
-      }
-
-      const lineByOrderSeq = new Map();
-      for (const it of items) {
-        if (!byOrder.has(it.SONUM)) continue; // excluded order (not DOCSTAT='M') or line has no header
-        const h = byOrder.get(it.SONUM);
-        const orderId = `${company}:${it.SONUM}`;
-        const qty = it.ORDQTY || 0;
-        const value = it.TRNVAL || 0;
-        const seqNum = cleanText(it.SEQNUM);
-        const sku = cleanText(it.STKCOD) || null;
-        insertLine.run(orderId, seqNum || null, sku, qty, it.UNITPR || 0, value);
-        lineByOrderSeq.set(`${it.SONUM}|${seqNum}`, { orderId, orderNo: it.SONUM, parentSku: sku });
-        insertTx.run(company, toIsoDate(it.SODAT || h.SODAT), sku, h.CUSCOD || null, normalizeSlmCode(h.SLMCOD) || null, qty, value, it.SONUM);
-        linesImported++;
-
-        // plain sales_history stays CONSI-free — see file header. Consignment numbers still live in
-        // sales_transactions/outbound_* (company='CONSI') and the v_sc_consi_monthly view built on top.
-        const period = ym(it.SODAT || h.SODAT);
-        if (period && it.STKCOD && company !== CONSI_COMPANY) {
-          const key = `${normalizeSlmCode(h.SLMCOD) || 'ALL'}|${it.STKCOD}|${period}`;
-          const cur = monthly.get(key) || { qty: 0, amount: 0 };
-          cur.qty += qty;
-          cur.amount += value;
-          monthly.set(key, cur);
-
-          const allKey = `ALL|${it.STKCOD}|${period}`;
-          const curAll = monthly.get(allKey) || { qty: 0, amount: 0 };
-          curAll.qty += qty;
-          curAll.amount += value;
-          monthly.set(allKey, curAll);
-        }
-      }
-
-
-      for (const rm of remarks) {
-        const orderNo = cleanText(rm.DOCNUM);
-        if (!byOrder.has(orderNo)) continue;
-        const seqNum = cleanText(rm.SEQNUM);
-        const parent = lineByOrderSeq.get(`${orderNo}|${seqNum}`);
-        if (!parent?.parentSku) continue;
-        const component = parseSalesLineComponentRemark(rm.REMARK);
-        if (!acceptsComponent(parent.parentSku, component?.childCode, knownSkus)) continue;
-        insertComponent.run(company, parent.orderId, parent.orderNo, seqNum, parent.parentSku, component.childCode, component.childName, component.childQty, component.note);
-        componentsImported++;
-      }
-
-      db.exec('COMMIT');
-    } catch (e) {
-      db.exec('ROLLBACK');
-      throw e;
+    // เขียนเฉพาะใบที่เปลี่ยน (2026-11-24, ผู้ใช้แจ้งระบบค้างช่วง sync): เดิมลบทั้งบริษัทแล้วเขียนใหม่ใน transaction เดียว
+    // — วัดบนสำเนา DB จริง TSS ถือ write lock 90 วิ, TSS-67/68 60 + 25 วิ ทุกรอบ (ระหว่างนั้น login/บันทึกของทุกคนค้าง)
+    // ทั้งที่แต่ละรอบมีใบเปลี่ยนจริงแค่หลักร้อย · ตอนนี้: สร้างแถวที่จะเขียนของแต่ละใบ (order/lines/transactions/components)
+    // ในหน่วยความจำ → hash → เทียบกับ hash รอบก่อน (sales_order_sync) → เขียนเฉพาะใบเพิ่ม/เปลี่ยน/หายไป
+    // แบ่ง transaction ละ SALES_WRITE_CHUNK ใบ (ปล่อย lock ให้คนอื่นเขียนแทรกได้) · แต่ละใบลบ+เขียนใน transaction เดียวกัน
+    // ผู้อ่านจึงไม่เคยเห็นใบครึ่งๆ กลางๆ · hash ทำจากแถวผลลัพธ์ (ไม่ใช่ข้อมูลดิบ) — แก้กติกาแปลงข้อมูลแล้วใบที่ได้รับผลถูกเขียนใหม่เอง
+    const orders = new Map(); // sonum -> { order, lines:[], txs:[], comps:[] }
+    for (const [sonum, h] of byOrder) {
+      orders.set(sonum, { order: [`${company}:${sonum}`, company, sonum, toIsoDate(h.SODAT), toIsoDate(h.DLVDAT), h.CUSCOD || null, normalizeSlmCode(h.SLMCOD) || null, h.DOCSTAT || null, h.TOTAL || 0], lines: [], txs: [], comps: [] });
+      ordersImported++;
     }
+    const lineByOrderSeq = new Map();
+    for (const it of items) {
+      if (!byOrder.has(it.SONUM)) continue; // excluded order (not DOCSTAT='M') or line has no header
+      const h = byOrder.get(it.SONUM);
+      const o = orders.get(it.SONUM);
+      const orderId = `${company}:${it.SONUM}`;
+      const qty = it.ORDQTY || 0;
+      const value = it.TRNVAL || 0;
+      const seqNum = cleanText(it.SEQNUM);
+      const sku = cleanText(it.STKCOD) || null;
+      o.lines.push([orderId, seqNum || null, sku, qty, it.UNITPR || 0, value]);
+      lineByOrderSeq.set(`${it.SONUM}|${seqNum}`, { orderId, orderNo: it.SONUM, parentSku: sku });
+      o.txs.push([company, toIsoDate(it.SODAT || h.SODAT), sku, h.CUSCOD || null, normalizeSlmCode(h.SLMCOD) || null, qty, value, it.SONUM]);
+      linesImported++;
+
+      // plain sales_history stays CONSI-free — see file header. Consignment numbers still live in
+      // sales_transactions/outbound_* (company='CONSI') and the v_sc_consi_monthly view built on top.
+      const period = ym(it.SODAT || h.SODAT);
+      if (period && it.STKCOD && company !== CONSI_COMPANY) {
+        const key = `${normalizeSlmCode(h.SLMCOD) || 'ALL'}|${it.STKCOD}|${period}`;
+        const cur = monthly.get(key) || { qty: 0, amount: 0 };
+        cur.qty += qty;
+        cur.amount += value;
+        monthly.set(key, cur);
+
+        const allKey = `ALL|${it.STKCOD}|${period}`;
+        const curAll = monthly.get(allKey) || { qty: 0, amount: 0 };
+        curAll.qty += qty;
+        curAll.amount += value;
+        monthly.set(allKey, curAll);
+      }
+    }
+    for (const rm of remarks) {
+      const orderNo = cleanText(rm.DOCNUM);
+      if (!byOrder.has(orderNo)) continue;
+      const seqNum = cleanText(rm.SEQNUM);
+      const parent = lineByOrderSeq.get(`${orderNo}|${seqNum}`);
+      if (!parent?.parentSku) continue;
+      const component = parseSalesLineComponentRemark(rm.REMARK);
+      if (!acceptsComponent(parent.parentSku, component?.childCode, knownSkus)) continue;
+      orders.get(orderNo).comps.push([company, parent.orderId, parent.orderNo, seqNum, parent.parentSku, component.childCode, component.childName, component.childQty, component.note]);
+      componentsImported++;
+    }
+
+    const oldHash = new Map(db.prepare('SELECT order_id, hash FROM sales_order_sync WHERE company = ?').all(company).map((r) => [r.order_id, r.hash]));
+    const changed = [];
+    const newIds = new Set();
+    for (const o of orders.values()) {
+      const id = o.order[0];
+      newIds.add(id);
+      o.hash = crypto.createHash('sha1').update(SALES_HASH_VERSION + JSON.stringify([o.order, o.lines, o.txs, o.comps])).digest('base64');
+      if (oldHash.get(id) !== o.hash) changed.push(o);
+    }
+    const gone = db.prepare('SELECT id, order_no FROM outbound_orders WHERE company = ?').all(company).filter((r) => !newIds.has(r.id));
+    const goneIds = new Set(gone.map((g) => g.id));
+    for (const id of oldHash.keys()) if (!newIds.has(id) && !goneIds.has(id)) gone.push({ id, order_no: id.slice(company.length + 1) });
+
+    const delLines = db.prepare('DELETE FROM outbound_lines WHERE order_id = ?');
+    const delComps = db.prepare('DELETE FROM sales_line_components WHERE order_id = ?');
+    const delTx = db.prepare('DELETE FROM sales_transactions WHERE company = ? AND so_ref = ?');
+    const delOrder = db.prepare('DELETE FROM outbound_orders WHERE id = ?');
+    const setHash = db.prepare('INSERT INTO sales_order_sync (order_id, company, hash) VALUES (?, ?, ?) ON CONFLICT(order_id) DO UPDATE SET hash = excluded.hash');
+    const delHash = db.prepare('DELETE FROM sales_order_sync WHERE order_id = ?');
+    const inChunks = (list, fn) => {
+      for (let i = 0; i < list.length; i += SALES_WRITE_CHUNK) {
+        db.exec('BEGIN');
+        try { for (const x of list.slice(i, i + SALES_WRITE_CHUNK)) fn(x); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
+      }
+    };
+    inChunks(gone, (g) => { delLines.run(g.id); delComps.run(g.id); delTx.run(company, g.order_no); delOrder.run(g.id); delHash.run(g.id); });
+    inChunks(changed, (o) => {
+      const [id, , sonum] = o.order;
+      delLines.run(id); delComps.run(id); delTx.run(company, sonum);
+      insertOrder.run(...o.order);
+      for (const l of o.lines) insertLine.run(...l);
+      for (const t of o.txs) insertTx.run(...t);
+      for (const c of o.comps) insertComponent.run(...c);
+      setHash.run(id, company, o.hash);
+    });
+    if (changed.length || gone.length) console.log(`[importFromExpress] sales ${company}: เขียนใหม่ ${changed.length} ใบ · ลบ ${gone.length} ใบ (จาก ${orders.size})`);
   }
 
   db.exec('BEGIN');
@@ -1764,16 +1802,27 @@ function refreshSalesRollups(db) {
   // ลูกค้าที่ไม่นับเป็นยอดขาย (บริษัทในเครือ + Shop ของบริษัท, 2026-10-14 — lib/nonSales.js) ไม่เข้าตารางสรุปยอด
   // (Dashboard รายสินค้า / ประวัติขาย / Sales Overview) · insertSql ทุกตัวรับ ? ที่ 2 = รายการรหัสที่ตัด
   const excludeJson = JSON.stringify([...require('../lib/nonSales').nonSalesCodes(db)]);
+  // คำนวณลงตาราง TEMP ก่อน (2026-11-24): วัดบนสำเนา DB จริง 3 ขั้นนี้ถือ write lock 8–14 วิ ต่อขั้น เพราะ GROUP BY
+  // ทั้งเดือนอยู่ใน transaction · TEMP อยู่ใน temp DB ไม่ล็อก DB หลัก → ช่วงที่ล็อกเหลือแค่ DELETE + คัดลอกผลลัพธ์
   function runRollupStep(deleteSql, insertSql, label) {
-    db.exec('BEGIN');
+    const m = insertSql.match(/INSERT INTO (\w+)\s*\(([^)]*)\)/);
+    if (!m) throw new Error('runRollupStep: อ่านชื่อตาราง/คอลัมน์จาก insertSql ไม่ได้');
+    const [, table, cols] = m;
+    db.exec('DROP TABLE IF EXISTS temp.rollup_tmp');
+    db.exec(`CREATE TEMP TABLE rollup_tmp AS SELECT ${cols} FROM main.${table} WHERE 0`);
     try {
-      db.prepare(deleteSql).run(cutoffYm);
-      db.prepare(insertSql).run(cutoffYm, excludeJson);
-
-      db.exec('COMMIT');
-    } catch (e) {
-      db.exec('ROLLBACK');
-      throw e;
+      db.prepare(insertSql.replace(`INSERT INTO ${table}`, 'INSERT INTO temp.rollup_tmp')).run(cutoffYm, excludeJson);
+      db.exec('BEGIN');
+      try {
+        db.prepare(deleteSql).run(cutoffYm);
+        db.exec(`INSERT INTO main.${table} (${cols}) SELECT ${cols} FROM temp.rollup_tmp`);
+        db.exec('COMMIT');
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+    } finally {
+      db.exec('DROP TABLE IF EXISTS temp.rollup_tmp');
     }
   }
 
@@ -1958,25 +2007,14 @@ async function syncSalesLinesMonthly(db) {
       dc.amount += Number(r.TRNVAL) || 0;
       daily.set(dk, dc);
     }
-    db.exec('BEGIN');
-    try {
-      db.prepare('DELETE FROM sales_lines_monthly WHERE company = ?').run(company);
-      for (const [key, v] of monthly) {
-        const [period, cust, slm, sku, unit] = key.split('\u0001');
-        insert.run(company, period, cust, slm, sku, unit, v.qty, v.qtyBase, v.amount);
-        rowsImported++;
-      }
-      db.prepare('DELETE FROM sales_lines_daily WHERE company = ?').run(company);
-      for (const [key, v] of daily) {
-        const [day, cust, slm, sku, unit] = key.split('\u0001');
-        insertDaily.run(company, day, cust, slm, sku, unit, v.qty, v.qtyBase, v.amount);
-      }
-      setState.run(source, mtimeMs, new Date().toISOString());
-      db.exec('COMMIT');
-    } catch (e) {
-      db.exec('ROLLBACK');
-      throw e;
-    }
+    // เขียนแบบเทียบของเดิม ก้อนละไม่กี่พันแถว (writeTableDiff, 2026-11-24) — เดิม DELETE ทั้งบริษัท + INSERT ใน transaction เดียว (วัดได้ 14 วิ)
+    const byCo = { where: 'WHERE company = ?', params: [company] };
+    writeTableDiff(db, { table: 'sales_lines_monthly', keyCols: ['company', 'ym', 'cust_code', 'slm_code', 'sku', 'unit_code'], valCols: ['qty', 'qty_base', 'amount'], scope: byCo,
+      rows: [...monthly].map(([key, v]) => [company, ...key.split('\u0001'), v.qty, v.qtyBase, v.amount]) });
+    writeTableDiff(db, { table: 'sales_lines_daily', keyCols: ['company', 'd', 'cust_code', 'slm_code', 'sku', 'unit_code'], valCols: ['qty', 'qty_base', 'amount'], scope: byCo,
+      rows: [...daily].map(([key, v]) => [company, ...key.split('\u0001'), v.qty, v.qtyBase, v.amount]) });
+    rowsImported += monthly.size;
+    setState.run(source, mtimeMs, new Date().toISOString());
   }
   // จำกติกาที่ใช้สร้างแล้ว เฉพาะเมื่อสร้างใหม่ครบทุกแฟ้ม (อ่านบางแฟ้มไม่ได้ = รอบหน้าสร้างใหม่ทั้งหมดอีกครั้ง)
   if (rulesChanged && allOk) setState.run(rulesKey, rulesSig, new Date().toISOString());

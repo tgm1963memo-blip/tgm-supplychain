@@ -1062,6 +1062,11 @@ function runMigrations(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS mkt_promo_settings (key TEXT PRIMARY KEY, value TEXT, updated_by TEXT,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))`);
   db.prepare("INSERT OR IGNORE INTO mkt_promo_settings (key, value) VALUES ('paper_approvers', ?)").run(JSON.stringify(['3384']));
+  // sync ยอดขายแบบเขียนเฉพาะใบที่เปลี่ยน (2026-11-24, jobs/importFromExpress.js syncSales) — hash ของแต่ละใบ +
+  // index ไว้ลบ sales_transactions ทีละใบ (company, so_ref) · สร้างครั้งเดียวตอนเริ่ม server (ไม่ใช่ใน worker ระหว่าง sync)
+  db.exec(`CREATE TABLE IF NOT EXISTS sales_order_sync (order_id TEXT PRIMARY KEY, company TEXT NOT NULL, hash TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_sales_order_sync_co ON sales_order_sync(company);
+    CREATE INDEX IF NOT EXISTS idx_sales_tx_company_soref ON sales_transactions(company, so_ref);`);
 }
 
 module.exports = { runMigrations, columnExists, addColumnIfMissing };
