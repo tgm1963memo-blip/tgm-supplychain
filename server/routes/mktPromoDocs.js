@@ -65,13 +65,20 @@ function nextNo(db, col, prefix, width, seed) {
 // ตรวจ + ทำความสะอาดเนื้อหาเอกสารจาก client → { head, body, issues }
 function buildDoc(db, b) {
   b = b || {};
-  const ch = CHANNELS.find(c => c.code === b.customer_code);
-  if (!ch) throw httpErr(400, 'กรุณาเลือกลูกค้า (ช่องทางขาย)');
-  const cust = db.prepare('SELECT name FROM customers WHERE code = ?').get(ch.code);
+  // ลูกค้าได้หลายราย (2026-11-25) — ใช้โปร/ราคาเดียวกัน GP แยกรายลูกค้า · รับรูปแบบเก่า customer_code+gp ด้วย
+  const custIn = Array.isArray(b.customers) ? b.customers : [{ code: b.customer_code, gp: b.gp }];
+  const seen = new Set(), customers = [];
+  for (const c of custIn.slice(0, CHANNELS.length)) {
+    const ch = CHANNELS.find(x => x.code === txt(c?.code, 40));
+    if (!ch || seen.has(ch.code)) continue;
+    seen.add(ch.code); customers.push({ code: ch.code, name: ch.name, gp: Math.max(0, Math.min(100, num(c?.gp))) });
+  }
+  if (!customers.length) throw httpErr(400, 'กรุณาเลือกลูกค้า (ช่องทางขาย) อย่างน้อย 1 ราย');
+  customers.sort((x, y) => CHANNELS.findIndex(c => c.code === x.code) - CHANNELS.findIndex(c => c.code === y.code));
   const head = {
     doc_date: isDate(b.doc_date) ? b.doc_date : new Date().toISOString().slice(0, 10),
-    customer_code: ch.code, customer_name: ch.name, customer_master_name: cust ? cust.name : null,
-    gp: Math.min(100, num(b.gp)), title: txt(b.title, 200), purpose: txt(b.purpose, 100),
+    customer_code: customers.map(c => c.code).join(', '), customer_name: customers.map(c => c.name).join(', '),
+    gp: customers[0].gp, title: txt(b.title, 200), purpose: txt(b.purpose, 100),
     route_id: txt(b.route_id, 40) || DEFAULT_ROUTES[0].id,
   };
   if (!head.title) throw httpErr(400, 'กรุณาระบุชื่อรายการ');
@@ -109,14 +116,14 @@ function buildDoc(db, b) {
         return { code, name: p ? p.name : '', unit: p ? p.unit : '', normal, promo, tgt };
       }).filter(Boolean);
       nItems += items.length;
-      return { kind, title: txt(u?.title, 160), items };
+      return { kind, title: txt(u?.title, 160), tgt_on: u?.tgt_on !== false, items };
     });
     return sec;
   });
   if (nItems > MAX_ITEMS) throw httpErr(400, `สินค้ารวมเกิน ${MAX_ITEMS} รายการ`);
   if (!secs.length) issues.push('ยังไม่มีส่วนในใบนี้ เพิ่มอย่างน้อย 1 ส่วน');
   const aff = [5, 10, 12, 15].filter(r => (Array.isArray(b.aff) ? b.aff.map(Number) : []).includes(r));
-  const body = { secs, aff, note: longTxt(b.note, 1000) };
+  const body = { customers, secs, aff, note: longTxt(b.note, 1000) };
   return { head, body, issues };
 }
 
@@ -146,11 +153,12 @@ function summaryHtml(d) {
   }).join('');
   return `<ul style="padding-left:18px;margin:6px 0">${secs}</ul>`;
 }
+const custLabel = d => (d.body?.customers?.length ? d.body.customers : [{ code: d.customer_code, name: d.customer_name }]).map(c => `${c.name} (${c.code})`).join(', ');
 async function mailApprovers(db, d, uids, levelLabel) {
   const to = db.prepare(`SELECT email FROM sc_users WHERE uid IN (${uids.map(() => '?').join(',')}) AND is_active = 1 AND email IS NOT NULL AND email <> ''`).all(...uids).map(r => r.email);
   if (!to.length) return;
   const subject = `ขออนุมัติใบเคาะราคา การตลาด ${d.doc_no} · ${d.title}`;
-  const html = `<div style="font-family:Sarabun,Arial,sans-serif;max-width:640px"><p>มีใบเคาะราคา การตลาด <b>${e(d.doc_no)}</b> ลูกค้า <b>${e(d.customer_name)} (${e(d.customer_code)})</b> รอคุณอนุมัติในขั้น <b>${e(levelLabel)}</b></p>
+  const html = `<div style="font-family:Sarabun,Arial,sans-serif;max-width:640px"><p>มีใบเคาะราคา การตลาด <b>${e(d.doc_no)}</b> ลูกค้า <b>${e(custLabel(d))}</b> รอคุณอนุมัติในขั้น <b>${e(levelLabel)}</b></p>
     <p>ผู้เสนอ: ${e(d.created_by_name)}<br>ชื่อรายการ: ${e(d.title)}</p>${summaryHtml(d)}
     <p><a href="${e(appUrl())}" style="background:#1B2064;color:#fff;padding:9px 18px;border-radius:6px;text-decoration:none">เปิดระบบเพื่ออนุมัติ (เมนู ใบเคาะราคา การตลาด)</a></p></div>`;
   return sendMail({ to: to.join(','), subject, html, text: `${subject}\nเปิดระบบ: ${appUrl()}` });
@@ -169,7 +177,7 @@ async function mailCc(db, d) {
   const subject = `[อนุมัติแล้ว] ใบโปรโมชัน ${d.promo_no} · ${d.title}`;
   const html = `<div style="font-family:Sarabun,Arial,sans-serif;max-width:680px"><p>เรียนทุกท่าน</p>
     <p>ใบโปรโมชัน <b>${e(d.promo_no)}</b> (อ้างอิงใบเคาะ ${e(d.doc_no)}) ได้รับอนุมัติครบทุกขั้นแล้ว</p>
-    <p>ลูกค้า: ${e(d.customer_name)} (${e(d.customer_code)})<br>ชื่อรายการ: ${e(d.title)}<br>ผู้เสนอ: ${e(d.created_by_name)}</p>${summaryHtml(d)}
+    <p>ลูกค้า: ${e(custLabel(d))}<br>ชื่อรายการ: ${e(d.title)}<br>ผู้เสนอ: ${e(d.created_by_name)}</p>${summaryHtml(d)}
     <p><a href="${e(appUrl())}" style="background:#1B2064;color:#fff;padding:9px 18px;border-radius:6px;text-decoration:none">ดูรายละเอียดในระบบ (เมนู ใบเคาะราคา การตลาด)</a></p></div>`;
   const toList = to.length ? [...new Set(to)] : all.slice(0, 1);
   const ccList = all.filter(m => !toList.includes(m));
@@ -202,7 +210,10 @@ module.exports = function mktPromoDocsRoutes(db) {
 
   const isAll = u => ALL_ROLES.includes(u.role);
   const canCreate = u => CREATE_ROLES.includes(u.role);
-  const shape = h => h && ({ ...h, body: parseJson(h.body_json, { secs: [], aff: [], note: '' }), levels: parseJson(h.levels_json, []), cc: parseJson(h.cc_json, []),
+  const bodyOf = h => { const bd = parseJson(h.body_json, { secs: [], aff: [], note: '' });
+    if (!Array.isArray(bd.customers) || !bd.customers.length) bd.customers = [{ code: h.customer_code, name: h.customer_name, gp: h.gp }];
+    return bd; };
+  const shape = h => h && ({ ...h, body: bodyOf(h), levels: parseJson(h.levels_json, []), cc: parseJson(h.cc_json, []),
     body_json: undefined, levels_json: undefined, cc_json: undefined });
   const isApprover = (d, uid) => (d.levels || []).some(l => (l.uids || []).includes(uid));
   const load = (id, user) => {
