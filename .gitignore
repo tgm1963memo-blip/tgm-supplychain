@@ -36,3 +36,6 @@ deploy-shared/tunnel-watch.log
 deploy-shared/.tunnel-watch.lock
 deploy-shared/.tunnel-watch-state.json
 deploy-shared/.tunnel-watch-ngrok.json
+
+# ผลสำรวจ Choco (มีข้อมูลจริง)
+choco-discover/

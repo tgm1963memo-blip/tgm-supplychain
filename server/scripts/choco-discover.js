@@ -19,8 +19,11 @@ const BROWSERS = [
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
 ];
 const API = 'crmpos-bo-api.azurewebsites.net';
-const OUT = path.join(path.dirname(DB_PATH), 'choco-discover');
-const SECRET_KEYS = /token|password|authorization|secret/i;
+// ข้าง DB จริงของ service (นอก repo) · ถ้า DB_PATH ไม่ได้ตั้ง (ชี้เข้า repo) ใช้ C:TGM-Datasupplychain-db แทน — ไฟล์มีข้อมูลจริง ห้ามอยู่ใน OneDrive/repo
+const REPO = path.resolve(__dirname, '..', '..');
+const OUT = process.env.CHOCO_DISCOVER_DIR || (path.resolve(DB_PATH).startsWith(REPO)
+  ? 'C:\TGM-Data\supplychain-db\choco-discover' : path.join(path.dirname(DB_PATH), 'choco-discover'));
+const SECRET_KEYS = /token|password|authorization|secret|username|email/i;
 
 function scrub(v, depth = 0) {
   if (depth > 12 || v == null) return v;
