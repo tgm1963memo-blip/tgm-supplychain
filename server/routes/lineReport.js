@@ -10,6 +10,7 @@ const fs = require('fs');
 const line = require('../lib/lineMessaging');
 const { buildWeeklyReport, reportRange } = require('../lib/weeklySalesReport');
 const { reportHtml } = require('../lib/renderReportImage');
+const { applyChocoToReport } = require('../lib/chocoPos');
 const { sendWeeklyReport, imagePath } = require('../lib/lineWeeklyReport');
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -78,9 +79,9 @@ function adminRouter(db) {
   });
 
   // ตัวอย่างรายงานเป็นหน้า HTML (ตารางเดียวกับรูปที่ส่ง)
-  router.get('/preview', (req, res) => {
+  router.get('/preview', async (req, res) => {
     try {
-      const rep = buildWeeklyReport(db, range(req.query));
+      const rep = await applyChocoToReport(buildWeeklyReport(db, range(req.query)));
       if (req.query.format === 'json') return res.json(rep);
       res.type('html').send(reportHtml(rep));
     } catch (e) { fail(res, e); }

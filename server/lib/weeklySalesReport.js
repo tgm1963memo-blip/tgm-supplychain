@@ -119,8 +119,9 @@ function buildWeeklyReport(db, { from, to }) {
     return out;
   }
   const shTy = shopTotals(from, to), shLy = shopTotals(lyFrom, lyTo);
-  // choco = Excel ใช้ยอดจาก Choco POS (หน้าร้านพระราม 3 / Online) — ยังไม่ได้เชื่อม (2026-11-25) จึงแสดงยอดใบกำกับในระบบพร้อมหมายเหตุ
-  const shops = cfg.shops.map((s) => row(s.label, shLy[s.channel] || 0, shTy[s.channel] || 0, s.choco ? { note: 'ยอดในระบบ — รอเชื่อม Choco POS' } : {}));
+  // choco = Excel ใช้ยอดจาก Choco POS · Shop พระรามสาม แทนด้วยยอด Choco ใน lib/chocoPos.js applyChocoToReport (เรียกตอนส่ง/ดูตัวอย่าง)
+  //   Online ยังไม่มีในบัญชี Choco (มีแค่ร้าน TGM SHOP RAMA3) จึงใช้ยอดในระบบพร้อมหมายเหตุ
+  const shops = cfg.shops.map((s) => row(s.label, shLy[s.channel] || 0, shTy[s.channel] || 0, { channel: s.channel, ...(s.choco ? { note: s.channel === 'online' ? 'ยอดในระบบ — บัญชี Choco ไม่มีช่องทาง Online' : 'ยอดในระบบ' } : {}) }));
 
   // ---- 2) ห้างรายเจ้า (ยอดไม่รวมฝากขาย) ----
   // ไม่รวมเบเกอรี่ (Tops/เบเกอรี่, เดอะมอลล์/เบเกอรี่ …) และ TSS-NV — ตรงกับ Excel ฝ่ายขาย (เทียบ 1–23 พ.ย. 2569, 2026-11-25:

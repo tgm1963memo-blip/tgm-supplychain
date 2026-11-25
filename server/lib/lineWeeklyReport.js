@@ -10,6 +10,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { DB_PATH } = require('../db/init');
 const { buildWeeklyReport } = require('./weeklySalesReport');
+const { applyChocoToReport } = require('./chocoPos');
 const { renderReportPngs } = require('./renderReportImage');
 const line = require('./lineMessaging');
 const { publicBaseUrl } = require('./publicUrl');
@@ -55,7 +56,7 @@ function summaryText(rep) {
 
 // สร้างรูปและข้อความ (ไม่ส่ง) — คืน { rep, token, messages }
 async function prepare(db, { from, to }) {
-  const rep = buildWeeklyReport(db, { from, to });
+  const rep = await applyChocoToReport(buildWeeklyReport(db, { from, to }));
   const pngs = await renderReportPngs(rep);
   fs.mkdirSync(IMAGE_DIR, { recursive: true });
   cleanupOldImages();
