@@ -51,6 +51,8 @@ tr.grp td { background: #f2f2f2; font-weight: 700; }
 .neg { color: #c00000; }
 .new { color: #1f5fbf; font-weight: 700; }
 .small { font-size: 12px; color: #666; display: block; }
+.note { color: #c00000; font-size: 13px; margin-right: 4px; }
+td.g { font-weight: 700; white-space: nowrap; }
 .foot { margin-top: 8px; font-size: 12px; color: #666; display: flex; justify-content: space-between; gap: 8px; }
 `;
 
@@ -68,13 +70,13 @@ function sheets(rep) {
     <tr class="tot"><td>รวม</td><td class="n">${num(tot.ly)}</td><td class="n">100%</td><td class="n">${num(tot.ty)}</td>${diffCells(tot)}<td class="n">100%</td></tr></table>
     <h3>Shop และ Online</h3>
     <table><tr><th></th><th>${esc(P)}</th><th>${esc(T)}</th><th class="d">+/- บาท</th><th class="d">% เพิ่ม/ลด</th></tr>
-    ${rep.shops.map((r) => `<tr><td><b>${esc(r.label)}</b></td><td class="n">${num(r.ly)}</td><td class="n">${num(r.ty)}</td>${diffCells(r)}</tr>`).join('')}</table>${foot}`;
+    ${rep.shops.map((r) => `<tr><td><b>${esc(r.label)}</b>${r.note ? `<span class="small">${esc(r.note)}</span>` : ''}</td><td class="n">${num(r.ly)}</td><td class="n">${num(r.ty)}</td>${diffCells(r)}</tr>`).join('')}</table>${foot}`;
 
   // 2) ห้างรายเจ้า
   const s2 = `<h2>ยอดขายห้างรายเจ้า (ไม่รวมฝากขาย)</h2><p class="sub">${esc(T)} เทียบ ${esc(P)}</p>
     ${rep.chains.map((sec) => `<h3>${esc(sec.title)}</h3>
       <table><tr><th style="width:38%">ห้าง</th><th>${esc(P)}</th><th>${esc(T)}</th><th class="d">+/- บาท</th><th class="d">% เพิ่ม/ลด</th></tr>
-      ${sec.rows.filter(visible).map((r) => `<tr><td>${esc(r.label)}${r.detail ? `<span class="small">${esc(r.detail)}</span>` : ''}</td><td class="n">${num(r.ly)}</td><td class="n">${num(r.ty)}</td>${diffCells(r)}</tr>`).join('')}
+      ${sec.rows.filter((r) => r.always || visible(r)).map((r) => `<tr><td>${r.note ? `<span class="note">${esc(r.note)}</span>` : ''}${esc(r.label)}${r.detail ? `<span class="small">${esc(r.detail)}</span>` : ''}</td><td class="n">${num(r.ly)}</td><td class="n">${num(r.ty)}</td>${diffCells(r)}</tr>`).join('')}
       <tr class="tot"><td>รวม</td><td class="n">${num(sec.total.ly)}</td><td class="n">${num(sec.total.ty)}</td>${diffCells(sec.total)}</tr></table>`).join('')}${foot}`;
 
   // 3) ลูกค้ารับโอนจากออฟฟิศ
@@ -84,13 +86,13 @@ function sheets(rep) {
     ${rep.office.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${esc(r.code)}</td><td>${esc(r.label)}</td><td class="n">${num(r.ly, 2)}</td><td class="n">${num(r.ty, 2)}</td>${diffCells(r, 2)}</tr>`).join('')}
     <tr class="tot"><td colspan="3">รวมรายได้จากการขายสินค้าสุทธิ</td><td class="n">${num(ot.ly, 2)}</td><td class="n">${num(ot.ty, 2)}</td>${diffCells(ot, 2)}</tr></table>${foot}`;
 
-  // 4) ลูกค้าโรงงานทั้งหมด
+  // 4) ลูกค้าโรงงานทั้งหมด — แบบ Excel (2026-11-25): ตารางเดียวเรียงตามยอดที่เพิ่มขึ้น + คอลัมน์ชื่อกลุ่มลูกค้าทุกแถว
   const ft = rep.factory_total;
-  const s4 = `<h2>สรุปยอดขายสินค้าแยกตามกลุ่มลูกค้า</h2><p class="sub">โรงงาน TGM · ${esc(T)} เทียบ ${esc(P)} · เรียงตามยอดที่เพิ่มขึ้น</p>
-    <table><tr><th style="width:42%">ลูกค้า</th><th>${esc(P)}</th><th>${esc(T)}</th><th class="d">+/- บาท</th><th class="d">%</th></tr>
-    ${rep.factory.map((sec) => `<tr class="grp"><td colspan="5">${esc(sec.title)} (${sec.rows.length} ราย)</td></tr>
-      ${sec.rows.map((r) => `<tr><td>${esc(r.label)}</td><td class="n">${num(r.ly, 2)}</td><td class="n">${num(r.ty, 2)}</td>${diffCells(r, 2)}</tr>`).join('')}`).join('')}
-    <tr class="tot"><td>รวม</td><td class="n">${num(ft.ly, 2)}</td><td class="n">${num(ft.ty, 2)}</td>${diffCells(ft, 2)}</tr></table>${foot}`;
+  const frows = rep.factory_rows || rep.factory.flatMap((sec) => sec.rows.map((r) => ({ ...r, group: sec.title })));
+  const s4 = `<h2>สรุปยอดขายสินค้าแยกตามกลุ่มลูกค้า</h2><p class="sub">โรงงาน TGM · ${esc(T)} เทียบ ${esc(P)}</p>
+    <table><tr><th style="width:13%">ชื่อกลุ่มลูกค้า</th><th style="width:37%">ชื่อลูกค้า</th><th>${esc(P)}</th><th>${esc(T)}</th><th class="d">ปีนี้เพิ่ม(ลด)</th><th class="d">%</th></tr>
+    ${frows.map((r) => `<tr><td class="g">${esc(r.group)}</td><td>${esc(r.label)}</td><td class="n">${num(r.ly, 2)}</td><td class="n">${num(r.ty, 2)}</td>${diffCells(r, 2)}</tr>`).join('')}
+    <tr class="tot"><td colspan="2">รวม</td><td class="n">${num(ft.ly, 2)}</td><td class="n">${num(ft.ty, 2)}</td>${diffCells(ft, 2)}</tr></table>${foot}`;
 
   return [s1, s2, s3, s4];
 }

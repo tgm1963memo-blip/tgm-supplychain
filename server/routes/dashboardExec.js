@@ -149,11 +149,19 @@ module.exports = function dashboardExecRoutes(db) {
         WHERE company = 'TGM' AND substr(d, 1, 7) BETWEEN ? AND ? GROUP BY 1, 2)
       SELECT ex.cust_code, ex.ym FROM ex JOIN bp ON bp.cust_code = ex.cust_code AND bp.ym = ex.ym WHERE abs(bp.amt - ex.amt) < 1`)
       .all(m0, m1, m0, m1).map((r) => `${r.cust_code}|${r.ym}`));
-    if (!same.size) return [];
-    const inRange = (company, sign) => db.prepare(`SELECT cust_code, substr(d, 1, 7) AS ym, SUM(amount) AS amount FROM invoice_sales_daily
+    // (2026-11-25) เดือนที่ยอดไม่ตรงกัน แต่บิลสรุปของ Bplus ทั้งหมดลงวันที่หลังช่วงที่เลือก (ไม่มีแถวยอด ≠ 0 จนถึง `to`) —
+    // ในช่วงนี้ BP-TGM = 0 อยู่แล้ว จึงเติมแถวรายวันของ Express TGM ได้โดยไม่ซ้ำ (เช่น 30-NU-0005 โลตัส พ.ย. 2025:
+    // Bplus 486,987 วันที่ 30 / Express 437,957 รายวัน → ช่วง 1–23 พ.ย. 2568 เดิมได้ 0 แทน 338,679 ไม่ตรง Excel ฝ่ายขาย)
+    const lump = new Set(db.prepare(`SELECT cust_code, substr(d, 1, 7) AS ym FROM invoice_sales_daily
+        WHERE company = 'BP-TGM' AND substr(d, 1, 7) BETWEEN ? AND ? GROUP BY 1, 2
+        HAVING SUM(CASE WHEN d <= ? AND abs(amount) > 0.005 THEN 1 ELSE 0 END) = 0
+           AND SUM(CASE WHEN d > ? AND abs(amount) > 0.005 THEN 1 ELSE 0 END) > 0`)
+      .all(m0, m1, to, to).map((r) => `${r.cust_code}|${r.ym}`).filter((k) => !same.has(k)));
+    if (!same.size && !lump.size) return [];
+    const inRange = (company, sign, keys) => db.prepare(`SELECT cust_code, substr(d, 1, 7) AS ym, SUM(amount) AS amount FROM invoice_sales_daily
       WHERE company = ? AND d >= ? AND d <= ? ${slmCodes.sql} GROUP BY 1, 2`).all(company, from, to, ...slmCodes.params)
-      .filter((r) => same.has(`${r.cust_code}|${r.ym}`)).map((r) => ({ company, cust_code: r.cust_code, amount: sign * (Number(r.amount) || 0) }));
-    return [...inRange('BP-TGM', -1), ...inRange('TGM', 1)];
+      .filter((r) => keys.some((s) => s.has(`${r.cust_code}|${r.ym}`))).map((r) => ({ company, cust_code: r.cust_code, amount: sign * (Number(r.amount) || 0) }));
+    return [...inRange('BP-TGM', -1, [same]), ...inRange('TGM', 1, [same, lump])];
   }
 
   // ยอดต่อลูกค้าในช่วง → Map(code → { net, consi }) · ยอดขายให้บริษัทในเครือฝั่ง Express สะสมใน map.ic (ไม่อยู่ใน map)
