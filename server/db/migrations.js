@@ -1080,6 +1080,42 @@ function runMigrations(db) {
     db.prepare('INSERT INTO app_migrations (id) VALUES (?)').run(MKT_NO_CLERK);
     console.log('[migrations] ใบเคาะการตลาด: เอาขั้นธุรการออกจากเส้นทาง/ใบที่ยังไม่อนุมัติแล้ว');
   }
+  // พัฒนาสินค้าใหม่ (NPD) — 2026-11-25 แยกจากเมนูของตัวอย่าง (routes/npdProjects.js) · flow 13 ขั้นที่ผู้ใช้ยืนยัน
+  // สถานะคุมฝั่ง server ทั้งหมด · ข้อมูลทุน (cost_json) ตัดออกจาก response ของผู้ที่ไม่มีสิทธิ์ดูทุน
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS npd_projects (
+      id TEXT PRIMARY KEY, doc_no TEXT UNIQUE, legacy_no TEXT, status TEXT NOT NULL DEFAULT 'draft',
+      round INTEGER NOT NULL DEFAULT 1, root_id TEXT, prev_id TEXT,
+      cust_code TEXT, cust_name TEXT, header_json TEXT NOT NULL DEFAULT '{}', items_json TEXT NOT NULL DEFAULT '[]',
+      head_uid TEXT, flags_json TEXT NOT NULL DEFAULT '{}',
+      test_json TEXT, first_lot_json TEXT, cost_json TEXT, price_json TEXT,
+      sku_code TEXT, sku_name TEXT,
+      return_reason TEXT, returned_from TEXT, cancel_reason TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      status_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      submitted_at TEXT, launched_at TEXT, cancelled_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS npd_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, action TEXT NOT NULL, from_status TEXT, to_status TEXT,
+      detail TEXT, by_uid TEXT, by_name TEXT, at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS npd_attachments (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'other', label TEXT, filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL, content BLOB NOT NULL, uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE TABLE IF NOT EXISTS npd_settings (key TEXT PRIMARY KEY, value TEXT, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+    CREATE INDEX IF NOT EXISTS idx_npd_projects_by ON npd_projects(created_by, created_at);
+    CREATE INDEX IF NOT EXISTS idx_npd_projects_status ON npd_projects(status);
+    CREATE INDEX IF NOT EXISTS idx_npd_projects_root ON npd_projects(root_id);
+    CREATE INDEX IF NOT EXISTS idx_npd_logs_p ON npd_logs(project_id, id);
+    CREATE INDEX IF NOT EXISTS idx_npd_att_p ON npd_attachments(project_id);
+  `);
+  // ผู้รับผิดชอบรายขั้น — ตั้งต้นว่าง แอดมินกำหนดในแท็บตั้งค่า (ยังไม่ทราบ uid ของพี่หลิน/คุณโอ/RD/บัญชี ณ 2026-11-25)
+  const insNpd = db.prepare("INSERT OR IGNORE INTO npd_settings (key, value) VALUES (?, '[]')");
+  for (const k of ['lin', 'o', 'rd', 'cost_acct', 'factory_acct']) insNpd.run(k);
 }
 
 module.exports = { runMigrations, columnExists, addColumnIfMissing };

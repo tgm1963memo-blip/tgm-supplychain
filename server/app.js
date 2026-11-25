@@ -621,6 +621,8 @@ function buildApp(db, opts = {}) {
   app.use('/api/quotation_headers', require('./routes/quotationHeaders')(db, [...PROMO_DRAFT_ROLES, 'manager']));
   // ใบเคาะราคา การตลาด (ออนไลน์) 2026-11-23 — สิทธิ์ตรวจในตัว route (ผู้สร้าง / ผู้อนุมัติตามขั้น / แอดมิน)
   app.use('/api/mkt_promo_docs', require('./routes/mktPromoDocs')(db));
+  // พัฒนาสินค้าใหม่ (NPD) 2026-11-25 — แยกจากของตัวอย่าง · สิทธิ์ตรวจในตัว route (ผู้ขอ / หัวหน้าที่เลือก / ผู้รับผิดชอบใน npd_settings / แอดมิน)
+  app.use('/api/npd_projects', require('./routes/npdProjects')(db));
   // ทุนสินค้า + ราคาหมูหน้าฟาร์ม + เกณฑ์พิจารณาโปร (2026-10-22) — ทุนผลิตเป็นข้อมูลอ่อนไหว: ผู้ใช้สั่ง 2026-10-27 ให้เห็นเฉพาะ admin/superadmin
   const PROMO_COST_ROLES = ['superadmin', 'admin'];
   app.use('/api/promo_costs', require('./routes/promoCosts')(db, PROMO_COST_ROLES, PROMO_COST_ROLES, PROMO_COST_ROLES));

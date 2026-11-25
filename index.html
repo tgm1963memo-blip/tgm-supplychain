@@ -5487,7 +5487,7 @@ const RNAV={
     ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
     ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
     ['custreg','🏪','ข้อมูลลูกค้า'],
-    ['sample','🧪','ของตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],
+    ['sample','🧪','ของตัวอย่าง'],['npd','✨','พัฒนาสินค้าใหม่ (NPD)'],['skuadmin','⚙️','SKU Settings'],
     ['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],
     ['users','👥','จัดการผู้ใช้'],['perms','🔐','สิทธิ์การใช้งาน'],['auditlog','🔍','Audit Log']
   ],
@@ -5498,7 +5498,7 @@ const RNAV={
     ['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],
     ['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],
     ['custreg','🏪','ข้อมูลลูกค้า'],
-    ['sample','🧪','ของตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],
+    ['sample','🧪','ของตัวอย่าง'],['npd','✨','พัฒนาสินค้าใหม่ (NPD)'],['skuadmin','⚙️','SKU Settings'],
     ['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports'],['auditlog','🔍','Audit Log']
   ],
   // ── Sales department ──────────────────────────────────────────────────
@@ -5507,20 +5507,20 @@ const RNAV={
     ['dash','📊','Dashboard'],['mysales','📈','ยอดขายทีม'],['consi','📦','ฝากขาย CONSI'],
     ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['mktpromo','📣','ใบเคาะราคา การตลาด'],
     ['forecast','📝','Sales Forecast'],
-    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['reports','📄','Reports']
+    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['npd','✨','พัฒนาสินค้าใหม่ (NPD)'],['reports','📄','Reports']
   ],
   // officer: ทำงาน Sales ประจำวัน
   sales_officer:[
     ['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],
     ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
     ['forecast','📝','Sales Forecast'],
-    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']
+    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['npd','✨','พัฒนาสินค้าใหม่ (NPD)']
   ],
   // worker: Sales ระดับพื้นฐาน (เห็นเฉพาะงานตัวเอง)
   sales_worker:[
     ['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],
     ['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],
-    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']
+    ['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['npd','✨','พัฒนาสินค้าใหม่ (NPD)']
   ],
   // ── Marketing (2026-11-23) — ใบเคาะราคา การตลาด (ออนไลน์) ─────────────────────
   marketing_manager:[['mktpromo','📣','ใบเคาะราคา การตลาด']],
@@ -5550,12 +5550,12 @@ const RNAV={
     ['sample','🧪','ของตัวอย่าง']
   ],
   // ── Backward-compat (roles เดิม) ─────────────────────────────────────
-  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['forecast','📝','Sales Forecast'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง']],
-  planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['sample','🧪','ของตัวอย่าง'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
+  sales:[['dash','📊','Dashboard'],['mysales','📈','ยอดขายของฉัน'],['promo_history','🎯','เอกสารโปรโมชัน'],['pricetiers','💰','ราคากลาง A–G'],['quotation','🧾','ใบเสนอราคา'],['forecast','📝','Sales Forecast'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['npd','✨','พัฒนาสินค้าใหม่ (NPD)']],
+  planning:[['dash','📊','Dashboard'],['forecast','📝','Forecast ทั้งหมด'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodplan','🏭','สั่งยอดผลิต'],['prodsummary','📈','เปรียบเทียบผลิต'],['sample','🧪','ของตัวอย่าง'],['npd','✨','พัฒนาสินค้าใหม่ (NPD)'],['skuadmin','⚙️','SKU Settings'],['groups','🏷️','จัดการกลุ่ม']],
   warehouse:[['dash','📊','Dashboard'],['wms','🔗','WMS System'],['po','📋','PO จอง Stock'],['sample','🧪','ของตัวอย่าง']],
-  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
+  manager:[['dash','📊','Dashboard'],['mysales','📈','Sales Overview'],['consi','📦','ฝากขาย CONSI'],['planstock','📦','Stock & Planning'],['po','📋','Production Planning'],['planbook','📋','จองสินค้า PO/SO'],['booksummary','📊','สรุปการจอง'],['prodsummary','📈','เปรียบเทียบผลิต'],['custreg','🏪','ข้อมูลลูกค้า'],['sample','🧪','ของตัวอย่าง'],['npd','✨','พัฒนาสินค้าใหม่ (NPD)'],['groups','🏷️','จัดการกลุ่ม'],['reports','📄','Reports']],
 };
-const PTITLES={dash:'Dashboard',mktpromo:'ใบเคาะราคา การตลาด (ออนไลน์)',margin:'วิเคราะห์กำไร',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',promocosts:'ทุนสินค้า & ราคาหมู',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
+const PTITLES={dash:'Dashboard',mktpromo:'ใบเคาะราคา การตลาด (ออนไลน์)',margin:'วิเคราะห์กำไร',mysales:'Sales Overview',consi:'ฝากขาย CONSI',promo_history:'เอกสารโปรโมชัน',pricetiers:'ราคากลาง A–G',promocosts:'ทุนสินค้า & ราคาหมู',quotation:'ใบเสนอราคา',forecast:'Sales Forecast',planstock:'Stock & Planning',po:'Production Planning',planbook:'จองสินค้า PO/SO',booksummary:'สรุปสถานะการจอง',prodplan:'สั่งยอดผลิต',prodsummary:'เปรียบเทียบแผน vs จริง',forecastdoc:'Forecast เอกสาร',custreg:'ข้อมูลลูกค้า',sample:'ขอสินค้าตัวอย่าง',npd:'พัฒนาสินค้าใหม่ (NPD)',skuadmin:'SKU Settings',groups:'จัดการกลุ่มสินค้า/ลูกค้า',stock:'Stock Management',expiry:'สินค้าใกล้หมดอายุ',reports:'Reports & Export',users:'จัดการผู้ใช้',perms:'สิทธิ์การใช้งาน',wms:'WMS System',auditlog:'Audit Log'};
 
 
 // แยกแอป Sales/Planning (2026-09-15) — role ไหน "เป็นของแผนกเดียวเท่านั้น" คืนค่า 'sales'/'planning',
@@ -5658,7 +5658,7 @@ function _inboxRender(){
   if(b){b.style.display=n?'block':'none';b.textContent=n>99?'99+':String(n);}
   const p=document.getElementById('inbox-panel');if(!p||p.classList.contains('hidden'))return;
   const items=_inbox.items||[],seen=_inboxSeen();
-  const icon={promo_approve:'⏳',promo_cancel:'🚫',promo_key:'⌨️',quotation_approve:'🧾',promo_result:'📣'};
+  const icon={promo_approve:'⏳',promo_cancel:'🚫',promo_key:'⌨️',quotation_approve:'🧾',promo_result:'📣',npd_step:'✨'};
   const row=(i,idx)=>`<button type="button" onclick="inboxOpen(${idx})" style="display:flex;gap:10px;width:100%;text-align:left;background:${!i.actionable&&String(i.ts||'')>seen?'var(--LBL)':'transparent'};border:0;border-bottom:1px solid var(--BD);padding:9px 12px;cursor:pointer;color:inherit;font:inherit">
       <span style="font-size:16px">${icon[i.kind]||'🔔'}</span><span style="min-width:0;flex:1"><b style="font-size:12.5px;display:block">${esc(i.title)}</b>
       <span style="font-size:11.5px;color:var(--TX2);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(i.sub||'')}</span>
@@ -5685,6 +5685,7 @@ function inboxOpen(idx){
   const i=(_inbox.items||[])[idx];if(!i)return;
   _inboxClose();
   if(i.draft_no){if(typeof showPromoDraftModal==='function'){nav('promo_history');setTimeout(()=>showPromoDraftModal(i.draft_no),250);}else toast('เปิดเอกสารใบเคาะได้ที่แอป Sales','warn');return;}
+  if(i.npd_id){if(typeof npdOpen==='function'){nav('npd');setTimeout(()=>npdOpen(i.npd_id),300);}else toast('เปิดงานพัฒนาสินค้าใหม่ได้ที่แอป Sales','warn');return;}
   if(i.quotation_id){if(typeof qtOpen==='function'){nav('quotation');setTimeout(()=>qtOpen(i.quotation_id),300);}else toast('เปิดใบเสนอราคาได้ที่แอป Sales','warn');}
 }
 function _draftOpenFromUrl(){
@@ -5757,7 +5758,7 @@ const _NAV_GROUPS = [
   ['การขาย', ['mysales', 'margin', 'consi', 'forecast']],
   ['โปรโมชัน & ราคา', ['promo_history', 'pricetiers', 'promocosts', 'quotation', 'mktpromo']],
   ['วางแผน & ผลิต', ['planstock', 'po', 'planbook', 'booksummary', 'prodplan', 'prodsummary', 'forecastdoc', 'stock', 'expiry', 'wms']],
-  ['ลูกค้า & ตัวอย่าง', ['custreg', 'sample']],
+  ['ลูกค้า & ตัวอย่าง', ['custreg', 'sample', 'npd']],
   ['ตั้งค่าระบบ', ['skuadmin', 'groups', 'reports', 'users', 'perms', 'auditlog']]
 ];
 const _NAV_ICONS = {
@@ -5783,6 +5784,7 @@ const _NAV_ICONS = {
   wms: '<path d="M1.5 6L8 2.5 14.5 6v8h-13zM4.5 14V8.5h7V14"/>',
   custreg: '<path d="M2 6l1.2-3.5h9.6L14 6M2 6v8h12V6M2 6h12M6 14v-4h4v4"/>',
   sample: '<path d="M6 2h4M6.5 2v4L3 13a1 1 0 001 1.5h8A1 1 0 0013 13L9.5 6V2M5 10h6"/>',
+  npd: '<path d="M8 1.5l1.6 3.6 3.9.4-2.9 2.6.8 3.9L8 10l-3.4 2 .8-3.9-2.9-2.6 3.9-.4z"/>',
   skuadmin: '<path d="M3 2v4M3 10v4M8 2v7M8 13v1M13 2v2M13 8v6M1.5 8h3M6.5 11h3M11.5 6h3"/>',
   groups: '<path d="M8 2l6 3-6 3-6-3zM2 8l6 3 6-3M2 11l6 3 6-3"/>',
   reports: '<path d="M3 2h10v12H3zM6 11V9M8 11V6M10 11V8"/>',
@@ -5924,6 +5926,11 @@ function buildSB(){
   navItems=navItems.filter(([id])=>id!=='margin');
   if(canSeeCost()){const at=navItems.findIndex(([id])=>id==='mysales');navItems=[...navItems];navItems.splice(at<0?Math.min(1,navItems.length):at+1,0,['margin','📊','วิเคราะห์กำไร']);}
 
+  // พัฒนาสินค้าใหม่ (NPD, 2026-11-25): ผู้รับผิดชอบขั้นมาจากหลายแผนก (หัวหน้า/พี่หลิน/คุณโอ/RD/บัญชี) ตั้งรายคนใน npd_settings
+  // ไม่ผูก role/แผนก — กลุ่มที่ IT กำหนดเมนูเอง (dept+position) จึงอาจไม่มีหน้านี้ → เพิ่มให้ทุกคนในแอป Sales ยกเว้นฝ่ายการตลาด
+  // (server กรองรายการให้เห็นเฉพาะงานที่เกี่ยวข้องอยู่แล้ว) · แอป Planning ไม่มีหน้านี้ (typeof guard)
+  if(typeof pgNpd==='function'&&!/^marketing/.test(ROLE||'')&&!navItems.some(([id])=>id==='npd')){const at=navItems.findIndex(([id])=>id==='sample');navItems=[...navItems];navItems.splice(at<0?navItems.length:at+1,0,['npd','✨','พัฒนาสินค้าใหม่ (NPD)']);}
+
   // เก็บรายการหน้าที่ user คนนี้มีสิทธิ์เห็นไว้ระดับ global ให้ nav() เช็คก่อน dispatch จริง
   // (เดิม buildSB() แค่ซ่อนเมนูใน sidebar แต่ nav() ไม่เคยเช็คซ้ำ — เปิดจาก devtools เรียก nav('users') ได้เลยแม้ถูกซ่อน)
   window._allowedPageIds = new Set(navItems.map(([id]) => id));
@@ -6034,6 +6041,7 @@ function nav(page){
       case 'forecastdoc': pgForecastDoc(); break;
       case 'custreg': pgCustRegEntry(); break;
       case 'sample': pgSampleEntry(); break;
+      case 'npd': pgNpd(); break;
       case 'skuadmin': pgSKUAdmin(); break;
       case 'groups': pgGroupAdmin(); break;
       case 'stock': pgStock(); break;
@@ -15686,6 +15694,7 @@ const ALL_NAV_PAGES=[
   {id:'prodsummary',lbl:'📈 เปรียบเทียบผลิต'},
   {id:'custreg',lbl:'🏪 ข้อมูลลูกค้า'},
   {id:'sample',lbl:'🧪 ขอสินค้าตัวอย่าง'},
+  {id:'npd',lbl:'✨ พัฒนาสินค้าใหม่ (NPD)'},
   {id:'skuadmin',lbl:'⚙️ SKU Settings'},
   {id:'groups',lbl:'🏷️ จัดการกลุ่มสินค้า/ลูกค้า'},
   {id:'reports',lbl:'📄 Reports'},
@@ -15722,11 +15731,11 @@ let _permTab='pages';
 const DEFAULT_ROLES={
   // ── 5-Level roles ใหม่ ──────────────────────────────────────────────
   superadmin:{label:'Super Admin',pages:(ALL_NAV_PAGES||[]).map(p=>p.id)},
-  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','promo_history','pricetiers','promocosts','quotation','mktpromo','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custreg','sample','skuadmin','groups','reports','auditlog']},
+  admin:{label:'Admin (IT)',pages:['dash','mysales','consi','promo_history','pricetiers','promocosts','quotation','mktpromo','forecast','planstock','po','planbook','booksummary','prodplan','prodsummary','custreg','sample','npd','skuadmin','groups','reports','auditlog']},
   // Sales department
-  sales_manager:{label:'Sales Manager',pages:['dash','mysales','consi','promo_history','pricetiers','quotation','mktpromo','forecast','custreg','sample','reports']},
-  sales_officer:{label:'Sales Officer',pages:['dash','mysales','promo_history','pricetiers','quotation','forecast','custreg','sample']},
-  sales_worker:{label:'Sales Worker',pages:['dash','mysales','promo_history','pricetiers','quotation','custreg','sample']},
+  sales_manager:{label:'Sales Manager',pages:['dash','mysales','consi','promo_history','pricetiers','quotation','mktpromo','forecast','custreg','sample','npd','reports']},
+  sales_officer:{label:'Sales Officer',pages:['dash','mysales','promo_history','pricetiers','quotation','forecast','custreg','sample','npd']},
+  sales_worker:{label:'Sales Worker',pages:['dash','mysales','promo_history','pricetiers','quotation','custreg','sample','npd']},
   // Marketing (2026-11-23)
   marketing_manager:{label:'Marketing Manager',pages:['mktpromo']},
   marketing:{label:'Marketing',pages:['mktpromo']},
@@ -15737,7 +15746,7 @@ const DEFAULT_ROLES={
   // ── Backward-compat roles เดิม ───────────────────────────────────────
   planning:{label:'Planning (เดิม)',pages:['dash','forecast','planstock','po','prodplan','sample','skuadmin','groups']},
   warehouse:{label:'Warehouse (เดิม)',pages:['dash','wms','po','sample']},
-  sales:{label:'Sales (เดิม)',pages:['dash','mysales','promo_history','pricetiers','quotation','forecast','custreg','sample']},
+  sales:{label:'Sales (เดิม)',pages:['dash','mysales','promo_history','pricetiers','quotation','forecast','custreg','sample','npd']},
   manager:{label:'Manager (เดิม)',pages:['dash','mysales','planstock','po','custreg','sample','groups','reports']},
 };
 function _getRoles(){
@@ -23900,7 +23909,11 @@ function _srFilteredRows() {
 }
 function srSetFilter(k, v) { _sr.f[k] = v; pgSample(); }
 function srClearFilter() { _sr.f = { from: '', to: '', status: '', cust: '', by: '' }; _sr.filter = ''; pgSample(); }
-function srSetType(t) { _sr.type = t; _sr.tab = 'all'; _sr.f.status = ''; pgSample(); }
+// สินค้าใหม่ย้ายไปเมนู พัฒนาสินค้าใหม่ (NPD) แล้ว (2026-11-25) — ปุ่มเดิมพาไปเมนูใหม่ · คำขอ SN เดิมในระบบไม่มี (ตรวจ DB จริง 2026-11-25 = 0 แถว)
+function srSetType(t) {
+  if (t === 'new') { if (typeof pgNpd === 'function') { nav('npd'); } else toast('ขอตัวอย่างสินค้าใหม่ได้ที่เมนู พัฒนาสินค้าใหม่ (NPD) ในแอป Sales', 'warn'); return; }
+  _sr.type = t; _sr.tab = 'all'; _sr.f.status = ''; pgSample();
+}
 
 // ════════════════════════════════════════════════════════════════
 // ประวัติเบิก (Express) — สินค้าตัวอย่าง / ของชิม / ของแถม ปี 2569 (2026-11-05)
@@ -24151,7 +24164,7 @@ function _srTypeBar() {
       ${icon} ${lbl}${n ? ` <span style="font-size:11px;font-weight:500;opacity:.85">(ดำเนินการอยู่ ${n})</span>` : ''}</button>`;
   };
   const active = t => allSR.filter(r => srType(r) === t && !['draft', 'received', 'rejected'].includes(r.status)).length;
-  return btn('existing', SR_TYPES.existing.icon, SR_TYPES.existing.lbl, active('existing')) + btn('new', SR_TYPES.new.icon, SR_TYPES.new.lbl, active('new'))
+  return btn('existing', SR_TYPES.existing.icon, SR_TYPES.existing.lbl, active('existing')) + btn('new', SR_TYPES.new.icon, 'สินค้าใหม่ → เมนู NPD', 0)
     + btn('express', '📊', 'ประวัติเบิก (Express)', 0);
 }
 
@@ -24425,15 +24438,17 @@ function _srFmMissing(it) {
   if (it.pack2G || it.pack2Qty || it.pack2Type) req.push(['pack2G', 'Packing size 2 (g.)'], ['pack2Qty', 'Packing size 2 (Pack)'], ['pack2Type', 'ซองบรรจุ 2']);
   return req.filter(([k]) => empty(it[k]) || (k === 'qty' && !(Number(it.qty) > 0))).map(([, l]) => l);
 }
-function _srNewItemCard(it, i, total) {
+// h = ชื่อ handler (2026-11-25): เมนูพัฒนาสินค้าใหม่ (NPD) ใช้การ์ดเดียวกันแต่เก็บค่าลงฟอร์มของตัวเอง — ค่าเริ่มต้นคือฟอร์มของตัวอย่างเดิม
+function _srNewItemCard(it, i, total, h) {
+  const H = { f: 'srNewItemField', ref: 'srNewItemRef', rm: 'srRemoveItem', tried: !!(_sr.form && _sr.form._tried), ...(h || {}) };
   const inpSt = 'padding:7px 8px;border:1px solid var(--BD);border-radius:7px;font-family:var(--font);font-size:13px;box-sizing:border-box;width:100%';
   const R = '<span style="color:var(--R)"> *</span>';
   const lbl = (t, req = true) => `<div style="font-size:11px;color:var(--TX3);margin-bottom:4px">${t}${req ? R : ''}</div>`;
   const inp = (key, ph = '', type = 'text', w = '') => `<input type="${type}" ${type === 'number' ? 'step="0.01" min="0"' : ''} value="${esc(it[key] ?? '')}" placeholder="${esc(ph)}"
-      onchange="srNewItemField(${i},'${key}',this.value${type === 'number' ? ',true' : ''})" style="${inpSt}${w ? ';width:' + w + ';flex:none' : ''}">`;
+      onchange="${H.f}(${i},'${key}',this.value${type === 'number' ? ',true' : ''})" style="${inpSt}${w ? ';width:' + w + ';flex:none' : ''}">`;
   const fld = (l, key, ph = '', type = 'text', span = 1, req = true) => `<div style="grid-column:span ${span}">${lbl(l, req)}${inp(key, ph, type)}</div>`;
   const unitFld = (l, key, unit, ph = '') => `<div>${lbl(l)}<div style="display:flex;gap:5px;align-items:center">${inp(key, ph, 'number')}<span style="font-size:12px;color:var(--TX2);white-space:nowrap">${unit}</span></div></div>`;
-  const sel = (key, list, ph = '— เลือก —') => `<select onchange="srNewItemField(${i},'${key}',this.value)" style="${inpSt}"><option value="">${ph}</option>
+  const sel = (key, list, ph = '— เลือก —') => `<select onchange="${H.f}(${i},'${key}',this.value)" style="${inpSt}"><option value="">${ph}</option>
       ${SR_FM[list].map(([k, l]) => `<option value="${k}" ${it[key] === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   const sub = t => `<div style="font-size:12px;font-weight:700;color:var(--TX2);margin:12px 0 7px">${t}</div>`;
   const part = (icon, title, note, body, tint) => `<div style="border:1px solid var(--BD);border-radius:9px;padding:10px 12px 12px;margin-top:10px;background:${tint}">
@@ -24446,9 +24461,9 @@ function _srNewItemCard(it, i, total) {
     const list = key === 'coaYear' ? 'coaYear' : 'coa';
     return `<div style="padding:6px 10px;font-weight:600;font-size:12.5px;border-top:1px solid var(--BD)">${l}${R}</div>${SR_FM[list].map(([k, ol]) =>
       `<label style="padding:6px 10px;border-top:1px solid var(--BD);display:flex;gap:6px;align-items:center;font-size:12.5px;cursor:pointer">
-        <input type="radio" name="sr-${key}-${i}" value="${k}" ${it[key] === k ? 'checked' : ''} onchange="srNewItemField(${i},'${key}',this.value)">${list === 'coaYear' ? ol : ''}</label>`).join('')}`;
+        <input type="radio" name="sr-${key}-${i}" value="${k}" ${it[key] === k ? 'checked' : ''} onchange="${H.f}(${i},'${key}',this.value)">${list === 'coaYear' ? ol : ''}</label>`).join('')}`;
   };
-  const missing = _sr.form && _sr.form._tried ? _srFmMissing(it) : [];
+  const missing = H.tried ? _srFmMissing(it) : [];
 
   const detailPart = part('📦', 'ส่วนที่ 1 — รายละเอียดสินค้า', 'กรอกทุกช่อง (ช่องตัวเลขที่ไม่ใช้ เช่น สินค้าไม่สไลซ์ ใส่ 0)', `
     ${sub('สินค้า · ราคา · ปริมาณ')}
@@ -24456,9 +24471,9 @@ function _srNewItemCard(it, i, total) {
       ${unitFld('ราคาขายลูกค้า', 'targetPrice', 'บาท/กก.')}
       ${unitFld('ยอดสั่งซื้อ/เดือน', 'forecastKg', 'กก.')}
       ${fld('จำนวนตัวอย่าง', 'qty', '', 'number')}
-      <div>${lbl('หน่วย')}<select onchange="srNewItemField(${i},'unit',this.value)" style="${inpSt}">
+      <div>${lbl('หน่วย')}<select onchange="${H.f}(${i},'unit',this.value)" style="${inpSt}">
         ${SR_UNITS.map(u => `<option value="${u}" ${(it.unit || 'กก.') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
-      <div>${lbl('มูลค่าคาดการณ์ (บาท/เดือน)', false)}<div id="sr-val-${i}" style="padding:7px 2px;font-weight:700;font-size:13px">${_srItemValue(it)}</div></div>`)}
+      <div>${lbl('มูลค่าคาดการณ์ (บาท/เดือน)', false)}<div id="${H.valId || 'sr-val-'}${i}" style="padding:7px 2px;font-weight:700;font-size:13px">${_srItemValue(it)}</div></div>`)}
     ${sub('Brand · บรรจุภัณฑ์')}
     ${grid(170, `<div>${lbl('Brand')}${sel('brand', 'brand')}</div>
       ${it.brand === 'other' ? fld('Brand อื่นๆ — ระบุ', 'brandOther') : ''}
@@ -24474,12 +24489,12 @@ function _srNewItemCard(it, i, total) {
       ${unitFld('Diameter', 'diameterMm', 'mm')}
       ${unitFld('Weight / Piece', 'weightG', 'g.')}
       <div>${lbl('Length')}<div style="display:flex;gap:5px">${inp('lengthVal', '', 'number')}
-        <select onchange="srNewItemField(${i},'lengthUnit',this.value)" style="${inpSt};width:72px;flex:none">
+        <select onchange="${H.f}(${i},'lengthUnit',this.value)" style="${inpSt};width:72px;flex:none">
         ${['cm', 'inch'].map(u => `<option ${(it.lengthUnit || 'cm') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div></div>
       <div>${lbl('Storage')}${sel('storage', 'storage')}</div>
       ${unitFld('Shelf life', 'storageDays', 'วัน')}`)}
     <div style="margin-top:8px">${lbl('Detail of Product — รายละเอียดเพิ่มเติม (รสชาติ เมนู เงื่อนไขพิเศษ)')}
-      <textarea onchange="srNewItemField(${i},'detail',this.value)" placeholder="เช่น รสพริกไทยดำเข้ม ใช้ทำเมนูฮอทดอก · ตรวจผลจุลินทรีย์เฉพาะล็อตแรก" style="${inpSt};height:58px;resize:vertical">${esc(it.detail ?? '')}</textarea></div>`, 'var(--W)');
+      <textarea onchange="${H.f}(${i},'detail',this.value)" placeholder="เช่น รสพริกไทยดำเข้ม ใช้ทำเมนูฮอทดอก · ตรวจผลจุลินทรีย์เฉพาะล็อตแรก" style="${inpSt};height:58px;resize:vertical">${esc(it.detail ?? '')}</textarea></div>`, 'var(--W)');
 
   const optionPart = part('⚙️', 'ส่วนที่ 2 — Option เพิ่มเติม', 'ผลตรวจ COA และ Draft Spec. ที่ลูกค้าต้องการ (เลือกทุกข้อ)', `
     <div style="overflow-x:auto;margin-top:8px"><div style="display:grid;grid-template-columns:190px repeat(4,minmax(110px,1fr));border:1px solid var(--BD);border-radius:8px;background:#fff;min-width:640px">
@@ -24489,18 +24504,18 @@ function _srNewItemCard(it, i, total) {
     </div></div>
     <div style="margin-top:10px">${lbl('Draft Spec. ตัวอย่างสินค้า')}
       <div style="display:flex;gap:20px;flex-wrap:wrap">${[['yes', 'ต้องการ Draft Spec.'], ['no', 'ไม่ต้องการ Draft Spec.']].map(([k, l]) => `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;cursor:pointer">
-        <input type="radio" name="sr-ds-${i}" value="${k}" ${it.draftSpec === k ? 'checked' : ''} onchange="srNewItemField(${i},'draftSpec',this.value)">${l}</label>`).join('')}</div></div>
+        <input type="radio" name="sr-ds-${i}" value="${k}" ${it.draftSpec === k ? 'checked' : ''} onchange="${H.f}(${i},'draftSpec',this.value)">${l}</label>`).join('')}</div></div>
     <div style="font-size:11.5px;color:var(--A);margin-top:8px">หมายเหตุ: กรณีลูกค้ามีรายละเอียดเพิ่มเติม เช่น ตรวจผลจุลินทรีย์เฉพาะล็อตแรก, ต้องการตรวจ % เกลือทุกเดือน ระบุใน "รายละเอียดเพิ่มเติม" ให้ชัดเจน</div>`, '#FBFCFE');
 
   const internalPart = `<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--BD)">${grid(170, `<div>${lbl('สินค้าอ้างอิง (SKU เดิม) — ข้อมูลภายใน ไม่บังคับ', false)}
-        <input list="sr-sku-list" value="${esc(it.refSku || '')}" onchange="srNewItemRef(${i},this.value)" placeholder="ไม่บังคับ" style="${inpSt}">
+        <input list="sr-sku-list" value="${esc(it.refSku || '')}" onchange="${H.ref}(${i},this.value)" placeholder="ไม่บังคับ" style="${inpSt}">
         ${it.refName ? `<div style="font-size:10.5px;color:var(--TX3);margin-top:2px">${esc(it.refName)}</div>` : ''}</div>
       ${fld('ยี่ห้อ/ราคาคู่แข่ง — ข้อมูลภายใน ไม่บังคับ', 'competitor', 'เช่น ยี่ห้อ X 220 บ./กก.', 'text', 2, false)}`)}</div>`;
 
   return `<div style="margin-bottom:12px;padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid ${missing.length ? 'var(--R)' : 'var(--BD)'}">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <b style="font-size:13.5px;color:var(--N)">สินค้าใหม่ #${i + 1}</b>
-      ${total > 1 ? `<button onclick="srRemoveItem(${i})" style="padding:4px 10px;border:1px solid var(--BD);border-radius:7px;cursor:pointer;background:var(--W);color:var(--R);font-size:12px">✕ ลบรายการ</button>` : ''}
+      ${total > 1 ? `<button onclick="${H.rm}(${i})" style="padding:4px 10px;border:1px solid var(--BD);border-radius:7px;cursor:pointer;background:var(--W);color:var(--R);font-size:12px">✕ ลบรายการ</button>` : ''}
     </div>
     ${missing.length ? `<div style="font-size:12px;color:var(--R);margin-top:6px">ยังไม่ได้กรอก: ${missing.map(esc).join(', ')}</div>` : ''}
     ${detailPart}${optionPart}${internalPart}
@@ -25560,6 +25575,429 @@ function srPrintReport() {
     <tbody>${body}</tbody></table>`,
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// พัฒนาสินค้าใหม่ (NPD) — 2026-11-25 แยกจากเมนูของตัวอย่าง · API: /api/npd_projects (server/routes/npdProjects.js)
+// สถานะ/สิทธิ์ทุกขั้นตรวจที่ server — หน้านี้แค่แสดงปุ่มตามที่ server จะยอม (ผู้ขอ / หัวหน้า / รายชื่อใน npd_settings / แอดมิน)
+// ฟอร์มสินค้าใช้การ์ด FM-RDC-RDD-12 ตัวเดียวกับของตัวอย่าง (_srNewItemCard) ผ่าน handler ของหน้านี้
+// ═══════════════════════════════════════════════════════════════════════
+let _npd = { list: null, meta: null, view: 'list', p: null, form: null, q: '', f: 'open', err: '' };
+const NPD_FLOW = [
+  ['draft', '① สร้างคำขอ'], ['pending_head', '② หัวหน้า'], ['pending_paper', '③ คุณอ้อย'], ['pending_o', '④ คุณโอ'],
+  ['rd_queue', '⑤ แจ้ง RD'], ['rd_dev', '⑥ RD พัฒนา'], ['sample_sent', '⑦ RD ส่งตัวอย่าง'], ['sample_received', '⑦ Sales ได้รับ'],
+  ['at_customer', '⑧-⑨ ลูกค้าทดสอบ'], ['first_lot', '⑩ lot แรก/forecast'], ['spec_cost', '⑪-⑫ Spec + ทุน'],
+  ['price_quote', '⑬ เสนอราคา'], ['price_review', '⑬ คุณโอพิจารณา'], ['sku_setup', 'เปิดรหัสสินค้า'], ['launched', 'เปิดขาย'],
+];
+const NPD_CLOSED = ['launched', 'revised', 'cancelled'];
+const NPD_CLS = { draft: 'bbgr', returned: 'bbr', launched: 'bbg', revised: 'bbgr', cancelled: 'bbr', pending_head: 'bbl', pending_paper: 'bbl', pending_o: 'bbl', price_review: 'bbl' };
+const NPD_LOG_LBL = { create: 'สร้าง', update: 'แก้ไข', submit: 'ส่งขออนุมัติ', recall: 'เรียกคืน', head_approve: 'หัวหน้าอนุมัติ', head_return: 'หัวหน้าส่งกลับ',
+  paper_pass: 'คุณอ้อยอนุมัติ (บันทึกโดยพี่หลิน)', paper_return: 'คุณอ้อยไม่ผ่าน', o_approve: 'คุณโออนุมัติ', o_return: 'คุณโอส่งกลับ', rd_accept: 'RD รับเรื่อง',
+  rd_send: 'RD ส่งตัวอย่าง', sales_receive: 'Sales ได้รับตัวอย่าง', to_customer: 'ส่งให้ลูกค้า', feedback: 'Feedback ลูกค้า', first_lot: 'lot แรก/forecast',
+  rd_spec: 'RD ส่ง Spec', rd_cost: 'RD ส่งทุนเบื้องต้น', acct_cost: 'บัญชีต้นทุนบันทึกทุน', price_propose: 'Sales เสนอราคา', price_decide: 'คุณโอพิจารณาราคา',
+  sku_open: 'เปิดรหัสสินค้า', cancel: 'ยกเลิก', new_round: 'เปิดรอบใหม่', attach: 'แนบไฟล์', detach: 'ลบไฟล์' };
+const _npdApi = (p = '') => '/api/npd_projects' + p;
+const _npdNo = p => p.doc_no || p.legacy_no || 'ร่าง (ยังไม่มีเลข)';
+const _npdKeyLbl = k => ({ owner: 'Sales ผู้ขอ', head: 'หัวหน้า', ...(_npd.meta?.setting_keys || {}) })[k] || k;
+const _npdDays = iso => { const d = Math.floor((Date.now() - Date.parse(iso || '')) / 864e5); return Number.isFinite(d) ? d : 0; };
+const _npdDt = iso => iso ? new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }) : '';
+const _npdNum = n => Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+function _npdMine(p, key) {
+  if (_npd.meta?.is_admin) return true;
+  if (key === 'owner') return p.created_by === UID;
+  if (key === 'head') return p.head_uid === UID;
+  return (_npd.meta?.my_keys || []).includes(key);
+}
+function _npdWho(p) {
+  return (p.next_actors || []).map(a => `${esc(_npdKeyLbl(a.key))}${a.names && a.names.length ? ': ' + esc(a.names.join(', ')) : a.key === 'owner' || a.key === 'head' ? '' : ' <span style="color:var(--R)">(ยังไม่ได้ตั้งผู้รับผิดชอบ)</span>'}`).join(' · ');
+}
+
+async function pgNpd(reload) {
+  const ct = document.getElementById('ct');
+  if (_npd.list === null || reload || !_npd.meta) {
+    ct.innerHTML = '<div style="padding:30px;text-align:center;color:var(--TX3)">⏳ กำลังโหลดโปรเจกต์สินค้าใหม่…</div>';
+    const [l, m] = await Promise.all([apiFetch(_npdApi()), apiFetch(_npdApi('/meta'))]);
+    if (!_isActivePage('npd')) return;
+    _npd.err = l.error ? l.error.message : m.error ? m.error.message : '';
+    _npd.list = l.error ? [] : (l.data || []);
+    _npd.meta = m.error ? { status: {}, setting_keys: {}, heads: [], my_keys: [] } : m.data;
+  }
+  if (_npd.view === 'form' && _npd.form) return npdRenderForm();
+  if (_npd.view === 'detail' && _npd.p) return npdRenderDetail();
+  if (_npd.view === 'settings') return npdRenderSettings();
+  npdRenderList();
+}
+
+function npdRenderList() {
+  _npd.view = 'list'; _npd.p = null; _npd.form = null;
+  const m = _npd.meta || {};
+  document.getElementById('tb-r').innerHTML = `${m.is_admin ? `<button class="btn btn-sm" onclick="npdRenderSettings()">⚙️ ตั้งค่าผู้รับผิดชอบ</button>` : ''}${m.can_create ? `<button class="btn btn-sm btn-p" onclick="npdNew()">＋ ขอตัวอย่างสินค้าใหม่</button>` : ''}`;
+  const all = _npd.list || [];
+  const FILTERS = [['mine_wait', 'รอฉัน'], ['open', 'กำลังดำเนินการ'], ['launched', 'เปิดขายแล้ว'], ['closed', 'ยกเลิก/ปิดรอบ'], ['all', 'ทั้งหมด']];
+  const match = r => _npd.f === 'all' ? true : _npd.f === 'mine_wait' ? r.awaiting_me : _npd.f === 'launched' ? r.status === 'launched'
+    : _npd.f === 'closed' ? ['cancelled', 'revised'].includes(r.status) : !NPD_CLOSED.includes(r.status);
+  const q = _npd.q.trim().toLowerCase();
+  const rows = all.filter(r => match(r) && (!q || [r.doc_no, r.legacy_no, r.cust_name, r.cust_code, r.created_by_name, ...(r.items || [])].some(x => String(x || '').toLowerCase().includes(q))));
+  const cnt = k => all.filter(r => (_npd.f = k, match(r))).length;
+  const keep = _npd.f; const counts = Object.fromEntries(FILTERS.map(([k]) => [k, cnt(k)])); _npd.f = keep;
+  const unset = m.is_admin ? Object.keys(m.setting_keys || {}).filter(k => !(m.settings?.[k] || []).length) : [];
+  document.getElementById('ct').innerHTML = `${_npd.err ? `<div class="al alw">${esc(_npd.err)}</div>` : ''}
+    ${unset.length ? `<div class="al alw" style="cursor:pointer" onclick="npdRenderSettings()">⚠️ ยังไม่ได้ตั้งผู้รับผิดชอบ: ${unset.map(k => esc(m.setting_keys[k])).join(', ')} — คำขอจะค้างที่ขั้นนั้น กดเพื่อตั้งค่า</div>` : ''}
+    ${counts.mine_wait ? `<div class="al alw" style="cursor:pointer" onclick="_npd.f='mine_wait';npdRenderList()">⏳ มีงาน NPD รอคุณ ${counts.mine_wait} รายการ — กดเพื่อดู</div>` : ''}
+    <div class="card">
+      <div class="ch"><div class="ct2">✨ พัฒนาสินค้าใหม่ (NPD)</div><span class="hint">ขอตัวอย่าง → อนุมัติ → RD พัฒนา → ลูกค้าทดสอบ → spec/ทุน → ราคา → เปิดขาย</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${FILTERS.map(([k, l]) => `<button class="btn btn-sm${_npd.f === k ? ' btn-p' : ''}" onclick="_npd.f='${k}';npdRenderList()">${l} (${counts[k]})</button>`).join('')}
+        <input type="text" id="npd-q" placeholder="🔍 เลขที่ / ลูกค้า / สินค้า / ผู้ขอ" value="${esc(_npd.q)}" oninput="_npd.q=this.value;npdRenderList();const e=document.getElementById('npd-q');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="max-width:280px;margin-left:auto"></div>
+      <div class="tw"><table class="t"><thead><tr><th>เลขที่</th><th>รอบ</th><th>ลูกค้า</th><th>สินค้า</th><th>ผู้ขอ</th><th>สถานะ</th><th>อยู่ที่</th><th style="text-align:right">ค้าง (วัน)</th></tr></thead><tbody>
+        ${rows.map(r => { const d = NPD_CLOSED.includes(r.status) ? '' : _npdDays(r.status_at); return `<tr style="cursor:pointer" onclick="npdOpen('${esc(r.id)}')">
+          <td class="mono"><b>${esc(_npdNo(r))}</b></td><td>${r.round}</td><td>${esc(r.cust_name || '')} <span class="code">${esc(r.cust_code || '')}</span></td>
+          <td style="font-size:12px">${esc((r.items || []).join(', '))}</td><td style="font-size:12px">${esc(r.created_by_name || '')}</td>
+          <td><span class="badge ${NPD_CLS[r.status] || 'bba'}">${esc(r.status_label || r.status)}</span>${r.awaiting_me ? ' <span class="badge bba">รอคุณ</span>' : ''}${r.sku_code ? ` <span class="code">${esc(r.sku_code)}</span>` : ''}</td>
+          <td style="font-size:12px">${NPD_CLOSED.includes(r.status) ? '' : _npdWho(r)}</td>
+          <td style="text-align:right;${d >= 7 ? 'color:var(--R);font-weight:700' : ''}">${d === '' ? '' : d}</td></tr>`; }).join('')
+          || `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--TX3)">${all.length ? 'ไม่พบรายการตามตัวกรอง' : m.can_create ? 'ยังไม่มีโปรเจกต์ — กด "＋ ขอตัวอย่างสินค้าใหม่" มุมขวาบน' : 'ยังไม่มีโปรเจกต์ที่คุณเกี่ยวข้อง'}</td></tr>`}
+      </tbody></table></div>
+    </div>`;
+}
+
+async function npdOpen(id) {
+  const r = await apiFetch(_npdApi('/' + encodeURIComponent(id)));
+  if (r.error) return toast('เปิดโปรเจกต์ไม่สำเร็จ: ' + r.error.message);
+  if (!_npd.meta) { const m = await apiFetch(_npdApi('/meta')); _npd.meta = m.data || {}; }
+  _npd.p = r.data; _npd.view = 'detail'; npdRenderDetail();
+}
+
+// ── ฟอร์มคำขอ (สร้าง/แก้ไข ร่างหรือที่ถูกส่งกลับ) ──
+function npdNew() {
+  _npd.form = { id: null, cust_code: '', cust_name: '', head_uid: '', header: { contact: '', phone: '', purpose: '', deliveryDate: '', address: '', note: '', custGroup: '', gpTarget: '', costs: [] },
+    items: [_srBlankItem('new')], _tried: false, round: 1 };
+  _npd.view = 'form'; npdRenderForm();
+}
+function npdEdit() {
+  const p = _npd.p;
+  _npd.form = { id: p.id, cust_code: p.cust_code || '', cust_name: p.cust_name || '', head_uid: p.head_uid || '', header: { costs: [], ...JSON.parse(JSON.stringify(p.header || {})) },
+    items: (p.items || []).length ? JSON.parse(JSON.stringify(p.items)) : [_srBlankItem('new')], _tried: p.status === 'returned', round: p.round, status: p.status, return_reason: p.return_reason };
+  _npd.view = 'form'; npdRenderForm();
+}
+function npdRenderForm() {
+  const f = _npd.form, h = f.header, m = _npd.meta || {};
+  const inpSt = 'padding:8px 10px;border:1px solid var(--BD);border-radius:7px;width:100%;font-family:var(--font);font-size:13px;box-sizing:border-box';
+  const sec = (title, body) => `<div style="background:var(--bg2);border:1px solid var(--BD);border-radius:10px;padding:16px;margin-bottom:16px"><div style="font-weight:600;font-size:13px;margin-bottom:12px">${title}</div>${body}</div>`;
+  const fld = (label, id, val, ph = '', type = 'text', span) => `<div class="field" style="margin:0${span ? ';grid-column:1/-1' : ''}"><label>${label}</label><input id="${id}" type="${type}" value="${esc(val ?? '')}" placeholder="${esc(ph)}" style="${inpSt}"></div>`;
+  const custs = salesCustomers().slice(0, 300);
+  const skus = getSkusMerged();
+  document.getElementById('tb-r').innerHTML = '';
+  document.getElementById('ct').innerHTML = `<div style="margin-bottom:10px"><button class="btn btn-sm" onclick="${f.id ? `npdOpen('${esc(f.id)}')` : 'npdRenderList()'}">← กลับ</button></div>
+  ${f.status === 'returned' && f.return_reason ? `<div class="al alw">↩️ ถูกส่งกลับให้แก้ไข: <b>${esc(f.return_reason)}</b> — แก้แล้วกด "ส่งขออนุมัติ" (เริ่มที่หัวหน้าใหม่)</div>` : ''}
+  <div class="card"><div class="ch"><div class="ct2">✨ ${f.id ? 'แก้ไขคำขอ' : 'ขอตัวอย่างสินค้าใหม่'} · รอบที่ ${f.round || 1}</div><span class="hint">ตามแบบฟอร์มโรงงาน FM-RDC-RDD-12</span></div>
+    ${sec('📋 ข้อมูลทั่วไป', `<div class="cgrid c2" style="gap:12px">
+      <div class="field" style="margin:0"><label>ลูกค้า *</label><select id="npd-cust" style="${inpSt}"><option value="">— เลือกลูกค้า —</option>
+        ${custs.map(c => `<option value="${esc(c.c)}" ${f.cust_code === c.c ? 'selected' : ''}>${esc(c.c)} — ${esc((c.n || '').substring(0, 32))}</option>`).join('')}
+        ${f.cust_code && !custs.some(c => c.c === f.cust_code) ? `<option value="${esc(f.cust_code)}" selected>${esc(f.cust_code)} — ${esc(f.cust_name || '')}</option>` : ''}</select></div>
+      <div class="field" style="margin:0"><label>กลุ่มลูกค้า *</label><input id="npd-cg" list="npd-cg-list" value="${esc(h.custGroup || '')}" placeholder="เช่น ห้าง, ร้านอาหาร" style="${inpSt}">
+        <datalist id="npd-cg-list">${(typeof DX_CHANNELS !== 'undefined' ? DX_CHANNELS : []).map(([, l]) => `<option value="${esc(l)}"></option>`).join('')}<option value="โรงแรม/ร้านอาหาร"></option><option value="โรงงาน/OEM"></option></datalist></div>
+      ${fld('ผู้ติดต่อ *', 'npd-contact', h.contact, 'ชื่อผู้ติดต่อที่ลูกค้า')}${fld('เบอร์โทร *', 'npd-phone', h.phone)}
+      ${fld('วันที่ต้องการตัวอย่าง *', 'npd-delivery', h.deliveryDate, '', 'date')}${fld('GP เป้าหมาย (%)', 'npd-gp', h.gpTarget, 'เช่น 25', 'number')}
+      <div class="field" style="margin:0;grid-column:1/-1"><label>วัตถุประสงค์ / เหตุผล *</label><textarea id="npd-purpose" style="${inpSt};height:60px;resize:vertical" placeholder="เช่น ลูกค้าต้องการสินค้าทดแทนคู่แข่ง, เมนูใหม่ของร้าน">${esc(h.purpose || '')}</textarea></div>
+      ${fld('ที่อยู่จัดส่ง', 'npd-addr', h.address, 'ถ้าต่างจากปกติ')}${fld('หมายเหตุ', 'npd-note', h.note)}
+    </div>`)}
+    ${sec('✨ รายการสินค้าใหม่', `<div>${f.items.map((it, i) => _srNewItemCard(it, i, f.items.length, { f: 'npdItemField', ref: 'npdItemRef', rm: 'npdRemoveItem', tried: f._tried, valId: 'npd-val-' })).join('')}</div>
+      <button onclick="npdAddItem()" class="btn btn-sm" style="margin-top:6px">+ เพิ่มรายการสินค้า</button>
+      <div id="npd-items-total" style="margin-top:10px;font-size:13px;text-align:right">${_srItemsTotalHtml(f.items)}</div>
+      <datalist id="sr-sku-list">${skus.map(s => `<option value="${esc(s.code)}" label="${esc(s.code + ' — ' + (s.name || '').substring(0, 30))}"></option>`).join('')}</datalist>`)}
+    ${sec('💰 ค่าใช้จ่ายอื่นๆ', `<div style="font-size:12px;color:var(--TX3);margin-bottom:6px">เช่น ค่าแม่พิมพ์/บรรจุภัณฑ์ใหม่, ค่าขนส่ง, ค่าแรกเข้า</div>
+      ${(h.costs || []).map((c, i) => `<div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+        <input value="${esc(c.item || '')}" placeholder="รายการ" onchange="_npd.form.header.costs[${i}].item=this.value" style="${inpSt};flex:3;min-width:160px;width:auto">
+        <input type="number" step="0.01" value="${esc(c.amount ?? '')}" placeholder="บาท" onchange="_npd.form.header.costs[${i}].amount=this.value" style="${inpSt};width:120px">
+        <input value="${esc(c.note || '')}" placeholder="หมายเหตุ" onchange="_npd.form.header.costs[${i}].note=this.value" style="${inpSt};flex:2;min-width:120px;width:auto">
+        <button class="btn btn-sm" onclick="_npdCollect();_npd.form.header.costs.splice(${i},1);npdRenderForm()" style="color:var(--R)">✕</button></div>`).join('')}
+      <button class="btn btn-sm" onclick="_npdCollect();_npd.form.header.costs.push({item:'',amount:'',note:''});npdRenderForm()">+ เพิ่มค่าใช้จ่าย</button>`)}
+    ${sec('✅ ส่งขออนุมัติ', `<div class="field" style="margin:0;max-width:360px"><label>หัวหน้าผู้อนุมัติ (ขั้น ②) *</label><select id="npd-head" style="${inpSt}"><option value="">— เลือกหัวหน้า —</option>
+        ${(m.heads || []).filter(u => u.uid !== UID).map(u => `<option value="${esc(u.uid)}" ${f.head_uid === u.uid ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
+      <div class="hint" style="margin-top:6px">หลังหัวหน้าอนุมัติ → พี่หลินพิมพ์ให้คุณอ้อยเซ็น (แนบสแกน) → คุณโออนุมัติ → ส่ง RD อัตโนมัติ</div>`)}
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="npdSave(false)">💾 บันทึกร่าง</button><button class="btn btn-p" onclick="npdSave(true)">📤 บันทึกและส่งขออนุมัติ</button></div>
+  </div>`;
+}
+function _npdCollect() {
+  const f = _npd.form; if (!f) return;
+  const v = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const set = (k, id) => { const x = v(id); if (x !== undefined) f.header[k] = x; };
+  const c = v('npd-cust'); if (c !== undefined) { f.cust_code = c; const o = salesCustomers().find(x => x.c === c); f.cust_name = o ? o.n : (c === f.cust_code ? f.cust_name : ''); }
+  set('custGroup', 'npd-cg'); set('contact', 'npd-contact'); set('phone', 'npd-phone'); set('deliveryDate', 'npd-delivery'); set('gpTarget', 'npd-gp');
+  set('purpose', 'npd-purpose'); set('address', 'npd-addr'); set('note', 'npd-note');
+  const hd = v('npd-head'); if (hd !== undefined) f.head_uid = hd;
+}
+function npdItemField(i, key, val, num) {
+  const f = _npd.form;
+  f.items[i] = f.items[i] || _srBlankItem('new');
+  f.items[i][key] = num ? (val === '' ? '' : parseFloat(val) || 0) : val;
+  if (['brand', 'casing', 'outer'].includes(key) || f._tried) { _npdCollect(); npdRenderForm(); return; }
+  if (key === 'targetPrice' || key === 'forecastKg') {
+    const el = document.getElementById('npd-val-' + i); if (el) el.textContent = _srItemValue(f.items[i]);
+    const tot = document.getElementById('npd-items-total'); if (tot) tot.innerHTML = _srItemsTotalHtml(f.items);
+  }
+}
+function npdItemRef(i, code) { const s = getSkusMerged().find(x => x.code === code); npdItemField(i, 'refSku', code); _npd.form.items[i].refName = s ? (s.name || '') : ''; }
+function npdAddItem() { _npdCollect(); _npd.form.items.push(_srBlankItem('new')); npdRenderForm(); }
+function npdRemoveItem(i) { _npdCollect(); _npd.form.items.splice(i, 1); if (!_npd.form.items.length) _npd.form.items.push(_srBlankItem('new')); npdRenderForm(); }
+async function npdSave(submit) {
+  if (_npd.busy) return; _npd.busy = true;
+  try {
+    _npdCollect();
+    const f = _npd.form;
+    const body = { cust_code: f.cust_code, cust_name: f.cust_name, header: f.header, items: f.items };
+    const r = await apiFetch(_npdApi(f.id ? '/' + encodeURIComponent(f.id) : ''), { method: f.id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    if (r.error) return toast('บันทึกไม่สำเร็จ: ' + r.error.message);
+    f.id = r.data.id; _npd.list = null;
+    if (!submit) { toast('บันทึกร่างแล้ว'); _npd.p = r.data; _npd.view = 'detail'; return npdRenderDetail(); }
+    if (!f.head_uid) { toast('กรุณาเลือกหัวหน้าผู้อนุมัติ', 'warn'); return npdRenderForm(); }
+    if ((r.data.issues || []).length) { f._tried = true; npdRenderForm(); return toast(`ยังส่งไม่ได้: ${r.data.issues.slice(0, 2).join(' · ')}${r.data.issues.length > 2 ? ' …' : ''}`, 'warn'); }
+    const s = await apiFetch(_npdApi(`/${encodeURIComponent(f.id)}/act/submit`), { method: 'POST', body: JSON.stringify({ head_uid: f.head_uid }) });
+    if (s.error) { f._tried = true; npdRenderForm(); return toast('ส่งไม่สำเร็จ: ' + s.error.message); }
+    _npd.p = s.data; _npd.view = 'detail'; npdRenderDetail(); toast(`ส่งขออนุมัติแล้ว · เลขที่ ${s.data.doc_no}`);
+  } finally { _npd.busy = false; }
+}
+
+// ── หน้ารายละเอียด + ปุ่มตามขั้น ──
+function _npdTimeline(p) {
+  const cur = p.status === 'returned' ? 'draft' : p.status;
+  const idx = NPD_FLOW.findIndex(([k]) => k === cur);
+  return `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 10px">${NPD_FLOW.map(([k, l], i) => {
+    const done = idx > i || p.status === 'launched', now = idx === i && p.status !== 'launched';
+    const bg = done ? '#DCFCE7' : now ? (p.status === 'returned' ? '#FEE2E2' : '#FEF3C7') : 'var(--bg2)';
+    return `<span style="font-size:11.5px;padding:4px 8px;border-radius:6px;background:${bg};border:1px solid ${now ? 'var(--A)' : 'var(--BD)'};${now ? 'font-weight:700' : 'color:' + (done ? 'var(--G)' : 'var(--TX3)')}">${done ? '✓ ' : ''}${l}</span>`;
+  }).join('')}</div>`;
+}
+function _npdAttList(p, kinds) {
+  const list = (p.attachments || []).filter(a => !kinds || kinds.includes(a.kind));
+  if (!list.length) return '<span class="hint">ยังไม่มีไฟล์</span>';
+  return list.map(a => `<div style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:3px 0"><span>📎</span><b>${esc((_npd.meta?.att_kinds || {})[a.kind] || a.kind)}</b>
+    <a href="#" onclick="npdOpenAtt('${esc(p.id)}','${esc(a.id)}');return false">${esc(a.filename)}</a><span class="hint">${_npdDt(a.created_at)}</span>
+    ${(a.uploaded_by === UID || _npd.meta?.is_admin) && !NPD_CLOSED.includes(p.status) ? `<button class="btn btn-xs" style="color:var(--R)" onclick="npdDelAtt('${esc(a.id)}')">ลบ</button>` : ''}</div>`).join('');
+}
+const _npdUpBtn = (kind, label) => `<label class="btn btn-sm" style="cursor:pointer">📎 ${label}<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.xlsx,.docx" style="display:none" onchange="npdUpload(this,'${kind}')"></label>
+  <label class="btn btn-sm" style="cursor:pointer">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" style="display:none" onchange="npdUpload(this,'${kind}')"></label>`;
+const _npdInp = 'padding:7px 9px;border:1px solid var(--BD);border-radius:7px;font-family:var(--font);font-size:13px;box-sizing:border-box';
+
+function _npdActionPanel(p) {
+  const mine = k => _npdMine(p, k), out = [];
+  const box = (title, body) => out.push(`<div class="card" style="border:2px solid var(--A)"><div class="ch"><div class="ct2">👉 ${title}</div></div>${body}</div>`);
+  const btn = (label, onclick, cls = '') => `<button class="btn btn-sm ${cls}" onclick="${onclick}">${label}</button>`;
+  const approve = (ok, ret, what) => `<div style="display:flex;gap:8px;flex-wrap:wrap">${btn('↩️ ไม่ผ่าน ส่งกลับให้แก้ไข', `npdReturn('${ret}','${what}')`)}${btn('✅ อนุมัติ', `npdAct('${ok}',{comment:prompt('ความเห็น (ไม่บังคับ)','')??''})`, 'btn-p')}</div>`;
+  const s = p.status;
+  if (EDITABLE_NPD.includes(s) && mine('owner')) box(s === 'returned' ? `ถูกส่งกลับ: ${esc(p.return_reason || '')}` : 'ร่าง — กรอกให้ครบแล้วส่งขออนุมัติ',
+    `${(p.issues || []).length ? `<div style="font-size:12px;color:var(--R);margin-bottom:8px">ยังขาด: ${p.issues.map(esc).join(' · ')}</div>` : ''}<div style="display:flex;gap:8px;flex-wrap:wrap">${btn('✏️ แก้ไข / ส่งขออนุมัติ', 'npdEdit()', 'btn-p')}${!p.doc_no && !p.prev_id ? btn('🗑 ลบร่าง', 'npdDelete()') : ''}</div>`);
+  if (s === 'pending_head' && mine('head')) box('② หัวหน้าพิจารณาคำขอตัวอย่าง', approve('head_approve', 'head_return', 'หัวหน้า'));
+  if (s === 'pending_head' && p.created_by === UID) out.push(`<div style="margin-bottom:10px">${btn('เรียกคืนมาแก้ไข', "npdAct('recall')")}</div>`);
+  if (s === 'pending_paper' && mine('lin')) box('③ พิมพ์ให้คุณอ้อยเซ็น → สแกนแนบ → บันทึกผล', `<ol style="margin:0 0 10px 18px;font-size:13px;line-height:1.9">
+      <li>${btn('🖨 พิมพ์ใบขอตัวอย่าง (FM-RDC-RDD-12)', 'npdPrint()')}</li><li>ให้คุณอ้อยเซ็นอนุมัติ / ไม่อนุมัติ</li>
+      <li>แนบสแกน: ${_npdUpBtn('scan_paper', 'แนบสแกน')}<div style="margin-top:4px">${_npdAttList(p, ['scan_paper'])}</div></li></ol>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${btn('↩️ คุณอ้อยไม่ผ่าน', "npdReturn('paper_return','คุณอ้อย')")}${btn('✅ คุณอ้อยอนุมัติ (ต้องแนบสแกนแล้ว)', "npdAct('paper_pass')", 'btn-p')}</div>`);
+  if (s === 'pending_o' && mine('o')) box('④ คุณโอพิจารณาคำขอตัวอย่าง', `<div style="margin-bottom:8px">สแกนที่คุณอ้อยเซ็น: ${_npdAttList(p, ['scan_paper'])}</div>${approve('o_approve', 'o_return', 'คุณโอ')}`);
+  if (s === 'rd_queue' && mine('rd')) box('⑥ RD รับเรื่อง', btn('🧑‍🔬 รับเรื่อง เริ่มพัฒนา', "npdAct('rd_accept')", 'btn-p'));
+  if (s === 'rd_dev' && mine('rd')) box('⑦ RD ส่งสินค้าตัวอย่างให้ Sales', `<div style="margin-bottom:8px">เอกสารประกอบ (COA/ใบส่ง): ${_npdUpBtn('rd_doc', 'แนบเอกสาร')}<div style="margin-top:4px">${_npdAttList(p, ['rd_doc'])}</div></div>
+      <input id="npd-rd-note" placeholder="หมายเหตุถึง Sales (ไม่บังคับ)" style="${_npdInp};width:100%;margin-bottom:8px">${btn('📦 ส่งตัวอย่างแล้ว', "npdAct('rd_send',{note:document.getElementById('npd-rd-note').value})", 'btn-p')}`);
+  if (s === 'sample_sent' && mine('owner')) box('⑦ ได้รับสินค้าตัวอย่างจาก RD แล้วหรือยัง', `<div style="margin-bottom:8px">${_npdAttList(p, ['rd_doc'])}</div>${btn('✔️ ได้รับตัวอย่างแล้ว', "npdAct('sales_receive')", 'btn-p')}`);
+  if (s === 'sample_received' && mine('owner')) box('⑧ ส่งสินค้าตัวอย่างให้ลูกค้าทดสอบ', `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">วันที่ส่ง <input type="date" id="npd-sent" value="${new Date().toISOString().slice(0, 10)}" style="${_npdInp}">${btn('🚚 ส่งให้ลูกค้าแล้ว', "npdAct('to_customer',{date:document.getElementById('npd-sent').value})", 'btn-p')}</div>`);
+  if (s === 'at_customer' && mine('owner')) box('⑨ กรอก Feedback จากลูกค้า (Testing Report)', `<div class="cgrid c2" style="gap:10px">
+      <div class="field" style="margin:0"><label>วันที่ทดสอบ</label><input type="date" id="npd-fb-date" value="${new Date().toISOString().slice(0, 10)}" style="${_npdInp};width:100%"></div>
+      <div class="field" style="margin:0"><label>Sample code</label><input id="npd-fb-code" style="${_npdInp};width:100%"></div>
+      <div class="field" style="margin:0"><label>ความพึงพอใจ</label><select id="npd-fb-sat" style="${_npdInp};width:100%"><option value="">—</option>${[5, 4, 3, 2, 1].map(n => `<option value="${n}">${'★'.repeat(n)}</option>`).join('')}</select></div>
+      <div class="field" style="margin:0"><label>เหตุผลหลัก (ถ้าไม่ผ่าน)</label><select id="npd-fb-why" style="${_npdInp};width:100%"><option value="">—</option>${SR_FAIL_REASONS.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></div>
+      <div class="field" style="margin:0;grid-column:1/-1"><label>ความเห็นลูกค้า (บังคับถ้าไม่ผ่าน)</label><textarea id="npd-fb-text" style="${_npdInp};width:100%;height:60px"></textarea></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${btn('❌ ไม่ผ่าน — ยกเลิกโปรเจกต์', "npdFeedback('cancel')")}${btn('🔁 ไม่ผ่าน — ปรับสูตร เปิดรอบใหม่', "npdFeedback('revise')")}${btn('✅ ผ่าน', "npdFeedback('pass')", 'btn-p')}</div>`);
+  if (s === 'first_lot' && mine('owner')) {
+    const mths = Array.from({ length: 6 }, (_, k) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + k + 1); return d.toISOString().slice(0, 7); });
+    box(`⑩ แจ้งจำนวนผลิต lot แรก + forecast ยอดขาย`, `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px">
+      <div class="field" style="margin:0"><label>lot แรก (กก.) * ขั้นต่ำ ${_npd.meta?.min_first_lot_kg || 40}</label><input type="number" id="npd-fl-kg" min="0" style="${_npdInp};width:140px"></div>
+      <div class="field" style="margin:0"><label>วันที่ต้องการ</label><input type="date" id="npd-fl-date" style="${_npdInp}"></div></div>
+      <div style="font-size:12px;color:var(--TX2);margin-bottom:4px">Forecast ยอดขาย (กก./เดือน) — กรอกอย่างน้อย 1 เดือน</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${mths.map(mm => `<div><div class="hint">${mm}</div><input type="number" min="0" data-npd-m="${mm}" style="${_npdInp};width:100px"></div>`).join('')}</div>
+      <input id="npd-fl-note" placeholder="หมายเหตุ" style="${_npdInp};width:100%;margin:8px 0">${btn('📤 ส่งให้ RD ทำ spec/ทุน', 'npdFirstLot()', 'btn-p')}`);
+  }
+  if (s === 'spec_cost') {
+    const f = p.flags || {}, c = p.cost || {};
+    if (mine('rd')) box('⑪ RD ทำ Spec + ทุนเบื้องต้น (ทำคู่กันได้)', `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+      <div><b>11.1 Spec → พี่หลิน + คุณโอ</b> ${f.spec_at ? '✅ ส่งแล้ว' : ''}<div style="margin:6px 0">${_npdUpBtn('rd_spec', 'แนบ Spec')}</div>${_npdAttList(p, ['rd_spec'])}
+        <div style="margin-top:6px">${btn(f.spec_at ? 'ส่ง Spec ฉบับใหม่' : '📤 ส่ง Spec', "npdAct('rd_spec')", f.spec_at ? '' : 'btn-p')}</div></div>
+      <div><b>11.2 ทุนเบื้องต้น → บัญชีต้นทุน</b> ${f.rd_cost_at ? `✅ ส่งแล้ว ${_npdNum(c.rd?.amount)} บ./กก.` : ''}
+        <div style="display:flex;gap:6px;margin:6px 0;flex-wrap:wrap"><input type="number" step="0.01" id="npd-rdc" placeholder="บาท/กก." value="${esc(c.rd?.amount ?? '')}" style="${_npdInp};width:110px"><input id="npd-rdc-note" placeholder="รายละเอียดทุน" value="${esc(c.rd?.note || '')}" style="${_npdInp};flex:1;min-width:120px"></div>
+        ${btn(f.rd_cost_at ? 'ส่งทุนใหม่' : '📤 ส่งทุนเบื้องต้น', "npdAct('rd_cost',{amount:document.getElementById('npd-rdc').value,note:document.getElementById('npd-rdc-note').value})", f.rd_cost_at ? '' : 'btn-p')}</div></div>`);
+    if (mine('cost_acct')) box('⑫ บัญชีต้นทุนโรงงานคำนวณทุน → คุณโอ', f.rd_cost_at ? `<div style="margin-bottom:6px">ทุนเบื้องต้นจาก RD: <b>${_npdNum(c.rd?.amount)}</b> บ./กก. ${c.rd?.note ? '· ' + esc(c.rd.note) : ''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><input type="number" step="0.01" id="npd-acc" placeholder="ทุนที่คำนวณ บาท/กก." value="${esc(c.acct?.amount ?? '')}" style="${_npdInp};width:150px"><input id="npd-acc-note" placeholder="หมายเหตุ" value="${esc(c.acct?.note || '')}" style="${_npdInp};flex:1;min-width:120px">
+      ${btn(f.acct_cost_at ? 'บันทึกทุนใหม่' : '💾 บันทึกทุน ส่งคุณโอ', "npdAct('acct_cost',{amount:document.getElementById('npd-acc').value,note:document.getElementById('npd-acc-note').value})", 'btn-p')}</div>` : '<span class="hint">รอ RD ส่งทุนเบื้องต้นก่อน</span>');
+  }
+  if (s === 'price_quote' && mine('owner')) box('⑬ เสนอราคาขายให้คุณโอ', `<div style="margin-bottom:8px">Spec จาก RD: ${_npdAttList(p, ['rd_spec'])}</div>
+    ${p.price?.history?.length ? `<div class="hint" style="margin-bottom:6px">เคยเสนอ: ${p.price.history.map(x => _npdNum(x.price)).join(' → ')} บ./กก.</div>` : ''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><input type="number" step="0.01" id="npd-price" placeholder="ราคาขาย บาท/กก." style="${_npdInp};width:150px"><input id="npd-price-note" placeholder="เหตุผล/เงื่อนไข" style="${_npdInp};flex:1;min-width:160px">
+    ${btn('📤 เสนอราคา', "npdAct('price_propose',{price:document.getElementById('npd-price').value,note:document.getElementById('npd-price-note').value})", 'btn-p')}</div>`);
+  if (s === 'price_review' && mine('o')) {
+    const c = p.cost || {}, pr = p.price || {}, cost = c.acct?.amount || 0, gp = cost && pr.proposed ? (1 - cost / pr.proposed) * 100 : null;
+    box('⑬ คุณโอพิจารณาราคาขาย', `<div style="margin-bottom:8px;font-size:13.5px">ราคาเสนอ <b>${_npdNum(pr.proposed)}</b> บ./กก.${pr.note ? ' · ' + esc(pr.note) : ''}<br>ทุน (บัญชี) <b>${_npdNum(cost)}</b> บ./กก.${gp != null ? ` · กำไรขั้นต้นประมาณ <b>${gp.toFixed(1)}%</b>` : ''}${p.header?.gpTarget ? ` · GP เป้าหมาย ${esc(p.header.gpTarget)}%` : ''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${btn('❌ ยกเลิกโปรเจกต์', "npdDecide('cancel')")}${btn('🔁 เริ่มตัวอย่างรอบใหม่', "npdDecide('new_round')")}${btn('🛠 ปรับ spec/ทุน', "npdDecide('respec')")}${btn('💬 คุยราคาใหม่', "npdDecide('renegotiate')")}${btn('✅ อนุมัติราคา', "npdDecide('approve')", 'btn-p')}</div>`);
+  }
+  if (s === 'sku_setup' && mine('factory_acct')) box('เปิดรหัสสินค้าในระบบ และเปิดขาย', `<div style="margin-bottom:6px">ราคาที่อนุมัติ <b>${_npdNum(p.price?.approved)}</b> บ./กก.</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><input id="npd-sku" placeholder="รหัสสินค้าใหม่ (Express)" style="${_npdInp};width:180px"><input id="npd-skuname" value="${esc(p.items?.[0]?.name || '')}" placeholder="ชื่อสินค้า" style="${_npdInp};flex:1;min-width:160px">
+    ${btn('🚀 เปิดขายแล้ว', "npdAct('sku_open',{sku_code:document.getElementById('npd-sku').value,sku_name:document.getElementById('npd-skuname').value})", 'btn-p')}</div>`);
+  return out.join('');
+}
+const EDITABLE_NPD = ['draft', 'returned'];
+
+function npdRenderDetail() {
+  const p = _npd.p, m = _npd.meta || {};
+  _npd.view = 'detail';
+  document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="npdPrint()">🖨 พิมพ์ FM-RDC-RDD-12</button>`;
+  const it = p.items || [], h = p.header || {}, fl = p.first_lot, tr = p.test, pr = p.price, c = p.cost;
+  const row = (l, v) => v ? `<div><span class="hint">${l}</span><div>${v}</div></div>` : '';
+  const canCancel = !NPD_CLOSED.includes(p.status) && (p.created_by === UID || m.is_admin);
+  document.getElementById('ct').innerHTML = `<div style="margin-bottom:10px"><button class="btn btn-sm" onclick="_npd.list=null;_npd.view='list';pgNpd()">← รายการ</button></div>
+    <div class="card"><div class="ch"><div class="ct2">✨ ${esc(_npdNo(p))} · รอบที่ ${p.round}</div><span class="badge ${NPD_CLS[p.status] || 'bba'}">${esc(p.status_label)}</span></div>
+      ${_npdTimeline(p)}
+      ${!NPD_CLOSED.includes(p.status) ? `<div style="font-size:13px;margin-bottom:6px">อยู่ที่: <b>${_npdWho(p) || '-'}</b> · ค้าง ${_npdDays(p.status_at)} วัน</div>` : ''}
+      ${p.status === 'cancelled' ? `<div class="al alw">ยกเลิก: ${esc(p.cancel_reason || '')}</div>` : ''}
+      ${p.status === 'launched' ? `<div class="al" style="background:#DCFCE7">🚀 เปิดขายแล้ว รหัส <b>${esc(p.sku_code)}</b> ${esc(p.sku_name || '')} · ${_npdDt(p.launched_at)}</div>` : ''}
+      ${(p.chain || []).length > 1 ? `<div style="font-size:12.5px">ประวัติรอบ: ${p.chain.map(x => x.id === p.id ? `<b>รอบ ${x.round}</b>` : `<a href="#" onclick="npdOpen('${esc(x.id)}');return false">รอบ ${x.round} ${esc(x.doc_no || '')}</a> (${esc((m.status || {})[x.status] || x.status)})`).join(' → ')}</div>` : ''}
+    </div>
+    ${_npdActionPanel(p)}
+    <div class="card"><div class="ch"><div class="ct2">📋 คำขอ</div></div>
+      <div class="cgrid c3" style="gap:10px;font-size:13px">${row('ลูกค้า', `${esc(p.cust_name || '')} <span class="code">${esc(p.cust_code || '')}</span>`)}${row('กลุ่มลูกค้า', esc(h.custGroup))}
+        ${row('ผู้ติดต่อ / โทร', esc([h.contact, h.phone].filter(Boolean).join(' · ')))}${row('วันที่ต้องการตัวอย่าง', esc(h.deliveryDate))}${row('ผู้ขอ', esc(p.created_by_name))}
+        ${row('หัวหน้าผู้อนุมัติ', esc(p.head_uid ? uidToName(p.head_uid) : ''))}${row('GP เป้าหมาย', h.gpTarget ? esc(h.gpTarget) + '%' : '')}
+        <div style="grid-column:1/-1">${row('วัตถุประสงค์', esc(h.purpose))}</div>${h.note ? `<div style="grid-column:1/-1">${row('หมายเหตุ', esc(h.note))}</div>` : ''}</div>
+      <div class="tw" style="margin-top:10px"><table class="t"><thead><tr><th>#</th><th>สินค้า</th><th>Brand</th><th>Storage</th><th style="text-align:right">ราคาเป้าหมาย</th><th style="text-align:right">กก./เดือน</th><th style="text-align:right">ตัวอย่าง</th></tr></thead><tbody>
+        ${it.map((x, i) => `<tr><td>${i + 1}</td><td><b>${esc(x.name)}</b><div class="hint">${esc(x.detail || '')}</div></td><td>${esc(_srFmLbl('brand', x.brand) || x.brandOther || '')}</td><td>${esc(_srFmLbl('storage', x.storage))} ${x.storageDays ? esc(x.storageDays) + ' วัน' : ''}</td>
+          <td style="text-align:right">${_npdNum(x.targetPrice)}</td><td style="text-align:right">${_npdNum(x.forecastKg)}</td><td style="text-align:right">${esc(x.qty)} ${esc(x.unit)}</td></tr>`).join('')}</tbody></table></div>
+    </div>
+    ${tr && tr.decision ? `<div class="card"><div class="ch"><div class="ct2">🧪 ผลทดสอบลูกค้า</div></div><div style="font-size:13px">ส่งให้ลูกค้า ${esc(tr.sent_date || '-')} · ทดสอบ ${esc(tr.date || '')} · ผล <b>${tr.decision === 'pass' ? '✅ ผ่าน' : tr.decision === 'revise' ? '🔁 ปรับสูตร' : '❌ ยกเลิก'}</b>${tr.satisfaction ? ' · ' + '★'.repeat(+tr.satisfaction) : ''}${tr.feedback ? '<br>' + esc(tr.feedback) : ''}</div></div>` : ''}
+    ${fl ? `<div class="card"><div class="ch"><div class="ct2">📦 lot แรก + forecast</div></div><div style="font-size:13px">lot แรก <b>${_npdNum(fl.kg)}</b> กก. ${fl.date ? '· ต้องการ ' + esc(fl.date) : ''}<br>forecast: ${(fl.forecast || []).map(x => `${esc(x.month)} <b>${_npdNum(x.kg)}</b>`).join(' · ')} กก.${fl.note ? '<br>' + esc(fl.note) : ''}</div></div>` : ''}
+    ${pr || c ? `<div class="card"><div class="ch"><div class="ct2">💰 ทุน & ราคา</div></div><div style="font-size:13px">${c ? `ทุน RD ${c.rd ? _npdNum(c.rd.amount) : '-'} · ทุนบัญชี ${c.acct ? _npdNum(c.acct.amount) : '-'} บ./กก.<br>` : ''}${pr ? `ราคาที่เสนอ ${(pr.history || []).map(x => _npdNum(x.price)).join(' → ') || '-'} บ./กก.${pr.approved ? ` · <b>อนุมัติ ${_npdNum(pr.approved)}</b>` : ''}` : ''}</div></div>` : ''}
+    <div class="card"><div class="ch"><div class="ct2">📎 ไฟล์แนบทั้งหมด</div>${!NPD_CLOSED.includes(p.status) ? `<div>${_npdUpBtn('other', 'แนบไฟล์อื่น')}</div>` : ''}</div>${_npdAttList(p)}</div>
+    <div class="card"><div class="ch"><div class="ct2">🕘 ประวัติ</div>${canCancel ? `<button class="btn btn-sm" style="color:var(--R)" onclick="npdCancel()">ยกเลิกโปรเจกต์</button>` : ''}</div><div class="tw"><table class="t"><tbody>
+      ${(p.logs || []).slice().reverse().map(l => `<tr><td style="white-space:nowrap;font-size:12px">${_npdDt(l.at)} ${String(l.at || '').slice(11, 16)}</td><td><b>${esc(NPD_LOG_LBL[l.action] || l.action)}</b></td><td style="font-size:12px">${esc(l.detail || '')}</td><td class="hint">${esc(l.by_name || l.by_uid || 'ระบบ')}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
+async function npdAct(action, body = {}) {
+  if (_npd.busy) return; _npd.busy = true;
+  try {
+    const p = _npd.p;
+    const r = await apiFetch(_npdApi(`/${encodeURIComponent(p.id)}/act/${action}`), { method: 'POST', body: JSON.stringify(body || {}) });
+    if (r.error) return toast('ทำรายการไม่สำเร็จ: ' + r.error.message);
+    _npd.p = r.data; _npd.list = null; npdRenderDetail();
+    if (r.data.new_id) {
+      toast('ปิดรอบนี้แล้ว · เปิดรอบใหม่เป็นร่างให้ Sales แก้ไข');
+      if (r.data.created_by === UID && confirm('เปิดร่างรอบใหม่เพื่อแก้ไขเลยไหม?')) return npdOpen(r.data.new_id);
+    } else toast(`บันทึกแล้ว · ${r.data.status_label}`);
+  } finally { _npd.busy = false; }
+}
+function npdReturn(action, who) {
+  const reason = prompt(`${who} ไม่ผ่าน — ระบุเหตุผลที่ส่งกลับให้ Sales แก้ไข`);
+  if (reason === null) return;
+  if (!reason.trim()) return toast('กรุณาระบุเหตุผล', 'warn');
+  npdAct(action, { reason });
+}
+function npdFeedback(decision) {
+  const g = id => document.getElementById(id)?.value || '';
+  const body = { decision, date: g('npd-fb-date'), sampleCode: g('npd-fb-code'), satisfaction: g('npd-fb-sat'), failReason: g('npd-fb-why'), feedback: g('npd-fb-text'), result: decision === 'pass' ? 'pass' : 'fail' };
+  if (decision !== 'pass' && !body.feedback.trim()) return toast('กรุณากรอกความเห็นลูกค้า/เหตุผล', 'warn');
+  if (!confirm(decision === 'pass' ? 'ยืนยันลูกค้าทดสอบผ่าน?' : decision === 'revise' ? 'ปิดรอบนี้และเปิดรอบใหม่ (คัดลอกคำขอเดิมเป็นร่าง)?' : 'ยืนยันยกเลิกโปรเจกต์นี้?')) return;
+  npdAct('feedback', body);
+}
+function npdFirstLot() {
+  const forecast = [...document.querySelectorAll('[data-npd-m]')].map(e => ({ month: e.dataset.npdM, kg: e.value })).filter(x => Number(x.kg) > 0);
+  npdAct('first_lot', { kg: document.getElementById('npd-fl-kg').value, date: document.getElementById('npd-fl-date').value, note: document.getElementById('npd-fl-note').value, forecast });
+}
+function npdDecide(decision) {
+  if (decision === 'approve') { if (confirm(`อนุมัติราคา ${_npdNum(_npd.p.price?.proposed)} บ./กก.?`)) npdAct('price_decide', { decision }); return; }
+  const lbl = { renegotiate: 'ให้ Sales คุยราคาใหม่', respec: 'ให้ RD ปรับ spec/ทุนใหม่', new_round: 'เริ่มขอตัวอย่างรอบใหม่', cancel: 'ยกเลิกโปรเจกต์' }[decision];
+  const reason = prompt(`${lbl} — ระบุเหตุผล`);
+  if (reason === null) return;
+  if (!reason.trim()) return toast('กรุณาระบุเหตุผล', 'warn');
+  npdAct('price_decide', { decision, reason });
+}
+function npdCancel() {
+  const reason = prompt('ยกเลิกโปรเจกต์นี้ — ระบุเหตุผล');
+  if (reason === null) return;
+  if (!reason.trim()) return toast('กรุณาระบุเหตุผล', 'warn');
+  npdAct('cancel', { reason });
+}
+async function npdDelete() {
+  if (!confirm('ลบร่างนี้?')) return;
+  const r = await apiFetch(_npdApi('/' + encodeURIComponent(_npd.p.id)), { method: 'DELETE' });
+  if (r.error) return toast('ลบไม่สำเร็จ: ' + r.error.message);
+  _npd.list = null; _npd.view = 'list'; pgNpd(); toast('ลบร่างแล้ว');
+}
+async function npdUpload(input, kind) {
+  const p = _npd.p, files = [...(input.files || [])];
+  input.value = '';
+  for (const f of files) {
+    if (f.size > 15 * 1024 * 1024) { toast(`${f.name}: ใหญ่เกิน 15 MB`); continue; }
+    const fd = new FormData(); fd.append('kind', kind); fd.append('file', f);
+    let res, j = null;
+    try {
+      res = await fetch(`${API_BASE}${_npdApi(`/${encodeURIComponent(p.id)}/attachments`)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + _sessionToken, 'ngrok-skip-browser-warning': 'true' }, body: fd });
+      j = await res.json().catch(() => null);
+    } catch (e) { toast('แนบไฟล์ไม่สำเร็จ: ' + e.message); continue; }
+    if (!res.ok) { toast(`แนบ ${f.name} ไม่สำเร็จ: ${(j && j.error) || res.status}`); continue; }
+    p.attachments = j;
+  }
+  npdRenderDetail(); toast('แนบไฟล์แล้ว');
+}
+async function npdDelAtt(aid) {
+  if (!confirm('ลบไฟล์แนบนี้?')) return;
+  const r = await apiFetch(_npdApi(`/${encodeURIComponent(_npd.p.id)}/attachments/${encodeURIComponent(aid)}`), { method: 'DELETE' });
+  if (r.error) return toast('ลบไฟล์ไม่สำเร็จ: ' + r.error.message);
+  _npd.p.attachments = r.data || []; npdRenderDetail();
+}
+async function npdOpenAtt(id, aid) {
+  const w = window.open('', '_blank');
+  try {
+    const res = await fetch(`${API_BASE}${_npdApi(`/${encodeURIComponent(id)}/attachments/${encodeURIComponent(aid)}/content`)}`, { headers: { Authorization: 'Bearer ' + _sessionToken, 'ngrok-skip-browser-warning': 'true' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const url = URL.createObjectURL(await res.blob());
+    if (w) w.location = url; else window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { if (w) w.close(); toast('เปิดไฟล์ไม่สำเร็จ: ' + e.message); }
+}
+// พิมพ์แบบฟอร์มโรงงาน FM-RDC-RDD-12 — ใช้ตัวพิมพ์เดียวกับของตัวอย่าง (_srWriteFm) โดยแปลงรูปข้อมูลให้ตรง
+function npdPrint() {
+  const p = _npd.p; if (!p) return;
+  const w = _srOpenPrintWindow(); if (!w) return;
+  const h = p.header || {}, tr = p.test || {};
+  _srWriteFm(w, { id: p.id, doc_no: p.doc_no || p.legacy_no, date: (p.submitted_at || p.created_at || '').slice(0, 10), deliveryDate: h.deliveryDate, custName: p.cust_name, custCode: p.cust_code,
+    contact: h.contact, phone: h.phone, purpose: h.purpose, items: p.items || [], new_info: { round: p.round, custGroup: h.custGroup, gpTarget: h.gpTarget, costs: h.costs || [] },
+    testResult: tr.decision ? { date: tr.date, result: tr.decision === 'pass' ? 'pass' : 'fail', feedback: tr.feedback, round: p.round, sampleCode: tr.sampleCode,
+      firstOrderKg: p.first_lot?.kg, firstOrderDate: p.first_lot?.date } : null });
+}
+
+// ── ตั้งค่าผู้รับผิดชอบรายขั้น (แอดมิน) ──
+function npdRenderSettings() {
+  const m = _npd.meta || {};
+  if (!m.is_admin) return npdRenderList();
+  _npd.view = 'settings';
+  document.getElementById('tb-r').innerHTML = '';
+  const users = m.users || [];
+  document.getElementById('ct').innerHTML = `<div style="margin-bottom:10px"><button class="btn btn-sm" onclick="npdRenderList()">← รายการ</button></div>
+    <div class="card"><div class="ch"><div class="ct2">⚙️ ผู้รับผิดชอบแต่ละขั้น (NPD)</div><span class="hint">ขั้นละได้หลายคน คนใดคนหนึ่งกดได้ · หัวหน้า (ขั้น ②) Sales เลือกเองตอนส่ง</span></div>
+      <div class="al" style="font-size:12.5px">ผู้ใช้ต้องเข้าแอป Sales ได้ — บัญชีที่เป็น role ฝ่ายวางแผน (planning_*) ล็อกอินแอป Sales ไม่ได้ ให้ตั้ง role เป็น manager/officer/worker ทั่วไปแทน</div>
+      ${Object.entries(m.setting_keys || {}).map(([k, l]) => `<div style="margin:12px 0"><b>${esc(l)}</b><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${(m.settings?.[k] || []).map(u => `<span class="badge bbl">${esc(users.find(x => x.uid === u)?.name || u)} <a href="#" onclick="npdSetRemove('${k}','${esc(u)}');return false" style="color:var(--R)">✕</a></span>`).join('') || '<span class="hint">ยังไม่ได้ตั้ง</span>'}</div>
+        <div style="display:flex;gap:6px;margin-top:6px"><input list="npd-users" id="npd-add-${k}" placeholder="พิมพ์ชื่อหรือรหัสพนักงาน" style="${_npdInp};width:280px"><button class="btn btn-sm" onclick="npdSetAdd('${k}')">+ เพิ่ม</button></div></div>`).join('')}
+      <datalist id="npd-users">${users.map(u => `<option value="${esc(u.uid)}">${esc(u.name)} · ${esc(u.role)}</option>`).join('')}</datalist>
+    </div>`;
+}
+async function _npdSaveSettings(next) {
+  const r = await apiFetch(_npdApi('/settings'), { method: 'PUT', body: JSON.stringify(next) });
+  if (r.error) return toast('บันทึกไม่สำเร็จ: ' + r.error.message);
+  _npd.meta.settings = r.data; npdRenderSettings(); toast('บันทึกผู้รับผิดชอบแล้ว');
+}
+function npdSetAdd(k) {
+  const v = (document.getElementById('npd-add-' + k)?.value || '').trim();
+  const u = (_npd.meta.users || []).find(x => x.uid === v || x.name === v);
+  if (!u) return toast('ไม่พบผู้ใช้นี้', 'warn');
+  const cur = _npd.meta.settings?.[k] || [];
+  if (cur.includes(u.uid)) return;
+  _npdSaveSettings({ [k]: [...cur, u.uid] });
+}
+function npdSetRemove(k, uid) { _npdSaveSettings({ [k]: (_npd.meta.settings?.[k] || []).filter(x => x !== uid) }); }
 </script>
 </body>
 </html>

@@ -48,6 +48,16 @@ function buildInbox(db, user) {
       .all(uid).forEach(q => items.push({ kind: 'quotation_approve', key: `qa:${q.id}:${q.submitted_at || ''}`, actionable: true, ts: q.submitted_at || q.updated_at,
         title: `รออนุมัติใบเสนอราคา ${q.doc_no || ''}`.trim(), sub: `${q.customer_name || ''}${q.sales_name ? ' · ' + q.sales_name : ''}`, quotation_id: q.id }));
   } catch { /* ยังไม่มีตารางใบเสนอราคา */ }
+  // พัฒนาสินค้าใหม่ (NPD, 2026-11-25) — ขั้นปัจจุบันเป็นหน้าที่ของฉัน (หัวหน้า/พี่หลิน/คุณโอ/RD/บัญชี/Sales เจ้าของงาน)
+  try {
+    const { awaitingFor, STATUS } = require('./npdProjects');
+    for (const p of awaitingFor(db, uid)) {
+      const names = (parse(p.items_json) || []).map(it => it.name).filter(Boolean).join(', ');
+      items.push({ kind: 'npd_step', key: `npd:${p.id}:${p.status}:${p.status_at}`, actionable: true, ts: p.status_at,
+        title: `NPD ${p.doc_no || p.legacy_no || ''} · ${STATUS[p.status] || p.status}`.replace(/\s+/g, ' '), sub: `${p.cust_name || ''}${names ? ' · ' + names : ''} · ผู้ขอ ${p.created_by_name || p.created_by}`,
+        npd_id: p.id });
+    }
+  } catch { /* ยังไม่มีตาราง NPD */ }
 
   // ผลของใบที่ฉันสร้าง (หรือสร้างแทน) 14 วันล่าสุด
   const since = new Date(Date.now() - 14 * 864e5).toISOString();

@@ -55,7 +55,8 @@ Express (Business Plus) ERP           tgm-supplychain (this repo)              t
 | 9 | สั่งยอดผลิต | `prodplan` | 🟡 Partial | CRUD ครบ แต่ **push-to-WMS เป็น stub** (ดูหัวข้อ 6) |
 | 10 | เปรียบเทียบผลิต | `prodsummary` | 🟡 Partial | ฝั่ง "แผน" real, ฝั่ง "จริง" เป็น local-only import |
 | 11 | ข้อมูลลูกค้า | `custreg` | 🟡 Partial | รายชื่อลูกค้า real, workflow อนุมัติเป็น **local-only** |
-| 12 | ของตัวอย่าง | `sample` | 🔴 Local-only | UI ครบทั้ง flow แต่ **ไม่ sync เลย** |
+| 12 | ของตัวอย่าง | `sample` | 🔴 Local-only | UI ครบทั้ง flow แต่ **ไม่ sync เลย** · (2026-11-25) เหลือเฉพาะสินค้าเดิม สินค้าใหม่ย้ายไป `npd` |
+| — (ใหม่ 2026-11-25) | พัฒนาสินค้าใหม่ (NPD) | `npd` | ✅ Full | flow 13 ขั้น server คุมสถานะ, Sales app เท่านั้น — ดูข้อ 21 |
 | 13 | SKU Settings | `skuadmin` | ✅ Full* | *เพิ่ม SKU ใหม่/เปลี่ยนชื่อ เป็น local-only |
 | 14 | จัดการกลุ่ม | `groups` | 🟡 Partial | กลุ่มลูกค้า/เซลส์ sync จริง, **กลุ่มสินค้า local-only** |
 | 15 | Reports | `reports` | ✅ Full | export hub + import CSV รายงาน 73 (manual reconciliation) |
@@ -164,6 +165,16 @@ Express (Business Plus) ERP           tgm-supplychain (this repo)              t
 - **ขออนุมัติราคาต่ำกว่าสิทธิ์**: บรรทัดที่ราคาเสนอ < ราคาฐาน `min_price_tier` ของผู้สร้าง = `needs_approval` → ออกเองไม่ได้ ต้องส่งให้ผู้จัดการ (เลือกคน, อีเมลแจ้ง) · draft → pending_approval → อนุมัติ = issued / ไม่อนุมัติ (บังคับเหตุผล) = rejected แก้แล้วส่งใหม่ · ผู้สร้างเรียกคืนได้
 - **ราคาพิเศษประจำลูกค้า** (`customer_special_prices`, key = รหัสลูกค้า หรือชื่อลูกค้าใหม่): เกิดตอนอนุมัติ · เป็นราคาตั้งต้นของลูกค้ารายนั้น และราคา ≥ ราคาพิเศษไม่ต้องขอซ้ำ · ผู้จัดการดู/ปิดใช้งานได้ (ปุ่ม 💜 ในหน้ารายการ)
 - ทดสอบ: `server/tests/quotations.test.js`, `quotation-approval.test.js`, `e2e/tests/price-tiers.spec.js`
+
+### 21) พัฒนาสินค้าใหม่ (NPD) — 2026-11-25, Sales app เท่านั้น
+- **ที่มา**: แยกคำขอตัวอย่างสินค้าใหม่ออกจากเมนูของตัวอย่าง เพราะขั้นตอนยาวข้ามหลายฝ่าย (แผน `vivid-churning-rainbow.md`)
+- **Flow**: ① Sales สร้าง (ฟอร์ม FM-RDC-RDD-12 เดิม) → ② หัวหน้าที่ Sales เลือก → ③ พี่หลินพิมพ์ให้คุณอ้อยเซ็น แนบสแกน แล้วบันทึกผล → ④ คุณโอ → แจ้ง RD อัตโนมัติ → ⑥ RD รับเรื่อง → ⑦ RD ส่งตัวอย่าง / Sales กดได้รับ → ⑧ ส่งลูกค้า → ⑨ feedback (ผ่าน / ปรับสูตร = เปิดรอบใหม่ / ยกเลิก) → ⑩ lot แรก ≥40 กก. + forecast → ⑪ RD แนบ spec + ส่งทุนเบื้องต้น (คู่ขนาน) → ⑫ บัญชีต้นทุนบันทึกทุน → ⑬ Sales เสนอราคา → คุณโอ: อนุมัติ (→ บัญชีโรงงานกรอกรหัสสินค้า → เปิดขาย) / คุยราคาใหม่ / ปรับ spec-ทุน / รอบใหม่ / ยกเลิก
+- **ไม่ผ่านที่ ②③④** = ส่งกลับให้ Sales แก้ (บังคับเหตุผล) ส่งใหม่เริ่มที่หัวหน้าเสมอ ใช้เลขเดิม · เลขเอกสาร `NP<พ.ศ.>-<เดือน>-<ลำดับ>` ออกตอนส่งครั้งแรก รอบใหม่ได้เลขใหม่ ผูก `root_id/prev_id`
+- **I/O**: `npd_projects`, `npd_logs`, `npd_attachments` (BLOB, ตรวจ magic bytes), `npd_settings` (uid ผู้รับผิดชอบ: lin / o / rd / cost_acct / factory_acct — แอดมินตั้งในหน้าเมนู) · API `/api/npd_projects` (`server/routes/npdProjects.js`) · การเปลี่ยนสถานะทั้งหมดผ่าน `POST /:id/act/:action` ภายใน BEGIN IMMEDIATE · แอดมินทำแทนได้ (log ระบุ)
+- **ทุน** (`cost_json`) ตัดออกจาก response ของคนที่ไม่ใช่ RD/บัญชีต้นทุน/คุณโอ/แอดมิน · อีเมลแจ้งคนถัดไปทุกขั้น + รายการในกระดิ่ง (`routes/inbox.js` kind `npd_step`)
+- **เมนู**: เพิ่มให้ทุกคนในแอป Sales ยกเว้นการตลาด (`buildSB`) เพราะผู้รับผิดชอบตั้งรายคน — **ผู้ใช้ role planning_* ล็อกอินแอป Sales ไม่ได้** RD/บัญชีต้องใช้ role ทั่วไป (manager/officer/worker)
+- **ข้อมูลเดิม**: `sample_requests` บน DB จริงว่าง (ตรวจ 2026-11-25) จึงไม่มีการย้ายข้อมูล
+- **เทสต์**: `server/tests/npd-projects.test.js` (4), `e2e/tests/npd-flow.spec.js` (เดินครบบนหน้าเว็บจริงกับ server ในหน่วยความจำ)
 
 ### หน้า WMS System, และหน้า orphan
 - **WMS System** (`wms`, เห็นเฉพาะ role `warehouse`): แสดง stock แบบอ่านอย่างเดียว + ปุ่มเปิด WMS app ในแท็บใหม่ + ข้อความ SSO — ข้อความ UI ในหน้านี้อ้างอิง Supabase ("ใช้ร่วมกันผ่าน Supabase") ซึ่ง**ล้าสมัยแล้ว** ตามหัวข้อ 6
