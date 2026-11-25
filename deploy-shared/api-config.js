@@ -1,6 +1,6 @@
 'use strict';
 
-const DEFAULT_API_BASE = 'https://effective-viewpicture-rating-pick.trycloudflare.com';
+const DEFAULT_API_BASE = 'https://collaboration-cinema-sufficiently-escape.trycloudflare.com';
 function getApiBase(env = process.env) {
   const value = env.TGM_API_BASE_URL === undefined ? DEFAULT_API_BASE : env.TGM_API_BASE_URL;
   let url;
