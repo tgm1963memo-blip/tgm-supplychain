@@ -16,7 +16,7 @@ const { sendMail, escapeHtml } = require('../lib/mailer');
 //   ⑫ บัญชีต้นทุนบันทึกทุนที่คำนวณ · ⑬ Sales เสนอราคา → คุณโอ: ผ่าน (→ บัญชีโรงงานเปิดรหัส → เปิดขาย)
 //      / ไม่ผ่าน เลือกได้ 4 ทาง: คุยราคาใหม่ · ปรับ spec-ทุน · เริ่มตัวอย่างรอบใหม่ · ยกเลิก (ผู้ใช้เลือก 2026-11-25)
 // ผู้รับผิดชอบ lin/o/rd/cost_acct/factory_acct มาจาก npd_settings (แอดมินตั้ง) · แอดมินทำแทนทุกขั้นได้ (log ระบุ)
-// ข้อมูลทุน (cost_json) เห็นเฉพาะ RD / บัญชีต้นทุน / คุณโอ / แอดมิน — สอดคล้องกติกาทุนเดิม (2026-10-27)
+// ข้อมูลทุน (cost_json) เห็นเฉพาะ RD / บัญชีต้นทุน / คุณโอ / พี่หลิน (เพิ่ม 2026-11-25 ผู้ใช้สั่ง) / แอดมิน — สอดคล้องกติกาทุนเดิม (2026-10-27)
 const CREATE_ROLES = ['superadmin', 'admin', 'manager', 'sales', 'sales_manager', 'sales_officer', 'sales_worker'];
 const HEAD_ROLES = ['superadmin', 'admin', 'manager', 'sales_manager'];
 const ADMIN_ROLES = ['superadmin', 'admin'];
@@ -150,7 +150,7 @@ module.exports = function npdProjectsRoutes(db) {
   const inSetting = (u, k, s = settings()) => (s[k] || []).includes(u.uid);
   const isActor = (u, s = settings()) => Object.keys(SETTING_KEYS).some(k => inSetting(u, k, s));
   const canSeeAll = u => isAdmin(u) || HEAD_ROLES.includes(u.role) || isActor(u);
-  const canSeeCost = u => isAdmin(u) || ['rd', 'cost_acct', 'o'].some(k => inSetting(u, k));
+  const canSeeCost = u => isAdmin(u) || ['rd', 'cost_acct', 'o', 'lin'].some(k => inSetting(u, k));
   // ผู้มีสิทธิ์ทำขั้นตาม key: owner / head / คีย์ใน npd_settings
   const uidsFor = (p, key, s = settings()) => keyUids(p, key, s);
   const can = (p, u, keys) => isAdmin(u) || keys.some(k => uidsFor(p, k).includes(u.uid));

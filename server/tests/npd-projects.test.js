@@ -86,6 +86,7 @@ test('full happy path: 13 steps end at launched, only the assigned person can ac
   // Sales ไม่เห็นข้อมูลทุน
   const salesView = (await call(`/${p.id}`)).data;
   assert.equal(salesView.cost, undefined);
+  assert.equal((await call(`/${p.id}`, 'GET', null, 'LIN')).data.cost.acct.amount, 118.5, 'พี่หลินเห็นทุน (2026-11-25)');
   assert.equal((await act(p.id, 'price_propose', { price: 175 })).data.status, 'price_review');
   assert.equal((await act(p.id, 'price_decide', { decision: 'approve' }, 'O')).data.status, 'sku_setup');
   assert.equal((await act(p.id, 'sku_open', {}, 'FA')).status, 400);
