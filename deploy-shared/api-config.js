@@ -1,6 +1,6 @@
 'use strict';
 
-const DEFAULT_API_BASE = 'https://collaboration-cinema-sufficiently-escape.trycloudflare.com';
+const DEFAULT_API_BASE = 'https://weekly-twelve-tank-answer.trycloudflare.com';
 function getApiBase(env = process.env) {
   const value = env.TGM_API_BASE_URL === undefined ? DEFAULT_API_BASE : env.TGM_API_BASE_URL;
   let url;
