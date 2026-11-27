@@ -22196,7 +22196,7 @@ function _mkPaper(d) {
   // ลำดับคอลัมน์: ลำดับ | รหัส | ชื่อ | ราคาปกติ | ราคาโปร | ผลตรวจ | Affiliate (ช่องว่าง) | เป้าขาย
   const colsOf = tg => `<colgroup><col style="width:4.5%"><col style="width:11.5%"><col><col style="width:7%"><col style="width:7.5%"><col style="width:${tg ? 11.5 : 12}%">${affs.map(() => `<col style="width:${tg ? 5.5 : 6}%">`).join('')}${tg ? '<col style="width:6.5%"><col style="width:8.5%">' : ''}</colgroup>`;
   const headOf = tg => { const two = affs.length || tg, rs = two ? ' rowspan="2"' : '';
-    return `<thead><tr><th${rs}>ลำ<br>ดับ</th><th${rs}>รหัสสินค้า</th><th${rs}>ชื่อสินค้า</th><th${rs}>ราคา<br>ปกติ</th><th${rs}>ราคาโปร<br>ออนไลน์</th><th${rs} class="chk">ผลตรวจ<br>(ผู้ตรวจสอบ)</th>${affs.length ? `<th colspan="${affs.length}" class="mk">Affiliate ปักตะกร้า (บาท)</th>` : ''}${tg ? '<th colspan="2" class="mk">เป้าขาย</th>' : ''}</tr>
+    return `<thead><tr><th${rs}>ลำ<br>ดับ</th><th${rs}>รหัสสินค้า</th><th${rs}>ชื่อสินค้า</th><th${rs}>ราคา<br>ปกติ</th><th${rs}>ราคาโปร<br>ออนไลน์</th><th${rs} class="chk">ผลตรวจ</th>${affs.length ? `<th colspan="${affs.length}" class="mk">Affiliate ปักตะกร้า (บาท)</th>` : ''}${tg ? '<th colspan="2" class="mk">เป้าขาย</th>' : ''}</tr>
     ${two ? `<tr>${affs.map(r => `<th class="mk">${r}%</th>`).join('')}${tg ? '<th class="mk">แพ็ก</th><th class="mk">บาท</th>' : ''}</tr>` : ''}</thead>`; };
   const B = (x, bold) => bold ? '<b>' + x + '</b>' : x;
   const affBlank = affs.map(() => '<td class="mk"></td>').join('');
