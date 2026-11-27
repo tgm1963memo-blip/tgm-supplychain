@@ -22221,8 +22221,8 @@ function _mkPaper(d) {
       let k = 0;
       return sub + `<table class="pt pti">${colsOf(tg)}${headOf(tg)}<tbody>
         ${_mkLive(u).map((x, i, arr) => x.child
-          ? `<tr class="kid"><td class="c"></td><td class="code">${esc(x.code)}</td><td class="kn">└ ${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : ''}</td><td class="c kt">ในชุด</td><td class="chk"></td>${affBlank}${tg ? '<td class="mk"></td><td class="mk"></td>' : ''}</tr>`
-          : `<tr><td class="c">${++k}</td><td class="code">${esc(x.code)}</td><td>${esc(_mkSku(x.code)?.name || x.name || '')}${arr[i + 1]?.child ? ' <b class="comp">ประกอบด้วย</b>' : ''}</td><td class="n">${x.normal ? _mkF0(x.normal) : '–'}</td><td class="n"><b>${_mkF0(x.promo)}</b></td><td class="chk"></td>${affBlank}${tg ? `<td class="n mk">${_mkF0(+x.tgt || 0)}</td><td class="n mk">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>` : ''}</tr>`).join('')}
+          ? (arr[i - 1]?.child ? '' : `<tr class="comp"><td></td><td></td><td colspan="${4 + affs.length + (tg ? 2 : 0)}" style="text-align:left;font-weight:600;padding-left:14px">ประกอบด้วย</td></tr>`) + `<tr class="kid"><td class="c"></td><td class="code">${esc(x.code)}</td><td class="kn">└ ${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : ''}</td><td class="c kt">ในชุด</td><td class="chk"></td>${affBlank}${tg ? '<td class="mk"></td><td class="mk"></td>' : ''}</tr>`
+          : `<tr><td class="c">${++k}</td><td class="code">${esc(x.code)}</td><td>${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : '–'}</td><td class="n"><b>${_mkF0(x.promo)}</b></td><td class="chk"></td>${affBlank}${tg ? `<td class="n mk">${_mkF0(+x.tgt || 0)}</td><td class="n mk">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>` : ''}</tr>`).join('')}
         ${tg && tSubs.length > 1 ? tot('รวม ' + lab, _mkSum(_mkLive(u))) : ''}${last ? tot('รวมเป้าขาย ส่วน ' + no, _mkSum(tSubs.flatMap(_mkLive)), true) : ''}</tbody></table>`;
     }).join('');
   }).join('');
