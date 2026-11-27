@@ -10484,7 +10484,7 @@ const SD_DIMS={
   branch:{l:'สาขา / ลูกค้า',key:r=>r._bname||r.c},
   slm:{l:'พนักงานขาย',key:r=>r.s==='(ไม่ระบุ)'||!r.s?'ไม่ระบุพนักงานขาย':(salesNameFor(r.s)||r.s)},
   pgrp:{l:'กลุ่มสินค้า',key:r=>r.k==='(none)'?'—':(expressGroupLabel(r.g)||'อื่นๆ')},
-  prod:{l:'สินค้า',key:r=>r.k==='(none)'?'(ไม่มีรายการสินค้า / ลดหนี้)':`${r.k} — ${r.n||r.k}`},
+  prod:{l:'สินค้า',key:r=>r.k==='(none)'?'(ใบกำกับไม่มีรายการสินค้า)':`${r.k} — ${r.n||r.k}`},
 };
 const SD_PV_DEFAULT={cust:['corp','branch','pgrp','prod'],prod:['pgrp','prod','corp']};
 // {cust:[...], prod:[...]} — ไม่มีค่า = มุมมองมาตรฐานเดิม (มี CN / NET / เทียบปีก่อน)
@@ -10622,7 +10622,25 @@ function _sdPvRows(custs,raw){
   // r.x = บรรทัดที่ไม่ใช่สินค้า (ค่าเช่า/เงินมัดจำ ฯลฯ — server จัดให้, 2026-11-16 ผู้ใช้ขอเน้นตัวสินค้า): ไม่แสดง
   // แต่ยังนับใน lineSum เพื่อไม่ให้ยอดค่าเช่าไหลไปอยู่แถว "(ไม่มีรายการสินค้า / ลดหนี้)"
   raw.forEach(r=>{const i=info.get(r.c);if(!i)return;lineSum.set(r.c,(lineSum.get(r.c)||0)+(Number(r.a)||0));if(!r.x)rows.push({...r,_corp:i.corp,_bname:i.bname});});
-  info.forEach((i,c)=>{const rem=i.tot-(lineSum.get(c)||0);if(Math.abs(rem)>=1)rows.push({c,s:'',k:'(none)',n:'',g:'',q:0,a:rem,_corp:i.corp,_bname:i.bname});});
+  // ส่วนต่างกับยอดหัวใบ (ลดหนี้ — ใบ CN ของ Express/Bplus ไม่มีบรรทัดสินค้า) กระจายหักเข้าแถวสินค้าตามสัดส่วนยอดขาย
+  // (2026-11-27, ผู้ใช้ขอ "เอายอดลดหนี้ไปหักตามรายการสินค้า ไม่ให้ขึ้นแยก") — ลำดับ: สินค้าของลูกค้ารายนั้น →
+  // ลูกค้าไม่มีสินค้าในช่วงนี้และเป็นยอดติดลบ (มีแต่ลดหนี้) → สินค้าของบริษัท/กลุ่มลูกค้าเดียวกัน → ทุกแถว
+  // ยอดบวกของลูกค้าที่ไม่มีบรรทัดสินค้าเลย (เช่นใบ BF) ไม่ใช่ลดหนี้ ไม่รู้ว่าเป็นสินค้าอะไร → คงแถว "(ใบกำกับไม่มีรายการสินค้า)"
+  // a กับ cc (ยอดส่วนที่คิดทุนได้) ปรับด้วยตัวคูณเดียวกัน ทุนขายคงเดิม → กำไร / %GP สะท้อนยอดหลังหักลดหนี้ · ยอดรวมยังเท่า NET
+  const byC=new Map(),byCorp=new Map();
+  rows.forEach(r=>{(byC.get(r.c)||byC.set(r.c,[]).get(r.c)).push(r);(byCorp.get(r._corp)||byCorp.set(r._corp,[]).get(r._corp)).push(r);});
+  const pend=new Map();
+  const spread=(list,amt)=>{const s=list.reduce((t,r)=>t+(Number(r.a)||0),0);if(!(s>=1))return false;list.forEach(r=>pend.set(r,(pend.get(r)||0)+amt*(Number(r.a)||0)/s));return true;};
+  const toCorp=new Map(),toAll=[];
+  info.forEach((i,c)=>{
+    const rem=i.tot-(lineSum.get(c)||0);if(Math.abs(rem)<1)return;
+    if(spread(byC.get(c)||[],rem))return;
+    if(rem<0){toCorp.set(i.corp,(toCorp.get(i.corp)||0)+rem);return;}
+    rows.push({c,s:'',k:'(none)',n:'',g:'',q:0,a:rem,_corp:i.corp,_bname:i.bname});
+  });
+  toCorp.forEach((amt,corp)=>{if(!spread(byCorp.get(corp)||[],amt))toAll.push(amt);});
+  if(toAll.length)spread(rows.filter(r=>r.k!=='(none)'),toAll.reduce((t,v)=>t+v,0));
+  pend.forEach((add,r)=>{const a0=Number(r.a)||0,f=a0?(a0+add)/a0:1;r.a=a0+add;if(r.cc!=null)r.cc=(Number(r.cc)||0)*f;});
   return rows;
 }
 // ค้นหาในแท็บรายลูกค้า (2026-10-14, ผู้ใช้แจ้ง "ค้นหา วิลล่า ทำไมมี Chatrium") — เดิมจับชื่อสินค้าด้วย เลยติดลูกค้าที่ซื้อ
@@ -10681,7 +10699,7 @@ function _sdPivotHtml(tab,custs,slm){
     });
   };
   walk(root,0,'');
-  return h+`</tbody></table></div><div style="font-size:11px;color:var(--TX3);margin-top:6px">ยอดขายจากบรรทัดใบกำกับ TSS + โรงงาน TGM · ส่วนต่างกับยอดหัวใบ (ลดหนี้ / ใบที่ไม่มีรายการสินค้า) แสดงเป็น "(ไม่มีรายการสินค้า / ลดหนี้)" ยอดรวมจึงเท่ายอด NET ด้านบน · สัดส่วน = เทียบชั้นแม่${costOn?` · ${_SD_COST_NOTE}`:''}</div>`;
+  return h+`</tbody></table></div><div style="font-size:11px;color:var(--TX3);margin-top:6px">ยอดขายจากบรรทัดใบกำกับ TSS + โรงงาน TGM · ยอดลดหนี้ (ใบ CN ไม่มีบรรทัดสินค้า) หักเข้าแต่ละสินค้าของลูกค้ารายนั้นตามสัดส่วนยอดขาย · ใบขายที่ไม่มีบรรทัดสินค้าของลูกค้าที่ไม่มีสินค้าอื่นแสดงเป็น "(ใบกำกับไม่มีรายการสินค้า)" ยอดรวมจึงเท่ายอด NET ด้านบน · สัดส่วน = เทียบชั้นแม่${costOn?` · ${_SD_COST_NOTE}`:''}</div>`;
 }
 // ระดับการแสดงผลแท็บรายลูกค้า (2026-10-12, ผู้ใช้ขอเลือกการจัดกลุ่มได้)
 const SD_LEVELS=[['full','บริษัท › สาขา › กลุ่มสินค้า › สินค้า'],['noprodgrp','บริษัท › สาขา › สินค้า'],['corp_prod','บริษัท › สินค้า'],['branch_prod','สาขา › สินค้า (ไม่จัดกลุ่ม)']];
