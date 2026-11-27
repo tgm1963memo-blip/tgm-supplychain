@@ -106,15 +106,17 @@ function buildDoc(db, b) {
         return { kind, title: txt(u?.title, 160), cols, rows };
       }
       const items = (Array.isArray(u?.items) ? u.items : []).map((x, r) => {
-        const code = txt(x?.code, 40), promo = num(x?.promo), normal = num(x?.normal), tgt = Math.round(num(x?.tgt));
+        // child = สินค้าในชุด (อยู่ใต้แถวรหัสชุด) ไม่มีราคาโปร/เป้าขายของตัวเอง
+        const child = x?.child === true, code = txt(x?.code, 40), promo = child ? 0 : num(x?.promo), normal = num(x?.normal), tgt = child ? 0 : Math.round(num(x?.tgt));
         if (!code && !promo) return null; // แถวว่าง ตัดทิ้ง
         const row = `${lab} แถว ${r + 1}`;
         const p = code ? getP.get(code) : null;
         if (!code) issues.push(`${row}: ยังไม่ได้กรอกรหัสสินค้า`);
         else if (!p) issues.push(`${row}: ไม่พบรหัส ${code} ในระบบ`);
-        if (code && !(promo > 0)) issues.push(`${row}: ยังไม่ได้กรอกราคาโปร`);
-        return { code, name: p ? p.name : '', unit: p ? p.unit : '', normal, promo, tgt };
+        if (code && !child && !(promo > 0)) issues.push(`${row}: ยังไม่ได้กรอกราคาโปร`);
+        return { code, name: p ? p.name : '', unit: p ? p.unit : '', normal, promo, tgt, ...(child ? { child: true } : {}) };
       }).filter(Boolean);
+      if (items[0]?.child) issues.push(`${lab}: สินค้าในชุดแถวแรกต้องอยู่ใต้แถวรหัสชุด`);
       nItems += items.length;
       return { kind, title: txt(u?.title, 160), tgt_on: u?.tgt_on !== false, items };
     });

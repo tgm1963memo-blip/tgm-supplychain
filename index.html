@@ -21534,6 +21534,7 @@ function _mkPaperCss() {
 .mkpaper .pt td.code{font-family:'IBM Plex Mono',monospace;font-size:11.5px;white-space:nowrap}
 .mkpaper .pt th.mk,.mkpaper .pt td.mk{background:var(--paper-mark);-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .mkpaper .pt th.chk{background:#fff}.mkpaper .pt th.chk,.mkpaper .pt td.chk{border-left:2px solid var(--paper-rule)}
+.mkpaper .pt tr.kid td{font-size:11px;padding-top:2px;padding-bottom:2px}.mkpaper .pt td.kn{padding-left:14px}.mkpaper .pt td.kt{color:#555}
 .mkpaper .pt tr.tot td{background:var(--paper-soft)}.mkpaper .pt tr.tot td.mk{background:var(--paper-mark)}
 .mkpaper .p-grand{display:flex;justify-content:flex-end;gap:20px;margin-top:10px;padding:6px 9px;border:1.5px solid var(--paper-rule);background:var(--paper-soft)}
 .mkpaper .p-grand span{margin-right:auto;font-weight:700}
@@ -21639,6 +21640,7 @@ function _mkIssues(d) {
       u.items.forEach((x, r) => {
         if (!x.code && !+x.promo) return; const row = `${lab} แถว ${r + 1}`;
         if (!x.code) E.push(row + ': ยังไม่ได้กรอกรหัสสินค้า'); else if (_mk.pmap && !_mkSku(x.code)) E.push(`${row}: ไม่พบรหัส ${x.code} ในระบบ`);
+        if (x.child) { if (!u.items.slice(0, r).some(y => !y.child && (y.code || +y.promo))) E.push(row + ': สินค้าในชุดต้องอยู่ใต้แถวรหัสชุด'); return; }
         if (x.code && !(+x.promo > 0)) E.push(row + ': ยังไม่ได้กรอกราคาโปร');
         else if (+x.normal > 0 && +x.promo > +x.normal) W.push(`${row}: ราคาโปร (${_mkF0(x.promo)}) สูงกว่าราคาปกติ (${_mkF0(x.normal)})`);
       });
@@ -21730,6 +21732,7 @@ const _mkTb = (act, s, u, i, n, lbl) => `<span class="tools"><button class="x" d
 function _mkNameCell(x) { const p = _mkSku(x.code); if (p) return `${esc(p.name)} <span class="hint">${esc(p.unit || '')}</span>`; return x.code ? '<span class="err">ไม่พบรหัสนี้ในระบบ</span>' : '<span class="hint">พิมพ์รหัสสินค้าก่อน</span>'; }
 function _mkSubForm(s, si, u, ui) {
   const d = _mk.doc, lab = `${si + 1}.${ui + 1}`, A = `data-s="${si}" data-u="${ui}"`;
+  const nos = []; { let k = 0; for (const x of (u.items || [])) nos.push(x.child ? 0 : ++k); }
   const head = `<div class="grp-h"><span class="grp-no">${lab}</span><input ${A} data-uf="title" value="${esc(u.title)}" placeholder="${u.kind === 'items' ? 'ชื่อส่วนย่อย เช่น ไส้กรอก / Flash Sale' : 'ชื่อส่วนย่อย (ไม่บังคับ)'}" aria-label="ชื่อส่วนย่อย ${lab}"><span class="hint">${MK_KIND[u.kind]}${u.kind === 'items' ? ' · ' + u.items.length + ' รายการ' : ''}</span>${u.kind === 'items' ? `<label class="chip ${_mkTgtOn(u) ? 'on' : ''}" style="padding:3px 9px"><input type="checkbox" ${A} data-tgton ${_mkTgtOn(u) ? 'checked' : ''}> ใส่เป้าขาย</label>` : ''}${_mkTb('sub', si, ui, ui, s.subs.length, ' ส่วนย่อย ' + lab)}</div>`;
   if (u.kind === 'text') return `<div class="grp">${head}<div style="padding:10px"><textarea rows="2" ${A} data-tx placeholder="พิมพ์รายละเอียดเป็นข้อความอิสระ ขึ้นบรรทัดใหม่ได้">${esc(u.text)}</textarea></div></div>`;
   if (u.kind === 'table') return `<div class="grp">${head}<div class="tw"><table class="t" style="min-width:${Math.max(420, u.cols.length * 130)}px"><thead><tr>
@@ -21738,8 +21741,14 @@ function _mkSubForm(s, si, u, ui) {
     <div class="row-act"><button class="btn btn-xs" data-act="addrow" ${A}>+ แถว</button><button class="btn btn-xs" data-act="addcol" ${A}>+ คอลัมน์</button></div></div>`;
   return `<div class="grp">${head}<div class="tw"><table class="t" style="min-width:1000px"><thead><tr>
     <th style="width:34px">#</th><th style="width:130px">รหัสสินค้า</th><th>ชื่อสินค้า <span class="hint">(จากระบบ)</span></th><th class="n" style="width:92px">ราคาปกติ</th><th class="n" style="width:92px">ราคาโปร</th>
-    ${MK_AFF.map(r => `<th class="aff" style="opacity:${d.body.aff.includes(r) ? 1 : .4}">Aff ${r}%</th>`).join('')}${_mkTgtOn(u) ? '<th class="n tgt" style="width:96px">เป้าขาย (แพ็ก)</th><th class="n tgt">เป้าขาย (บาท)</th>' : ''}<th style="width:34px"></th></tr></thead><tbody>
-    ${u.items.map((x, r) => `<tr><td class="calc" style="text-align:center">${r + 1}</td>
+    ${MK_AFF.map(r => `<th class="aff" style="opacity:${d.body.aff.includes(r) ? 1 : .4}">Aff ${r}%</th>`).join('')}${_mkTgtOn(u) ? '<th class="n tgt" style="width:96px">เป้าขาย (แพ็ก)</th><th class="n tgt">เป้าขาย (บาท)</th>' : ''}<th style="width:92px"></th></tr></thead><tbody>
+    ${u.items.map((x, r) => x.child ? `<tr class="kid"><td class="calc" style="text-align:center;color:var(--TX3)">└</td>
+      <td class="code"><input ${A} data-r="${r}" data-it="code" value="${esc(x.code)}" list="mk-skus" placeholder="สินค้าในชุด" aria-label="สินค้าในชุด ${lab} แถว ${r + 1}"></td>
+      <td class="calc nm">${_mkNameCell(x)}</td>
+      <td class="n"><input ${A} data-r="${r}" data-it="normal" type="number" min="0" step="0.01" value="${x.normal || ''}" aria-label="ราคาปกติสินค้าในชุด"></td>
+      <td class="calc hint" style="text-align:center">ในชุด</td>
+      ${MK_AFF.map(rt => `<td class="aff ${d.body.aff.includes(rt) ? '' : 'off'}"></td>`).join('')}${_mkTgtOn(u) ? '<td></td><td class="calc"></td>' : ''}
+      <td><button class="x" data-act="delitem" ${A} data-r="${r}" aria-label="ลบสินค้าในชุด แถว ${r + 1}">×</button></td></tr>` : `<tr><td class="calc" style="text-align:center">${nos[r]}</td>
       <td class="code"><input ${A} data-r="${r}" data-it="code" value="${esc(x.code)}" list="mk-skus" placeholder="รหัสสินค้า" aria-label="รหัสสินค้า ${lab} แถว ${r + 1}"></td>
       <td class="calc nm">${_mkNameCell(x)}</td>
       <td class="n"><input ${A} data-r="${r}" data-it="normal" type="number" min="0" step="0.01" value="${x.normal || ''}" aria-label="ราคาปกติ"></td>
@@ -21747,7 +21756,7 @@ function _mkSubForm(s, si, u, ui) {
       ${MK_AFF.map(rt => `<td class="aff affc ${d.body.aff.includes(rt) ? '' : 'off'}" data-rate="${rt}">${_mkF((+x.promo || 0) * rt / 100)}</td>`).join('')}
       ${_mkTgtOn(u) ? `<td class="n"><input ${A} data-r="${r}" data-it="tgt" type="number" min="0" value="${x.tgt || ''}" placeholder="0" style="font-weight:600" aria-label="เป้าขายแพ็ก"></td>
       <td class="calc tgtv">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>` : ''}
-      <td><button class="x" data-act="delitem" ${A} data-r="${r}" aria-label="ลบแถว ${r + 1}">×</button></td></tr>`).join('') || `<tr><td colspan="13" class="hint" style="padding:10px">ยังไม่มีสินค้า</td></tr>`}
+      <td style="white-space:nowrap"><button class="btn btn-xs" data-act="addchild" ${A} data-r="${r}" title="เพิ่มสินค้าลูกใต้แถวนี้ (เช่น ของในชุด) ไม่ต้องใส่ราคาโปร">+ ในชุด</button> <button class="x" data-act="delitem" ${A} data-r="${r}" aria-label="ลบแถว ${r + 1}${u.items[r + 1]?.child ? ' และสินค้าในชุด' : ''}">×</button></td></tr>`).join('') || `<tr><td colspan="13" class="hint" style="padding:10px">ยังไม่มีสินค้า</td></tr>`}
     </tbody></table></div><div class="row-act"><button class="btn btn-xs" data-act="additem" ${A}>+ เพิ่มสินค้าใน ${lab}</button></div></div>`;
 }
 function _mkRenderSecs() {
@@ -21888,7 +21897,8 @@ function _mkOnClick(e) {
     case 'subdel': s.subs.splice(ui, 1); break;
     case 'addsub': s.subs.push(MK_TPL[ds.k]()); break;
     case 'additem': u.items.push({ code: '', normal: 0, promo: 0, tgt: 0 }); break;
-    case 'delitem': u.items.splice(+ds.r, 1); break;
+    case 'delitem': { const r = +ds.r; let n = 1; if (!u.items[r]?.child) while (u.items[r + n]?.child) n++; u.items.splice(r, n); break; }
+    case 'addchild': { let j = +ds.r + 1; while (u.items[j]?.child) j++; u.items.splice(j, 0, { code: '', normal: 0, promo: 0, tgt: 0, child: true }); ds.focus = j; break; }
     case 'addrow': u.rows.push(u.cols.map(() => '')); break;
     case 'addcol': u.cols.push('คอลัมน์ ' + (u.cols.length + 1)); u.rows.forEach(r => r.push('')); break;
     case 'delrow': u.rows.splice(+ds.r, 1); break;
@@ -21898,6 +21908,7 @@ function _mkOnClick(e) {
   _mkRenderSecs(); _mkRefresh();
   const secEl = document.querySelectorAll('#mk-secs .sec')[si]; if (!secEl) return;
   if (a === 'additem') { const ins = secEl.querySelectorAll('.grp')[ui].querySelectorAll('[data-it="code"]'); ins[ins.length - 1].focus(); }
+  if (a === 'addchild') { const f = secEl.querySelectorAll('.grp')[ui].querySelector(`[data-r="${ds.focus}"][data-it="code"]`); if (f) f.focus(); }
   if (a === 'addsub') { const g = [...secEl.querySelectorAll('.grp')].pop(); g.scrollIntoView({ block: 'nearest' }); const f = g.querySelector('[data-it="code"]') || g.querySelector('textarea') || g.querySelector('[data-uf]'); if (f) f.focus(); }
 }
 
@@ -22072,7 +22083,7 @@ function _mkPaper(d) {
         return sub + `<table class="pt"><thead><tr>${u.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(v => `<td class="${_mkIsNum(v) ? 'n' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`; }
       const tg = _mkTgtOn(u), last = tg && u === tSubs[tSubs.length - 1];
       return sub + `<table class="pt pti">${colsOf(tg)}${headOf(tg)}<tbody>
-        ${_mkLive(u).map((x, i) => `<tr><td class="c">${i + 1}</td><td class="code">${esc(x.code)}</td><td>${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : '–'}</td><td class="n"><b>${_mkF0(x.promo)}</b></td>${affs.map(r => `<td class="n mk">${_mkF((+x.promo || 0) * r / 100)}</td>`).join('')}${tg ? `<td class="n mk">${_mkF0(+x.tgt || 0)}</td><td class="n mk">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>` : ''}<td class="chk"></td></tr>`).join('')}
+        ${(k => _mkLive(u).map(x => x.child ? `<tr class="kid"><td class="c"></td><td class="code">${esc(x.code)}</td><td class="kn">└ ${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : ''}</td><td class="c kt">ในชุด</td>${affs.map(() => '<td class="mk"></td>').join('')}${tg ? '<td class="mk"></td><td class="mk"></td>' : ''}<td class="chk"></td></tr>` : `<tr><td class="c">${++k}</td><td class="code">${esc(x.code)}</td><td>${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : '–'}</td><td class="n"><b>${_mkF0(x.promo)}</b></td>${affs.map(r => `<td class="n mk">${_mkF((+x.promo || 0) * r / 100)}</td>`).join('')}${tg ? `<td class="n mk">${_mkF0(+x.tgt || 0)}</td><td class="n mk">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>` : ''}<td class="chk"></td></tr>`).join(''))(0)}
         ${tg && tSubs.length > 1 ? tot('รวม ' + lab, _mkSum(_mkLive(u))) : ''}${last ? tot('รวมเป้าขาย ส่วน ' + no, _mkSum(tSubs.flatMap(_mkLive)), true) : ''}</tbody></table>`;
     }).join('');
   }).join('');
@@ -22084,7 +22095,7 @@ function _mkPaper(d) {
   const wm = d.status === 'cancelled' ? 'ยกเลิก' : ['draft', 'rejected'].includes(d.status) ? 'ร่าง · ยังไม่อนุมัติ' : '';
   const custHtml = `<table class="cu"><thead><tr><th style="width:34px;text-align:center">#</th><th>ชื่อลูกค้า</th><th>รหัสลูกค้า</th><th class="gp">GP</th></tr></thead><tbody>${custs.map((c, i) => `<tr><td style="text-align:center">${i + 1}</td><td>${esc(c.name || _mkCh(c.code).name)}</td><td class="cd">${esc(c.code)}</td><td class="gp">${+c.gp > 0 ? _mkF(c.gp) + '%' : 'ไม่มี GP'}</td></tr>`).join('')}</tbody></table>`;
   return `<div class="mkpaper" style="position:relative">${wm ? `<div class="wm">${wm}</div>` : ''}
-    <div class="p-top"><span>FM-MKT-PRO · พิมพ์จากระบบ TSS Supply Chain</span><span><b>${esc(d.doc_no || 'ร่างยังไม่บันทึก')}</b> · <span class="pg">หน้า 1/1</span></span></div>
+    <div class="p-top"><span>FM-MKT-PRO · พิมพ์จากระบบ TSS Supply Chain</span><span><b>${esc(d.doc_no || 'ร่างยังไม่บันทึก')}</b></span></div>
     <div class="p-head"><div><div class="p-co">บริษัท ไทย ซอสเซส มาร์เก็ตติ้ง จำกัด<small>ฝ่ายการตลาด · ช่องทางออนไลน์</small></div><div class="p-title">ใบเคาะราคา / ใบโปรโมชัน<br>(การตลาดออนไลน์)</div></div>
       <div class="p-nos"><div><span>วันที่เขียน</span><span>${_mkShort(d.doc_date)}</span></div><div><span>ใบเคาะราคา No.</span><span class="mono">${esc(d.doc_no || '(ออกเลขเมื่อบันทึก)')}</span></div><div class="recv"><span>วันที่รับเอกสาร (ผู้ตรวจสอบ)</span><span>____/____/______</span></div><div><span>ใบ Promotion No.</span><span class="mono">${esc(d.promo_no || '') || '&nbsp;'}</span></div></div></div>
     <div class="p-box">${custHtml}<div class="p-2"><div class="p-row"><span>ชื่อรายการ</span><span>${esc(d.title || '')}</span></div><div class="p-row"><span>วัตถุประสงค์</span><span>${esc(d.purpose || '')}</span></div></div></div>
