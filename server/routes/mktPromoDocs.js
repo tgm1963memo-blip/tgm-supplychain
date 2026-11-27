@@ -156,6 +156,12 @@ function summaryHtml(d) {
   return `<ul style="padding-left:18px;margin:6px 0">${secs}</ul>`;
 }
 const custLabel = d => (d.body?.customers?.length ? d.body.customers : [{ code: d.customer_code, name: d.customer_name }]).map(c => `${c.name} (${c.code})`).join(', ');
+// CC ประจำแผนก (2026-11-27, ผู้ใช้สั่ง) — ส่งทุกใบเมื่ออนุมัติครบ · แอดมินเลือกผู้รับในหน้า ตั้งค่าเส้นทาง
+const FIXED_CC_DEPTS = ['ระบบราคา', 'คลังสินค้า', 'เปิดบิล', 'บัญชี C/N', 'การเงิน คชจ. 1', 'การเงิน คชจ. 2'];
+function fixedCcOf(db) {
+  const v = parseJson(db.prepare("SELECT value FROM mkt_promo_settings WHERE key = 'fixed_cc'").get()?.value, null);
+  return Array.isArray(v) ? v : FIXED_CC_DEPTS.map(dept => ({ dept, uids: [], emails: [] }));
+}
 async function mailApprovers(db, d, uids, levelLabel) {
   const to = db.prepare(`SELECT email FROM sc_users WHERE uid IN (${uids.map(() => '?').join(',')}) AND is_active = 1 AND email IS NOT NULL AND email <> ''`).all(...uids).map(r => r.email);
   if (!to.length) return;
@@ -174,7 +180,8 @@ async function mailCc(db, d) {
     const uids = [d.created_by, ...(d.levels || []).map(l => l.by).filter(Boolean)];
     for (const u of uids) { const m = getE.get(u)?.email; if (m) to.push(m); }
   }
-  const all = [...new Set([...to, ...cc])];
+  const fixed = fixedCcOf(db).flatMap(g => [...(g.uids || []).map(u => getE.get(u)?.email), ...(g.emails || [])]).filter(Boolean);
+  const all = [...new Set([...to, ...cc, ...fixed])];
   if (!all.length) return { sent: false, reason: 'NO_RECIPIENT', count: 0 };
   const subject = `[อนุมัติแล้ว] ใบโปรโมชัน ${d.promo_no} · ${d.title}`;
   const html = `<div style="font-family:Sarabun,Arial,sans-serif;max-width:680px"><p>เรียนทุกท่าน</p>
@@ -243,7 +250,7 @@ module.exports = function mktPromoDocsRoutes(db) {
   // ข้อมูลประกอบฟอร์ม: ช่องทาง / เส้นทางอนุมัติ / ผู้ใช้ (เลือกผู้อนุมัติ+CC) / เลขถัดไป
   router.get('/meta', (req, res) => send(res, () => ({
     channels: CHANNELS, sec_types: SEC_TYPES, routes: routes(), can_create: canCreate(req.user) || canPaper(req.user), is_admin: ADMIN_ROLES.includes(req.user.role),
-    can_paper_approve: canPaper(req.user), paper_approvers: ADMIN_ROLES.includes(req.user.role) ? paperApprovers() : undefined,
+    fixed_cc: fixedCcOf(db), can_paper_approve: canPaper(req.user), paper_approvers: ADMIN_ROLES.includes(req.user.role) ? paperApprovers() : undefined,
     users: db.prepare("SELECT uid, name, role, position, email IS NOT NULL AND email <> '' AS has_email FROM sc_users WHERE is_active = 1 ORDER BY name").all(),
     next: { doc_no: nextNo(db, 'doc_no', 'MKT', 4, MKT_SEED), promo_no: nextNo(db, 'promo_no', 'M', 5, PRO_SEED) },
   })));
@@ -270,6 +277,19 @@ module.exports = function mktPromoDocsRoutes(db) {
       .run(txt(req.body?.name, 120) || null, JSON.stringify(levels), JSON.stringify(cc), req.user.uid, r.id);
     return routes();
   })));
+
+  router.put('/settings/fixed-cc', (req, res) => send(res, () => {
+    if (!ADMIN_ROLES.includes(req.user.role)) throw httpErr(403, 'เฉพาะแอดมิน');
+    const getU = db.prepare('SELECT uid FROM sc_users WHERE uid = ? AND is_active = 1');
+    const list = (Array.isArray(req.body?.list) ? req.body.list : []).slice(0, 12).map(g => ({
+      dept: txt(g?.dept, 60),
+      uids: [...new Set((Array.isArray(g?.uids) ? g.uids : []).map(String))].filter(u => getU.get(u)).slice(0, 10),
+      emails: [...new Set((Array.isArray(g?.emails) ? g.emails : []).map(e => txt(e, 160).toLowerCase()))].filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)).slice(0, 10),
+    })).filter(g => g.dept);
+    db.prepare(`INSERT INTO mkt_promo_settings (key, value, updated_by, updated_at) VALUES ('fixed_cc', ?, ?, ${now})
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`).run(JSON.stringify(list), req.user.uid);
+    return fixedCcOf(db);
+  }));
 
   router.put('/settings/paper-approvers', (req, res) => send(res, () => {
     if (!ADMIN_ROLES.includes(req.user.role)) throw httpErr(403, 'เฉพาะแอดมิน');

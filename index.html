@@ -21565,6 +21565,20 @@ function _mkPaperCss() {
 .mkpaper .p-sign .date{font-size:12px}
 .mkpaper .p-copy{border:1.5px solid var(--paper-rule);border-top:0;padding:6px 9px;display:flex;flex-wrap:wrap;gap:4px 0;font-size:12px}.mkpaper .p-copy b{margin-right:10px}
 .mkpaper table th,.mkpaper table td,.mkpaper .pt td.code,.mkpaper table.cu td.cd{color:#111}
+.mkpaper .p-date{margin-top:8px;font-size:13.5px}.mkpaper .p-date b{font-weight:600;margin-left:6px}
+.mkpaper table.nos{border-collapse:collapse;font-size:13px;border:1.5px solid var(--paper-rule)}
+.mkpaper table.nos th,.mkpaper table.nos td{border:1px solid var(--paper-rule);padding:5px 9px;white-space:nowrap;text-align:left}
+.mkpaper table.nos th{background:var(--paper-soft);font-weight:600}.mkpaper table.nos th.blank{background:#fff}
+.mkpaper table.nos thead th{font-size:11.5px;text-align:center;line-height:1.3}.mkpaper table.nos tbody th{font-size:13px}.mkpaper .pt th.chk{font-size:11.5px}
+.mkpaper table.nos td.dt{color:#444;letter-spacing:.5px;text-align:center}
+.mkpaper .cus{display:flex;flex-wrap:wrap;gap:2px 0}.mkpaper .cus .c{white-space:nowrap}
+.mkpaper .cus .c+.c::before{content:"";display:inline-block;width:1px;height:12px;background:#777;margin:0 9px;vertical-align:-1px}
+.mkpaper .cus .cd{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#444;margin-left:4px}
+.mkpaper .cus .gp{font-weight:700;margin-left:4px}.mkpaper .cus .gpall{margin-left:auto;padding-left:12px;white-space:nowrap}
+.mkpaper .pt th.chk,.mkpaper .pt td.chk{border-left:2px solid var(--paper-rule);border-right:2px solid var(--paper-rule)}
+.mkpaper .ptf th,.mkpaper .ptf td{text-align:left}
+.mkpaper .p-copy{display:grid;grid-template-columns:auto 1fr;gap:3px 10px}.mkpaper .p-copy .lst{display:flex;flex-wrap:wrap}
+.mkpaper .p-copy .lst span{white-space:nowrap}.mkpaper .p-copy .lst span+span::before{content:"·";margin:0 7px;color:#666}.mkpaper .p-copy .nt{grid-column:2;color:#444}
 .mkpaper .wm{position:absolute;top:40%;left:0;right:0;text-align:center;font-size:64px;font-weight:700;color:rgba(195,22,27,.12);transform:rotate(-22deg);pointer-events:none}`;
 }
 
@@ -21723,7 +21737,7 @@ function mkRenderForm() {
       <div class="grid"><div class="span2"><span class="lbl">เส้นทางอนุมัติ</span><select data-hf="route_id">${(_mk.meta?.routes || []).map(r => `<option value="${esc(r.id)}" ${r.id === d.route_id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div></div>
       <div class="lbl" style="margin:12px 0 0">ผู้อนุมัติแต่ละขั้น <span class="hint">· ค่าตั้งต้นจากเส้นทาง แก้ได้ในใบนี้ ขั้นละอย่างน้อย 1 คน (ใส่ตัวเองไม่ได้) · คนใดคนหนึ่งในขั้นอนุมัติ = ผ่านขั้น</span></div>
       <div id="mk-levels"></div>
-      <div class="lbl" style="margin:14px 0 4px">แจ้งทางอีเมล (CC) หลังอนุมัติ</div><div id="mk-cc"></div>
+      <div class="lbl" style="margin:14px 0 4px">แจ้งทางอีเมล (CC) หลังอนุมัติ <span class="hint">· ส่งแผนกประจำทุกใบอัตโนมัติ: ${(_mk.meta?.fixed_cc || []).map(g => esc(g.dept)).join(' · ') || '–'} · รายชื่อด้านล่างเป็น CC เพิ่มเติมของใบนี้ (ได้อีเมล แต่ไม่พิมพ์บนเอกสาร)</span></div><div id="mk-cc"></div>
       <div class="row-act" style="padding:8px 0 0">
         <select id="mk-cc-user" style="width:auto;min-width:220px"><option value="">+ เพิ่มผู้ใช้ในระบบ…</option>${(_mk.meta?.users || []).map(u => `<option value="${esc(u.uid)}">${esc(u.name)}${u.position ? ' · ' + esc(u.position) : ''}${u.has_email ? '' : ' (ไม่มีอีเมล)'}</option>`).join('')}</select>
         <input id="mk-cc-email" type="email" placeholder="หรือพิมพ์อีเมล" style="max-width:240px"><button class="btn btn-sm" data-act="ccadd">+ เพิ่ม</button>
@@ -21755,9 +21769,9 @@ function _mkSubForm(s, si, u, ui) {
   const head = `<div class="grp-h"><span class="grp-no">${lab}</span><input ${A} data-uf="title" value="${esc(u.title)}" placeholder="${u.kind === 'items' ? 'ชื่อส่วนย่อย เช่น ไส้กรอก / Flash Sale' : 'ชื่อส่วนย่อย (ไม่บังคับ)'}" aria-label="ชื่อส่วนย่อย ${lab}"><span class="hint">${MK_KIND[u.kind]}${u.kind === 'items' ? ' · ' + u.items.length + ' รายการ' : ''}</span>${u.kind === 'items' ? `<label class="chip ${_mkTgtOn(u) ? 'on' : ''}" style="padding:3px 9px"><input type="checkbox" ${A} data-tgton ${_mkTgtOn(u) ? 'checked' : ''}> ใส่เป้าขาย</label>` : ''}${_mkTb('sub', si, ui, ui, s.subs.length, ' ส่วนย่อย ' + lab)}</div>`;
   if (u.kind === 'text') return `<div class="grp">${head}<div style="padding:10px"><textarea rows="2" ${A} data-tx placeholder="พิมพ์รายละเอียดเป็นข้อความอิสระ ขึ้นบรรทัดใหม่ได้">${esc(u.text)}</textarea></div></div>`;
   if (u.kind === 'table') return `<div class="grp">${head}<div class="tw"><table class="t" style="min-width:${Math.max(420, u.cols.length * 130)}px"><thead><tr>
-    ${u.cols.map((c, j) => `<th><div class="th-in"><input ${A} data-th data-c="${j}" value="${esc(c)}" aria-label="หัวคอลัมน์ ${j + 1}"><button class="x" data-act="delcol" ${A} data-c="${j}" ${u.cols.length < 2 ? 'disabled' : ''} aria-label="ลบคอลัมน์">×</button></div></th>`).join('')}<th style="width:34px"></th></tr></thead>
-    <tbody>${u.rows.map((r, ri) => `<tr>${r.map((v, j) => `<td><input ${A} data-td data-r="${ri}" data-c="${j}" value="${esc(v)}"></td>`).join('')}<td><button class="x" data-act="delrow" ${A} data-r="${ri}" aria-label="ลบแถว">×</button></td></tr>`).join('')}</tbody></table></div>
-    <div class="row-act"><button class="btn btn-xs" data-act="addrow" ${A}>+ แถว</button><button class="btn btn-xs" data-act="addcol" ${A}>+ คอลัมน์</button></div></div>`;
+    ${u.cols.map((c, j) => `<th><div class="th-in"><input ${A} data-th data-c="${j}" value="${esc(c)}" aria-label="หัวคอลัมน์ ${j + 1}"><button class="x" data-act="delcol" ${A} data-c="${j}" ${u.cols.length < 2 ? 'disabled' : ''} aria-label="ลบคอลัมน์ ${j + 1}" style="width:auto;padding:0 6px;font-size:11px;white-space:nowrap;color:var(--R)">ลบคอลัมน์</button></div></th>`).join('')}<th style="width:64px"></th></tr></thead>
+    <tbody>${u.rows.map((r, ri) => `<tr>${r.map((v, j) => `<td><input ${A} data-td data-r="${ri}" data-c="${j}" value="${esc(v)}"></td>`).join('')}<td><button class="x" data-act="delrow" ${A} data-r="${ri}" aria-label="ลบแถว ${ri + 1}" style="width:auto;padding:0 6px;font-size:11px;white-space:nowrap;color:var(--R)">ลบแถว</button></td></tr>`).join('')}</tbody></table></div>
+    <div class="row-act"><button class="btn btn-xs" data-act="addrow" ${A}>+ แถว</button><button class="btn btn-xs" data-act="addcol" ${A}>+ คอลัมน์</button><button class="btn btn-xs" data-act="trimtable" ${A} title="ลบแถวที่ว่างทั้งแถว และคอลัมน์ที่ยังไม่ตั้งชื่อและไม่มีข้อมูล">ลบแถว/คอลัมน์ว่าง</button></div></div>`;
   return `<div class="grp">${head}<div class="tw"><table class="t" style="min-width:1000px"><thead><tr>
     <th style="width:34px">#</th><th style="width:130px">รหัสสินค้า</th><th>ชื่อสินค้า <span class="hint">(จากระบบ)</span></th><th class="n" style="width:92px">ราคาปกติ</th><th class="n" style="width:92px">ราคาโปร</th>
     ${MK_AFF.map(r => `<th class="aff" style="opacity:${d.body.aff.includes(r) ? 1 : .4}">Aff ${r}%</th>`).join('')}${_mkTgtOn(u) ? '<th class="n tgt" style="width:96px">เป้าขาย (แพ็ก)</th><th class="n tgt">เป้าขาย (บาท)</th>' : ''}<th style="width:92px"></th></tr></thead><tbody>
@@ -21772,7 +21786,7 @@ function _mkSubForm(s, si, u, ui) {
       <td class="calc nm">${_mkNameCell(x)}</td>
       <td class="n"><input ${A} data-r="${r}" data-it="normal" type="number" min="0" step="0.01" value="${x.normal || ''}" aria-label="ราคาปกติ"></td>
       <td class="n"><input ${A} data-r="${r}" data-it="promo" type="number" min="0" step="0.01" value="${x.promo || ''}" style="font-weight:600" aria-label="ราคาโปร"></td>
-      ${MK_AFF.map(rt => `<td class="aff affc ${d.body.aff.includes(rt) ? '' : 'off'}" data-rate="${rt}">${_mkF((+x.promo || 0) * rt / 100)}</td>`).join('')}
+      ${MK_AFF.map(rt => `<td class="aff affc ${d.body.aff.includes(rt) ? '' : 'off'}" data-rate="${rt}"></td>`).join('')}
       ${_mkTgtOn(u) ? `<td class="n"><input ${A} data-r="${r}" data-it="tgt" type="number" min="0" value="${x.tgt || ''}" placeholder="0" style="font-weight:600" aria-label="เป้าขายแพ็ก"></td>
       <td class="calc tgtv">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>` : ''}
       <td style="white-space:nowrap"><button class="btn btn-xs" data-act="addchild" ${A} data-r="${r}" title="เพิ่มสินค้าลูกใต้แถวนี้ (เช่น ของในชุด) ไม่ต้องใส่ราคาโปร">+ ในชุด</button> <button class="x" data-act="delitem" ${A} data-r="${r}" aria-label="ลบแถว ${r + 1}${u.items[r + 1]?.child ? ' และสินค้าในชุด' : ''}">×</button></td></tr>`).join('') || `<tr><td colspan="13" class="hint" style="padding:10px">ยังไม่มีสินค้า</td></tr>`}
@@ -21847,7 +21861,6 @@ function _mkOnInput(e) {
     if (ds.it === 'code') { x.code = t.value.trim(); const last = _mk.last[x.code]; if (last && !(+x.normal > 0)) { x.normal = last; tr.querySelector('[data-it="normal"]').value = last; } }
     else x[ds.it] = +t.value;
     tr.querySelector('.nm').innerHTML = _mkNameCell(x);
-    tr.querySelectorAll('.affc').forEach(td => td.textContent = _mkF((+x.promo || 0) * td.dataset.rate / 100));
     const tv = tr.querySelector('.tgtv'); if (tv) tv.textContent = _mkF0((+x.promo || 0) * (+x.tgt || 0));
     return _mkRefresh();
   }
@@ -21921,6 +21934,13 @@ function _mkOnClick(e) {
     case 'addrow': u.rows.push(u.cols.map(() => '')); break;
     case 'addcol': u.cols.push('คอลัมน์ ' + (u.cols.length + 1)); u.rows.forEach(r => r.push('')); break;
     case 'delrow': u.rows.splice(+ds.r, 1); break;
+    case 'trimtable': {
+      const r0 = u.rows.length, c0 = u.cols.length, def = c => !String(c || '').trim() || /^คอลัมน์ \d+$/.test(String(c).trim());
+      u.rows = u.rows.filter(r => r.some(v => String(v).trim()));
+      const keep = u.cols.map((c, j) => !def(c) || u.rows.some(r => String(r[j] || '').trim()));
+      if (keep.some(Boolean)) { u.cols = u.cols.filter((_, j) => keep[j]); u.rows = u.rows.map(r => r.filter((_, j) => keep[j])); }
+      if (!u.rows.length) u.rows.push(u.cols.map(() => ''));
+      toast(`ลบแถวว่าง ${Math.max(0, r0 - u.rows.length)} · คอลัมน์ว่าง ${c0 - u.cols.length}`); break; }
     case 'delcol': u.cols.splice(+ds.c, 1); u.rows.forEach(r => r.splice(+ds.c, 1)); break;
     default: return;
   }
@@ -22083,12 +22103,15 @@ async function _mkOpenAtt(id, aid) {
 // ── เอกสาร A4 ──
 function _mkPaper(d) {
   const affs = MK_AFF.filter(r => d.body.aff.includes(r)), custs = _mkCusts(d);
-  const colsOf = tg => `<colgroup><col style="width:4.5%"><col style="width:11.5%"><col><col style="width:7%"><col style="width:7.5%">${affs.map(() => '<col style="width:6.4%">').join('')}${tg ? '<col style="width:6.5%"><col style="width:8.5%">' : ''}<col style="width:${tg ? 12 : 14}%"></colgroup>`;
+  // ลำดับคอลัมน์: ลำดับ | รหัส | ชื่อ | ราคาปกติ | ราคาโปร | ผลตรวจ | Affiliate (ช่องว่าง) | เป้าขาย
+  const colsOf = tg => `<colgroup><col style="width:4.5%"><col style="width:11.5%"><col><col style="width:7%"><col style="width:7.5%"><col style="width:${tg ? 11.5 : 12}%">${affs.map(() => `<col style="width:${tg ? 5.5 : 6}%">`).join('')}${tg ? '<col style="width:6.5%"><col style="width:8.5%">' : ''}</colgroup>`;
   const headOf = tg => { const two = affs.length || tg, rs = two ? ' rowspan="2"' : '';
-    return `<thead><tr><th${rs}>ลำ<br>ดับ</th><th${rs}>รหัสสินค้า</th><th${rs}>ชื่อสินค้า</th><th${rs}>ราคา<br>ปกติ</th><th${rs}>ราคาโปร<br>ออนไลน์</th>${affs.length ? `<th colspan="${affs.length}" class="mk">Affiliate ปักตะกร้า (บาท)</th>` : ''}${tg ? '<th colspan="2" class="mk">เป้าขาย</th>' : ''}<th${rs} class="chk">ผลตรวจ<br>(ผู้ตรวจสอบ)</th></tr>
+    return `<thead><tr><th${rs}>ลำ<br>ดับ</th><th${rs}>รหัสสินค้า</th><th${rs}>ชื่อสินค้า</th><th${rs}>ราคา<br>ปกติ</th><th${rs}>ราคาโปร<br>ออนไลน์</th><th${rs} class="chk">ผลตรวจ<br>(ผู้ตรวจสอบ)</th>${affs.length ? `<th colspan="${affs.length}" class="mk">Affiliate ปักตะกร้า (บาท)</th>` : ''}${tg ? '<th colspan="2" class="mk">เป้าขาย</th>' : ''}</tr>
     ${two ? `<tr>${affs.map(r => `<th class="mk">${r}%</th>`).join('')}${tg ? '<th class="mk">แพ็ก</th><th class="mk">บาท</th>' : ''}</tr>` : ''}</thead>`; };
   const B = (x, bold) => bold ? '<b>' + x + '</b>' : x;
-  const tot = (label, x, bold) => `<tr class="tot"><td colspan="${5 + affs.length}" style="text-align:right">${B(label, bold)}</td><td class="n mk">${B(_mkF0(x.q), bold)}</td><td class="n mk">${B(_mkF0(x.b), bold)}</td><td class="chk"></td></tr>`;
+  const affBlank = affs.map(() => '<td class="mk"></td>').join('');
+  const tot = (label, x, bold) => `<tr class="tot"><td colspan="${6 + affs.length}" style="text-align:right">${B(label, bold)}</td><td class="n mk">${B(_mkF0(x.q), bold)}</td><td class="n mk">${B(_mkF0(x.b), bold)}</td></tr>`;
+  const isDefCol = c => !String(c || '').trim() || /^คอลัมน์ \d+$/.test(String(c).trim());
   let nTgt = 0;
   const secs = d.body.secs.map((s, si) => {
     const no = si + 1, T = MK_TYPES[s.type] || MK_TYPES.other;
@@ -22098,11 +22121,18 @@ function _mkPaper(d) {
     return hdr + subs.map(u => {
       const lab = no + '.' + (s.subs.indexOf(u) + 1), sub = `<div class="p-sub"><b>${lab}</b>${esc(u.title)}</div>`;
       if (u.kind === 'text') return sub + `<div class="p-box p-text">${esc(u.text)}</div>`;
-      if (u.kind === 'table') { const rows = u.rows.filter(r => r.some(v => String(v).trim()));
-        return sub + `<table class="pt"><thead><tr>${u.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(v => `<td class="${_mkIsNum(v) ? 'n' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`; }
+      if (u.kind === 'table') {
+        // ตารางอิสระ: ชิดซ้ายทุกช่อง · ไม่แสดงแถวว่าง และคอลัมน์ที่ยังเป็นชื่อตั้งต้น ("คอลัมน์ N"/ว่าง) ที่ไม่มีข้อมูลเลย
+        const rows = u.rows.filter(r => r.some(v => String(v).trim()));
+        const keep = u.cols.map((c, j) => !isDefCol(c) || rows.some(r => String(r[j] || '').trim()));
+        return sub + `<table class="pt ptf"><thead><tr>${u.cols.map((c, j) => keep[j] ? `<th>${esc(c)}</th>` : '').join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((v, j) => keep[j] ? `<td>${esc(v)}</td>` : '').join('')}</tr>`).join('')}</tbody></table>`;
+      }
       const tg = _mkTgtOn(u), last = tg && u === tSubs[tSubs.length - 1];
+      let k = 0;
       return sub + `<table class="pt pti">${colsOf(tg)}${headOf(tg)}<tbody>
-        ${(k => _mkLive(u).map(x => x.child ? `<tr class="kid"><td class="c"></td><td class="code">${esc(x.code)}</td><td class="kn">└ ${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : ''}</td><td class="c kt">ในชุด</td>${affs.map(() => '<td class="mk"></td>').join('')}${tg ? '<td class="mk"></td><td class="mk"></td>' : ''}<td class="chk"></td></tr>` : `<tr><td class="c">${++k}</td><td class="code">${esc(x.code)}</td><td>${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : '–'}</td><td class="n"><b>${_mkF0(x.promo)}</b></td>${affs.map(r => `<td class="n mk">${_mkF((+x.promo || 0) * r / 100)}</td>`).join('')}${tg ? `<td class="n mk">${_mkF0(+x.tgt || 0)}</td><td class="n mk">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>` : ''}<td class="chk"></td></tr>`).join(''))(0)}
+        ${_mkLive(u).map(x => x.child
+          ? `<tr class="kid"><td class="c"></td><td class="code">${esc(x.code)}</td><td class="kn">└ ${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : ''}</td><td class="c kt">ในชุด</td><td class="chk"></td>${affBlank}${tg ? '<td class="mk"></td><td class="mk"></td>' : ''}</tr>`
+          : `<tr><td class="c">${++k}</td><td class="code">${esc(x.code)}</td><td>${esc(_mkSku(x.code)?.name || x.name || '')}</td><td class="n">${x.normal ? _mkF0(x.normal) : '–'}</td><td class="n"><b>${_mkF0(x.promo)}</b></td><td class="chk"></td>${affBlank}${tg ? `<td class="n mk">${_mkF0(+x.tgt || 0)}</td><td class="n mk">${_mkF0((+x.promo || 0) * (+x.tgt || 0))}</td>` : ''}</tr>`).join('')}
         ${tg && tSubs.length > 1 ? tot('รวม ' + lab, _mkSum(_mkLive(u))) : ''}${last ? tot('รวมเป้าขาย ส่วน ' + no, _mkSum(tSubs.flatMap(_mkLive)), true) : ''}</tbody></table>`;
     }).join('');
   }).join('');
@@ -22110,22 +22140,25 @@ function _mkPaper(d) {
   const lvls = d.levels || [];
   const sign = [['ผู้เสนอ (การตลาด)', esc(d.created_by_name || ''), _mkShort(d.submitted_at || d.doc_date)],
     ...lvls.map(l => [esc(l.label), l.status === 'approved' ? esc(l.by_name || '') : '', l.status === 'approved' && l.by ? _mkShort(l.at) : '____/____/______'])];
-  const cc = (d.cc || []).filter(c => c.on !== false).map(_mkCcLabel);
+  // CC บนเอกสาร = แผนกประจำ (ตั้งโดยแอดมิน) · รายชื่อที่ผู้เสนอเพิ่มรายใบยังได้อีเมล แต่ไม่พิมพ์
+  const fx = (_mk.meta?.fixed_cc || []).map(g => { const nm = [...(g.uids || []).map(u => _mkUser(u)?.name || u), ...(g.emails || [])]; return `<span>${esc(g.dept)}${nm.length ? ' (' + nm.map(esc).join(', ') + ')' : ''}</span>`; });
   const wm = d.status === 'cancelled' ? 'ยกเลิก' : ['draft', 'rejected'].includes(d.status) ? 'ร่าง · ยังไม่อนุมัติ' : '';
-  const custHtml = `<table class="cu"><thead><tr><th style="width:34px;text-align:center">#</th><th>ชื่อลูกค้า</th><th>รหัสลูกค้า</th><th class="gp">GP</th></tr></thead><tbody>${custs.map((c, i) => `<tr><td style="text-align:center">${i + 1}</td><td>${esc(c.name || _mkCh(c.code).name)}</td><td class="cd">${esc(c.code)}</td><td class="gp">${+c.gp > 0 ? _mkF(c.gp) + '%' : 'ไม่มี GP'}</td></tr>`).join('')}</tbody></table>`;
+  const gpTxt = g => +g > 0 ? _mkF(g) + '%' : 'ไม่มี GP', sameGp = custs.every(c => +c.gp === +custs[0].gp);
+  const custHtml = `<div class="cus">${custs.map(c => `<span class="c">${esc(c.name || _mkCh(c.code).name)}<span class="cd">${esc(c.code)}</span>${sameGp ? '' : `<span class="gp">GP ${gpTxt(c.gp)}</span>`}</span>`).join('')}${sameGp ? `<span class="gpall">GP <b>${gpTxt(custs[0]?.gp)}</b>${custs.length > 1 ? ' ทุกราย' : ''}</span>` : ''}</div>`;
   return `<div class="mkpaper" style="position:relative">${wm ? `<div class="wm">${wm}</div>` : ''}
-    <div class="p-top"><span>FM-MKT-PRO · พิมพ์จากระบบ TSS Supply Chain</span><span><b>${esc(d.doc_no || 'ร่างยังไม่บันทึก')}</b></span></div>
-    <div class="p-head"><div><div class="p-co">บริษัท ไทย ซอสเซส มาร์เก็ตติ้ง จำกัด<small>ฝ่ายการตลาด · ช่องทางออนไลน์</small></div><div class="p-title">ใบเคาะราคา / ใบโปรโมชัน<br>(การตลาดออนไลน์)</div></div>
-      <div class="p-nos"><div><span>วันที่เขียน</span><span>${_mkShort(d.doc_date)}</span></div><div><span>ใบเคาะราคา No.</span><span class="mono">${esc(d.doc_no || '(ออกเลขเมื่อบันทึก)')}</span></div><div class="recv"><span>วันที่รับเอกสาร (ผู้ตรวจสอบ)</span><span>____/____/______</span></div><div><span>ใบ Promotion No.</span><span class="mono">${esc(d.promo_no || '') || '&nbsp;'}</span></div></div></div>
-    <div class="p-box">${custHtml}<div class="p-2"><div class="p-row"><span>ชื่อรายการ</span><span>${esc(d.title || '')}</span></div><div class="p-row"><span>วัตถุประสงค์</span><span>${esc(d.purpose || '')}</span></div></div></div>
+    <div class="p-top"><span>FM-MKT-PRO · พิมพ์จากระบบ TSS Supply Chain</span><b>${esc(d.doc_no || 'ร่างยังไม่บันทึก')}</b></div>
+    <div class="p-head"><div><div class="p-co">บริษัท ไทย ซอสเซส มาร์เก็ตติ้ง จำกัด<small>ฝ่ายการตลาด · ช่องทางออนไลน์</small></div><div class="p-title">ใบเคาะราคา / ใบโปรโมชัน<br>(การตลาดออนไลน์)</div><div class="p-date">วันที่เขียน <b>${_mkShort(d.doc_date)}</b></div></div>
+      <table class="nos"><thead><tr><th class="blank"></th><th>เลขที่</th><th>วันที่รับเอกสาร<br>(ผู้ตรวจสอบ)</th></tr></thead>
+        <tbody><tr><th>ใบเคาะราคา</th><td class="mono">${esc(d.doc_no || '(ออกเลขเมื่อบันทึก)')}</td><td class="dt">____/____/______</td></tr><tr><th>ใบ Promotion</th><td class="mono">${esc(d.promo_no || '') || '&nbsp;'}</td><td class="dt">____/____/______</td></tr></tbody></table></div>
+    <div class="p-box"><div class="p-row"><span>ลูกค้า / GP</span><span>${custHtml}</span></div><div class="p-2"><div class="p-row"><span>ชื่อรายการ</span><span>${esc(d.title || '')}</span></div><div class="p-row"><span>วัตถุประสงค์</span><span>${esc(d.purpose || '')}</span></div></div></div>
     ${secs}${nTgt > 1 ? `<div class="p-grand"><span>รวมเป้าขายทุกส่วน</span><b>${_mkF0(T.q)} แพ็ก</b><b>${_mkF0(T.b)} บาท</b></div>` : ''}
     <div class="p-box p-fill"><div class="p-row"><span>เอกสารแนบ</span><span>${(d.attachments || []).length ? d.attachments.map((a, i) => `${i + 1}. ${esc(a.label || a.filename)}`).join(' &nbsp;·&nbsp; ') : 'ไม่มี'}</span></div>
       <div class="p-row grow"><span>หมายเหตุ</span><span>${esc(d.body.note || '') || '&nbsp;'}</span></div></div>
     <div class="p-sign">${sign.map(([r, n, dt]) => `<div><span class="role">${r}</span><span class="line">${n}</span><span class="date">ว.ด.ป. ${dt}</span></div>`).join('')}</div>
-    ${d.approval_mode === 'paper' && d.status === 'approved' ? `<div class="p-copy"><b>อนุมัติจากเอกสารกระดาษ</b>ลายเซ็นอนุมัติอยู่ในเอกสารแนบ · บันทึกในระบบโดย ${esc(lvls[0]?.recorded_by_name || lvls[0]?.by_name || '')} ${_mkShort(d.approved_at)}${lvls[0]?.note || lvls[0]?.comment ? ' · ' + esc(lvls[0].note || lvls[0].comment) : ''}</div>` : ''}
-    <div class="p-copy"><b>แจ้งทางอีเมล (CC) หลังอนุมัติ</b>${cc.map(esc).join(' · ') || '–'}<span style="margin-left:auto;padding-left:10px">${d.cc_sent_at ? esc(d.cc_sent_note || 'ส่งแล้ว') + ' ' + _mkShort(d.cc_sent_at) : 'ระบบส่งอัตโนมัติเมื่ออนุมัติครบ'}</span></div></div>`;
+    ${d.approval_mode === 'paper' && d.status === 'approved' ? `<div class="p-copy"><b>อนุมัติจากเอกสารกระดาษ</b><div>ลายเซ็นอนุมัติอยู่ในเอกสารแนบ · บันทึกในระบบโดย ${esc(lvls[0]?.recorded_by_name || lvls[0]?.by_name || '')} ${_mkShort(d.approved_at)}${lvls[0]?.note || lvls[0]?.comment ? ' · ' + esc(lvls[0].note || lvls[0].comment) : ''}</div></div>` : ''}
+    <div class="p-copy"><b>แจ้งทางอีเมล (CC) หลังอนุมัติ</b><div class="lst">${fx.join('') || '<span>–</span>'}</div><span class="nt">${d.cc_sent_at ? esc(d.cc_sent_note || 'ส่งแล้ว') + ' ' + _mkShort(d.cc_sent_at) : 'ระบบส่งอัตโนมัติเมื่ออนุมัติครบ'}</span></div></div>`;
 }
-// พิมพ์: เปิดหน้าต่างใหม่ บังคับ A4 แนวตั้ง ย่อให้พอดี 1 หน้า แต่ไม่เล็กกว่า 70% (ยาวกว่านั้นขึ้นหน้าใหม่ เว้นขอบ 12 มม.)
+// พิมพ์: เปิดหน้าต่างใหม่ บังคับ A4 แนวตั้ง ย่อให้พอดี 1 หน้า แต่ไม่เล็กกว่า 70% (จัดกลาง) · ยาวกว่านั้นพิมพ์ 100% เต็มความกว้าง ขึ้นหน้าใหม่ เว้นขอบ 12 มม.
 function mkPrint() {
   const d = _mk.doc; if (!d) return;
   const w = window.open('', '_blank'); if (!w) return toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต pop-up แล้วลองใหม่');
@@ -22133,11 +22166,11 @@ function mkPrint() {
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
   <style>body{margin:0;background:#fff;font-family:'IBM Plex Sans Thai',sans-serif}${_mkPaperCss()}
   @page{size:A4 portrait;margin:0}
-  @media print{.mkpaper{width:210mm;min-height:0;margin:0;box-shadow:none;zoom:var(--fit,1)}.mkpaper .p-sign,.mkpaper .pt tr,.mkpaper .p-box,.mkpaper .p-grand{break-inside:avoid}.mkpaper .p-sech,.mkpaper .p-sub{break-after:avoid}}
+  @media print{.mkpaper{width:210mm;min-height:0;margin:0 auto;box-shadow:none;zoom:var(--fit,1)}.mkpaper .p-sign,.mkpaper .pt tr,.mkpaper .p-box,.mkpaper .p-grand{break-inside:avoid}.mkpaper .p-sech,.mkpaper .p-sub{break-after:avoid}}
   </style><style id="pg"></style></head><body>${_mkPaper(d)}
   <script>
-  function fit(){var p=document.querySelector('.mkpaper');p.style.zoom='1';p.style.minHeight='0';var H=p.offsetHeight;p.style.zoom='';var MIN=0.70,one=Math.min(1,1095/H),paged=one<MIN,f=paged?MIN:one;
-   document.getElementById('pg').textContent=paged?'@page{size:A4 portrait;margin:12mm 0}':'';if(!paged)p.style.minHeight=(1095/f).toFixed(1)+'px';document.documentElement.style.setProperty('--fit',f.toFixed(4));
+  function fit(){var p=document.querySelector('.mkpaper');p.style.zoom='1';p.style.minHeight='0';var H=p.offsetHeight;p.style.zoom='';var MIN=0.70,one=Math.min(1,1095/H),paged=one<MIN,f=paged?1:one;
+   document.getElementById('pg').textContent=paged?'@page{size:A4 portrait;margin:12mm 0}@media print{.mkpaper{display:block!important}.mkpaper .p-sech,.mkpaper .p-sub{break-inside:avoid}.mkpaper .p-fill{min-height:0}}':'';if(!paged)p.style.minHeight=(1095/f).toFixed(1)+'px';document.documentElement.style.setProperty('--fit',f.toFixed(4));
    var n=paged?Math.ceil(H*MIN/1032):1;var g=document.querySelector('.pg');if(g)g.textContent=n>1?'รวม '+n+' หน้า':'หน้า 1/1';}
   window.onload=function(){var go=function(){fit();setTimeout(function(){window.print()},250)};document.fonts&&document.fonts.ready?document.fonts.ready.then(go):go();};
   <` + `/script></body></html>`);
@@ -22147,7 +22180,7 @@ function mkPrint() {
 // ── ตั้งค่าเส้นทางอนุมัติ (แอดมิน) ──
 async function mkRenderRoutes() {
   _mk.view = 'routes';
-  if (!_mk.routes) { _mk.routes = JSON.parse(JSON.stringify(_mk.meta?.routes || [])); _mk.paper = [...(_mk.meta?.paper_approvers || [])]; }
+  if (!_mk.routes) { _mk.routes = JSON.parse(JSON.stringify(_mk.meta?.routes || [])); _mk.paper = [...(_mk.meta?.paper_approvers || [])]; _mk.fcc = JSON.parse(JSON.stringify(_mk.meta?.fixed_cc || [])); }
   document.getElementById('tb-r').innerHTML = `<button class="btn btn-sm" onclick="_mk.routes=null;mkRenderList()">← กลับรายการ</button>`;
   const users = _mk.meta?.users || [];
   const uopt = ex => users.filter(u => !ex.includes(u.uid)).map(u => `<option value="${esc(u.uid)}">${esc(u.name)}${u.position ? ' · ' + esc(u.position) : ''}</option>`).join('');
@@ -22155,6 +22188,10 @@ async function mkRenderRoutes() {
     <div class="card"><div class="ch"><div class="ct2">ผู้บันทึกอนุมัติจากเอกสารกระดาษ</div><span class="hint">ถ่ายรูปเอกสารที่เซ็นแล้วแนบ แล้วกดบันทึกเป็นอนุมัติได้ (ข้ามขั้นอนุมัติในระบบ)</span></div>
       <div class="pick">${(_mk.paper || []).map(u => `<span class="pk">${esc(_mkUser(u)?.name || u)}<button class="x" data-ppd="${esc(u)}">×</button></span>`).join('') || '<span class="hint">ยังไม่มี</span>'}
       <select data-ppa="1"><option value="">+ เพิ่มผู้บันทึก…</option>${uopt(_mk.paper || [])}</select><button class="btn btn-sm btn-p" data-ppsave="1">บันทึกรายชื่อ</button></div></div>
+    <div class="card"><div class="ch"><div class="ct2">CC ประจำแผนก</div><span class="hint">ส่งทุกใบเมื่ออนุมัติครบ · บนเอกสารพิมพ์ชื่อแผนก · แผนกที่ยังไม่มีผู้รับจะไม่ส่งอีเมล</span><button class="btn btn-sm btn-p" data-fcsave="1">บันทึก CC แผนก</button></div>
+      ${(_mk.fcc || []).map((g, i) => `<div class="lvl"><span class="n">${i + 1}</span><input data-fcd="${i}" value="${esc(g.dept)}" aria-label="ชื่อแผนก"><div class="pick">${(g.uids || []).map(u => `<span class="pk">${esc(_mkUser(u)?.name || u)}<button class="x" data-fcud="${i}:${esc(u)}">×</button></span>`).join('')}${(g.emails || []).map(m => `<span class="pk mono">${esc(m)}<button class="x" data-fced="${i}:${esc(m)}">×</button></span>`).join('')}
+        <select data-fcua="${i}"><option value="">+ เลือกผู้ใช้…</option>${uopt(g.uids || [])}</select><input data-fcei="${i}" type="email" placeholder="หรืออีเมล" style="max-width:200px"><button class="btn btn-xs" data-fcea="${i}">+ อีเมล</button><button class="x" data-fcdel="${i}" title="ลบแผนก">🗑</button></div></div>`).join('')}
+      <div class="row-act" style="padding:8px 0"><button class="btn btn-xs" data-fcadd="1">+ เพิ่มแผนก</button></div></div>
     ${_mk.routes.map((r, a) => `<div class="card"><div class="ch"><div class="ct2"><input data-rn="${a}" value="${esc(r.name)}" style="min-width:320px;font-weight:700"></div><button class="btn btn-sm btn-p" data-rsave="${a}">บันทึกเส้นทางนี้</button></div>
       ${r.levels.map((l, i) => `<div class="lvl"><span class="n">${i + 1}</span><input data-rl="${a}:${i}" value="${esc(l.label)}"><div class="pick">${(l.uids || []).map(u => `<span class="pk">${esc(_mkUser(u)?.name || u)}<button class="x" data-rud="${a}:${i}:${esc(u)}">×</button></span>`).join('')}
         <select data-rua="${a}:${i}"><option value="">+ เลือกผู้อนุมัติ…</option>${uopt(l.uids || [])}</select><button class="x" data-rld="${a}:${i}" title="ลบขั้น" ${r.levels.length < 2 ? 'disabled' : ''}>🗑</button></div></div>`).join('')}
@@ -22166,13 +22203,22 @@ async function mkRenderRoutes() {
   const root = document.getElementById('mk-routes');
   root.oninput = e => { const t = e.target, ds = t.dataset;
     if (ds.rn !== undefined) _mk.routes[+ds.rn].name = t.value;
+    if (ds.fcd !== undefined) _mk.fcc[+ds.fcd].dept = t.value;
     if (ds.rl) { const [a, i] = ds.rl.split(':').map(Number); _mk.routes[a].levels[i].label = t.value; }
     if (ds.rcr) { const [a, j] = ds.rcr.split(':').map(Number); _mk.routes[a].cc[j].role = t.value; } };
   root.onchange = e => { const t = e.target, ds = t.dataset; if (!t.value) return;
     if (ds.rua) { const [a, i] = ds.rua.split(':').map(Number); const l = _mk.routes[a].levels[i]; l.uids = [...new Set([...(l.uids || []), t.value])]; mkRenderRoutes(); }
+    if (ds.fcua !== undefined) { const g = _mk.fcc[+ds.fcua]; g.uids = [...new Set([...(g.uids || []), t.value])]; return mkRenderRoutes(); }
     if (ds.ppa) { _mk.paper = [...new Set([...(_mk.paper || []), t.value])]; return mkRenderRoutes(); }
     if (ds.rca !== undefined) { const r = _mk.routes[+ds.rca]; r.cc = [...(r.cc || []), { role: '', uid: t.value, on: true, src: 'route' }]; mkRenderRoutes(); } };
   root.onclick = async e => { const t = e.target.closest('button'); if (!t) return; const ds = t.dataset;
+    if (ds.fcud) { const [i, u] = ds.fcud.split(':'); const g = _mk.fcc[+i]; g.uids = (g.uids || []).filter(x => x !== u); return mkRenderRoutes(); }
+    if (ds.fced) { const k = ds.fced.indexOf(':'), g = _mk.fcc[+ds.fced.slice(0, k)], m = ds.fced.slice(k + 1); g.emails = (g.emails || []).filter(x => x !== m); return mkRenderRoutes(); }
+    if (ds.fcea !== undefined) { const g = _mk.fcc[+ds.fcea], em = root.querySelector(`[data-fcei="${ds.fcea}"]`).value.trim().toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return toast('อีเมลไม่ถูกต้อง'); g.emails = [...new Set([...(g.emails || []), em])]; return mkRenderRoutes(); }
+    if (ds.fcdel !== undefined) { _mk.fcc.splice(+ds.fcdel, 1); return mkRenderRoutes(); }
+    if (ds.fcadd) { _mk.fcc.push({ dept: 'แผนกใหม่', uids: [], emails: [] }); return mkRenderRoutes(); }
+    if (ds.fcsave) { const res = await apiFetch('/api/mkt_promo_docs/settings/fixed-cc', { method: 'PUT', body: JSON.stringify({ list: _mk.fcc }) });
+      if (res.error) return toast('บันทึกไม่สำเร็จ: ' + res.error.message); _mk.meta.fixed_cc = res.data; _mk.fcc = JSON.parse(JSON.stringify(res.data)); mkRenderRoutes(); return toast('บันทึก CC ประจำแผนกแล้ว'); }
     if (ds.ppd) { _mk.paper = (_mk.paper || []).filter(u => u !== ds.ppd); return mkRenderRoutes(); }
     if (ds.ppsave) { const res = await apiFetch('/api/mkt_promo_docs/settings/paper-approvers', { method: 'PUT', body: JSON.stringify({ uids: _mk.paper || [] }) });
       if (res.error) return toast('บันทึกไม่สำเร็จ: ' + res.error.message); _mk.paper = res.data; _mk.meta.paper_approvers = res.data; mkRenderRoutes(); return toast('บันทึกรายชื่อผู้บันทึกแล้ว'); }
