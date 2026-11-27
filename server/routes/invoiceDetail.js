@@ -236,6 +236,19 @@ function invoiceDetailRoutes(db) {
           WHERE b.company = 'BP-TGM' AND b.is_cn = 0 AND b.doc_date >= ? AND b.doc_date <= ?${fb.sql}
           GROUP BY b.cust_code, s, l.sku, u${bkGrp}`).all(...(withCost ? effDates : []), from, to, ...fb.params));
       } catch (e) { /* ยังไม่มีตาราง Bplus */ }
+      // ยอดลดหนี้รายลูกค้า (ใบ CN ไม่มีบรรทัดสินค้า) — client กระจายหักเข้าแถวสินค้าตามสัดส่วน (2026-11-27, ผู้ใช้ขอ
+      // "ลดหนี้หักตามรายการสินค้า" + "ของที่ไม่ใช่สินค้าหมวด 001–006 ไม่ต้องแสดง" — จึงไม่ใช้ส่วนต่างหัวใบที่ปนใบขายไม่มีบรรทัดอีก)
+      const cn = {};
+      const addCn = list => list.forEach(x => { if (x.a) cn[x.c] = (cn[x.c] || 0) + x.a; });
+      addCn(db.prepare(`SELECT i.cust_code AS c, SUM(i.total) AS a FROM v_invoice_heads i
+        WHERE i.doc_date >= ? AND i.doc_date <= ? AND i.rectyp = '5' AND ${salesDocSql('i.doc_num')}${fi.sql}
+        GROUP BY i.cust_code`).all(from, to, ...fi.params));
+      try {
+        const fb = filt('b', false);
+        addCn(db.prepare(`SELECT b.cust_code AS c, SUM(b.amount) AS a FROM bplus_invoices b
+          WHERE b.company = 'BP-TGM' AND b.is_cn = 1 AND b.doc_date >= ? AND b.doc_date <= ?${fb.sql}
+          GROUP BY b.cust_code`).all(from, to, ...fb.params));
+      } catch (e) { /* ยังไม่มีตาราง Bplus */ }
       let costInfo = null;
       if (withCost) ({ rows, costInfo } = addCost(ctx, rows));
       // สินค้าที่ไม่มีกลุ่มใน products (รหัสโรงงาน/บาร์โค้ด) → หากลุ่มจากรหัสขึ้นต้น/ชื่อ แบบเดียวกับแท็บรายสินค้า
@@ -254,7 +267,7 @@ function invoiceDetailRoutes(db) {
         }
         r.u = unitLabel(r.u);
       }
-      res.json(costInfo ? { from, to, rows, cost: costInfo } : { from, to, rows });
+      res.json(costInfo ? { from, to, rows, cn, cost: costInfo } : { from, to, rows, cn });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

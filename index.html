@@ -10609,12 +10609,12 @@ function _sdPvLoad(slm){
   const e=_sdPvData[key];if(e)return e;
   const n=_sdPvData[key]={loading:true};
   apiFetch('/api/invoice_detail/pivot',{method:'POST',body:JSON.stringify({from:p.from,to:p.to,...(slm?{slm}:{})})})
-    .then(r=>{if(r.error)throw new Error(r.error.message);n.rows=r.data.rows||[];n.cost=r.data.cost||null;}).catch(e=>{n.error=e.message||String(e);})
+    .then(r=>{if(r.error)throw new Error(r.error.message);n.rows=r.data.rows||[];n.cn=r.data.cn||null;n.cost=r.data.cost||null;}).catch(e=>{n.error=e.message||String(e);})
     .finally(()=>{n.loading=false;if(document.getElementById('sd-ta'))sdRender();});
   return n;
 }
 // แถวข้อมูล pivot + ส่วนต่างกับยอดหัวใบรายสาขา (ลดหนี้ / ใบที่ไม่มีบรรทัดสินค้า) ให้ยอดรวมเท่ากับยอด NET ด้านบน
-function _sdPvRows(custs,raw){
+function _sdPvRows(custs,raw,cn){
   const profs=customerProfiles(),remote=Object.fromEntries((DB.get('remote_customers_cache')||[]).map(x=>[String(x.code||''),x]));
   const info=new Map();
   custs.forEach(c=>(c.branches||[]).forEach(b=>info.set(b.c,{corp:c.n,bname:_sdCustDisplayName(b.c,b.n,remote,profs[b.c]||{}),tot:b._tot||0})));
@@ -10622,24 +10622,25 @@ function _sdPvRows(custs,raw){
   // r.x = บรรทัดที่ไม่ใช่สินค้า (ค่าเช่า/เงินมัดจำ ฯลฯ — server จัดให้, 2026-11-16 ผู้ใช้ขอเน้นตัวสินค้า): ไม่แสดง
   // แต่ยังนับใน lineSum เพื่อไม่ให้ยอดค่าเช่าไหลไปอยู่แถว "(ไม่มีรายการสินค้า / ลดหนี้)"
   raw.forEach(r=>{const i=info.get(r.c);if(!i)return;lineSum.set(r.c,(lineSum.get(r.c)||0)+(Number(r.a)||0));if(!r.x)rows.push({...r,_corp:i.corp,_bname:i.bname});});
-  // ส่วนต่างกับยอดหัวใบ (ลดหนี้ — ใบ CN ของ Express/Bplus ไม่มีบรรทัดสินค้า) กระจายหักเข้าแถวสินค้าตามสัดส่วนยอดขาย
+  // ยอดลดหนี้ (ใบ CN ของ Express/Bplus ไม่มีบรรทัดสินค้า) กระจายหักเข้าแถวสินค้าตามสัดส่วนยอดขาย
   // (2026-11-27, ผู้ใช้ขอ "เอายอดลดหนี้ไปหักตามรายการสินค้า ไม่ให้ขึ้นแยก") — ลำดับ: สินค้าของลูกค้ารายนั้น →
-  // ลูกค้าไม่มีสินค้าในช่วงนี้และเป็นยอดติดลบ (มีแต่ลดหนี้) → สินค้าของบริษัท/กลุ่มลูกค้าเดียวกัน → ทุกแถว
-  // ยอดบวกของลูกค้าที่ไม่มีบรรทัดสินค้าเลย (เช่นใบ BF) ไม่ใช่ลดหนี้ ไม่รู้ว่าเป็นสินค้าอะไร → คงแถว "(ใบกำกับไม่มีรายการสินค้า)"
-  // a กับ cc (ยอดส่วนที่คิดทุนได้) ปรับด้วยตัวคูณเดียวกัน ทุนขายคงเดิม → กำไร / %GP สะท้อนยอดหลังหักลดหนี้ · ยอดรวมยังเท่า NET
+  // ลูกค้าไม่มีสินค้าในช่วงนี้ → สินค้าของบริษัท/กลุ่มลูกค้าเดียวกัน → ทุกแถว
+  // + (2026-11-27, ผู้ใช้ขอ "ของที่ไม่ใช่สินค้าหมวด 001–006 ไม่ต้องแสดง"): ใบขายที่ไม่มีบรรทัดสินค้า (เช่นใบ BF) ไม่รู้ว่าเป็นสินค้าอะไร
+  // → ไม่แสดง (เดิมเป็นแถว "(ไม่มีรายการสินค้า)") · ยอดลดหนี้มาจาก server ตรงๆ (cn รายลูกค้า) ไม่ใช่ส่วนต่างหัวใบที่ปนใบพวกนี้
+  // server เก่ายังไม่ส่ง cn → ใช้ส่วนต่างหัวใบเฉพาะที่ติดลบ · ยอดรวมจึงเป็นยอดสินค้าหลังหักลดหนี้ (ไม่เท่า NET ด้านบนถ้ามีใบไม่มีบรรทัด)
+  // a กับ cc (ยอดส่วนที่คิดทุนได้) ปรับด้วยตัวคูณเดียวกัน ทุนขายคงเดิม → กำไร / %GP สะท้อนยอดหลังหักลดหนี้
   const byC=new Map(),byCorp=new Map();
   rows.forEach(r=>{(byC.get(r.c)||byC.set(r.c,[]).get(r.c)).push(r);(byCorp.get(r._corp)||byCorp.set(r._corp,[]).get(r._corp)).push(r);});
   const pend=new Map();
   const spread=(list,amt)=>{const s=list.reduce((t,r)=>t+(Number(r.a)||0),0);if(!(s>=1))return false;list.forEach(r=>pend.set(r,(pend.get(r)||0)+amt*(Number(r.a)||0)/s));return true;};
   const toCorp=new Map(),toAll=[];
   info.forEach((i,c)=>{
-    const rem=i.tot-(lineSum.get(c)||0);if(Math.abs(rem)<1)return;
-    if(spread(byC.get(c)||[],rem))return;
-    if(rem<0){toCorp.set(i.corp,(toCorp.get(i.corp)||0)+rem);return;}
-    rows.push({c,s:'',k:'(none)',n:'',g:'',q:0,a:rem,_corp:i.corp,_bname:i.bname});
+    const amt=cn?(Number(cn[c])||0):Math.min(0,i.tot-(lineSum.get(c)||0));if(Math.abs(amt)<1)return;
+    if(spread(byC.get(c)||[],amt))return;
+    toCorp.set(i.corp,(toCorp.get(i.corp)||0)+amt);
   });
   toCorp.forEach((amt,corp)=>{if(!spread(byCorp.get(corp)||[],amt))toAll.push(amt);});
-  if(toAll.length)spread(rows.filter(r=>r.k!=='(none)'),toAll.reduce((t,v)=>t+v,0));
+  if(toAll.length)spread(rows,toAll.reduce((t,v)=>t+v,0));
   pend.forEach((add,r)=>{const a0=Number(r.a)||0,f=a0?(a0+add)/a0:1;r.a=a0+add;if(r.cc!=null)r.cc=(Number(r.cc)||0)*f;});
   return rows;
 }
@@ -10658,7 +10659,7 @@ function _sdPivotHtml(tab,custs,slm){
   if(d.loading)return '<div class="al ali" style="margin-top:8px">⏳ กำลังโหลดข้อมูลรายสินค้าจากใบกำกับ…</div>';
   if(d.error)return `<div class="al alw" style="margin-top:8px">โหลดข้อมูลไม่สำเร็จ: ${esc(d.error)}</div>`;
   const dims=_sdPv[tab]||SD_PV_DEFAULT[tab];
-  let rows=_sdPvRows(custs,d.rows||[]);
+  let rows=_sdPvRows(custs,d.rows||[],d.cn);
   const q=(_sd.q||'').toLowerCase().trim();
   if(q){
     // ลูกค้าก่อน สินค้าทีหลัง (2026-10-14) — ดู _sdCustSearch
@@ -10699,7 +10700,7 @@ function _sdPivotHtml(tab,custs,slm){
     });
   };
   walk(root,0,'');
-  return h+`</tbody></table></div><div style="font-size:11px;color:var(--TX3);margin-top:6px">ยอดขายจากบรรทัดใบกำกับ TSS + โรงงาน TGM · ยอดลดหนี้ (ใบ CN ไม่มีบรรทัดสินค้า) หักเข้าแต่ละสินค้าของลูกค้ารายนั้นตามสัดส่วนยอดขาย · ใบขายที่ไม่มีบรรทัดสินค้าของลูกค้าที่ไม่มีสินค้าอื่นแสดงเป็น "(ใบกำกับไม่มีรายการสินค้า)" ยอดรวมจึงเท่ายอด NET ด้านบน · สัดส่วน = เทียบชั้นแม่${costOn?` · ${_SD_COST_NOTE}`:''}</div>`;
+  return h+`</tbody></table></div><div style="font-size:11px;color:var(--TX3);margin-top:6px">ยอดขายจากบรรทัดใบกำกับ TSS + โรงงาน TGM · แสดงเฉพาะสินค้าหมวด 001–006 (ไม่รวมค่าเช่า / ของใช้ / ใบขายที่ไม่มีรายการสินค้า) · ยอดลดหนี้ (ใบ CN ไม่มีบรรทัดสินค้า) หักเข้าแต่ละสินค้าของลูกค้ารายนั้นตามสัดส่วนยอดขาย · ยอดรวมจึงอาจไม่เท่ายอด NET ด้านบน · สัดส่วน = เทียบชั้นแม่${costOn?` · ${_SD_COST_NOTE}`:''}</div>`;
 }
 // ระดับการแสดงผลแท็บรายลูกค้า (2026-10-12, ผู้ใช้ขอเลือกการจัดกลุ่มได้)
 const SD_LEVELS=[['full','บริษัท › สาขา › กลุ่มสินค้า › สินค้า'],['noprodgrp','บริษัท › สาขา › สินค้า'],['corp_prod','บริษัท › สินค้า'],['branch_prod','สาขา › สินค้า (ไม่จัดกลุ่ม)']];
