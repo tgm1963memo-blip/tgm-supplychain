@@ -40,7 +40,7 @@ test.describe('Sales Overview expand keeps scroll + Top 10 popup', () => {
     await page.locator('#sd-ta strong', { hasText: /^กลุ่มทดสอบ 30$/ }).click();
     const after = await page.locator('#sd-ta .tw').evaluate((el) => el.scrollTop);
     expect(Math.abs(after - before)).toBeLessThan(5);
-    await expect(page.getByText('สาขา 30', { exact: false }).first()).toBeVisible();
+    await expect(page.locator('#sd-ta').getByText('สาขา 30', { exact: false }).first()).toBeVisible();
   });
 
   test('Top 10 is a button that opens a popup, not a box inside the table', async ({ page }) => {

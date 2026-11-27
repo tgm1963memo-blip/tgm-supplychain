@@ -389,6 +389,9 @@ test('dashboard exec: gross margin block only for users allowed to see cost, cos
   assert.deepEqual(det.by_slm.map(c => [c.code, c.covered]), [['101', 4800], ['102', 400]]);
   assert.deepEqual(det.below_cost.map(x => [x.cust, x.sku, x.slm, x.covered - x.cogs.total]), [['C2', 'P2', '102', -100]]);
   assert.deepEqual(det.cost_changes.map(x => [x.sku, x.prev, x.cur, x.avg_price]), [['P1', 100, 110, 150]]);
+  // ?cust= (Sales Overview ตัวกรองลูกค้า, 2026-11-27) — เหลือเฉพาะลูกค้าที่ขอ
+  const onlyC2 = (await mg('SA', 'from=2026-11-01&to=2026-11-30&cust=C2')).data;
+  assert.deepEqual([onlyC2.totals.lines, onlyC2.by_customer.map(c => c.code)], [400, ['C2']]);
   assert.equal(det.by_sku.find(x => x.sku === 'CV').source, 'converted');
   // กลุ่มสินค้า = รหัสกลุ่ม Express · ลูกค้าต่อสินค้า · รายการที่ไม่ใช่สินค้า (ค่าเช่า) ไม่นับ
   assert.deepEqual(det.by_group.map(g => [g.name, g.lines]), [['003', 5200], ['002', 300]]);

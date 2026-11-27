@@ -696,14 +696,18 @@ module.exports = function dashboardExecRoutes(db) {
     const lo = from.length === 10 ? from : `${from}-01`;
     const hi = to.length === 10 ? to : `${to}-31`;
     const skip = JSON.stringify([...reqNonSales.ic, ...reqNonSales.staff]);
+    // ?cust=C1,C2 (2026-11-27, Sales Overview ตัวกรองลูกค้า) — กรองเพิ่มจากสิทธิ์เดิม (slmCodes) ไม่ได้ขยายสิทธิ์
+    const custs = [...new Set(String(query.cust || '').split(',').map((c) => c.trim()).filter(Boolean))].slice(0, 5000);
+    const custSql = custs.length ? 'AND cust_code IN (SELECT value FROM json_each(?))' : '';
     const rows = cos.length ? db.prepare(`SELECT cust_code, slm_code, sku, unit_code,
         (${effDates.map(() => '(d >= ?)').join(' + ')}) AS bk, MIN(d) AS d0,
         SUM(qty) AS qty, SUM(qty_base) AS qty_base, SUM(amount) AS amount
       FROM sales_lines_daily
       WHERE company IN (${inList(cos.length)}) AND d >= ? AND d <= ?
         AND cust_code NOT IN (SELECT value FROM json_each(?))
+      ${custSql}
       ${slmCodes.sql}
-      GROUP BY cust_code, slm_code, sku, unit_code, bk`).all(...effDates, ...cos, lo, hi, skip, ...slmCodes.params) : [];
+      GROUP BY cust_code, slm_code, sku, unit_code, bk`).all(...effDates, ...cos, lo, hi, skip, ...(custs.length ? [JSON.stringify(custs)] : []), ...slmCodes.params) : [];
 
     const zero = () => ({ lines: 0, covered: 0, cogs: { total: 0, depr: 0, base: 0 } });
     const add = (a, amt, cg) => {

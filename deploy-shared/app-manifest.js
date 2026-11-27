@@ -37,7 +37,7 @@ const SALES_ONLY = [
   // the <select> that calls it only renders when _dashHasSalesCluster is true anyway.
   'dashTopTables',
   '_sbInvoiceSalesRows', '_sbInvoiceSalesRowsRange', '_sdScaleProdsToTotal',
-  '_sdBuildCustsFromInvoice', '_sdBuildSlmsFromInvoice', '_sdUpdateSlmDrop',
+  '_sdBuildCustsFromInvoice', '_sdBuildSlmsFromInvoice', '_sdUpdateSlmDrop', 'sdSetCustF', '_sdUpdateCustDrop', 'sdReload', 'sdPvRetry', '_sdLc',
   // ตัวกรองบริษัท + ยอดโรงงาน (Bplus) ใน Sales Overview (2026-10-05) — เรียก _sbInvoiceSalesRows* ที่เป็น sales-only
   '_sdCo', '_sdCoLabel', '_sdCosFor', '_sdInvMonth', '_sdInvRange', '_sdInvDays', '_sdCustSearch', '_SD_PROD_DIMS', '_sdBpLines', '_sdProdsMixed', '_SD_CASH_POS', '_sdNoPos', '_sdProdsInv', 'sdSetCo',
   '_sdD', '_sdWI', '_sdVs', '_sdBar', 'sdTogOp',

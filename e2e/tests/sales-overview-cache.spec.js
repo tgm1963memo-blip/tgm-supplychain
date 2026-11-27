@@ -45,7 +45,7 @@ test.describe('Sales Overview year-view cache (stale-while-revalidate)', () => {
     await page.evaluate(() => {
       // _sd.cy_y defaults to the current Buddhist year; _sdApiYear() = cy_y - 543. Cache key must match exactly.
       const gy = _sd.cy_y - 543;
-      DB.set(`sd_year_cache_${gy}_ALL`, {
+      DB.set(`sd_year_cache_${gy}_ALL_${_sdCo()}`, {
         total: 123456789, qty: 45678, invoices: 321, vs: 12,
         monthly: [{ ym: `${gy}-01`, total: 123456789, qty: 45678, invoices: 321 }],
         slmList: [], invoiceBased: false,
@@ -65,7 +65,7 @@ test.describe('Sales Overview year-view cache (stale-while-revalidate)', () => {
     await openPage(page);
     await page.evaluate(() => {
       const gy = _sd.cy_y - 543;
-      DB.set(`sd_year_cache_${gy - 1}_ALL`, { // wrong year on purpose
+      DB.set(`sd_year_cache_${gy - 1}_ALL_${_sdCo()}`, { // wrong year on purpose
         total: 999999999, qty: 1, invoices: 1, vs: 0, monthly: [], slmList: [], invoiceBased: false, custs: [], prods: [], slms: [],
       });
     });
